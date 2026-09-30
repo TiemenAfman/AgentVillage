@@ -59,6 +59,8 @@ const CIVIC = [
   ['fountain', 'Fountain', '45'],
   ['flowerbed', 'Centre bed', 'until the fountain'],
   ['lighthouse', 'Lighthouse', '50'],
+  // The pirates' pub, once the light burns (Plans/piratenkroeg.md).
+  ['piratetavern', 'Salty Kraken', '52'],
   // The trades, out beyond the shopping streets. The smith goes in at night: move the night
   // slider (Plans/DONE/zagerij.md, Plans/DONE/smidse.md, Plans/DONE/stal-en-veld.md).
   ['sawmill', 'Sawmill', '55'],
@@ -1188,11 +1190,12 @@ function setPrompt(near) {
   promptEl.innerHTML = `<b>E</b> ${near.prompt || `look at ${near.label}`}`;
 }
 
-// The doors on the field: the tavern, and the castle, whose great hall is a rave here at any
-// hour - the island opens it on Saturday nights only (Plans/DONE/rave-in-het-kasteel.md).
+// The doors on the field: the tavern, the castle, whose great hall is a rave here at any
+// hour - the island opens it on Saturday nights only (Plans/DONE/rave-in-het-kasteel.md) - and the
+// Salty Kraken (Plans/piratenkroeg.md).
 function doors() {
   const out = [];
-  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern'], ['c:castle', 'rave', 'the castle']]) {
+  for (const [id, room, label] of [['c:tavern', 'tavern', 'the tavern'], ['c:castle', 'rave', 'the castle'], ['c:piratetavern', 'piratetavern', 'the Salty Kraken']]) {
     const at = placed.get(id);
     if (at) out.push({ id, room, kind: 'door', x: at.x, z: at.z, r: 2.4, label, prompt: `step into ${label}` });
   }

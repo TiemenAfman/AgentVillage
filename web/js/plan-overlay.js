@@ -48,6 +48,9 @@ const C = {
   ok: new THREE.Color(0x8fe0a8),
   bad: new THREE.Color(0xe0574a),
   hover: new THREE.Color(0xf4ece0),
+  gate: new THREE.Color(0xe8b45c),
+  gateIn: new THREE.Color(0x8fe0a8),
+  gateOut: new THREE.Color(0xf0a060),
   tether: new THREE.Color(0xe8b45c),
   polder: new THREE.Color(0xd8c48a),
   unpolder: new THREE.Color(0x3d7f9a),
@@ -287,6 +290,76 @@ export function createPlanOverlay({ scene, terrain, village, byId, shapeOf = nul
     }
   }
 
+  // ---------------------------------------------------------------- the entrances
+  // Where a road crosses the edge of a hamlet: a bar across the road on the boundary, a green
+  // arrow just outside pointing in (the entrance) and an orange one just inside pointing out
+  // (the exit), and the name of the side. The arches themselves are not drawn while planning
+  // (main.js hides the hamlet group, and from straight above a gateway is a line), so this is
+  // how the keeper sees which roads are ways in and out. `list` is [{ x, z, dx, dz, name,
+  // word }]: the boundary's middle in world units and the unit step out of the hamlet.
+  const gateGroup = new THREE.Group();
+  group.add(gateGroup);
+  function clearGates() {
+    for (const o of [...gateGroup.children]) {
+      gateGroup.remove(o);
+      if (!o.isSprite) o.geometry.dispose();     // a sprite's quad is one shared by all of them
+      if (o.material.map) o.material.map.dispose();
+      o.material.dispose();
+    }
+  }
+  function gateLabel(name, word) {
+    const c = document.createElement('canvas');
+    c.width = 384; c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(24, 30, 20, 0.82)';
+    g.strokeStyle = '#e8b45c';
+    g.lineWidth = 4;
+    g.beginPath(); g.roundRect(4, 4, 376, 120, 18); g.fill(); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#f4ece0';
+    g.font = '600 38px "Iowan Old Style", Georgia, serif';
+    g.fillText(String(name || '').slice(0, 22), 192, 40);
+    g.fillStyle = '#8fe0a8';
+    g.font = '600 28px "Iowan Old Style", Georgia, serif';
+    g.fillText(`${word} entrance / exit`, 192, 88);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+  function setGates(list = []) {
+    clearGates();
+    const t = terrain();
+    if (!t) return;
+    const y = (x, z) => Math.max(t.worldHeight(x, z), WATER_Y) + LIFT_MARK + 0.08;
+    const flat = (pts, c) => {
+      const pos = [];
+      for (const [x, z] of pts) pos.push(x, y(x, z), z);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setIndex(pts.length === 3 ? [0, 1, 2] : [0, 1, 2, 0, 2, 3]);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide, transparent: true, opacity: 0.95, depthTest: false }));
+      m.renderOrder = 1002;
+      m.frustumCulled = false;
+      gateGroup.add(m);
+    };
+    for (const e of list) {
+      const px = -e.dz, pz = e.dx;             // across the road
+      const at = (a, b) => [e.x + e.dx * a + px * b, e.z + e.dz * a + pz * b];
+      // the bar over the boundary, three cells wide
+      flat([at(-0.15, -1.6), at(0.15, -1.6), at(0.15, 1.6), at(-0.15, 1.6)], C.gate);
+      // an arrow is a triangle: its tip first, then the two corners of its base
+      const arrow = (from, dir, c) => flat([at(from + dir * 1.3, 0), at(from, -0.85), at(from, 0.85)], c);
+      arrow(1.4, -1, C.gateIn);                // outside, pointing back in over the bar
+      arrow(-1.4, 1, C.gateOut);               // inside, pointing out over it
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: gateLabel(e.name, e.word), transparent: true, depthTest: false }));
+      const [lx, lz] = at(4.2, 0);
+      sprite.position.set(lx, y(lx, lz) + 0.5, lz);
+      sprite.scale.set(9, 3, 1);
+      sprite.renderOrder = 1003;
+      gateGroup.add(sprite);
+    }
+  }
+
   // ---------------------------------------------------------------- the ghosts
   // A building being carried: the real building's own shape under the translucent green or
   // red, at where it would stand. The real group never moves - see the top of plan-mode.js
@@ -373,11 +446,12 @@ export function createPlanOverlay({ scene, terrain, village, byId, shapeOf = nul
 
   function destroy() {
     dispose(grid); dispose(gridWater); dispose(fills); dispose(marks); dispose(tethers); dispose(hover);
+    clearGates();
     setGhosts([]);
     dropShapes();
     scene.remove(group);
     OK.dispose(); BAD.dispose();
   }
 
-  return { group, rebuildGround, paint, setMarks, setGhosts, setHover, setVisible, dispose: destroy, hasGround: () => !!fills };
+  return { group, rebuildGround, paint, setMarks, setGates, setGhosts, setHover, setVisible, dispose: destroy, hasGround: () => !!fills };
 }

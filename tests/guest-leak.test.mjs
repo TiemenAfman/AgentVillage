@@ -45,6 +45,8 @@ register('./support/shared-loader.mjs', import.meta.url);
 // set, so every sheet a raise asks for turns into a texture this test can see - and a sheet
 // per landscape is exactly the kind of thing that is easy to leave behind.
 globalThis.document = {
+  // The treasure statue's plaque paints a canvas (web/js/treasure-plaque.js); nothing here reads it.
+  createElement: () => ({ width: 0, height: 0, getContext: () => ({ fillRect() {}, strokeRect() {}, fillText() {}, measureText: () => ({ width: 0 }) }) }),
   createElementNS: () => {
     const on = {};
     const img = {
@@ -94,6 +96,7 @@ const { attachQuarry } = await import('../web/js/quarry.js');
 const { attachBeacon } = await import('../web/js/beacon.js');
 const { attachGoldPile } = await import('../web/js/goldpit.js');
 const { attachOrePile } = await import('../web/js/goldmine.js');
+const { attachPlaque } = await import('../web/js/treasure-plaque.js');
 const { attachFurnace } = await import('../web/js/goldsmith.js');
 const { makeTerrain } = await import('../shared/terrain.mjs');
 const { placeIsland } = await import('../shared/regions.mjs');
@@ -114,7 +117,7 @@ function body(name) {
 // stands is not what this is about, and a trade in the sea still builds its trade.
 const CIVICS = ['clocktower', 'fountain', 'sawmill', 'smithy', 'stable', 'bakery', 'butcher', 'brewery', 'quarry',
   'windmill', 'lighthouse', 'goldmine', 'goldsmith', 'goldpit', 'ship', 'castle', 'market', 'chapel', 'school',
-  'grocer', 'fishery', 'shipyard'];
+  'grocer', 'fishery', 'shipyard', 'treasure'];
 function bundle() {
   const b = JSON.parse(JSON.stringify(starterBundle(0)));
   CIVICS.forEach((t, k) => {
@@ -157,7 +160,7 @@ const flameMat = new THREE.MeshBasicMaterial();
 // imported - and a mirror kept honest by the first test below, which fails the moment
 // attachExtras hangs something on a record that this list does not know about.
 const MIRRORED = new Set(['blades', 'beacon', 'clock', 'fountain', 'sawmill', 'smithy', 'ship', 'stable', 'bakery', 'baker',
-  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor']);
+  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor', 'plaque']);
 // What attachExtras hangs only on our own island: the postbox flag and the fisherman are behind
 // `mail`, a yard sign behind `signs`, and both are off for a guest.
 const OURS_ONLY = new Set(['mailFlag', 'fisher', 'sign']);
@@ -179,6 +182,7 @@ function extras(rec) {
   if (a.goldpile) { rec.goldPile = attachGoldPile(group, a.goldpile.at, material); rec.goldPile.foreign = true; }
   if (a.orepile && a.orepile.at) { rec.orePile = attachOrePile(group, a.orepile.at); rec.orePile.foreign = true; }
   if (a.goldsmith) rec.furnace = attachFurnace(group, a.goldsmith.at, material);
+  if (spec.civicType === 'treasure' && built.anchors && built.anchors.sign) rec.plaque = attachPlaque(group, built.anchors.sign, 3);
   if (a.resetclock) { rec.resetClock = attachResetClock(group, a.resetclock.at, material, a.resetclock.r); rec.resetClock.foreign = true; }
   if (spec.kind === 'camp') {
     const fire = new THREE.Mesh(campfireGeo, material);

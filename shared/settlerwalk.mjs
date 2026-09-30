@@ -121,7 +121,21 @@ export const DOOR_DIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 // which is also all the old re-expansion ever amounted to (it relaxed with the best cost,
 // which the fresher entry had already done). The 12000 budget counts expansions, as it
 // always meant to; stale entries no longer eat it.
-export function findPath(terrain, from, to, blocked) {
+//
+// Options, all optional, none used by a settler's walk or a guard's chase:
+//   open      anything with `has(key)`: cells that are not land and are walked anyway - the deck of
+//             a bridge somebody built. Without it a route round the river was the only one.
+//   prefer    `has(key)`: the roads. A step onto one costs ROAD_STEP instead of 1, so a route
+//             follows a road that is a little longer rather than cutting across the fields.
+//   crossing  `(fromKey, toKey) => extra cost` of a step between two cells: a fence in the way,
+//             which a route would rather go round to a gate than walk through.
+//   step      `(fromKey, toKey) => boolean`: whether a body can make the step at all. A bridge's
+//             deck is a cell like its bank, two metres higher at the crown, and a route that steps
+//             on to it from the side halfway across walks into the river.
+// The heuristic is scaled with ROAD_STEP to stay admissible, which is a wider search, so
+// either of the last two gets a bigger budget.
+export const ROAD_STEP = 0.5;
+export function findPath(terrain, from, to, blocked, { open = null, prefer = null, crossing = null, step = null } = {}) {
   const size = terrain.size;
   const key = (x, z) => x + z * size;
   const start = key(from[0], from[1]);
@@ -163,9 +177,11 @@ export function findPath(terrain, from, to, blocked) {
       swap(i, m); i = m;
     }
   };
-  const h = (x, z) => Math.abs(x - to[0]) + Math.abs(z - to[1]);
+  const unit = prefer ? ROAD_STEP : 1;
+  const h = (x, z) => (Math.abs(x - to[0]) + Math.abs(z - to[1])) * unit;
+  const budget = prefer || crossing ? 60000 : 12000;
   let guard = 0;
-  while (hf.length && guard < 12000) {
+  while (hf.length && guard < budget) {
     pop();
     const cur = top.k;
     const cx = cur % size, cz = (cur - (cur % size)) / size;
@@ -178,10 +194,12 @@ export function findPath(terrain, from, to, blocked) {
       const nx = d === 0 ? cx + 1 : d === 1 ? cx - 1 : cx;
       const nz = d === 2 ? cz + 1 : d === 3 ? cz - 1 : cz;
       if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
-      if (!terrain.isLand(nx, nz)) continue;
       const k = key(nx, nz);
+      // `open`: cells that are not land and are walked anyway - the deck of a bridge (has(key)).
+      if (!terrain.isLand(nx, nz) && !(open && open.has(k))) continue;
       if (blocked && blocked.has(k) && k !== goal) continue;
-      const cost = gc + 1 + 4 * terrain.slope(nx, nz);
+      if (step && !step(cur, k)) continue;
+      const cost = gc + (prefer && prefer.has(k) ? ROAD_STEP : 1) + 4 * terrain.slope(nx, nz) + (crossing ? crossing(cur, k) : 0);
       if (g.has(k) && g.get(k) <= cost) continue;
       g.set(k, cost);
       prev.set(k, cur);

@@ -7,6 +7,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { DEFAULT_AVATAR, PLAYER_HAT_SHAPES, HAND_ITEMS, SWATCHES } = await import('../web/js/avatar.js');
+const { EQUIPMENT, byId, unlockOf } = await import('../shared/equipment.mjs');
 const { SETTLER_PARTS } = await import('../web/js/settler-mesh.js');
 const { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, iconDyes, iconKey, iconGeometry } =
   await import('../web/js/inventory.js');
@@ -34,6 +35,39 @@ test('picker options are the ids the spec accepts', () => {
   for (const id of ['lefthand', 'righthand']) {
     assert.deepEqual(slot(id).options.map((o) => o.id), ['', ...HAND_ITEMS.map((h) => h.id)]);
   }
+});
+
+// The catalogue (shared/equipment.mjs) decides what a picker offers: a live piece is a tile in
+// the picker of its slot (the unlock id is the tile the quest opens), and a planned one is in
+// none - it has nothing to draw, so a tile for it would render an empty well.
+test('every live piece is a tile, and no planned piece is in any picker', () => {
+  const pickers = { hand: ['lefthand', 'righthand'], head: ['head'] };
+  for (const e of EQUIPMENT.filter((p) => p.status === 'live')) {
+    const ids = pickers[e.slot];
+    assert.ok(ids, `${e.id}: no picker for slot ${e.slot}`);
+    for (const id of ids) {
+      assert.ok(slot(id).options.some((o) => o.id === e.id), `${e.id} missing from ${id}`);
+      assert.ok(optionIcon(slot(id), e.id).item || optionIcon(slot(id), e.id).shape, `${e.id}: no icon`);
+    }
+  }
+  for (const e of EQUIPMENT.filter((p) => p.status === 'planned')) {
+    for (const s of INVENTORY_SLOTS) {
+      assert.ok(!(s.options || []).some((o) => o.id === e.id), `${e.id} is planned but in ${s.id}`);
+    }
+  }
+});
+
+test('a locked piece is a tile like any other, and the unlock id it waits for is a real one', () => {
+  // The picker locks by the catalogue's unlock id (studio.js): every tile that can be locked
+  // must name an unlock a quest can hand out, and every other tile must be free for all.
+  const lockable = new Set(EQUIPMENT.filter((e) => e.status === 'live').map((e) => e.id));
+  for (const s of INVENTORY_SLOTS.filter((x) => x.options)) {
+    for (const o of s.options) {
+      if (lockable.has(o.id)) assert.ok(unlockOf(o.id), `${o.id}: locked with no unlock id`);
+      else assert.equal(unlockOf(o.id), null, `${o.id}: locked but not in the catalogue as live`);
+    }
+  }
+  assert.ok(byId('shovel').hint, 'a locked tile says where the piece comes from');
 });
 
 test('icon part lists name only baked parts', () => {

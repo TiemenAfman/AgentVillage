@@ -107,6 +107,13 @@ const SHADOW_OF_DIST = 0.48;
 // wrapping from one edge of the drawn three by three to the other does it 430 units out.
 const CLOUD_TILE = 288;
 const CLOUDS_PER_TILE = 30;
+// How high the layer hangs, world units over the sea. It was 24 to 33 - a lovely height for
+// a 128 island and straight through the volcano, whose rim is 38 up and summit 41, so clouds
+// drifted through the mountain. Now clear of it with room for the weather to lower it (rain
+// takes it down ten, weather.js `drop`) and the smoke that rises from the crater. Puffs are
+// CLOUD_SIZE larger to stay the size they looked from the ground.
+export const CLOUD_Y = [54, 66];
+const CLOUD_SIZE = 1.4;
 // A whole number of periods of every wave term in the water shader - see update().
 export const WAVE_LOOP = 20 * Math.PI;
 export const WAVE_RATES = [1.1, 0.9, 1.3];
@@ -116,12 +123,35 @@ export const WAVE_RATES = [1.1, 0.9, 1.3];
 // has carried it by `seconds` of sea time. Nothing here depends on who is asking - that is
 // what puts a cloud in the same place on every screen. The two other images drawn are this
 // one a tile either side.
-export function cloudNearest(start, speed, seconds, focus) {
-  const lo = focus - CLOUD_TILE / 2;
+export function cloudNearest(start, speed, seconds, focus, tile = CLOUD_TILE) {
+  const lo = focus - tile / 2;
   const v = start + speed * seconds - lo;
-  return lo + (v - Math.floor(v / CLOUD_TILE) * CLOUD_TILE);
+  return lo + (v - Math.floor(v / tile) * tile);
 }
 export { CLOUD_TILE };
+
+// A stable 0..1 for a cloud's image, from which cloud it is and which tile-shift of it (so it
+// does not change as the wind carries the cloud, nor as the camera moves).
+export function cloudHash(a, b, c) {
+  let x = (a * 374761393 + b * 668265263 + c * 1274126177) | 0;
+  x = Math.imul(x ^ (x >>> 13), 1274126177);
+  x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+// How much of an outer image is drawn, 0..1 (its size, so it grows in rather than popping): a
+// carpet of evenly spaced specks out to the horizon reads as debris on the sea, not as sky, so
+// past the near three by three the sky thins out and gathers. `d` is how far the image lies from
+// the camera; `m` says how much of a 2 x 2 block of tiles is kept - blocks are wholly full or
+// mostly empty, which is what makes clumps. Near enough (`d` under 350) everything stays, so the
+// sky over the island is the one it always was.
+export function cloudShown(cloud, mx, mz, d, salt = 0) {
+  const ramp = d <= 350 ? 0 : d >= 900 ? 1 : ((d - 350) / 550) ** 2 * (3 - 2 * (d - 350) / 550);
+  if (ramp <= 0) return 1;
+  const block = cloudHash(Math.floor(mx / 2), Math.floor(mz / 2), 977 + salt) < 0.45 ? 0.62 : 0.05;
+  const keep = 1 - (1 - block) * ramp;
+  const v = (keep - cloudHash(cloud, mx, mz + salt)) / 0.12;
+  return v <= 0 ? 0 : v >= 1 ? 1 : v;
+}
 
 // Where the sand gives up and the meadow takes over. The bands below still change on a
 // line at 0.35 - the height `terrain.mjs` calls the top of a beach, and the height the
@@ -1510,6 +1540,8 @@ export function createLandscape({
 
   // ---- boundaries and fields -----------------------------------------------
   let borderMesh = null, fieldMesh = null;
+  let dressed = village;               // the village the boundaries were last drawn for
+  let bridgeRoads = new Set();         // cells of hand-built bridges and their banks, as `gx + gz * size`
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
 
   function buildHamletDressing(v, seasonName) {
@@ -1520,7 +1552,12 @@ export function createLandscape({
     // already walk on, so no extra data is needed to know where the gates are. The field
     // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
     // same merged geometry, for no extra draw call.
-    const bg = buildBorders(v, terrain, own.owner, roads, fieldPlan);
+    dressed = v;
+    // The gates in a boundary are where a road crosses it, and a bridge the keeper built by hand
+    // (a prop, so not in the village's paths) is a road for that: without it the fence ran
+    // straight across the bridge's foot.
+    const gates = bridgeRoads.size ? new Set([...roads, ...bridgeRoads]) : roads;
+    const bg = buildBorders(v, terrain, own.owner, gates, fieldPlan);
     if (bg) {
       // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
       // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -1706,6 +1743,15 @@ export function createLandscape({
     };
   }
 
+  // The bridges the keeper has built by hand, as cells: the fence opens for them like for any
+  // road. Only the boundaries are drawn again, and only when the set really changed.
+  function setBridgeRoads(cells) {
+    const next = new Set((cells || []).map(([gx, gz]) => gx + gz * size));
+    if (next.size === bridgeRoads.size && [...next].every((k) => bridgeRoads.has(k))) return;
+    bridgeRoads = next;
+    buildHamletDressing(dressed, currentSeason);
+  }
+
   return {
     group, ground, update, reshape, fellTrees, dispose, workSites,
     triangles: p / 3 + (volcanoDressing ? volcanoDressing.triangles : 0),
@@ -1719,7 +1765,7 @@ export function createLandscape({
     // A fork of their own would be tidier and is not free: it is a visible change to a
     // sky nobody asked to have redrawn. If it is ever worth making, make it deliberately.
     rng,
-    buildPaths, squareCells, setOwnership, setHouseFrontages,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, setBridgeRoads,
     ownership: () => own, season: () => currentSeason,
   };
 }
@@ -1958,9 +2004,13 @@ export function createWorld(scene, terrain, village, opts = {}) {
         // Evaluate the normal here, in world coordinates: interpolating it from
         // the ocean disc's handful of vertices painted giant wedges of light,
         // while the dense coastal mesh shimmered right up to its hard edge.
+        // Calmer with distance: these ripples are a few units across, and a pixel a few hundred
+        // units out spans many of them - the sun's glint on them aliased into a lattice of dots
+        // over the open sea as soon as the haze no longer hid it (View Distance up).
+        float calm = 1.0 - smoothstep(150.0, 450.0, distance(vWorld, cameraPosition));
         vec3 n = normalize(vec3(
-          -0.065 * cos(vWorld.x * 1.3 + uTime * 1.1), 1.0,
-          -0.068 * cos(vWorld.z * 1.7 - uTime * 0.9)));
+          -0.065 * calm * cos(vWorld.x * 1.3 + uTime * 1.1), 1.0,
+          -0.068 * calm * cos(vWorld.z * 1.7 - uTime * 0.9)));
         vec3 v = normalize(cameraPosition - vWorld);
         float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
         col = mix(col, uShallow, fresnel * 0.18);
@@ -2105,6 +2155,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
   oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
   oceanMat.transparent = false;
   oceanMat.depthWrite = true;
+  // Pushed back in depth, in proportion to the depth buffer's own resolution: 0.2 under the
+  // patch is a hair at a thousand units (the buffer's step there is about 0.3), and with the far
+  // plane out past 1400 the two started to fight there as a moire of dots over the open sea.
+  oceanMat.polygonOffset = true;
+  oceanMat.polygonOffsetFactor = 4;
+  oceanMat.polygonOffsetUnits = 16;
   const ocean = new THREE.Mesh(oceanGeo, oceanMat);
   // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
   // disc carries the same wave, but with a vertex only at its centre and its rim it is
@@ -2238,6 +2294,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
     const k = celestial / CELESTIAL;
     sunDisc.scale.setScalar(k);
     moonDisc.scale.setScalar(k);
+    // The open sea has to reach past the far plane, or with the haze pushed out (View Distance
+    // over the default) its rim shows as a line against the dome. 1500 is the disc for a far
+    // plane of 1400, so nothing changes until the slider goes past that; its shading is per
+    // pixel from the world position, so a wider disc looks the same.
+    const spread = Math.max(1, far / 1400);
+    ocean.scale.set(spread, 1, spread);
   };
   const recentre = (x, y, z) => {
     horizonAt.set(x, y, z);
@@ -2319,12 +2381,12 @@ export function createWorld(scene, terrain, village, opts = {}) {
   for (let i = 0; i < CLOUDS_PER_TILE; i++) {
     const parts = 3 + cloudRng.int(3);
     for (let k = 0; k < parts; k++) {
-      const r = cloudRng.range(1.6, 3.2);
-      const ox = cloudRng.range(-3, 3), oy = cloudRng.range(-0.4, 0.4), oz = cloudRng.range(-2, 2);
+      const r = cloudRng.range(1.6, 3.2) * CLOUD_SIZE;
+      const ox = cloudRng.range(-3, 3) * CLOUD_SIZE, oy = cloudRng.range(-0.4, 0.4), oz = cloudRng.range(-2, 2) * CLOUD_SIZE;
       const squash = cloudRng.range(0.4, 0.6);
       cloudPuffs.push({ cloud: i, ox, oy, oz, sx: r, sy: r * squash, sz: r });
     }
-    cloudDrift.push({ x: cloudRng.range(0, CLOUD_TILE), y: cloudRng.range(24, 33), z: cloudRng.range(0, CLOUD_TILE), speed: cloudRng.range(0.35, 0.75) });
+    cloudDrift.push({ x: cloudRng.range(0, CLOUD_TILE), y: cloudRng.range(CLOUD_Y[0], CLOUD_Y[1]), z: cloudRng.range(0, CLOUD_TILE), speed: cloudRng.range(0.35, 0.75) });
   }
   const IMAGES = 9;
   const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * IMAGES);
@@ -2332,6 +2394,51 @@ export function createWorld(scene, terrain, village, opts = {}) {
   // The instances move with the camera's tile, so a bounding sphere taken at boot would go
   // stale and cull clouds that are plainly in view.
   clouds.frustumCulled = false;
+  // Past the three by three the layer is cut off in a square 1.5 tiles out, and with the haze
+  // that far in nobody saw it. Once the fog lets the eye reach past it (View Distance up, see
+  // setCloudReach) the same tiles go on in further rings, a second mesh hung on the first - so
+  // it inherits the weather's drop, its colour (the same material) and the underwater hide -
+  // that casts no shadow: the shadow box is a few hundred units wide and would only draw them
+  // twice. CLOUD_RING_MAX caps the cost (13 by 13 images), not the sky: beyond it the layer ends.
+  const CLOUD_RING_MAX = 6;
+  const farImages = (2 * CLOUD_RING_MAX + 1) ** 2 - IMAGES;
+  const farClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * farImages);
+  farClouds.frustumCulled = false;
+  farClouds.count = 0;
+  farClouds.visible = false;
+  clouds.add(farClouds);
+  let cloudRing = 1;
+  // And past those, a coarser layer of the same sky: the same clouds at FAR_SCALE times the size
+  // and the spacing (so as much of the sea covered, in a sixteenth of the clouds), which a
+  // cloud that far off cannot tell from the small ones. It starts where the fine rings end
+  // (their reach, (CLOUD_RING_MAX + 1/2) tiles) and goes on as far as the haze does, up to
+  // FAR_RING_MAX rings of its own tiles - the layer ends beyond that, on a horizon that far.
+  const FAR_SCALE = 4, FAR_TILE = CLOUD_TILE * FAR_SCALE, FAR_RING_MAX = 6;
+  const coarseImages = (2 * FAR_RING_MAX + 1) ** 2 - IMAGES;
+  const coarseClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * coarseImages);
+  coarseClouds.frustumCulled = false;
+  coarseClouds.count = 0;
+  coarseClouds.visible = false;
+  clouds.add(coarseClouds);
+  let coarseRing = 0;
+  // How far out the clouds must go: as far as the haze lets anybody see. Rings of tiles, the
+  // image nearest the camera being within half a tile of it, so ring r reaches (r + 1/2) tiles.
+  const setCloudReach = (dist) => {
+    const r = Math.min(CLOUD_RING_MAX, Math.max(1, Math.ceil(dist / CLOUD_TILE - 0.5)));
+    if (r !== cloudRing) {
+      cloudRing = r;
+      farClouds.count = cloudPuffs.length * ((2 * r + 1) ** 2 - IMAGES);
+      farClouds.visible = r > 1;
+    }
+    // Its own 3 x 3 is inside the fine rings' reach, so it needs a second ring to add anything.
+    const c = dist <= (CLOUD_RING_MAX + 0.5) * CLOUD_TILE ? 0
+      : Math.min(FAR_RING_MAX, Math.max(2, Math.ceil(dist / FAR_TILE - 0.5)));
+    if (c !== coarseRing) {
+      coarseRing = c;
+      coarseClouds.count = c ? cloudPuffs.length * ((2 * c + 1) ** 2 - IMAGES) : 0;
+      coarseClouds.visible = c > 0;
+    }
+  };
   // Where the page's own island is in the sea (`state.homeOrigin`): the page draws it at
   // the scene origin and translates the world, so a world position is scene + home.
   const seaHome = [0, 0];
@@ -2362,6 +2469,72 @@ export function createWorld(scene, terrain, village, opts = {}) {
       }
     }
     clouds.instanceMatrix.needsUpdate = true;
+    if (cloudRing < 2) return;
+    // The rings round it, written the same way: every image of every cloud that is not one
+    // of the nine above.
+    const fm = farClouds.instanceMatrix.array;
+    let f = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      const wx = cloudNearest(c.x, c.speed, seconds, fx);
+      const wz = cloudNearest(c.z, 0, 0, fz);
+      // Which tile-shift of the cloud the nearest image is, so an image keeps its number.
+      const kx = Math.round((wx - c.x - c.speed * seconds) / CLOUD_TILE), kz = Math.round((wz - c.z) / CLOUD_TILE);
+      for (let i = -cloudRing; i <= cloudRing; i++) {
+        for (let j = -cloudRing; j <= cloudRing; j++) {
+          if (i >= -1 && i <= 1 && j >= -1 && j <= 1) continue;
+          const x = wx + i * CLOUD_TILE, z = wz + j * CLOUD_TILE;
+          const k = cloudShown(p.cloud, kx + i, kz + j, Math.hypot(x - fx, z - fz));
+          if (k === 0) continue;
+          const o = f * 16;
+          fm[o] = p.sx * k; fm[o + 1] = 0; fm[o + 2] = 0; fm[o + 3] = 0;
+          fm[o + 4] = 0; fm[o + 5] = p.sy * k; fm[o + 6] = 0; fm[o + 7] = 0;
+          fm[o + 8] = 0; fm[o + 9] = 0; fm[o + 10] = p.sz * k; fm[o + 11] = 0;
+          fm[o + 12] = x + p.ox - seaHome[0];
+          fm[o + 13] = c.y + p.oy;
+          fm[o + 14] = z + p.oz - seaHome[1];
+          fm[o + 15] = 1;
+          f++;
+        }
+      }
+    }
+    farClouds.count = f;
+    farClouds.instanceMatrix.needsUpdate = true;
+  }
+  // The coarse layer, written the same way at FAR_SCALE times everything but the height, which
+  // keeps its own (a cloud four times as big is twice as thick, not four times as high).
+  function placeCoarseClouds(seconds) {
+    if (!coarseRing) return;
+    const cm = coarseClouds.instanceMatrix.array;
+    const fx = horizonAt.x + seaHome[0], fz = horizonAt.z + seaHome[1];
+    let n = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      const sx = c.x * FAR_SCALE, sv = c.speed * FAR_SCALE;
+      const wx = cloudNearest(sx, sv, seconds, fx, FAR_TILE);
+      const wz = cloudNearest(c.z * FAR_SCALE, 0, 0, fz, FAR_TILE);
+      const kx = Math.round((wx - sx - sv * seconds) / FAR_TILE), kz = Math.round((wz - c.z * FAR_SCALE) / FAR_TILE);
+      for (let i = -coarseRing; i <= coarseRing; i++) {
+        for (let j = -coarseRing; j <= coarseRing; j++) {
+          if (i >= -1 && i <= 1 && j >= -1 && j <= 1) continue;
+          const x = wx + i * FAR_TILE, z = wz + j * FAR_TILE;
+          // Always as thinned as the far end of the fine rings (a distance of 900 or more).
+          const k = cloudShown(p.cloud, kx + i, kz + j, 900, 31);
+          if (k === 0) continue;
+          const o = n * 16;
+          cm[o] = p.sx * FAR_SCALE * k; cm[o + 1] = 0; cm[o + 2] = 0; cm[o + 3] = 0;
+          cm[o + 4] = 0; cm[o + 5] = p.sy * FAR_SCALE / 2 * k; cm[o + 6] = 0; cm[o + 7] = 0;
+          cm[o + 8] = 0; cm[o + 9] = 0; cm[o + 10] = p.sz * FAR_SCALE * k; cm[o + 11] = 0;
+          cm[o + 12] = x + p.ox * FAR_SCALE - seaHome[0];
+          cm[o + 13] = c.y + p.oy * 2;
+          cm[o + 14] = z + p.oz * FAR_SCALE - seaHome[1];
+          cm[o + 15] = 1;
+          n++;
+        }
+      }
+    }
+    coarseClouds.count = n;
+    coarseClouds.instanceMatrix.needsUpdate = true;
   }
   group.add(clouds);
 
@@ -2731,6 +2904,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(celestial).add(horizonAt);
 
     placeClouds(seaSeconds);
+    placeCoarseClouds(seaSeconds);
     moonAt(dir, moon);
 
     // None over a volcano: they gather by the lake and the forest edge, and it has neither.
@@ -2796,9 +2970,9 @@ export function createWorld(scene, terrain, village, opts = {}) {
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
     fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
-    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages,
+    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages, setBridgeRoads: land.setBridgeRoads,
     ownership: land.ownership, season: land.season,
-    followShadow, setShadowDistance, setFar, recentre, reshapeWater, setWaterFocus, state, reshape,
+    followShadow, setShadowDistance, setFar, setCloudReach, recentre, reshapeWater, setWaterFocus, state, reshape,
     // The sea's own uniforms - the clock, the sun, the night - by reference, for whatever else
     // is drawn under the water and has to move with it (the sea bed's caustics).
     waterUniforms: waterMat.uniforms,
@@ -2814,7 +2988,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
 // Which cells of paving are a junction and which are a stretch of lane between two of
 // them. Pure, and exported, because the one hard requirement on the drawing is measurable
 // and tests/paths.test.mjs measures it: a settler walks from cell middle to cell middle
-// and `gateOf` in main.js looks a road cell up by its middle, so wherever the paving ends
+// and `hamletEntrances` (hamlet-sign-placement.js) looks a road cell up by its middle, so wherever the paving ends
 // up drawn it has to still be under those middles.
 //
 // A junction, a dead end and every cell of a plaza keep a tile of their own. The plaza is

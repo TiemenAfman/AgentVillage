@@ -390,6 +390,12 @@ function gullBuffer(ctx) {
 // `build` is the first bar without a kick.
 export const RAVE_SONG = { bpm: 132, bars: 16, build: 12 };
 
+// The Salty Kraken's shanty (Plans/piratenkroeg.md): 6/8 at 100 dotted crotchets, sixteen bars of
+// two counts, the chorus from bar `chorus`. Its loop is 19.2 s - under twenty on purpose, since
+// tests/sound.test.mjs knows the rave's buffer by its length - and web/js/pirate-tavern.js nods
+// the crew along to it off this one copy.
+export const SHANTY_SONG = { bpm: 100, bars: 16, beatsPerBar: 2, chorus: 8 };
+
 // Everything is written into the loop modulo its length, so a tail that runs past the last
 // bar lands on the first one and the loop has no seam to fold: the crash on the drop and the
 // kick's decay are the same samples either way round. Mono, like every placed voice, even

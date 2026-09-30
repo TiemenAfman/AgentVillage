@@ -8,9 +8,10 @@
 // with some outskirts. The aerial caption answers "which hamlet is this", and a hamlet is
 // one answer, so it goes up once.
 //
-// The wooden arch is the other half and deliberately stays one per lobe (`hamletSigns` in
-// main.js): it stands over the road where it enters *that* piece of land, and you meet it
-// on foot at each annex's own way in, never two in one view. The minimap already marks a
+// The wooden arch is the other half and deliberately stays one per *entrance* (`hamletSigns` in
+// main.js, `hamletEntrances` in hamlet-sign-placement.js): it stands over the road where it
+// crosses the edge of the hamlet's land, at most one per side of the compass, and you meet it
+// on foot at each way in, never two in one view. The minimap already marks a
 // hamlet once, at `d.center` (`islandFeatures` in minimap.js), so it needs nothing here.
 
 // How many super-cells a lobe's parcel holds. The wire sends a parcel as a bounding box of

@@ -428,3 +428,36 @@ test('a host refuses a harbour with too many boats, no side, or no planks', () =
   assert.throws(() => parseBundle(harbour({ pier: [] })), /no planks/);
   assert.equal(parseBundle(harbour({})).island.harbours[0].boats, 1);
 });
+
+// The treasure statue (Plans/schatkaarten.md): `{ placed, found }`, so a visitor sees the
+// same statue and the same plaque as the keeper - and can write neither.
+test('the statue and its tally travel, and a village without one packs an empty count', () => {
+  const v = village();
+  assert.deepEqual(pack().treasure, { placed: false, found: 0 });
+  v.treasure = { placed: true, found: 7 };
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.treasure, { placed: true, found: 7 });
+  assert.deepEqual(parseBundle(JSON.parse(JSON.stringify(packed))), packed);
+});
+
+test('the sender clamps a broken tally and a host refuses it', () => {
+  const v = village();
+  v.treasure = { placed: 'yes', found: 5e9, secret: 'no' };
+  const packed = buildBundle({ config, village: v, keeper: 'Martijn' });
+  assert.deepEqual(packed.treasure, { placed: false, found: 999999 });   // forgiving, and nothing extra
+  const t = (x) => mutated((w) => { w.treasure = x; });
+  assert.throws(() => parseBundle(t({ placed: true, found: 1000000 })), /outside 0\.\.999999/);
+  assert.throws(() => parseBundle(t({ placed: true, found: -1 })), /outside 0\.\.999999/);
+  assert.throws(() => parseBundle(t({ placed: true, found: 1.5 })), /whole number/);
+  assert.throws(() => parseBundle(t({ placed: true, found: '3' })), /whole number/);
+  assert.throws(() => parseBundle(t({ placed: 1, found: 3 })), /yes or no/);
+  assert.throws(() => parseBundle(t({ placed: true })), /whole number/);
+  assert.throws(() => parseBundle(t({ placed: true, found: 3, note: 'x' })), /which is not something it carries/);
+  assert.throws(() => parseBundle(t(null)), /not an object/);
+  assert.throws(() => parseBundle(t([])), /not an object/);
+});
+
+test('a bundle from before the statue parses, and stays without one', () => {
+  const old = mutated((w) => { delete w.treasure; });
+  assert.equal('treasure' in parseBundle(old), false);
+});

@@ -52,6 +52,12 @@ export function localZone(epochMs) {
 //   season   seasonOf(month)
 //   moon     the phase, 0..1: 0 is new, 0.5 full. From the epoch alone - the moon is the
 //            same moon whatever time zone you look at it from
+//   day      the world's day number: whole days since 1 January 1970 as it reads `tz`
+//            minutes east of UTC, so it turns over at the world's midnight and not this
+//            machine's. Whatever happens "once a day" (the bottle on the beach,
+//            Plans/schatkaarten.md) keys on this, never on a Date of its own. Integer
+//            arithmetic on the shifted epoch and no Date getter, so it agrees in every
+//            runtime, and floor (not trunc) keeps it right before 1970 as well
 export function worldTime(epochMs, tz) {
   const shifted = epochMs + (Number.isFinite(tz) ? tz : 0) * MINUTE;
   const d = new Date(shifted);
@@ -64,5 +70,6 @@ export function worldTime(epochMs, tz) {
     weekday: d.getUTCDay(),
     season: seasonOf(month),
     moon: lunation - Math.floor(lunation),
+    day: Math.floor(shifted / DAY),
   };
 }

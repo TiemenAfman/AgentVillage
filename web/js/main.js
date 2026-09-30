@@ -43,9 +43,9 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, GRAPHICS_TIERS } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, GRAPHICS_TIERS } from './graphics-settings.js';
 import { createNameplate } from './nameplate.js';
-import { hamletSignSites } from './hamlet-sign-placement.js';
+import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { createUI } from './ui.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
@@ -68,6 +68,14 @@ import { createIslandChat } from './islandchat.js';
 import { createOffice } from './office.js';
 import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
+import { createPirate, createQuestGiver } from './pirate.js';
+import { createQuestLog } from './quest-log.js';
+import { createQuestPanel } from './quest-panel.js';
+import { createQuestMark } from './quest-mark.js';
+import { unlock } from './unlocks.js';
+import { isUnlocked, unlocked } from './unlocks.js';   // the hunt asks what is owned (treasure.js)
+import { keysOf } from './keybinds.js';
+import { cardOf, FIRST_HUNT_SEED } from 'shared/treasure.mjs';
 import { opensChronicle, chronicleInteractable, isChronicle, HOVER as CHRONICLE_HOVER } from './chronicle-house.js';
 import { createProps } from './props.js';
 import { createPanels } from './panels.js';
@@ -90,6 +98,9 @@ import { attachBeacon, updateBeacon } from './beacon.js';
 import { createMarket, answerOf } from './market.js';
 import { createMailbox } from './mail.js';
 import { attachMailFlag, setMailFlag, updateMailFlag } from './mailflag.js';
+import { attachPlaque, setPlaque } from './treasure-plaque.js';
+import { createTreasureHunt, createFinds } from './treasure.js';
+import { createTreasureView, registerStatueCargo } from './treasure-site.js';
 import { attachGoldPile } from './goldpit.js';
 import { attachOrePile } from './goldmine.js';
 import { attachFurnace } from './goldsmith.js';
@@ -455,6 +466,14 @@ const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 // moves a house still does it to the record's group, and never has to know about this.
 const homeBatch = createRecordBatch({ material: buildingMat, parent: scene });
 
+// Object Distance is worked out from View Distance (graphics-settings.js OBJECT_RATIO), never
+// stored or set: it is written into state.graphics here and again whenever View Distance moves,
+// so the rest of this file reads it like it always did.
+function withObjectDistance(g) {
+  g.objectDistance = objectDistanceOf(g.viewDistance, graphicsTier({ modest, phone: !!STANDALONE }));
+  return g;
+}
+
 const state = {
   village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
   // `terrain` is this island, local and origin-centred, and stays exactly that: world.js
@@ -472,7 +491,7 @@ const state = {
   // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
   // onGraphicsSetting is the only thing that moves them. Plans/DONE/graphics-afstanden.md is why
   // they are not collapsed into camera.far.
-  graphics: loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]),
+  graphics: withObjectDistance(loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })])),
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
@@ -687,6 +706,8 @@ function speakToKeeper(it) {
   // hall pauses the feet, and closing it hands the camera back (its onClose). Panel first, so
   // walk mode is already paused when the camera is taken.
   if (it.post === 'mayor') { openTownHall(); if (state.townHall.isOpen()) faceUp(it.id, fig); return; }
+  // The pirate's piece is a window with a choice in it (web/js/pirate.js), held the same way.
+  if (it.post === 'pirate') { openPirate(); if (state.pirate && state.pirate.isOpen()) faceUp(it.id, fig); return; }
   const c = { day: worldNow().weekday, hour: currentHour() };
   const on = gatheringAt(c.day, c.hour);
   const night = c.hour >= 22 || c.hour < 7;
@@ -709,6 +730,8 @@ function speakToKeeper(it) {
       : c.day === 0 ? '“Sunday. The door is open for anyone.”'
         : night ? '“A quiet night. The lamp stays lit.”'
           : '“Peace be with you. The bell keeps the island’s hours.”',
+    // Only until his own panel (web/js/pirate.js, Plans/schatkaarten.md) takes the conversation over.
+    pirate: '“Arr. The chest stays shut for now, landlubber. Come back when the tide is in.”',
   };
   if (!said[it.post]) return;
   if (state.walk) state.walk.setPaused(true);
@@ -790,6 +813,27 @@ function parkOnSquare() {
 // (findPath, the settlers' own) round whatever the feet would bump into, then the last
 // stretch to the point itself unless that is inside something (a door's step is not).
 // False, and a word, when there is no way there - the sea, another island, a walled yard.
+const FENCE_STEPS = 12;
+const DECK_STEP = 0.44;          // just under walk.js's STEP_UP (0.45)
+// Every cell of road, as `gx + gz * size`, for a route to prefer: the layout's paths, the town's
+// paving, every hamlet's own and the bridges built by hand. Worked out again only when the
+// village or the set of bridges is another one.
+let roadKeysOf = { village: null, terrain: null, bridges: -1, keys: null };
+function roadKeys() {
+  const v = state.village, t = state.terrain;
+  if (!v || !t) return null;
+  const bridges = bridgeRoadCells();
+  if (roadKeysOf.village === v && roadKeysOf.terrain === t && roadKeysOf.bridges === bridges.length) return roadKeysOf.keys;
+  const keys = new Set();
+  const add = (cells) => { for (const [gx, gz] of cells || []) keys.add(gx + gz * t.size); };
+  for (const p of v.paths || []) add(p.cells);
+  add(v.island && v.island.town && v.island.town.paved);
+  for (const d of v.districts || []) { add(d.paved); add(d.deck); for (const l of d.lobes || []) add(l.paved); }
+  add(bridges);
+  roadKeysOf = { village: v, terrain: t, bridges: bridges.length, keys };
+  return keys;
+}
+
 function walkBodyTo(x, z, { exact = true } = {}) {
   const w = state.walk, t = state.terrain;
   if (!w || !w.parked() || !t) return false;
@@ -797,20 +841,44 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   const cell = (px, pz) => [Math.floor(px + half), Math.floor(pz + half)];
   const from = cell(w.state.pos.x, w.state.pos.z), to = cell(x, z);
   const say = () => { state.ui.toast('There is no way to walk there.'); return false; };
-  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || !t.isLand(to[0], to[1])) return say();
+  // The decks of the bridges built by hand: over water, and steeper than one step from the
+  // banks in the crown, so neither `isLand` nor `blockedAt` (which reads a deck above your
+  // feet as the river under it) lets a route over them. Walking one is fine once you are on it.
+  const deck = state.props ? state.props.deckCells(t) : null;
+  const onDeck = (px, pz) => !!deck && deck.has(px + pz * t.size);
+  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || (!t.isLand(to[0], to[1]) && !onDeck(to[0], to[1]))) return say();
   // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
   // on a grown island, and A* looks at a few hundred.
   const memo = new Map();
   const blocked = { has(k) {
     let v = memo.get(k);
     if (v === undefined) {
-      const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
-      v = w.blockedAt(cx, cz);
+      if (deck && deck.has(k)) v = false;
+      else {
+        const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
+        v = w.blockedAt(cx, cz);
+      }
       memo.set(k, v);
     }
     return v;
   } };
-  const path = findPath(t, from, to, blocked);
+  // A fence between two owners is walked round to its gate, not through: crossing one costs as
+  // much as a dozen steps, and costs nothing where a road passes (which is where the gate is).
+  const roads = roadKeys();
+  const owner = state.world && state.world.ownership ? (state.world.ownership() || {}).owner : null;
+  const crossing = owner ? (a, b) => {
+    const oa = owner[a], ob = owner[b];
+    if (oa === ob || (oa < 0 && ob < 0)) return 0;      // the same land, or nobody's / the town's
+    return roads && roads.has(a) && roads.has(b) ? 0 : FENCE_STEPS;
+  } : null;
+  // A deck is a cell like any other to the search, and a step on to it from the bank beside it
+  // halfway across the arch is two metres of wall: the walker could not climb it and swam.
+  // Onto a deck (or from one) only where the two surfaces are within a step, so it is entered
+  // at its ends and walked along, never boarded from the side.
+  const surface = (k) => (deck && deck.has(k) ? deck.get(k)
+    : t.worldHeight(...t.cellWorld(k % t.size, (k - (k % t.size)) / t.size)));
+  const step = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  const path = findPath(t, from, to, blocked, { open: deck, prefer: roads, crossing, step });
   if (!path) return say();
   const pts = path.slice(1);
   if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
@@ -988,6 +1056,14 @@ function interactables() {
         id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
         label: 'the tavern', prompt: 'step into the tavern',
       });
+    } else if (rec.spec.civicType === 'piratetavern') {
+      // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
+      // so `kind: 'tavern'` - but answered from the middle of the lot, not the door, because its
+      // door is on the water and the step in front of it is wet.
+      out.push({
+        id: rec.id, kind: 'tavern', room: 'piratetavern', x: p.x, z: p.z, r: 2.6,
+        label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
+      });
     } else if (rec.spec.civicType === 'castle') {
       // At the gate, not the middle of the lot: a seven by seven castle measured from its
       // centre would answer E from behind its back wall. A getter for the prompt, because
@@ -1037,7 +1113,12 @@ function interactables() {
   }
   for (const b of state.boats) {
     if (isShip(b)) continue;   // no key for a ship: her ladders are the way aboard
-    out.push({ id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat', prompt: 'take the boat' });
+    // With the statue in the arms E lays it on the boat first (treasure.js layOnBoat); a getter, since
+    // the hands change without the list being rebuilt.
+    out.push({
+      id: b.id, kind: 'boat', x: b.x, z: b.z, r: 2.4, label: 'the boat',
+      get prompt() { return state.walk && state.walk.carrying() ? 'lay the statue on the boat' : 'take the boat'; },
+    });
   }
   // The vegetable beds. `label` names the place, for the panel and for "where am I";
   // the prompt above the keys counts the last minutes down on its own.
@@ -1051,6 +1132,8 @@ function interactables() {
       });
     }
   }
+  // The bottle on the beach, the X on an islet, the statue in the sand, the square to set it down on.
+  if (state.hunt) out.push(...state.hunt.interactables());
   return out;
 }
 
@@ -1686,7 +1769,7 @@ async function fetchGold() {
 // controller close all of them from one place instead of eight. Only one can be up at a
 // time in practice, so the first one found is the one holding the screen.
 const PANELS = () => [state.board, state.chat, state.market, state.mailbox,
-  state.townHall, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
+  state.townHall, state.pirate, state.crewTalk, state.office, state.studio, state.newSettler, state.buildMenu, state.sysmenu];
 const openPanel = () => PANELS().find((p) => p && p.isOpen()) || null;
 
 // What the keys do while you are out on the island. Lifted out of `enterWalk` because
@@ -1727,7 +1810,10 @@ function takeBoat(which) {
   // when two of them shared one.
   const b = typeof which === 'string' ? boatAt(which) : which;
   if (!b || !state.walk) return;
+  const hadCargo = !!state.walk.cargo();
   state.walk.board(b);
+  // walk.board() puts a statue in the arms on the hull by itself; the book wants to hear of it.
+  if (state.hunt) state.hunt.boardedWith(hadCargo);
   if (state.net) state.net.takeBoat(b.id);
   // Told as a room rather than as a flag. `room()` in lib/players.mjs:55 already accepts
   // this slug and tick() only sends slot [6] when it is set, so an older client sees
@@ -1772,7 +1858,14 @@ function walkCallbacks() {
       else if (it.kind === 'keeper') speakToKeeper(it);
       else if (it.kind === 'bed') pullBed(it.id);
       else if (it.kind === 'panel') workPanel(it);
-      else if (it.kind === 'boat') takeBoat(it.id);
+      else if (it.treasure) state.hunt.interact(it);
+      else if (it.kind === 'boat') {
+        const hull = boatAt(it.id);
+        if (state.walk.carrying() && hull && hull.pilot && state.net && hull.pilot !== state.net.id()) {
+          state.ui.toast('Somebody else has the tiller of that boat.');   // her cargo would be seen by nobody else
+        } else if (state.walk.carrying()) state.hunt.layOnBoat(hull);
+        else takeBoat(it.id);
+      }
       else if (it.kind === 'dock') takeBoatAt(it.id);
       else if (it.kind === 'ashore') stepAshore();
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
@@ -1791,6 +1884,7 @@ function walkCallbacks() {
       else talkTo(it.id);
     },
     onSendAway: (it) => {
+      if (it.treasure) return;   // the bottle, the X and the statue are not settlers
       if (it.kind === 'bed') { digBed(it.id); return; }
       if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
     },
@@ -1959,7 +2053,7 @@ function applyPanelMessage(m) {
 // A board you are already working says how to let go of it, not how to take it.
 // The phone's buttons say what they would do: a word under X for what is in reach, and the
 // two hands only while there is ground under your feet to fight or drink on.
-const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter' };
+const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter', 'step into the Salty Kraken': 'Enter' };
 function touchHud(near, walk) {
   if (!state.touch) return;
   const word = !near ? ''
@@ -2093,8 +2187,10 @@ function enterInterior(room, at) {
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
         onLeave: () => leaveInterior(),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
-        onDrink: (side) => { if (state.net) state.net.drink(side); },
+        onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
+        onTalk: (it) => openCrewTalk(it),
+        onOrder: (r) => questEvents.drank(r),
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -2113,6 +2209,7 @@ function enterInterior(room, at) {
   inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
+  if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
@@ -2214,6 +2311,7 @@ function minimapData() {
     far: state.horizon ? state.horizon.marks() : [],
     town: townCentreScenePos(),
     district: minimapDistrict(),
+    quest: questMarkData(),
     // Names and distances for the nearest islands, on the phone, where a wanderer has
     // nothing else to steer by (see the `named` pass in minimap.js).
     named: STANDALONE ? namedIslands(w.pos) : null,
@@ -2341,6 +2439,7 @@ function worldMapData() {
     players: mapPlayers(),
     town: townCentreScenePos(),
     district: minimapDistrict(),
+    quest: questMarkData(),
   };
 }
 
@@ -2377,6 +2476,9 @@ function enterWalk(spot = null) {
   }
   // `?dive`: in open water a few strokes off the home island's east side, to try diving
   // without walking to a beach first (Plans/onderwater-zwemmen.md). C sinks, Space rises.
+  // `?hunt` puts the same two handles on window for playing the treasure hunt from the console
+  // (Plans/schatkaarten.md): teleport with `__state.walk.state.pos.set(x, y, z)`, read `__state.hunt`.
+  if (params.has('hunt')) { window.__state = state; window.__camera = camera; }
   if (params.has('dive') && !reboard && state.terrain) {
     window.__state = state;   // for the console and the test browser: `__state.walk.state.pos.y`
     window.__camera = camera;
@@ -2437,6 +2539,189 @@ function openTownHall() {
   if (keeperOnly('read the register')) return;
   if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.townHall.open();
+}
+
+// The pirate at the tavern (web/js/pirate.js, Plans/schatkaarten.md): his quests. Anyone may
+// speak to him - the story is per browser, like the look - so it is not behind keeperOnly.
+function openPirate() {
+  if (!state.pirate || state.pirate.isOpen()) return;
+  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  state.pirate.open();
+}
+
+// ---- the pirate's quests ------------------------------------------------------------------
+// `state.quests` is the book (web/js/quest-log.js). What the treasure side of the island reports
+// goes through `state.questEvents`, which says the outcome as a toast and keeps the log up to
+// date: digging up a statue or a chest, lifting the statue, laying it on a boat, standing it in
+// the town. Each returns the book's result (`{ gained, lines, cardMade }`), or null before the
+// book exists. The pirate's own Accept goes to the book directly and shows its lines in his
+// window instead of a toast.
+function reportQuest(result) {
+  if (result && result.lines) for (const line of result.lines) state.ui.toast(escapeHtml(line));
+  return result;
+}
+const questEvents = {
+  dug: (kind) => (state.quests ? reportQuest(state.quests.onDug(kind)) : null),
+  lifted: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onLifted(kind)) : null),
+  boarded: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onBoarded(kind)) : null),
+  delivered: (kind = 'statue') => (state.quests ? reportQuest(state.quests.onDelivered(kind)) : null),
+  // A drink had in a room (the Salty Kraken's first chapter), and a dive that went deep enough.
+  drank: (where) => (state.quests ? reportQuest(state.quests.onDrank(where)) : null),
+  dived: (depth) => (state.quests ? reportQuest(state.quests.onDived(depth)) : null),
+};
+
+// Speaking to one of the Salty Kraken's crew (web/js/pirate-tavern.js `talkers`): the giver's
+// window, with the room's walk paused while it is up. No faceUp - that is for the sea's figures;
+// the crew show turns the pirate to you itself.
+function openCrewTalk(member) {
+  if (!state.inside || !state.crewTalk || state.crewTalk.isOpen()) return;
+  state.inside.setPaused(true);
+  const idle = member.idle && member.idle.length ? member.idle[Math.floor(Math.random() * member.idle.length)] : null;
+  state.crewTalk.open({ who: member.who, name: member.name, idle, talk: () => state.quests.onTalked(member.who) });
+}
+
+// The dive the navigator asks for: once a dive, the first moment the walker is this far under.
+const DIVE_DEPTH = 2;
+let divedDeep = false;
+function questDive() {
+  const ws = state.mode === 'walk' && !state.inside && state.walk ? state.walk.state : null;
+  if (!ws || !ws.dive) { divedDeep = false; return; }
+  const depth = -ws.pos.y;
+  if (!divedDeep && ws.diving && depth >= DIVE_DEPTH) {
+    divedDeep = true;
+    questEvents.dived(Math.round(depth * 100) / 100);
+  }
+}
+
+// Every islet in the world with its id, in the world's frame - what the treasure maps pick
+// from and ask whether they still lie in free water. Once per fleet and berth, like mapIslets
+// (`state.fleet` is replaced wholesale on every change, so the object is the key).
+let questIslets = { fleet: null, home: null, list: [] };
+function worldIslets() {
+  const home = state.homeOrigin;
+  if (!home || !state.fleet || !state.fleet.length) return null;
+  if (questIslets.fleet === state.fleet && questIslets.home === home) return questIslets.list;
+  const extra = STANDALONE ? [{ half: OPEN_HOME / 2, origin: home }] : [];
+  questIslets = { fleet: state.fleet, home, list: isletsNear(state.fleet, [0, 0], { range: WORLD_HALF, extra }) };
+  return questIslets.list;
+}
+// The map the pirate hands over. The first hunt's seed is fixed per island, so it points at the
+// same islet for anybody who asks and does not depend on the day (shared/treasure.mjs). Null
+// while the page does not know the world yet: the book asks again when it does (ensureCard).
+function questCardFor(name) {
+  if (name !== 'first-hunt') return null;
+  const candidates = worldIslets();
+  if (!candidates) return null;
+  const id = state.islandId || 'open-sea';
+  return cardOf(FIRST_HUNT_SEED(id), id, { candidates, berth: state.homeOrigin, day: worldNow().day });
+}
+// The map in hand as the chart and the radar draw it, in scene coordinates (the world's minus
+// the berth, as mapIslets does), or null.
+function questMarkData() {
+  const card = state.quests && state.quests.card();
+  const home = state.homeOrigin;
+  if (!card || !home) return null;
+  return { x: card.spot.x - home[0], z: card.spot.z - home[1], grid: card.grid, asleep: card.status === 'asleep' };
+}
+let questSeen = { fleet: null, home: null };
+let questMark = null, pirateRecId = null;
+function questFrame(nowMs) {
+  const log = state.quests;
+  if (!log) return;
+  // Once per change of the world: the owed map is made, and a map whose islet went under
+  // somebody's island goes to sleep (the islet is worked out from the fleet, so it comes back
+  // with the water).
+  if (questSeen.fleet !== state.fleet || questSeen.home !== state.homeOrigin) {
+    questSeen = { fleet: state.fleet, home: state.homeOrigin };
+    const list = worldIslets();
+    if (list) {
+      log.ensureCard();
+      const card = log.card();
+      if (card) log.setStatus(list.some((i) => i.id === card.isletId) ? 'awake' : 'asleep');
+    }
+    if (state.hunt) state.hunt.refresh();
+  }
+  // The exclamation mark over the pirate while he has business with you: this page's sprite and
+  // nobody else's, since where you are in the story is yours alone.
+  let fig = null;
+  if (log.pirateHasBusiness() && state.settlers && state.mode !== 'plan' && !state.inside) {
+    let rec = pirateRecId && state.byId.get(pirateRecId);
+    if (!rec) {
+      rec = null; pirateRecId = null;
+      for (const r of state.byId.values()) {
+        const k = keeperOf(r.spec);
+        if (k && k.post === 'pirate') { rec = r; pirateRecId = r.id; break; }
+      }
+    }
+    if (rec && rec.group.visible) fig = state.settlers.figure(rec.id);
+  }
+  if (fig && fig.visible) {
+    if (!questMark) questMark = createQuestMark();
+    if (!questMark.sprite.parent) scene.add(questMark.sprite);
+    questMark.place(fig.pos[0], fig.y || 0, fig.pos[1], camera, nowMs / 1000);
+  } else if (questMark) {
+    questMark.hide();
+  }
+}
+// ---- the treasure hunt (web/js/treasure.js, Plans/schatkaarten.md) ----------------------------
+// The bottle on the beach, the X on the islet, the dig, the statue and its voyage home. treasure.js
+// holds the rules and is handed everything the page knows; treasure-site.js draws it. What reaches
+// the island (data/treasure.json) goes through mine() and is the keeper's alone: a visitor's page
+// and the phone play the hunt to the end except for setting the statue down in somebody's town.
+const treasureDay = (ms) => worldTime(ms, state.seaTz == null ? localZone(ms) : state.seaTz).day;
+const treasureKeeper = () => !state.guest && state.hasIslander !== false && !STANDALONE;
+async function treasureAsk(init) {
+  if (!treasureKeeper()) return null;
+  try {
+    const r = await mine('/api/treasure', { cache: 'no-store', ...init });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
+const treasureBody = (action) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+function startTreasureHunt() {
+  registerStatueCargo();
+  const walkGround = (x, z) => (state.walk ? state.walk.groundAt(x, z) : state.terrain.worldHeight(x, z));
+  state.hunt = createTreasureHunt({
+    quests: state.quests,
+    events: state.questEvents,
+    finds: createFinds(),
+    unlocks: { isUnlocked, unlocked, unlock },
+    walk: state.walk,
+    view: createTreasureView({ scene, material: buildingMat }),
+    home: () => state.homeOrigin,
+    islandId: () => state.islandId,
+    islets: worldIslets,
+    village: () => state.village,
+    terrain: () => state.terrain,
+    clock: () => worldNow(),
+    dayOf: treasureDay,
+    groundAt: walkGround,
+    keeper: treasureKeeper,
+    read: () => treasureAsk({}),
+    post: (action) => treasureAsk(treasureBody(action)),
+    toast: (html) => state.ui.toast(html),
+    onChange: () => { if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables()); },
+    refetchVillage: () => fetchVillage().then((v) => applyVillage(v, { animate: true })),
+  });
+  // A page that closes with the statue in its arms or on its boat puts it back on the islet; one
+  // that crashes leaves 'lifted' behind, which boot() below undoes on the next load.
+  addEventListener('pagehide', () => {
+    if (!treasureKeeper() || !state.walk || !(state.walk.carrying() || state.walk.cargo())) return;
+    mine('/api/treasure', { ...treasureBody('dropped'), keepalive: true }).catch(() => {});
+  });
+  state.hunt.boot();
+}
+
+// K on foot, where the side panels do not open: a word on where the story stands.
+function questGlance() {
+  const v = state.quests && state.quests.view();
+  if (!v) return;
+  const a = v.active;
+  const bits = [a ? `<b>${escapeHtml(a.title)}</b>: ${escapeHtml(a.goal)}` : 'No quest right now.'];
+  if (v.card) bits.push(v.card.asleep ? `Your map (${escapeHtml(v.card.grid)}) sleeps: the water is somebody's now.` : `Your map points to square <b>${escapeHtml(v.card.grid)}</b>. M shows the chart.`);
+  state.ui.toast(bits.join('<br>'));
 }
 
 // The chronicle house keeps the island's history (Plans/DONE/kroniekhuis.md), and what it opens is
@@ -2679,6 +2964,7 @@ function applyCameraRange() {
 // and it deliberately does not know how big the world is: a world 4000 across is not a
 // reason to draw 4000 of it.
 function applyViewDistance() {
+  withObjectDistance(state.graphics);
   camera.far = state.graphics.viewDistance + VIEW_MARGIN;
   camera.updateProjectionMatrix();
   // The sun and moon are fog-free discs, so they are the one part of the sky that has to be
@@ -2687,14 +2973,18 @@ function applyViewDistance() {
   applyFogRange();
 }
 
-// The furthest the haze may close: inside the far plane (FOG_CAP of it), and never further out
-// than Object Distance. The second half is what makes a house come out of the mist rather than
-// appear: every record past Object Distance is taken out of the picture (keepRecord), and with
-// the fog closed by then it was already the colour of the fog - on every part of the screen,
-// since the fog is by distance (radial-fog.js), like the cut. It is also what keeps an older
-// machine playable without the island looking cut short: what is not drawn is behind a haze
-// that thickens towards it, not a line where the town stops. The planner draws everything.
+// The furthest the haze may close: inside the far plane, and nothing else. Object Distance is
+// not the haze's business - it says how far houses, props and boats are drawn, and the two are
+// separate sliders: View Distance is what you see, Object Distance is what is put in the picture.
+// (It used to cap the haze too, so that a house was always cut in full fog and came out of the
+// mist; the price of letting go is that a house cut nearer than the haze now leaves in clear
+// air. On the default tiers the haze is closer in than Object Distance, so they never meet.)
 function fogCeiling() {
+  return camera.far * FOG_CAP;
+}
+// How far a record or a whole neighbour is still drawn: the nearer of the far plane's haze and
+// Object Distance, and never further than the planner's whole-island view. What the cut uses.
+function cullCeiling() {
   return fogCeilingOf(camera.far * FOG_CAP, objectReach(), state.mode === 'plan');
 }
 // Object Distance as this frame uses it: the setting, floored from above by the orbit target's
@@ -2753,8 +3043,6 @@ function onGraphicsSetting(key, value) {
 }
 function applyGraphics(key = null) {
   if (!key || key === 'viewDistance') applyViewDistance();
-  // Object Distance moves the haze (fogCeiling) before it decides anything about fading.
-  else if (key === 'objectDistance') applyFogRange();
   if (!key || key === 'shadowDistance') { if (state.world) state.world.setShadowDistance(state.graphics.shadowDistance); }
   if (key !== 'shadowDistance') applyObjectDistances();
 }
@@ -2781,17 +3069,16 @@ const cullEye = new THREE.Vector3();
 function cullRecords() {
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
-  // Never tighter than the haze actually standing: the frame loop sets it before
-  // controls.update moves the camera, so on a fast zoom in the floor has already come in and
-  // the fog is still where it was - cut to the new floor, a house between the two would pop.
+  // Object Distance and nothing else: the haze no longer waits for it (fogCeiling), so a cut
+  // nearer than the haze is a house leaving in clear air, which is the slider's own doing.
   const reach = objectReach();
-  const range = state.mode === 'plan' || !(reach > 0) ? 0 : Math.max(reach, fogAt || 0);
+  const range = state.mode === 'plan' || !(reach > 0) ? 0 : reach;
   for (const rec of state.byId.values()) keepRecord(rec, range, cullEye);
   for (const g of state.guests) for (const rec of g.records || []) keepRecord(rec, range, cullEye);
   // And a whole neighbour once the fog has closed over all of it - its ground, wood and fields
   // are not records, and were drawn in full fog however far off they lay. After the records,
   // so each record's landmark answer (rec.seen) is fresh for keepRegion to read.
-  const ceiling = state.mode === 'plan' ? Infinity : fogCeiling();
+  const ceiling = state.mode === 'plan' ? Infinity : cullCeiling();
   for (const g of state.guests) keepRegion(g, ceiling, cullEye);
 }
 
@@ -2859,19 +3146,33 @@ function applyFogRange() {
 // and both floors are below what is passed in, so an island in the sunshine gets the two
 // numbers it has always had, to the decimal.
 function setFogRange(half, out, far) {
-  const h = hazeRange({ near: half * 1.1, far, half, out, thick: haze() });
+  // View Distance past the default lets the haze out with it (hazeOpening): the far end moves
+  // towards the far plane, and below the weather's own multiplier, so rain still closes it in.
+  const open = state.mode === 'plan' ? 0 : hazeOpening(state.graphics.viewDistance);
+  const thick = haze();
+  const h = hazeRange({ near: half * 1.1, far: far + (camera.far * FOG_CAP - far) * open, half, out, thick });
   // Near the world's edge the haze closes in, so that whatever lies across it is behind the
   // fog before the jump and after it (wrapEye). Across the edge nothing is nearer than the
   // eye's own way to the edge plus the open water between the far edge and the fleet, and
   // far from the edge that is more than the haze reaches anyway.
-  h.far = Math.min(h.far, edgeReach());
+  // That cap is a few thousand at most and did not move with View Distance, so it was the
+  // wall the haze stopped at however far the slider went; the opening lifts it to the far
+  // plane. The price is what it always protected: with the haze fully open, the sea across
+  // the edge is empty water until the jump puts the far side of the world there.
+  const edge = edgeReach();
+  h.far = Math.min(h.far, edge + (camera.far - edge) * open);
   // Never past the far plane: whatever lies beyond it is cut off on a sphere round the eye,
   // and a haze that is still thin there shows that cut as a hard curved edge to the sea.
   // Closed just inside it, the cut is in full fog and the sea runs into the horizon colour.
   // And never past Object Distance, so the houses come out of the mist (fogCeiling).
   fogAt = fogCeiling();
   scene.fog.far = Math.min(h.far, fogAt);
-  scene.fog.near = Math.min(h.near, scene.fog.far * 0.8);
+  // The near end follows the far one out by the same opening - hazeRange holds it at four
+  // tenths of the far end, which at the slider's end would still be a haze from 2400 out.
+  const nearOut = h.near + (scene.fog.far * 0.8 - h.near) * open * Math.min(1, thick);
+  scene.fog.near = Math.min(nearOut, scene.fog.far * 0.8);
+  // The clouds go on as far as the haze lets anybody see (world.js setCloudReach).
+  if (state.world) state.world.setCloudReach(scene.fog.far);
 }
 // The ceiling setFogRange last closed the haze under. From above it moves with the zoom (the
 // orbit floor), so the frame loop asks again whenever it differs - on one island too, which
@@ -3229,8 +3530,19 @@ addEventListener('keydown', (e) => {
 // H is the clock's hour preview (a lens on this screen, the sea's clock is not touched).
 const ORBIT_KEYS = {
   i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
-  b: 'build-btn', j: 'animals-btn', enter: 'walk-btn', h: 'clock-chip',
+  b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn', h: 'clock-chip',
 };
+// On foot the quest log is a toast (side panels are closed while walking), on its own key
+// (keybinds.js `quests`, default K) - checked here and not in walk.js, which has no use for it.
+addEventListener('keydown', (e) => {
+  if (state.mode !== 'walk' || state.inside || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (!keysOf('quests').includes(e.key.toLowerCase())) return;
+  if (overlayOpen() || (state.walk && (state.walk.state.paused || state.walk.state.working))) return;
+  e.preventDefault();
+  questGlance();
+});
 
 // Esc, from the sky, with nothing else to close: the menu (web/js/sysmenu.js). Every other
 // Escape handler on the page closes its own thing and many of them do not stop the key, so
@@ -4142,7 +4454,7 @@ function raiseGuestIslands() {
       buildings: (region.village && region.village.buildings) || [],
       material: buildingMat, modest,
     });
-    for (const rec of g.records) attachExtras(rec, { mail: false, signs: false });
+    for (const rec of g.records) attachExtras(rec, { mail: false, signs: false, found: region.village && region.village.treasure ? region.village.treasure.found : 0 });
     // And the people. They are not simulated here - the sea walks them and sends where
     // they got to - but they are drawn by exactly the same eleven meshes ours are, so a
     // village of three hundred over there costs what a village of three hundred costs.
@@ -4434,8 +4746,15 @@ function makeRecord(spec) {
 
 // `gold` follows `mail` unless it is said: a guest island's records come through here with
 // the mail off, and the count its pit would show is OUR five-hour window.
-function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
+function attachExtras(rec, { mail = true, signs = true, gold = mail, found = null } = {}) {
   const { spec, built, group } = rec;
+  // The count on the treasure statue's plaque: our island's `village.treasure.found` (kept up to
+  // date by applyVillage), and for a guest island's statue what the caller read off that
+  // island's own village. One plane and one texture, so a neighbour's costs nothing worth a flag.
+  if (spec.civicType === 'treasure' && built.anchors && built.anchors.sign) {
+    const n = found ?? (mail && state.village && state.village.treasure ? state.village.treasure.found : 0);
+    rec.plaque = attachPlaque(group, built.anchors.sign, n);
+  }
   if (built.animated && built.animated.blades) {
     const m = new THREE.Mesh(bladesGeo, buildingMat);
     m.castShadow = true;
@@ -4488,7 +4807,7 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail } = {}) {
   // The fisherman at the fisherman's hut (web/js/fisher.js, Plans/DONE/regisseur.md). Our own island
   // only: he finds the water's edge off the ground this page walks on, and a guest's hut stands
   // on a region whose ground is not `groundAt`'s.
-  if (mail && spec.civicType === 'fishery') rec.fisher = attachFisher(group, buildingMat, groundAt);
+  if (mail && spec.civicType === 'fishery') rec.fisher = attachFisher(group, buildingMat, groundAt, spec.harbour && spec.plot?.quay ? HARBOUR_DECK : null);
   // The quarry's treadwheel crane and its tub (Plans/DONE/ambachten.md, web/js/quarry.js), hung on the
   // record's group like the sawmill's blade. The brewery's copper steams from an anchor of its
   // own beside the chimney's smoke.
@@ -4778,7 +5097,11 @@ function buildScene(village) {
   // it is doing. Built here rather than at boot because it borrows world.js's clouds, dome
   // and lights instead of drawing a second set, and thrown away with the scene on a reseed.
   if (state.sky) state.sky.dispose();
-  state.sky = createWeather({ scene, world: state.world, camera, onHaze: applyFogRange });
+  state.sky = createWeather({
+    scene, world: state.world, camera, onHaze: applyFogRange,
+    // Planning looks straight down too: a box of rain from the planner's camera is a curtain.
+    fromSky: () => state.mode === 'orbit' || state.mode === 'plan',
+  });
   // The sea from underneath, for a camera that has gone below it (web/js/underwater.js). Built
   // with the world it dresses and thrown away with it; the sound is looked up per call because
   // state.sound is made later, at boot, and outlives every reseed.
@@ -4946,6 +5269,16 @@ function deckMapForHome() {
 // boardwalk, and handOutDecks is already where every change to what can be stood on
 // arrives - a bridge going up, a prop being placed, a village being applied.
 let homeStand = null;
+// The decks of this island - bridges, laid and built by hand, and the quay - by `gx + gz * size`, as
+// handOutDecks last made them. What the route's dots ride on: at terrain height they went under the
+// planks of a bridge and the way over it looked like the way through the river.
+let deckHeights = null;
+function routeHeight(x, z) {
+  const t = state.terrain;
+  const h = t.worldHeight(x, z);
+  const y = deckHeights && deckHeights.get(Math.floor(x + t.half) + Math.floor(z + t.half) * t.size);
+  return y !== undefined && y > h ? y : h;
+}
 // And one per neighbour, keyed by their region. Their decks travel in their bundle; ours
 // are worked out here, which is the whole of why these are two lines and not one.
 const guestStands = new WeakMap();
@@ -4969,6 +5302,10 @@ function handOutDecks() {
   if (state.props && state.terrain) {
     for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
+  deckHeights = flat;
+  // A bridge going up or coming down opens or closes a way into a hamlet: its sign, and the
+  // gap in the fence.
+  if (state.village && state.terrain && hamletGroup.parent) syncHamlets(state.village);
   // Two consumers, two keyings, and they are not the same any more. The settlers walk this
   // island and nothing else, so they keep the plain `gx + gz*size` cell the bridges and the
   // props are recorded under. Walk mode reads the whole archipelago, where that number is
@@ -5024,32 +5361,6 @@ function titleCaseName(s) {
   return String(s || '').split(/[\s_]+/).filter(Boolean)
     .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)))
     .join(' ');
-}
-
-// Where a hamlet's road leaves its land - the entrance the welcome sign stands beside. Derived
-// rather than recorded: the road id is `road:<district>:<lobe>`, so the cells are already
-// on the wire, and the parcel says which of them are still on the hamlet's own ground.
-// Deriving it also means the chronicle gets it for nothing, because it filters the roads
-// it hands down and the gate follows whatever road is there.
-function gateOf(village, d, li, lobe) {
-  const lat = village.island && village.island.lattice;
-  const road = (village.paths || []).find((r) => r.id === `road:${d.id}:${li}`);
-  if (!lat || !road || road.cells.length < 2 || !lobe.parcel) return null;
-  const own = new Set();
-  const p = lobe.parcel;
-  for (let r = 0; r < p.h; r++) {
-    for (let c = 0; c < p.w; c++) if ((p.rows[r] || '')[c] === '1') own.add(`${p.i0 + c},${p.j0 + r}`);
-  }
-  const mine = ([gx, gz]) => own.has(
-    `${Math.floor((gx - lat.anchor[0]) / lat.pitch)},${Math.floor((gz - lat.anchor[1]) / lat.pitch)}`);
-  // The road starts inside and walks out, so the gate is the step where that stops
-  // being true - and if it never was, the first cell is close enough to the edge.
-  for (let i = 0; i < road.cells.length - 1; i++) {
-    if (mine(road.cells[i]) && !mine(road.cells[i + 1])) {
-      return { at: road.cells[i], next: road.cells[i + 1] };
-    }
-  }
-  return { at: road.cells[0], next: road.cells[1] };
 }
 
 // ---- the middle of the square ----------------------------------------------
@@ -5113,11 +5424,21 @@ function syncSquareBed(village) {
   squareBed.group.position.set(x, groundAt(x, z), z);
 }
 
+// The cells of the bridges built by hand (props), which the layout knows nothing about: a road
+// that crosses a river on one still enters a hamlet, so they count as road for its entrances.
+function bridgeRoadCells() {
+  const t = state.terrain;
+  if (!state.props || !t) return [];
+  return state.props.roadCells(t);
+}
+
 function syncHamlets(village) {
   if (!hamletGroup.parent) scene.add(hamletGroup);
   const terrain = state.terrain;
   const live = new Set();
-  const signSite = hamletSignSites(village, terrain);
+  const bridges = bridgeRoadCells();
+  const opened = [];              // cells the boundary fence is open at besides where a road crosses it
+  const signSite = hamletSignSites(village, terrain, bridges);
 
   for (const d of village.districts) {
     state.districts.set(d.id, d);
@@ -5151,37 +5472,42 @@ function syncHamlets(village) {
       }
     }
     if (!d.center || d.tier === 'farmstead') continue;
-    for (const [li, lobe] of (d.lobes || []).entries()) {
-      const key = `${d.id}#${li}`;
-      // Keep the entrance in sight, but put both posts on free ground beside it. One per
-      // lobe, deliberately: each annex has its own way in and you meet its arch there on
-      // foot - unlike the aerial caption, which goes up once per hamlet (captionCell in
-      // web/js/captions.js).
-      const gate = gateOf(village, d, li, lobe);
+    // One gateway per entrance: where a road crosses the edge of the hamlet's land, at most
+    // one per side of the compass (hamletEntrances says which, and how many a place this big
+    // has). The hamlet's aerial caption goes up once (captionCell in web/js/captions.js); on
+    // foot you meet the arch at each way in, and with more than one it says which.
+    for (const gate of hamletEntrances(village, d, bridges)) {
+      // A gate the keeper set opens the fence where it stands, road or no road yet.
+      if (gate.fixed) opened.push(gate.at, gate.next);
+      const key = `${d.id}#${gate.side}`;
       const site = signSite(gate);
       if (!site) continue;
       live.add(key);
       const { gx, gz, turn } = site;
-      const [x, z] = terrain.cellWorld(gx, gz);
-      const sx = x, sz = z;
+      // `fx`/`fz`: half a cell along the road, which is the fence's own line.
+      const [cx, cz] = terrain.cellWorld(gx, gz);
+      const sx = cx + (site.fx || 0), sz = cz + (site.fz || 0);
       const have = hamletSigns.get(key);
-      if (have && have.text === d.name) {
+      if (have && have.text === d.name && have.label === gate.label) {
         have.group.rotation.y = turn;
         have.group.position.set(sx, groundAt(sx, sz), sz);
         continue;
       }
       if (have) { hamletGroup.remove(have.group); have.dispose(); }
       const sign = createNameplate(titleCaseName(d.name), {
-        width: 2.1, height: 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
+        width: 2.1, height: gate.label ? 0.8 : 0.62, canvasW: 768, band: d.hue, height0: 1.35, posts: 2, arch: 2.2,
+        sub: gate.label, subBack: gate.back,
       });
-      // Face approaching walkers, with the whole frame clear of the paving.
+      // Face whoever walks in, with both posts on the cells beside the road.
       sign.group.rotation.y = turn;
       sign.group.position.set(sx, groundAt(sx, sz), sz);
       sign.group.userData.id = `district:${d.id}`;
       hamletGroup.add(sign.group);
-      hamletSigns.set(key, { ...sign, text: d.name, popped: !have });
+      hamletSigns.set(key, { ...sign, text: d.name, label: gate.label, popped: !have });
     }
   }
+  // The fence opens for a bridge built by hand and for a gate the keeper set, like for a road.
+  if (state.world && state.world.setBridgeRoads) state.world.setBridgeRoads([...bridges, ...opened]);
   for (const [key, rec] of [...hamletSigns]) {
     if (live.has(key)) continue;
     hamletGroup.remove(rec.group);
@@ -5569,6 +5895,11 @@ function applyVillage(next, { animate }) {
   if (state.region) state.region.village = next;
   for (const d of next.districts) state.districts.set(d.id, d);
   const nextSpecs = specById(next);
+  // A chest dug up changes the plaque's number and nothing else about the village, so the
+  // statue's record is not rebuilt for it; it is told.
+  for (const rec of state.byId.values()) if (rec.plaque) setPlaque(rec.plaque, next.treasure ? next.treasure.found : 0);
+  // Whether the statue stands, which houses worked today: the bottle and the statue's spot follow.
+  if (state.hunt) state.hunt.refresh();
 
   // new cleared ground -> fell the trees that stood there
   if (prev && animate) {
@@ -6232,12 +6563,16 @@ function frame(nowMs) {
   if (!state.youMarker) state.youMarker = createYouMarker(scene);
   const sky = state.mode === 'orbit' && state.walk.parked() && !state.inside;
   state.youMarker.update(sky ? state.walk.state.pos : null, state.walk.state.route,
-    (x, z) => state.terrain.worldHeight(x, z), performance.now() / 1000, state.ui.youMarkerMode());
+    routeHeight, performance.now() / 1000, state.ui.youMarkerMode());
 
   // ---- walking ------------------------------------------------------------
   keepRaveHours();
   if (state.inside) {
-    const w = state.inside.update(dt, { clock: state.sound ? state.sound.raveClock() : null });
+    const w = state.inside.update(dt, {
+      clock: state.sound ? state.sound.raveClock() : null,
+      // Who the story waits on, for the mark over one of the Kraken's crew.
+      business: state.quests ? state.quests.businessWith() : null,
+    });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
@@ -6275,6 +6610,7 @@ function frame(nowMs) {
   state.vitals.setHealth(state.net ? state.net.health() : 1);
   // And the air: the page's own sum, the sea's word correcting it (stepBreath above).
   stepBreath(nowMs);
+  questDive();
   // The beer wears off wherever you are, but only blurs the view from your own eyes: the sky
   // is not the settler's.
   stepTipsy(state.tipsy, dt);
@@ -6362,7 +6698,7 @@ function frame(nowMs) {
   // The pad is three CULL_PADs rather than one: the islets are only re-laid every two seconds,
   // and a camera flying in may cover a pad's width in that time - so a palm must still be past
   // full fog when it comes back into the buffers.
-  if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: fogCeiling() + 3 * CULL_PAD });
+  if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: cullCeiling() + 3 * CULL_PAD });
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
   if (state.props) state.props.update(dt);
@@ -6500,6 +6836,8 @@ function frame(nowMs) {
   state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
     state.hourOverride != null || state.chronicle.t != null);
   drawAgentBars(eye);
+  questFrame(nowMs);
+  if (state.hunt) state.hunt.frame(dt, nowMs / 1000);
   // The shadow map every n-th frame when the quality governor asks (applyQuality). Its light
   // matrix is only rebuilt when the map is, so what stands still stays exactly where its
   // shadow is between two redraws; only what moves has a shadow a frame or two behind.
@@ -6959,6 +7297,36 @@ async function boot() {
     },
   });
 
+  // The pirate's quests (Plans/schatkaarten.md): the book, its log beside the island (K), and the
+  // pirate's own window. The book gives every unlock to unlocks.js (the inventory's locked tiles
+  // ask there) and gives itself back to the panel whenever it changes.
+  state.quests = createQuestLog({
+    unlock,
+    cardFor: questCardFor,
+    onChange: () => {
+      if (state.questPanel) state.questPanel.refresh();
+      if (state.hunt) state.hunt.refresh();
+    },
+  });
+  state.quests.sync();
+  state.questEvents = questEvents;
+  state.questPanel = createQuestPanel({ ui: state.ui, log: state.quests });
+  state.pirate = createPirate(document.body, {
+    log: state.quests,
+    talk: () => state.quests.onTalked('pirate'),
+    onClose: () => {
+      const walkOn = () => { if (state.walk) state.walk.setPaused(false); };
+      if (!faceToFace.end(walkOn)) walkOn();
+    },
+  });
+  state.crewTalk = createQuestGiver(document.body, {
+    log: state.quests,
+    onClose: () => {
+      if (state.inside) state.inside.setPaused(false);
+      else if (state.walk) state.walk.setPaused(false);
+    },
+  });
+
   state.newSettler = createNewSettler(document.body, {
     onFounded: (r) => state.ui.toast(`<b>${r.settlerName}</b> is on the way to ${r.cwd.split(/[\/]/).pop()}.`),
     onClose: () => { if (state.walk) state.walk.setPaused(false); },
@@ -7147,6 +7515,13 @@ async function boot() {
     dance: danceNow,
     following: hullFollowed,
     poseHull,
+    // The shovel and the statue (Plans/schatkaarten.md): the hunt reads how a dig ended, and a refused
+    // hand is a line of words. Asked through state.hunt, which is made a little later.
+    onDigDone: (x, z, info) => { if (state.hunt) state.hunt.onDigDone(x, z, info); },
+    onDigCancelled: (reason) => { if (state.hunt) state.hunt.onDigCancelled(reason); },
+    onBlocked: (reason) => {
+      if (reason === 'carry') state.ui.toast('Your hands are full: you are carrying the statue.');
+    },
   });
   state.walk.setBoats(() => state.boats);   // the ladders on their sides
   handOutDecks();                    // buildScene ran before there was a walk mode to tell
@@ -7209,8 +7584,11 @@ async function boot() {
       if (state.world) state.world.reshapeWater();
       seaFloorChanged();
       if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+      // The islet a map points at has come or gone: its X with it.
+      if (state.hunt) state.hunt.refresh();
     },
   });
+  startTreasureHunt();
   state.minimap = createMinimap();
   state.worldMap = createWorldMap({ phone: !!STANDALONE, onClose: () => setMinimapMode('radar') });
   // On a phone there is no M: a tap on the radar opens the chart, and its own ✕ closes it.
@@ -7343,7 +7721,7 @@ async function boot() {
   // the village are both replaced under it by later scans.
   state.plan = createPlanMode({
     dom: renderer.domElement,
-    terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
+    terrain: () => state.terrain, village: () => state.village, byId: () => state.byId, bridges: bridgeRoadCells,
     pickables: () => state.pickables, bounds: () => state.bounds, ghostPose,
     overlay: createPlanOverlay({
       scene, terrain: () => state.terrain, village: () => state.village, byId: () => state.byId,
@@ -7583,6 +7961,8 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
     if (rec.fire) rec.fire.intensity = 2.4 * (0.85 + 0.15 * Math.sin(nowMs / 1000 * 23));
   }
   const civicFire = rec.spec.civicType === 'tavern' || rec.spec.civicType === 'townhall'
+    // The Salty Kraken's hearth, lit whenever the pirates are in, which is always.
+    || rec.spec.civicType === 'piratetavern'
     || rec.spec.civicType === 'smithy' || rec.spec.civicType === 'sawmill'
     // An oven and a brazier that are lit all day, like the smithy's fire.
     || rec.spec.civicType === 'bakery' || rec.spec.civicType === 'cauldron'

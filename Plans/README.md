@@ -54,6 +54,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   gebouwd: een settler doet wat zijn sessie doet, in plaats van altijd te hameren.
 - 🚧 [schatkaarten.md](schatkaarten.md) — plan van 29 september 2026, nog niet gebouwd: iets te
   vinden op de eilandjes.
+- 🚧 [piratenkroeg.md](piratenkroeg.md) — plan van 30 september 2026, in uitvoering: de Salty Kraken, een
+  tweede kroeg op de piratenoever van de haventrechter (trede 52) met een piratenbemanning aan tafel die de
+  quests geeft, de piraat en zijn kist ervoor, een shanty en een eigen bake. De plaatsing komt als laatste,
+  afgestemd met de quay-sessie (`quay-en-rivier.md`, op `fix/quay-en-rivier`).
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
@@ -237,5 +241,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - ✅ [slagerij.md](DONE/slagerij.md) — De slagerij
 - ✅ [smidse.md](DONE/smidse.md) — De smidse
 - ✅ [stal-en-veld.md](DONE/stal-en-veld.md) — Stal, dieren en de spullen van het veld
+- ✅ [ingangen-en-bruggen.md](DONE/ingangen-en-bruggen.md) — De naam op een poort boven elke weg die een dorp in- of uitgaat, en handgebouwde bruggen als weg
+- ✅ [ingangen-verplaatsen.md](DONE/ingangen-verplaatsen.md) — De keeper legt zelf vast waar de ingang van een dorp is: Gate-tool, `layout.gates`, één per kant
 - ✅ [vier-havens.md](DONE/vier-havens.md) — Vier havens, wegen naar het plein, meer boten per haven
 - ✅ [zagerij.md](DONE/zagerij.md) — De zagerij

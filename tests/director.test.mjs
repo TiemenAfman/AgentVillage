@@ -206,3 +206,20 @@ test('the fisherman comes out in the morning, fishes at the water\'s edge, and g
   disposeFisher(f);
   assert.equal(hut.children.length, 0);
 });
+
+test('a fisherman on the quay stands on its deck, not in the cut-away ground under it', () => {
+  const uniforms = { uNight: { value: 0 } };
+  const material = new THREE.MeshBasicMaterial();
+  material.userData.uniforms = uniforms;
+  const hut = new THREE.Group();
+  hut.position.set(10, 0.2, 20);
+  // The quay's ground is cut away: the terrain under the hut is a metre below the water.
+  const groundAt = () => -1;
+  const DECK = 0.35;                         // the model's floor in the hut's frame (HARBOUR_DECK)
+  const f = attachFisher(hut, material, groundAt, DECK);
+  for (let t = 0; t < 60; t += 0.05) updateFisher(f, 0.05);
+  assert.equal(f.mode, 'fish');
+  assert.equal(f.figure.position.y, DECK, 'he stands on the deck, not on the terrain under it');
+  assert.ok(f.figure.position.z > 0 && f.figure.position.z < 1, `a little way out of the door, at z ${f.figure.position.z}`);
+  disposeFisher(f);
+});

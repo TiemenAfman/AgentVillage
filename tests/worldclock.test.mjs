@@ -39,6 +39,26 @@ test('the month and the weekday turn over at the world\'s midnight, not this mac
   assert.deepEqual([ny.month, ny.weekday, ny.season], [11, 3, 'winter']);
 });
 
+test("the day number turns over at the world's midnight, not this machine's", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  // 1 January 1970 is day 0, and a day is whole days from there.
+  assert.equal(worldTime(0, 0).day, 0);
+  assert.equal(worldTime(Date.UTC(2026, 8, 30), 0).day, Date.UTC(2026, 8, 30) / DAY);
+  // 22:30 UTC on the last of September is already the first of October in Amsterdam's
+  // summer time: the next day there, and the same one at zero and further west.
+  const t = Date.UTC(2026, 8, 30, 22, 30);
+  assert.equal(worldTime(t, 120).day, worldTime(t, 0).day + 1);
+  assert.equal(worldTime(t, 120).day, Date.UTC(2026, 9, 1) / DAY);
+  assert.equal(worldTime(t, -300).day, worldTime(t, 0).day);
+  // The last minute of a world day and the first of the next.
+  assert.equal(worldTime(Date.UTC(2026, 8, 30, 23, 59), 0).day + 1, worldTime(Date.UTC(2026, 9, 1, 0, 0), 0).day);
+  // A whole number, and floor rather than truncation before 1970.
+  assert.equal(worldTime(-1, 0).day, -1);
+  assert.ok(Number.isInteger(worldTime(t, 330).day));
+  // No zone means UTC, as for the hour.
+  assert.equal(worldTime(t).day, worldTime(t, 0).day);
+});
+
 test('the season is worked out once, and world.js hands out the same one', async () => {
   assert.deepEqual([0, 3, 6, 9, 11].map(seasonOf), ['winter', 'spring', 'summer', 'autumn', 'winter']);
   assert.equal(worldTime(Date.UTC(2026, 9, 1, 12), 0).season, 'autumn');

@@ -133,6 +133,9 @@
       <!-- The island's animal journal (web/js/animal-dossier.js). Hidden until the island has
            an animal, and only ever shown to the keeper: /api/animals is loopback only. -->
       <button class="chip nav" id="animals-btn" aria-keyshortcuts="J" title="The island's animals, and what they have been up to (J)" aria-label="Animals" hidden data-key="J"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="10.5" r="1.8"/><circle cx="17.5" cy="10.5" r="1.8"/><circle cx="9.8" cy="6" r="1.8"/><circle cx="14.2" cy="6" r="1.8"/><path d="M12 12c-3 0-5 3.2-5 5.6 0 1.6 1.6 2.4 5 2.4s5-.8 5-2.4c0-2.4-2-5.6-5-5.6z"/></svg><span class="lbl">Animals</span></button>
+      <!-- The pirate's quest log (web/js/quest-panel.js): what he asked, the map in your pocket,
+           and what the finished quests gave. Always there: quests are per browser, not the island's. -->
+      <button class="chip nav" id="quests-btn" aria-keyshortcuts="K" title="Your quests and the treasure map you carry (K)" aria-label="Quests" data-key="K"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h10a2 2 0 0 1 2 2v13H8a2 2 0 0 1-2-2z"/><path d="M6 17a2 2 0 0 0 2 2M9.5 8.5h5M9.5 12h5"/></svg><span class="lbl">Quests</span></button>
       <button class="chip nav" id="reset-btn" aria-keyshortcuts="O" title="Frame the whole island (O)" aria-label="Overview" data-key="O"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path d="M8 15c1-2.7 2.5-3.8 4-3.8s3 1.1 4 3.8z"/></svg><span class="lbl">Overview</span></button>
       <span class="chips-sep" aria-hidden="true"></span>
     </div>
@@ -194,7 +197,7 @@
         <div class="chips wrap"><button class="chip" id="legend-btn" title="What everything on the island means (L)">Open the legend</button></div>
         <p class="muted">The legend stands beside the island rather than over it, so you can look from one to the other.</p>
         <h3 class="sec">Keys</h3>
-        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>H</kbd> preview the hour · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
+        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>H</kbd> preview the hour · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>K</kbd> quests · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
         <p class="muted sysmenu-keys">On foot: the first <kbd>Esc</kbd> frees the mouse, the second takes you up into the sky. The rest is under Controls.</p>
       </section>
     </div>
@@ -247,6 +250,12 @@
 <aside class="panel animal-panel" id="animal-journal" hidden>
   <div class="panel-head"><h2>The animals</h2><button class="x" data-close="animal-journal">✕</button></div>
   <div class="panel-body" id="animal-journal-body"></div>
+</aside>
+
+<!-- The quest log (web/js/quest-panel.js): the sixth side panel ui.js's SIDE list keeps one of. -->
+<aside class="panel quest-panel" id="quest-log" hidden>
+  <div class="panel-head"><h2>Quests</h2><button class="x" data-close="quest-log">✕</button></div>
+  <div class="panel-body" id="quest-log-body"></div>
 </aside>
 
 <!-- The planner (web/js/plan-mode.js): tools on the left, the draft on the right. Filled

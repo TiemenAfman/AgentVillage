@@ -18,6 +18,7 @@ export const TOOLS = [
   ['polder', 'Polder', '4', 'Paint shallow water to take off the sea as land. Click a standing polder and press Delete to give it back.'],
   ['land', 'Land', '5', 'Give the selected hamlet more land, painted onto its edge; right-drag takes land away. With the town picked, paint more ground for the town.'],
   ['road', 'Road', '6', 'Drag a road out from one that reaches the square. Over a river it gets a bridge as long as the gap.'],
+  ['gate', 'Gate', '7', "Click the edge of a hamlet's land to put its way in there, on the side that cell lies on. Right-click a gate to shut it; Shift-click gives its side back to the roads."],
 ];
 
 export function createPlanPanel(handlers) {

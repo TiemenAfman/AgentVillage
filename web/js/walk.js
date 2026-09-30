@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
-import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf } from './boat.js';
+import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
@@ -79,6 +79,15 @@ const SWIM_SINK = 0.07;
 // Chrome closes the tab on it without letting the page object. A letter has no such owner.
 const CROUCH_SCALE = 0.62;
 const CROUCH_SPEED = 1.7;
+// The treasure statue in both arms (Plans/schatkaarten.md): a walk at this share of the ordinary one,
+// no run (so no stamina spent either), no jump. Named because the gait's step rate follows it too.
+const CARRY_SPEED = 0.55;
+// A dig (`dig`) takes this long unless the caller says otherwise, and the shovel goes in this far ahead
+// of the feet - where `onDigDone` says the hole is, so a spot is found at the hole and not under the boots.
+const DIG_SECONDS = 2.5;
+const DIG_REACH = 0.6;
+// The same refusal is told once a second at most: a key held against a ladder asks every frame.
+const BLOCKED_TOAST_MS = 1000;
 const LIE_AFTER_MS = 2000;
 // Where the camera looks once the settler is flat out: the reclining figure only stands
 // about 0.18 clear of the towel, so a fifth of standing eye level is halfway up it.
@@ -204,6 +213,12 @@ export function createWalkMode({
   // be drawn - so that what is stood on it is put on the plane as it is drawn and not as it was a
   // frame ago (main.js). Without one (the workbench has no ships) the hull is read as it stands.
   poseHull = null,
+  // Carrying and digging (Plans/schatkaarten.md). `onDigDone(x, z, { from, yaw })` is a dig that ran its
+  // whole time: the hole is at x, z (DIG_REACH ahead of the feet, `from`). `onDigCancelled(reason)` is
+  // one that did not - 'moved', 'jump', 'crouch', 'hit' (main.js calls cancelDig('hit') when we are
+  // struck), 'paused', 'reset' (a seat, a boat, leaving walk mode) or 'blocked'. `onBlocked('carry')`
+  // is a thing refused because both hands are full - main.js turns it into a toast.
+  onDigDone = null, onDigCancelled = null, onBlocked = null,
 }) {
   const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
@@ -301,6 +316,13 @@ export function createWalkMode({
     // crank }. Deliberately not `vehicle`, which means the boat everywhere main.js and net.js
     // look at it (the hull sync, the berth, the boat's own stamina) - Plans/DONE/fiets.md.
     bike: null,
+    // The statue in both arms: its item name, or null. Like `bike`, never `vehicle`. net.js puts it in
+    // the pose (CARRYING); aboard it is `cargo` instead, which the sea is not told about.
+    carry: null,
+    // The statue on a hull instead of in the arms: { item, hull }. A body aboard has no hands to spare.
+    cargo: null,
+    // A dig going on: { t, total } in seconds, or null. net.js puts it in the pose (DIGGING).
+    digging: null,
     crouchSince: 0,
     blockers: [],
     // The other people, kept apart from the buildings on purpose: the building list is
@@ -355,6 +377,7 @@ export function createWalkMode({
     state.sitting = null;
     state.crouchSince = 0;
     state.dancing = false;
+    cancelDig('reset');   // every way of standing up, sitting, boarding or leaving ends a dig
     endDive();
   }
   // Back to floating at the surface (or to whatever the caller is about to make of the body:
@@ -369,6 +392,8 @@ export function createWalkMode({
   // Jumping and crouching live here rather than in the key handler because the controller
   // does both as well, and two copies of "only from the ground" would drift apart.
   function jump() {
+    if (state.digging) { cancelDig('jump'); return; }   // the press is the cancel; it does not also jump
+    if (state.carry) return;                            // both hands are full
     if (state.bike) { hopWanted = true; return; }   // taken by the next stepBike, tyres down
     if (climb) { climb.letGo = true; return; }     // a jump on a ladder is letting go of it
     if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
@@ -376,7 +401,9 @@ export function createWalkMode({
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
   }
   function crouchToggle() {
-    if (state.lying) standUp();                 // pressing it again is how you get up
+    if (state.digging) { cancelDig('crouch'); return; }
+    if (state.carry) return;                    // nor a crouch, nor (C being swim-down) a dive
+    if (state.lying) standUp();               // pressing it again is how you get up
     else if (!state.crouching) { state.crouching = true; state.crouchSince = performance.now(); state.dancing = false; }
   }
   // Dancing, where you stand (Plans/DONE/dansen.md). A pose like sitting, held until you do anything
@@ -384,7 +411,7 @@ export function createWalkMode({
   // dry ground and nothing else going on - not on the bike, at a tiller, in the water, on a
   // stool or lying down. A crouch is stood up out of, the way a jump stands you off a stool.
   const canDance = () => state.active && !state.working && state.grounded && !state.swimming
-    && !state.vehicle && !state.bike && !state.sitting && !state.lying;
+    && !state.vehicle && !state.bike && !state.sitting && !state.lying && !state.carry && !state.digging;
   function danceToggle() {
     if (state.dancing) { state.dancing = false; return; }
     if (!canDance()) return;
@@ -393,10 +420,116 @@ export function createWalkMode({
     state.dancing = true;
   }
 
+  // ---- carrying and digging (Plans/schatkaarten.md) -------------------------------------------
+  // Two things done with the hands, both only on dry ground and on foot, and both a pose in the sea's
+  // eyes (net.js CARRYING / DIGGING): `state.carry` and `state.digging`. Like the bicycle they are
+  // their own state and never `vehicle`, which means the boat to every reader of it.
+  //
+  // The rig draws them (classic-avatar.js setCarry / dig); asked with `?.` because a rig from before
+  // them just does not show either and everything here still holds.
+  let lastBlockedAt = -Infinity;
+  function blockedBy(reason) {
+    const now = performance.now();
+    if (now - lastBlockedAt < BLOCKED_TOAST_MS) return;
+    lastBlockedAt = now;
+    if (onBlocked) onBlocked(reason);
+  }
+  // Hands free to take hold of something: on foot on land, nothing else going on. Swimming is not:
+  // lift() is never how a statue ends up in the water, only wading in with it (or stepping off a hull
+  // into it, which unboard refuses) can.
+  const canHandle = () => state.active && !state.paused && !state.working && !state.parked
+    && !state.vehicle && !state.deck && !climb && !state.bike && !state.swimming
+    && !state.sitting && !state.lying && !state.digging;
+
+  // Take the statue (or whatever `item` names) in both arms. False when there is no room for it: the
+  // hands are busy, or it is already in them or on a hull.
+  function lift(item = 'statue') {
+    if (!item || state.carry || state.cargo || !canHandle()) return false;
+    state.carry = item;
+    // Both hands: no shield up, no dance, no crouch, and the sprint toggle is dropped with the rest.
+    lowerShields();
+    state.dancing = false;
+    releaseCrouch();
+    stick.run = false;
+    if (classicAvatar.setCarry) classicAvatar.setCarry(true);
+    return true;
+  }
+  // Set it down: hands empty, and the item's name back so the caller can put it somewhere. Null when
+  // nothing was in them. What is under the feet is main.js's to know, not the walk's.
+  function putDown() {
+    const item = state.carry;
+    if (!item) return null;
+    state.carry = null;
+    if (classicAvatar.setCarry) classicAvatar.setCarry(false);
+    return item;
+  }
+  // Aboard nothing is held: the statue goes onto the hull instead (boat.js setCargo hangs it on the
+  // deck, where it swells with her), and the arms are free for the tiller. board() does this itself for
+  // whoever comes aboard carrying, so the pose never says CARRYING at the wheel.
+  function putOnBoat(hull) {
+    if (!state.carry || !hull) return false;
+    const item = state.carry;
+    state.carry = null;
+    if (classicAvatar.setCarry) classicAvatar.setCarry(false);
+    state.cargo = { item, hull };
+    if (hull.craft && hull.craft.setCargo) hull.craft.setCargo(cargoMesh(item, material));
+    return true;
+  }
+  // And back into the arms - once the body is not aboard. unboard() does it on the way ashore; this is
+  // the same thing for a body that got off some other way (a jump, a ladder, walk mode left and
+  // re-entered), standing wherever it now is.
+  function takeOffBoat() {
+    const c = state.cargo;
+    if (!c || state.vehicle || state.deck || climb) return false;
+    state.cargo = null;
+    if (c.hull.craft && c.hull.craft.setCargo) c.hull.craft.setCargo(null);
+    state.carry = c.item;
+    if (classicAvatar.setCarry) classicAvatar.setCarry(true);
+    return true;
+  }
+
+  // Digging: standing still with a shovel for `seconds`. Refused unless the feet are on dry ground and
+  // nothing else is going on, and with both hands full; the body must already be still, because moving
+  // is what cancels it (in update, where the input is read). Returns whether it began.
+  const canDig = () => state.active && !state.paused && !state.working && !state.parked && state.grounded
+    && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !state.bike
+    && !state.sitting && !state.lying;
+  function dig(seconds = DIG_SECONDS) {
+    if (state.digging) return false;
+    if (state.carry) { blockedBy('carry'); return false; }
+    if (!canDig() || state.moving || state.crouching) return false;
+    state.dancing = false;
+    lowerShields();
+    state.digging = { t: 0, total: Math.max(0.05, seconds) };
+    if (classicAvatar.dig) classicAvatar.dig(true);
+    return true;
+  }
+  // The dig is over before its time. Moving, a jump, a crouch and a panel do this themselves; what
+  // only main.js knows - a blow from a guard - it calls with 'hit'.
+  function cancelDig(reason = 'cancelled') {
+    if (!state.digging) return false;
+    state.digging = null;
+    if (classicAvatar.dig) classicAvatar.dig(false);
+    if (onDigCancelled) onDigCancelled(reason);
+    return true;
+  }
+  function stepDig(dt) {
+    const d = state.digging;
+    d.t += dt;
+    if (d.t < d.total) return;
+    state.digging = null;
+    if (classicAvatar.dig) classicAvatar.dig(false);
+    if (!onDigDone) return;
+    const px = state.pos.x, pz = state.pos.z;
+    onDigDone(px + Math.sin(state.yaw) * DIG_REACH, pz + Math.cos(state.yaw) * DIG_REACH, { from: [px, pz], yaw: state.yaw });
+  }
+
   // Take a seat: a stool, a bench, the edge of a table. The same shape as lying down - a
   // pose held until you walk out of it - except that it is entered deliberately, so
   // nothing counts down to it and the seat says how high you end up.
   function sitOn({ x, z, y, yaw = 0 }) {
+    if (state.carry) { blockedBy('carry'); return; }   // nowhere to put it down on a stool
+    cancelDig('reset');
     putBikeAway();
     endDive();
     state.crouching = false;
@@ -529,7 +662,7 @@ export function createWalkMode({
   let clickLockFailed = false;
   // Not with the arms already busy: swimming, lying down, sitting, or at a tiller.
   const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting
-    && !state.vehicle && !state.bike;
+    && !state.vehicle && !state.bike && !state.carry && !state.digging;
   // One swing of `side`'s hand, if it may fight at all. `onSwing` hears of every swing the
   // arm actually started - main.js puts it on the wire (net.js swing()), which is what makes
   // the button hit something on the sea rather than only move an arm - and of none it
@@ -555,7 +688,7 @@ export function createWalkMode({
   // sitting at the bar is what a beer is for. A glass is no shield, so a drink never goes
   // near `guardUp` and never into `blocking`, which the sea would take for a raised guard.
   const canDrink = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying
-    && !state.vehicle && !state.bike;
+    && !state.vehicle && !state.bike && !state.carry && !state.digging;
   const beerIn = (side) => classicAvatar.held(side) === 'beer';
   // What a hand's button does on the press or the click, for any hand that is not a shield
   // (whose button holds rather than acts - guardUp above).
@@ -652,11 +785,13 @@ export function createWalkMode({
   };
   // From behind the eyes the camera may look nearly straight up and down; from behind the
   // back it may not, or it swings under the ground or over the head.
-  // In the water the mouse may look much further up (SWIM_PITCH_MIN): it is how a swimmer sees where
-  // they are heading, and how a diver climbs (diving.js lookRise). On land a camera that low would
-  // be under the ground, so the range narrows again as soon as the feet are out of the water and
-  // `relaxPitch` eases whatever was left over back into it.
-  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [state.swimming ? SWIM_PITCH_MIN : -0.25, 0.95]);
+  // The mouse may look far up (SWIM_PITCH_MIN) in the water and on land alike: a swimmer sees where
+  // they are heading with it, a diver climbs on it (diving.js lookRise), and a walker sees the sky
+  // and the clouds. A camera that low would be under the ground, but cameraFloor holds it above and
+  // placeCamera raises the aim by as much as it was pushed, so looking up still looks up - the body
+  // slides down out of the frame instead, which is the price of the sky. It used to stop at -0.25 on
+  // land; `relaxPitch` is what is left of that, easing a pitch back into a range that shrank.
+  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [SWIM_PITCH_MIN, 0.95]);
   function relaxPitch(dt) {
     const lo = pitchRange()[0];
     if (state.camPitch < lo) state.camPitch = Math.min(lo, state.camPitch + (lo - state.camPitch) * (1 - Math.exp(-8 * dt)) + 1e-4);
@@ -849,6 +984,8 @@ export function createWalkMode({
     putBikeAway();
     state.vehicle = boat;
     standUp();
+    // A statue in the arms goes onto the hull: a pilot has both hands on the tiller.
+    if (state.carry) putOnBoat(boat);
     // Both hands to the tiller: a shield held up on the way aboard is let go of, or it
     // would ride along in the pose (net.js drops the flag afloat, but the arm would not).
     lowerShields();
@@ -1120,7 +1257,9 @@ export function createWalkMode({
     // Out over the side at the head of a ladder: down it, rather than against the rail.
     if (d.grounded && state.moving) {
       const ladder = ladderDown(spec, d.x, d.z, lx);
-      if (ladder) { startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y }); return stepClimb(dt, ix, iz); }
+      // Not with the statue on the hull: a climber leaves it behind, and it goes ashore only in arms.
+      if (ladder && state.cargo) blockedBy('carry');
+      else if (ladder) { startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y }); return stepClimb(dt, ix, iz); }
     }
     // A ship is walked on her own model (shared/hullwalk.mjs), whatever has no model on the plain
     // rectangles of its craft.
@@ -1161,6 +1300,9 @@ export function createWalkMode({
       place(camBack);
       letRun(b);
       if (state.onLeftDeck) state.onLeftDeck(b);
+      // Over the rail with the statue: it goes with you, in your arms, and not left on a hull you are
+      // no longer on (there is no way back to it from the water).
+      if (state.cargo) takeOffBoat();
     }
     return afterMove(dt);
   }
@@ -1177,6 +1319,8 @@ export function createWalkMode({
     }
     if (!ok) return false;
     if (water && groundAt(x, z) < WATER_Y) {
+      // The statue is not put in the sea: it stays on the hull until there is a shore to carry it to.
+      if (state.cargo) { blockedBy('carry'); return false; }
       state.vehicle = null;
       offDeck();
       place(camBack);
@@ -1194,6 +1338,8 @@ export function createWalkMode({
     state.floor = state.pos.y;
     state.grounded = true;
     state.vy = 0;
+    // Ashore, the statue comes with you - in the arms, since the hull is not under you any more.
+    if (state.cargo) takeOffBoat();
     return true;
   }
 
@@ -1209,6 +1355,8 @@ export function createWalkMode({
   function lookedAround() { riddenSinceLook = 0; }
   function mount() {
     if (!bikes || !state.active || state.paused || state.working || state.vehicle || state.bike) return false;
+    if (state.carry) { blockedBy('carry'); return false; }
+    if (state.digging) return false;
     if (!state.grounded || state.swimming || state.sitting || state.lying) return false;
     if (groundAt(state.pos.x, state.pos.z, state.pos.y) < BIKE_SHORE) return false;
     if (!bikeMesh) bikeMesh = createBicycle({ scene, material });
@@ -1365,6 +1513,9 @@ export function createWalkMode({
   function setAvatar(spec) {
     avatarLook = spec;
     classicAvatar.set(spec);
+    // A new look must not drop what the hands are doing: the rig starts from empty hands.
+    if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true);
+    if (state.digging && classicAvatar.dig) classicAvatar.dig(true);
   }
 
   const forward = new THREE.Vector3();
@@ -1485,6 +1636,7 @@ export function createWalkMode({
     state.sway += dt * (state.running ? 1.4 : state.moving ? 1 : 0.55);
     if (state.paused) {
       stick.x = 0; stick.z = 0;
+      cancelDig('paused');
       // A conversation is a rest: both pools go on filling behind it.
       stepPool(state.stamina.body, false, dt);
       stepPool(state.stamina.boat, false, dt);
@@ -1605,17 +1757,27 @@ export function createWalkMode({
     // From the water or a quay, pushing at the hull of a ship: no key, you just climb.
     if (state.grounded && !state.sitting && !state.lying && !state.parked) {
       const at = ladderAhead(ix, iz);
-      if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
+      // A rope ladder wants both hands.
+      if (at && state.carry) blockedBy('carry');
+      else if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
     }
 
     const push = Math.min(1, Math.hypot(ix, iz));
+    // A dig is a stand: any step, or the ground going out from under it, ends it (a jump, a crouch, a
+    // panel and a blow do so where they happen). Otherwise it just runs down its clock.
+    if (state.digging) {
+      if (push > 0.02) cancelDig('moved');
+      else if (!canDig()) cancelDig('blocked');
+      else stepDig(dt);
+    }
     // Shift only spends while it does something: held standing still, crouched on land, or
     // on a stool, it is not a run and costs nothing. `swimming` is last frame's answer,
     // which is the one every other line here uses too. An empty pool is the ordinary gait -
     // a walk on land, a plain stroke in the water - until RECOVER_AT opens it again.
     // Walking on the bottom is not a stroke and spends nothing (BOTTOM_SPEED has no turbo).
+    // Nor with the statue in your arms: it is a walk, at CARRY_SPEED, however hard Shift is held.
     const wants = boost && push > 0.02 && !state.lying && !state.sitting && (state.swimming || !state.crouching)
-      && !(state.dive && state.onBed);
+      && !(state.dive && state.onBed) && !state.carry;
     const turbo = stepPool(state.stamina.body, wants, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = turbo;
@@ -1624,7 +1786,7 @@ export function createWalkMode({
       : state.dive ? (state.onBed ? BOTTOM_SPEED : turbo ? DIVE_TURBO : DIVE_SPEED)
       : state.swimming ? (turbo ? SWIM_TURBO : SWIM_SPEED)
         : state.crouching ? CROUCH_SPEED
-          : run ? RUN_SPEED : WALK_SPEED) * push * dt;
+          : run ? RUN_SPEED : WALK_SPEED) * push * dt * (state.carry ? CARRY_SPEED : 1);
     state.moving = push > 0.02;
     state.running = run && state.moving;   // the others need to know which gait to draw
     if (state.moving) {
@@ -1651,7 +1813,7 @@ export function createWalkMode({
       else if (!blocked(nx, state.pos.z)) state.pos.x = nx;
       else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
       state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
-      state.bob += dt * (run ? 13 : 9);
+      state.bob += dt * (run ? 13 : 9) * (state.carry ? CARRY_SPEED : 1);
     } else {
       state.bob += dt * 1.5;
     }
@@ -1694,7 +1856,7 @@ export function createWalkMode({
     // and the mouse add up and a stroke sideways or a body hanging still is not moved by it.
     const steer = state.moving && (state.dive || state.swimming) ? lookRise(state.camPitch, state.firstPerson) * iz : 0;
     const rise = clamp((spaceHeld || padJump ? 1 : 0) - (state.crouching ? 1 : 0) + steer, -1, 1);
-    if (!state.dive && state.swimming && rise < 0 && !state.sitting && !state.lying
+    if (!state.dive && state.swimming && rise < 0 && !state.sitting && !state.lying && !state.carry
         && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y)) {
       state.dive = true;
       state.vy = -0.3;                       // a first push under; stepDive takes it from here
@@ -1891,8 +2053,8 @@ export function createWalkMode({
     // looking up used to put the camera below the surface, its top cutting the view in two). It must
     // not also flatten the view: a camera pushed up by it aims as far above the body as it was pushed,
     // so the direction the mouse asked for survives and looking up still looks up. Only upwards, and
-    // only for a swimmer - the diver's ceiling pulling the camera down keeps its old view of the diver.
-    const lift = state.swimming && !fp ? Math.max(0, camY - cy) : 0;
+    // only, and never in first person - the diver's ceiling pulling the camera down keeps its old view of the diver.
+    const lift = !fp ? Math.max(0, camY - cy) : 0;
     // On a plane the camera stands in the plane's own frame: its offset from you turned with her tilt
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
@@ -1984,6 +2146,21 @@ export function createWalkMode({
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },
     mount, dismount, riding: () => state.bike,
+    // The statue in both arms (Plans/schatkaarten.md). `lift(item)` takes it - false if the hands are
+    // busy or it is already carried; `putDown()` hands the item name back; `carrying()` is the item or
+    // null. Aboard it is cargo: `putOnBoat(hull)` (board() does it for whoever boards carrying),
+    // `takeOffBoat()` for a body already off the hull (unboard() does it on the way ashore), and
+    // `cargo()` is { item, hull } or null.
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo,
+    // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
+    // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
+    // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and
+    // `digProgress()` how far, 0..1 or null - for the mound of sand and the hole.
+    dig, cancelDig, digging: () => !!state.digging,
+    // Shovelfuls the rig has flung since this was last asked (classic-avatar.js digged), one grain
+    // burst each for main.js; 0 from a rig that does not count them.
+    digged: () => (classicAvatar.digged ? classicAvatar.digged() : 0),
+    digProgress: () => (state.digging ? clamp(state.digging.t / state.digging.total, 0, 1) : null),
     // What is underfoot here, decks included. The archipelago alone answers with water
     // over a quay, because planks are a level rather than ground - and "can I step out
     // here" has to mean the same thing as "will my feet find something".

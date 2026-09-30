@@ -26,9 +26,11 @@ import { disposeFisher } from './fisher.js';
 import { disposeQuarry } from './quarry.js';
 import { disposeBatavia } from './batavia.js';
 import { disposeClock } from './clock.js';
+import { disposePlaque } from './treasure-plaque.js';
 
 export function disposeExtras(rec) {
   if (rec.nameplate) rec.nameplate.dispose();
+  if (rec.plaque) disposePlaque(rec.plaque);
   if (rec.fountain) {
     rec.fountain.surface.geometry.dispose();
     rec.fountain.jets.geometry.dispose();

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_TIERS, GRAPHICS_KEY, clampGraphic, loadGraphics, saveGraphic,
-  forgetGraphics, graphicsTier,
+  forgetGraphics, graphicsTier, hazeOpening, HAZE_OPEN_AT, OBJECT_RATIO, objectDistanceOf,
 } from '../web/js/graphics-settings.js';
 
 const memory = (init = {}) => {
@@ -61,10 +61,10 @@ test('only what somebody moved is kept; the rest follows the machine', () => {
   saveGraphic('viewDistance', 250, s);
   assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { shadowDistance: 120, viewDistance: 250 });
   // One bad field keeps the other three, and a remembered number outside its slider is clamped.
-  const kept = loadGraphics(GRAPHICS_DEFAULTS, memory({ [GRAPHICS_KEY]: JSON.stringify({ viewDistance: 'far', npcDistance: 120, objectDistance: 9999 }) }));
+  const kept = loadGraphics(GRAPHICS_DEFAULTS, memory({ [GRAPHICS_KEY]: JSON.stringify({ viewDistance: 'far', npcDistance: 120, shadowDistance: 99999 }) }));
   assert.equal(kept.viewDistance, GRAPHICS_DEFAULTS.viewDistance);
   assert.equal(kept.npcDistance, 120);
-  assert.equal(kept.objectDistance, GRAPHICS_LIMITS.objectDistance.max);
+  assert.equal(kept.shadowDistance, GRAPHICS_LIMITS.shadowDistance.max);
   // Not a slider, or not a number: not kept.
   saveGraphic('fov', 90, s);
   saveGraphic('npcDistance', NaN, s);
@@ -116,10 +116,11 @@ test('the full defaults are the old look, and every tier cuts its houses inside 
   // VIEW_MARGIN, 150, to View Distance).
   assert.equal(GRAPHICS_TIERS.full.viewDistance + 150, 1400);
   for (const [tier, d] of Object.entries(GRAPHICS_TIERS)) {
-    // The haze closes at the nearer of the far plane and Object Distance (main.js fogCeiling),
-    // so the building dither is never needed: the houses come out of the mist.
-    const ceiling = Math.min((d.viewDistance + 150) * 0.95, d.objectDistance);
-    assert.equal(fadeNeeded(d.objectDistance, ceiling), false, tier);
+    // Object Distance is View Distance times the tier's ratio (objectDistanceOf), and the cut
+    // lies inside the haze the far plane closes at, so the building dither is never needed.
+    const object = objectDistanceOf(d.viewDistance, tier);
+    const ceiling = Math.min((d.viewDistance + 150) * 0.95, object);
+    assert.equal(fadeNeeded(object, ceiling), false, tier);
   }
   // And the shadow box may grow to the widest world.js allows (SHADOW_SPAN[1] = 190, a half-width).
   const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
@@ -129,22 +130,28 @@ test('the full defaults are the old look, and every tier cuts its houses inside 
   assert.equal(GRAPHICS_TIERS.full.shadowDistance, 2 * Number(span[2]));
 });
 
-test('the haze never closes past Object Distance, and a slider change moves it', () => {
+test('the haze is the far plane alone and never waits for Object Distance, which only cuts', () => {
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
-  const ceil = main.slice(main.indexOf('function fogCeiling()'), main.indexOf('function fogCeiling()') + 300);
+  // The haze is the far plane's alone; Object Distance is only the cut (cullCeiling).
+  const fogC = main.slice(main.indexOf('function fogCeiling()'), main.indexOf('function fogCeiling()') + 120);
+  assert.match(fogC, /return camera\.far \* FOG_CAP;/);
+  assert.doesNotMatch(fogC, /objectReach/);
+  const ceil = main.slice(main.indexOf('function cullCeiling()'), main.indexOf('function cullCeiling()') + 200);
   assert.match(ceil, /fogCeilingOf\(camera\.far \* FOG_CAP, objectReach\(\), state\.mode === 'plan'\)/);
   // Object Distance as the frame reads it: floored by the orbit target only from above.
-  const reach = main.slice(main.indexOf('function objectReach()'), main.indexOf('function objectReach()') + 300);
+  const reach = main.slice(main.indexOf('function objectReach()'), main.indexOf('function objectReach()') + 700);
   assert.match(reach, /state\.mode === 'orbit' \? camera\.position\.distanceTo\(controls\.target\) : null/);
   assert.match(reach, /objectReachOf\(state\.graphics\.objectDistance, orbit\)/);
-  const set = main.slice(main.indexOf('function setFogRange('), main.indexOf('function setFogRange(') + 1600);
+  const set = main.slice(main.indexOf('function setFogRange('), main.indexOf('function setFogRange(') + 3200);
   assert.match(set, /fogAt = fogCeiling\(\);\r?\n\s*scene\.fog\.far = Math\.min\(h\.far, fogAt\)/);
   // The floor moves with the zoom, so the frame asks again on one island too.
   assert.match(main, /state\.sea\.count\(\) > 1 \|\| \(state\.mode !== 'plan' && fogCeiling\(\) !== fogAt\)\) applyFogRange\(\)/);
-  const apply = main.slice(main.indexOf('function applyGraphics('), main.indexOf('function applyGraphics(') + 600);
-  assert.match(apply, /key === 'objectDistance'\) applyFogRange\(\)/);
+  // There is no Object Distance slider: it follows View Distance whenever that moves.
+  const view = main.slice(main.indexOf('function applyViewDistance('), main.indexOf('function applyViewDistance(') + 200);
+  assert.match(view, /withObjectDistance\(state\.graphics\)/);
+  assert.equal(GRAPHICS_LIMITS.objectDistance, undefined);
   // The page starts at its own machine's defaults.
-  assert.match(main, /graphics: loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: !!STANDALONE \}\)\]\)/);
+  assert.match(main, /graphics: withObjectDistance\(loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: !!STANDALONE \}\)\]\)\)/);
 });
 
 test('the sky is drawn on the far plane, so a short view never shows the clear colour', () => {
@@ -177,4 +184,30 @@ test('the fireflies go out in the haze, and the cut is taken where the camera is
   // The cut runs right before the render, after every branch has moved the camera.
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   assert.match(main, /cullRecords\(\);\r?\n\s*renderer\.render\(state\.inside \? state\.inside\.scene : scene, eye\);/);
+});
+
+test('View Distance lets the haze out only past the desktop default, smoothly, and the far plane goes with it', () => {
+  const { viewDistance: from } = GRAPHICS_TIERS.full, max = HAZE_OPEN_AT;
+  // At and below the default the island's own haze is untouched: nothing here may change a tier.
+  for (const v of [GRAPHICS_LIMITS.viewDistance.min, GRAPHICS_TIERS.phone.viewDistance, GRAPHICS_TIERS.modest.viewDistance, from]) {
+    assert.equal(hazeOpening(v), 0, String(v));
+  }
+  assert.equal(hazeOpening(max), 1);
+  assert.equal(hazeOpening(max * 2), 1);
+  assert.ok(GRAPHICS_LIMITS.viewDistance.max >= max, 'the slider reaches the fully open haze');
+  assert.ok(hazeOpening(from + 10) > 0 && hazeOpening(from + 10) < 0.01, 'a nudge is a nudge, not a jump');
+  // The sea under the horizon and the clouds follow the same slider.
+  const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /hazeOpening\(state\.graphics\.viewDistance\)/);
+  assert.match(main, /state\.world\.setCloudReach\(scene\.fog\.far\)/);
+  const world = fs.readFileSync(new URL('../web/js/world.js', import.meta.url), 'utf8');
+  assert.match(world, /ocean\.scale\.set\(spread, 1, spread\)/);
+});
+
+test('Object Distance is View Distance times its tier ratio, and a desktop draws past the far plane', () => {
+  assert.equal(objectDistanceOf(1250, 'full'), 2000);
+  assert.equal(objectDistanceOf(800, 'modest'), 560);
+  assert.equal(objectDistanceOf(600, 'phone'), 390);
+  assert.equal(objectDistanceOf(6000), 9600);
+  assert.ok(OBJECT_RATIO.full > 1 && OBJECT_RATIO.modest < 1 && OBJECT_RATIO.phone < 1);
 });

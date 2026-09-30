@@ -61,10 +61,10 @@ test('the town stands on buildable ground, with the tavern and the town hall fac
   }
 });
 
-test('the crowd finds an innkeeper and a mayor on a starter, and nobody else', () => {
+test('the crowd finds an innkeeper, a mayor and a pirate on a starter, and nobody else', () => {
   const crowd = createCrowd(island(0));
   const posts = [...crowd.figures.values()].map((f) => f.post || null);
-  assert.deepEqual(posts.sort(), ['innkeeper', 'mayor']);
+  assert.deepEqual(posts.sort(), ['innkeeper', 'mayor', 'pirate']);
   assert.ok(crowd.figures.get('civic:tavern') && crowd.figures.get('civic:townhall'));
 });
 

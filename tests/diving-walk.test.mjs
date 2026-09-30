@@ -295,25 +295,22 @@ test('a diver looks up too, and the mouse climbs them', () => {
   assert.ok(walk.state.dive === false || walk.state.pos.y > y0 + 0.5, 'looking up and swimming on did not climb');
 });
 
-test('out of the water the range narrows again and the extra is eased away, never snapped', () => {
+test('out of the water the mouse still looks far up: the sky belongs to a walker too', () => {
   const { walk } = fresh();
   run(walk, 0.5);
   stick(walk, -1, 2);
-  const deep = walk.state.camPitch;
-  assert.ok(deep < -0.9);
+  assert.ok(walk.state.camPitch < -0.9);
   walk.state.pos.set(30, 0.6, 0);            // the beach: dry, so no longer swimming
   walk.update(FRAME);
   assert.equal(walk.state.swimming, false);
-  assert.ok(walk.state.camPitch > deep && walk.state.camPitch < deep + 0.2, `it snapped from ${deep} to ${walk.state.camPitch}`);
   run(walk, 1.5);
-  assert.ok(walk.state.camPitch >= -0.25 - 1e-6, `still ${walk.state.camPitch} on land`);
+  assert.ok(walk.state.camPitch < -0.9, `eased back to ${walk.state.camPitch} on land`);
   stick(walk, -1, 2);
-  assert.ok(walk.state.camPitch >= -0.25 - 1e-9, `on land the mouse looked up to ${walk.state.camPitch}`);
+  assert.ok(walk.state.camPitch >= -1.1 - 1e-9 && walk.state.camPitch < -0.9, `on land the mouse looked to ${walk.state.camPitch}`);
 });
-
-test('walk.js lifts the aim only for a swimmer, only upwards, and never in first person', () => {
+test('walk.js lifts the aim only upwards, and never in first person', () => {
   const src = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
-  assert.match(src, /const lift = state\.swimming && !fp \? Math\.max\(0, camY - cy\) : 0;/);
+  assert.match(src, /const lift = !fp \? Math\.max\(0, camY - cy\) : 0;/);
   assert.match(src, /camera\.lookAt\(state\.pos\.x, state\.pos\.y \+ aim \+ lift, state\.pos\.z\)/);
   assert.match(src, /const SWIM_PITCH_MIN = -1\.1;/);
 });

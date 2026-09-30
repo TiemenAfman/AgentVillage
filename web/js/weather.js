@@ -20,7 +20,7 @@
 // a sky nobody recognises - is not a degraded island; it is the island.
 import * as THREE from 'three';
 import { lerp, clamp } from 'shared/rng.mjs';
-import { seasonOf } from './world.js';
+import { seasonOf, CLOUD_Y } from './world.js';
 
 // The vocabulary, written out again here rather than imported from lib/weather.mjs: the
 // browser must never reach into lib/, and the sea must never reach into web/. The two
@@ -155,6 +155,9 @@ const SPAN = 58;
 // is under the ground, where a quarter of the rain was falling invisibly while the other
 // three quarters were a hundred metres overhead and a pixel long.
 const TALL = 30;
+// The tallest the box may be made when the cloud layer is high (world.js CLOUD_Y): the drops are
+// spread over the whole gap between the clouds and the water, so the same count is thinner.
+const MAX_H = 46;
 
 // Rain and snow, as everything that differs between them.
 const FALL = {
@@ -188,7 +191,10 @@ function dropGeometry() {
 // the one in front of you.
 const wrap = (v, span) => v - span * Math.round(v / span);
 
-export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) {
+// `fromSky()` is true while the camera looks down on the island from above (orbit): there is no rain
+// then. A box of drops seen from a hundred units off is a block of rain that swings round with the
+// camera, and every way of dressing that up looked worse than none; rain is for standing in.
+export function createWeather({ scene, world, camera, onHaze = () => {}, fromSky = () => false } = {}) {
   // What the sky is easing towards, and where it has got to. Five scalars rather than a
   // blend between four whole looks: a crossfade between two skies is these same five
   // numbers meeting in the middle, and doing it this way means adding a sixth sky costs a
@@ -238,9 +244,9 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
   const bz = new Float32Array(MAX_DROPS);
   const ph = new Float32Array(MAX_DROPS);
   for (let i = 0; i < MAX_DROPS; i++) {
-    bx[i] = (Math.random() - 0.5) * SPAN;
+    bx[i] = Math.random() - 0.5;
     by[i] = (Math.random() - 0.5) * TALL;
-    bz[i] = (Math.random() - 0.5) * SPAN;
+    bz[i] = Math.random() - 0.5;
     // One draw, doing double duty: the flutter phase, and - as its fractional part - how
     // much faster than the rest this one falls. Rain that all falls at one speed reads as a
     // sheet of wallpaper sliding down the screen.
@@ -276,7 +282,9 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
   function fall(dt, kind) {
     const f = FALL[kind];
     const amount = at.fall;
-    const n = Math.round(f.n * amount);
+    const eyeY = camera.position.y;
+    const span = SPAN;
+    const n = fromSky() ? 0 : Math.round(f.n * amount);
     drops.count = n;
     drops.visible = n > 0;
     if (!n) return;
@@ -297,13 +305,22 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
     // in full. The forward vector is the camera matrix's third column negated, and it is a
     // frame old here because the controls have not run yet; a frame of lag on where a box of
     // rain is centred is not a thing anybody can see.
-    const cx = camera.position.x - camera.matrix.elements[8] * SPAN * 0.33;
-    // Hung above the eye rather than centred on it, so that standing on the ground the box
-    // reaches from just under your feet to five houses up instead of burying a quarter of
-    // the rain in the hillside you are standing on.
-    const cy = camera.position.y + TALL * 0.28;
-    const cz = camera.position.z - camera.matrix.elements[10] * SPAN * 0.33;
-
+    // Rain falls out of the clouds, so the box lives under them: its top is the underside of the
+    // cloud layer (the weather has already lowered it by `drop`), and it is only as tall as the
+    // gap down to the water - a box that rode the camera up into the sky hung streaks a hundred
+    // units over the clouds from any height. Above the cloud layer the box is set down where the
+    // line of sight meets it, so what you look at from up there is the rain over that place.
+    const base = Math.max(6, CLOUD_Y[0] - 1 - at.drop);
+    const H = clamp(base + 1, 12, MAX_H);
+    const fx = -camera.matrix.elements[8], fy = -camera.matrix.elements[9], fz = -camera.matrix.elements[10];
+    let cx = camera.position.x + fx * span * 0.33, cz = camera.position.z + fz * span * 0.33;
+    if (eyeY > base && fy < -0.1) {
+      const reach = Math.min(1200, (base * 0.5 - eyeY) / fy);
+      cx = camera.position.x + fx * reach;
+      cz = camera.position.z + fz * reach;
+    }
+    const cy = base - H / 2;
+    const squash = H / TALL;
     // Nothing right against the lens. From the sky the whole box hangs around the camera, so
     // all anybody sees of the rain is the handful of drops within a few units of it - and a
     // 1.3-unit streak three units away is a white pole half the screen tall, which is what
@@ -318,14 +335,14 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
     const arr = drops.instanceMatrix.array;
     for (let i = 0; i < n; i++) {
       const fell = t * f.speed * (1 + (ph[i] % 1) * f.jitter);
-      let x = bx[i] + wx * t;
-      let z = bz[i] + wz * t;
+      let x = bx[i] * span + wx * t;
+      let z = bz[i] * span + wz * t;
       if (f.flutter) {
         x += f.flutter * Math.sin(t * 1.3 + ph[i]);
         z += f.flutter * Math.cos(t * 0.9 + ph[i] * 1.7);
       }
       const o = i * 16;
-      const qx = cx + wrap(x - cx, SPAN), qy = cy + wrap(by[i] - fell - cy, TALL), qz = cz + wrap(z - cz, SPAN);
+      const qx = cx + wrap(x - cx, span), qy = cy + wrap(by[i] * squash - fell - cy, H), qz = cz + wrap(z - cz, span);
       const dx = qx - px, dy = qy - py, dz = qz - pz;
       arr[o + 12] = qx;
       arr[o + 13] = dx * dx + dy * dy + dz * dz < near2 ? qy - 1e4 : qy;
@@ -367,17 +384,11 @@ export function createWeather({ scene, world, camera, onHaze = () => {} } = {}) 
     }
     if (world.ambient) world.ambient.intensity *= 1 + at.dark * 0.35;
 
-    // The dome and the haze it fades into. Both are drained of colour rather than painted
-    // slate, so this is as right at nine in the evening as it is at noon. The stars go with
-    // it: you cannot see them through cloud, and leaving them lit under an overcast sky was
-    // the first thing that looked wrong.
+    // The sky stays the sky's colour - blue by day whatever is falling: the weather is the light,
+    // the haze's reach and the rain, not a grey dome. Only the stars go out, since cloud is over
+    // the island at night too and a lit star through it is wrong.
     const u = world.sky && world.sky.material && world.sky.material.uniforms;
-    if (u) {
-      dull(u.uTop.value, at.grey);
-      dull(u.uHor.value, at.grey * 0.8);
-      u.uStars.value *= 1 - at.grey;
-    }
-    if (scene.fog) dull(scene.fog.color, at.grey * 0.7);
+    if (u) u.uStars.value *= 1 - at.grey;
 
     // And what is coming down. In winter the same system falls as snow - one field, one
     // mesh, one material; the season only changes the numbers it is stepped with.

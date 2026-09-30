@@ -13,13 +13,14 @@ import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
 import {
-  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
+  loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, PIRATE_ID, TREASURE_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
 import { hash32 } from './shared/rng.mjs';
 import { GOLDPIT_ID, GOLDMINE_ID, GOLDSMITH_ID } from './shared/gold.mjs';
 import { withScanLock } from './lib/lock.mjs';
 import { runPlan, pruneUnreachable } from './lib/plan.mjs';
 import { builtBoats } from './lib/boatyard.mjs';
+import { loadTreasure, viewOf as treasureView } from './lib/treasure.mjs';
 import { fleetOf, earnedBoats } from './shared/quay.mjs';
 
 export function parseArgs(argv) {
@@ -150,10 +151,16 @@ async function runScan(o) {
   // `layout.ladder` is the other: the most settlers the village has ever had at once, which
   // the model counts its milestones in (Plans/DONE/tenten-vertrekken.md). Read on every survey
   // rather than captured once, so a plan's re-survey sees the one written back below.
-  const survey = (rehomed) => buildVillage({
+  //
+  // The model also carries `treasure` ({ placed, found }, lib/treasure.mjs): whether the treasure
+  // statue has been set down is the keeper's word in data/treasure.json, not something
+  // the transcripts say, and `placeAll` gives the statue its cell when it reads `placed`. On the
+  // model rather than an option of `placeAll`, so the planner's re-survey and its trial scans
+  // (lib/plan.mjs) see the same word. The Codex scan has no statue.
+  const survey = (rehomed) => Object.assign(buildVillage({
     sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed,
     ladder: layout.ladder || null,
-  });
+  }), o.codex ? {} : { treasure: treasureView(loadTreasure()) });
   let model = survey(layout.rehomed || null);
   // Written back straight away, and moved only when the village sets a new most-ever or on
   // the first scan that has one at all: a scan of an unchanged island leaves it as it was.
@@ -327,6 +334,40 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
       id: 'civic:mailbox', kind: 'civic', civicType: 'mailbox', district: null,
       plot: boxPlot, door: null, name: 'The postbox', label: 'Postbox',
       title: 'Mail from off the island',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The pirate's sea chest on the tavern's pavement, and the keeper it gives the tavern a second
+  // one of (KEEPERS.pirate in shared/palette.mjs). It stands as soon as the tavern and a free cell
+  // beside its door do (lib/layout.mjs); like the postbox it holds nothing of the village's.
+  const piratePlot = plot(PIRATE_ID);
+  if (piratePlot) {
+    civics.push({
+      id: PIRATE_ID, kind: 'civic', civicType: 'pirate', district: null,
+      plot: piratePlot, door: null, name: 'The pirate’s chest', label: 'Pirate’s chest',
+      title: 'A sea chest by the tavern door',
+      startedAt: config.foundedAt, lastAt: null,
+      style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
+      stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
+      tools: {}, sheds: [],
+    });
+  }
+
+  // The treasure statue in the town centre: in the village only once the keeper has set it down
+  // (`model.treasure.placed`, lib/treasure.mjs). Its cell stays in the layout either way - a plot
+  // is never taken back - so a statue that stops being placed (data/treasure.json deleted) is out
+  // of the village and comes back on the same cell if it is placed again. The count on its plaque
+  // is `village.treasure.found`, not a field of this record: a bundle carries the count once.
+  const statuePlot = model.treasure && model.treasure.placed === true ? plot(TREASURE_ID) : null;
+  if (statuePlot) {
+    civics.push({
+      id: TREASURE_ID, kind: 'civic', civicType: 'treasure', district: null,
+      plot: statuePlot, door: null, name: 'The treasure statue', label: 'Treasure statue',
+      title: 'Golden treasure, dug up and carried home',
       startedAt: config.foundedAt, lastAt: null,
       style: 'unknown', model: null, models: {}, tier: 'civic', ornaments: [], active: false, archived: false,
       stats: { humanTurns: 0, assistantMsgs: 0, toolCalls: 0, filesTouched: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, apiErrors: 0, publishes: 0, durationMs: 0 },
@@ -590,6 +631,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     // page to draw; the island bundle does not carry it, so a zone costs no publish and no
     // rebuild on anybody else's screen - it changes nothing a neighbour can see.
     zones: layout.zones || [],
+    // The ways in the keeper set, per hamlet and side (`gate` in lib/plan.mjs): for the page to stand a
+    // gateway on and the planner to draw. Like the zones it is not in the island bundle - nobody else
+    // draws a gateway over our roads.
+    gates: layout.gates || {},
     // Each polder carries the moment it was drained, the way a milestone carries
     // `unlockedAt`. The list is append-only and polder k was earned at POLDER_AT +
     // k * POLDER_EVERY settlers, so the index is the date - but the viewer should not
@@ -616,6 +661,10 @@ function assemble({ config, model, layout, terrain, size, all, boats = {} }) {
     // How the island has grown. Every page and the sea build the ground from it, exactly as
     // they do from the polders, so it travels as the layout keeps it.
     grow: layout.grow || null,
+    // The treasure statue and its tally (lib/treasure.mjs, data/treasure.json - its own file and
+    // its own writer, like the boatyard's count). Just `{ placed, found }`: which way the statue
+    // is being carried is the carrier's business and is not written here.
+    treasure: treasureView(loadTreasure()),
     milestones: model.milestones.map((m) => ({ ...m, unlockedAt: iso(m.unlockedAt) })),
     // The tents that packed up for want of anything to do (lib/village.mjs), by session: the
     // town hall's register offers them an invitation back instead of saying they live here.
