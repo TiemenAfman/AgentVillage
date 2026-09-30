@@ -112,13 +112,25 @@ class frame:
         _frames.pop()
 
 
-class lid:
-    """What is emitted inside belongs to the roof (see the top)."""
+class group:
+    """What is emitted inside goes into parts named after `name` rather than the current group:
+    `roof` is the lid interior.js takes off, `near` the walls the hall's cutaway preview leaves
+    out (scripts/preview-krakenroom.py). Merged parts lose their labels, so a group is the way to
+    keep a set of pieces apart."""
+    def __init__(self, name):
+        self.name = name
+
     def __enter__(self):
-        _group.append('roof')
+        _group.append(self.name)
 
     def __exit__(self, *_):
         _group.pop()
+
+
+class lid(group):
+    """What is emitted inside belongs to the roof (see the top)."""
+    def __init__(self):
+        super().__init__('roof')
 
 
 def M(at=(0, 0, 0), turn=0.0, tilt=0.0, roll=0.0, scale=None):

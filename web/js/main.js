@@ -53,7 +53,7 @@ import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
-import { createInterior, INDOOR_GLOW } from './interior.js';
+import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -2223,6 +2223,16 @@ function keepRaveHours() {
 
 function enterInterior(room, at) {
   if (state.inside || state.mode !== 'walk') return;
+  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
+  // they are in. Usually they are, having been started as you walked up to the door.
+  if (!roomReady(room)) {
+    state.ui.toast('The door sticks a moment...');
+    prepareRoom(room).then(() => enterInterior(room, at), (e) => {
+      console.error('that room could not be loaded', e);
+      state.ui.toast('That door does not open yet.');
+    });
+    return;
+  }
   let inside = rooms.get(room);
   if (!inside) {
     try {
@@ -6636,6 +6646,9 @@ function frame(nowMs) {
   } else if (state.mode === 'walk') {
     wrapEye();
     const w = state.walk.update(dt);
+    // A door within reach whose room is drawn from sets loaded on demand starts loading them, so
+    // that by the time E is pressed they are in (interior.js prepareRoom).
+    if (w && w.near && w.near.room && !roomReady(w.near.room)) prepareRoom(w.near.room).catch(() => {});
     state.ui.setWalkPrompt(promptFor(w && w.near));
     touchHud(w && w.near, state.walk);
     state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));

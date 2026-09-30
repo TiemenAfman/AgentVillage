@@ -98,7 +98,11 @@ export const HERO_BUDGET = 4000;
 // scripts/build-batavia.py rather than decimated from a download, so she needs far less than
 // the galleon for more ship: she came out near 6200, and 8000 leaves room for a boat on her
 // waist, not for a second hull.
-export const HERO_BUDGETS = { pirateship: 30000, batavia: 8000 };
+// The Salty Kraken's hall (scripts/build-piratetavern-room.py): a whole cave tavern with two storeys
+// and all its dressing, drawn only while somebody is inside and with nobody's island in the scene.
+// The keeper's call was that indoors the triangle count must not limit the design; this is a ceiling
+// against a runaway bake, not a budget.
+export const HERO_BUDGETS = { pirateship: 30000, batavia: 8000, piratetavern_room: 400000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand

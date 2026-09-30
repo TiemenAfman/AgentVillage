@@ -22,6 +22,7 @@ import { CASTLE } from '../web/js/castle-mesh.js';
 import { GREATCASTLE } from '../web/js/greatcastle-mesh.js';
 import { TAVERN } from '../web/js/tavern-mesh.js';
 import { KRAKENKIT } from '../web/js/krakenkit-mesh.js';
+import { PIRATETAVERN_ROOM } from '../web/js/piratetavern_room-mesh.js';
 import { PIRATETAVERN } from '../web/js/piratetavern-mesh.js';
 import { COTTAGE } from '../web/js/cottage-mesh.js';
 import { HOUSE } from '../web/js/house-mesh.js';
@@ -71,7 +72,7 @@ import { SHIPYARD } from '../web/js/shipyard-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, piratetavern_room: PIRATETAVERN_ROOM, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -291,7 +292,7 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'krakenkit', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'piratesign', 'piratetavern', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'treasure', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'piratesign', 'piratetavern', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'treasure', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The Batavia, a hero like the galleon: the ship the village earns, modelled whole in
@@ -327,9 +328,6 @@ test('the register spans every set and answers by part name alone', () => {
     // Plans/DONE/goudmijn.md): the mine's hill is an asset of its own because it is lowered by its
     // datum (buildings.js MINE_DATUM) to bury its rim, and its cart and its ore are props.
     'civic_goldmine', 'civic_goldmine_hill', 'civic_goldpit', 'civic_goldsmith', 'civic_grocer',
-    // The Salty Kraken's kit, the ship's parts its hall is furnished with (scripts/build-krakenkit.py).
-    'civic_kraken_counter', 'civic_kraken_figurehead', 'civic_kraken_gunport', 'civic_kraken_jukebox', 'civic_kraken_lantern', 'civic_kraken_mast',
-    'civic_kraken_skulllamp', 'civic_kraken_skullsconce', 'civic_kraken_stern', 'civic_kraken_stool',
     'civic_library', 'civic_owlpost',
     // The pirate's sea chest by the tavern door (scripts/build-treasure.py).
     'civic_pirate',

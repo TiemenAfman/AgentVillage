@@ -12,6 +12,7 @@
 // Adding a room is one entry in ROOMS.
 import * as THREE from 'three';
 import { box, cylinder, cone, sphere, dome, mergeParts } from './buildings.js';
+import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
 import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
@@ -450,6 +451,13 @@ const ROOMS = {
 };
 
 export const ROOM_KINDS = Object.keys(ROOMS);
+
+// The baked sets a room is drawn from that are not loaded at boot (models.js LAZY). A room is built
+// only once they are in: `prepareRoom` starts them (when somebody walks up to the door) and says when
+// they have landed, `roomReady` says whether they have.
+const ROOM_SETS = { piratetavern: ['krakenkit', 'piratetavern_room'] };
+export const roomReady = (room) => (ROOM_SETS[room] || []).every(models.setLoaded);
+export const prepareRoom = (room) => Promise.all((ROOM_SETS[room] || []).map(models.loadSet));
 
 // ---------------------------------------------------------------- what you order
 // A pint, and a plate of bitterballen with a blob of mustard. Both are built about the origin

@@ -28,7 +28,6 @@ import { CASTLE } from './castle-mesh.js';
 import { GREATCASTLE } from './greatcastle-mesh.js';
 import { TAVERN } from './tavern-mesh.js';
 import { PIRATETAVERN } from './piratetavern-mesh.js';
-import { KRAKENKIT } from './krakenkit-mesh.js';
 import { COTTAGE } from './cottage-mesh.js';
 import { HOUSE } from './house-mesh.js';
 import { MANOR } from './manor-mesh.js';
@@ -75,7 +74,7 @@ import { HARBOURHOUSES } from './harbourhouses-mesh.js';
 import { WORKSHOPS } from './workshops-mesh.js';
 import { SHIPYARD } from './shipyard-mesh.js';
 
-const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the
@@ -84,7 +83,7 @@ const parts = new Map();
 // asset -> { set, parts: [name], anchors }
 const assets = new Map();
 
-for (const [set, data] of Object.entries(SETS)) {
+function register(set, data) {
   for (const [name, part] of Object.entries(data.parts)) {
     if (parts.has(name)) console.warn(`[island] two baked sets call a part "${name}"; ${parts.get(name).set} keeps it`);
     else parts.set(name, { set, part });
@@ -95,6 +94,32 @@ for (const [set, data] of Object.entries(SETS)) {
   for (const [name, info] of Object.entries(named)) {
     assets.set(name, { set, parts: info.parts, anchors: info.anchors || {} });
   }
+}
+for (const [set, data] of Object.entries(SETS)) register(set, data);
+
+// Sets that are not imported with the rest, because only a room needs them and a room is somewhere
+// most visitors never go: the Salty Kraken's hall (40 MB of triangles, the keeper's "indoors the count
+// must not limit the design") and its ship's parts. Imported the first time they are asked for
+// (interior.js prepareRoom, when somebody walks up to the door), never at boot - the boot rule above
+// still holds for everything the island itself draws. Resolved relative to this module, so a subpath
+// behind a proxy works as it does for every other asset.
+const LAZY = {
+  krakenkit: () => import('./krakenkit-mesh.js').then((m) => m.KRAKENKIT),
+  piratetavern_room: () => import('./piratetavern_room-mesh.js').then((m) => m.PIRATETAVERN_ROOM),
+};
+const lazyLoads = new Map();
+export const lazySets = () => Object.keys(LAZY);
+export const setLoaded = (set) => set in SETS;
+export function loadSet(set) {
+  if (set in SETS) return Promise.resolve();
+  if (!LAZY[set]) return Promise.reject(new Error(`no such model set: ${set}`));
+  if (!lazyLoads.has(set)) {
+    lazyLoads.set(set, LAZY[set]().then((data) => { SETS[set] = data; register(set, data); }, (e) => {
+      lazyLoads.delete(set);         // a failed load may be tried again on the next visit
+      throw e;
+    }));
+  }
+  return lazyLoads.get(set);
 }
 
 export const has = (name) => parts.has(name);

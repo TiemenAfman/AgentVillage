@@ -43,7 +43,11 @@ if (health && health.keyed && !key) {
 }
 
 fs.rmSync(OUT, { recursive: true, force: true });
-fs.cpSync(WEB, OUT, { recursive: true });
+// Less the sets only a room of one's own island is drawn from (models.js LAZY: the Salty Kraken's
+// hall and ship's parts, 47 MB): the phone has no island, so no rooms, and they are only ever
+// imported on the way into one.
+const ROOM_ONLY = new Set(['krakenkit-mesh.js', 'piratetavern_room-mesh.js']);
+fs.cpSync(WEB, OUT, { recursive: true, filter: (src) => !ROOM_ONLY.has(path.basename(src)) });
 fs.cpSync(SHARED, path.join(OUT, 'shared'), { recursive: true });
 
 // Ahead of every other script in the head, so it is there before main.js's graph starts.

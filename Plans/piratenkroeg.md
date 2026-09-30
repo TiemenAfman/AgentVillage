@@ -255,6 +255,13 @@ wat erop moet en de maat; de uitgewerkte versies staan in de sessie van 30 septe
 | Lantaarn | `civic_kraken_lantern` | voorbeeldmodule |
 | Nog te tekenen | - | trap met reling, open schatkist, jukebox |
 
+**Tweede ronde referentiebladen** (30 september, voor de zaal met verdiepingen): tot er een tekening is, staat er een
+eenvoudige plaatshouder van de juiste maat, elk in een eigen functie in `scripts/krakenroom/shell.py` of `dressing.py`,
+zodat hij los vervangen kan worden. Bestandsnamen in `refs\krakenkit\objecten\`: `sloep` (kroonluchter),
+`schatkist`, `kanon`, `scheepstrap`, `haard`, `rotsboog`, `kapiteinsstoel`, `kaartentafel`, `globe`, `telescoop`,
+`hangmat`, `anker`, `jolly-roger`, `stuurwiel`, `touwbrug`, `deur`. De prompts staan in de sessie van 30 september;
+ze gebruiken het stijlblok hierboven plus de regel tegen cartoon.
+
 **Nog in de kamer te verwerken** (uit de gesprekken): de grotkroeg van schets 2 (rots noord en west, rotsplafond
 over het noorden, bassin met steiger en roeiboot in het zuidoosten met maanlicht door een rotsboog, galerij
 boven het water, balkon met trap boven de kelder, jukebox tussen de zuidramen), de kogelinslag en het

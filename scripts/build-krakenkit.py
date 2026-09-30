@@ -46,4 +46,4 @@ for path in sorted((ROOT / 'scripts/krakenkit').glob('*.py')):
 bpy.context.scene['building_height'] = 2.0
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'promptholm-krakenkit.blend'))
-runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'krakenkit'})
+runpy.run_path(str(ROOT / 'scripts/export-models.py'), init_globals={'MODEL_SET': 'krakenkit', 'DIGITS': 4})

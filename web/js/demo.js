@@ -19,7 +19,7 @@ import { propGeometry, propFootprint, propReach, propLift } from './props.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
-import { createInterior, INDOOR_GLOW } from './interior.js';
+import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachGoldPile } from './goldpit.js';
@@ -1232,6 +1232,8 @@ function leaveField() {
 }
 
 function stepInside(door) {
+  // The Salty Kraken is drawn from sets loaded on demand (interior.js prepareRoom).
+  if (!roomReady(door.room)) { prepareRoom(door.room).then(() => stepInside(door), (e) => console.error(e)); return; }
   let room = rooms.get(door.room);
   if (!room) {
     room = createInterior({
