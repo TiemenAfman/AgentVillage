@@ -34,6 +34,10 @@ const SURFACES = [
 ];
 const flat = () => FLOOR;
 const FRAME = 1 / 60;
+// Walks are timed by the walking speed (web/js/avatar-gait.js), which came down from 3.4 to 0.65:
+// a stretch of so many metres takes this long.
+import { WALK_SPEED } from '../web/js/avatar-gait.js';
+const walkFor = (units) => units / WALK_SPEED;
 const run = (walk, seconds) => { for (let i = 0; i < Math.round(seconds / FRAME); i++) walk.update(FRAME); };
 
 function make(blockers = []) {
@@ -59,7 +63,7 @@ test('a stair is walked up to the gallery without a jump', () => {
   run(walk, 0.2);
   key('w', true);
   let top = 0;
-  for (let i = 0; i < 60 * 4 && walk.state.pos.x < 3; i++) { walk.update(FRAME); top = Math.max(top, walk.state.pos.y); }
+  for (let i = 0; i < Math.round(walkFor(5) / FRAME) && walk.state.pos.x < 3; i++) { walk.update(FRAME); top = Math.max(top, walk.state.pos.y); }
   key('w', false);
   run(walk, 0.5);
   assert.ok(walk.state.pos.x > 2.2, `did not get up the stair: x = ${walk.state.pos.x}`);
@@ -73,7 +77,7 @@ test('under the gallery the floor is still the floor', () => {
   walk.state.camYaw = 0;             // +z: straight under the gallery from its south side
   run(walk, 0.2);
   key('w', true);
-  run(walk, 1.5);
+  run(walk, walkFor(2.8));
   key('w', false);
   run(walk, 0.3);
   assert.ok(walk.state.pos.z > 0, `never got under: z = ${walk.state.pos.z}`);
@@ -85,7 +89,7 @@ test('walking off the open edge of the gallery is a fall to the floor', () => {
   walk.state.pos.set(3.4, GALLERY, 0);
   run(walk, 0.2);
   key('w', true);
-  run(walk, 1);
+  run(walk, walkFor(1.5));
   key('w', false);
   run(walk, 1.5);
   assert.ok(walk.state.pos.x > 4.1, `x = ${walk.state.pos.x}`);
@@ -99,7 +103,7 @@ test('a blocker with a height stops only the storey it stands on', () => {
   up.state.pos.set(2.4, GALLERY, 0);
   run(up, 0.2);
   key('w', true);
-  run(up, 1.5);
+  run(up, walkFor(1.5));
   key('w', false);
   assert.ok(up.state.pos.x < 3.3 - 0.12, `walked through the crate on the gallery: x = ${up.state.pos.x}`);
   // Below it, the same line walks straight on under the crate.
@@ -108,7 +112,7 @@ test('a blocker with a height stops only the storey it stands on', () => {
   down.state.pos.z = 0;
   run(down, 0.2);
   key('w', true);
-  run(down, 1.5);
+  run(down, walkFor(1.5));
   key('w', false);
   assert.ok(down.state.pos.x > 3.6, `the crate upstairs stopped a walker below: x = ${down.state.pos.x}`);
   assert.ok(Math.abs(down.state.pos.y - FLOOR) < 1e-6);
