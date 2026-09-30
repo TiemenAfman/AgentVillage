@@ -241,6 +241,23 @@ export function createQuestLog({ storage = defaultStorage(), unlock = null, card
     businessWith: () => businessWith(state),
     // Everything the log panel and the pirate's window draw, in one plain object.
     view: () => viewOf(state, held),
+    // Put the book at the start of a quest (or a later step of it), the story before it told: the
+    // `?quest=<id>[:<step>]` debug jump, so the Kraken's chapters can be played without digging
+    // first. What the skipped quests earned is granted (sync), and the first hunt's map is made
+    // when the jump lands on its dig. False for an id that is not a quest of the story.
+    jumpTo(id, step = 0) {
+      const story = QUESTS.filter((q) => !q.repeat);
+      const at = story.findIndex((q) => q.id === id);
+      if (at < 0) return false;
+      held = null;
+      state = parseQuestState({ ...state, done: story.slice(0, at).map((q) => q.id), step });
+      save();
+      saveCard();
+      sync();
+      ensureCard();
+      changed();
+      return true;
+    },
     // Forget everything (a debug reset). The unlocks stay: they belong to the look.
     reset() { state = parseQuestState(null); held = null; save(); saveCard(); changed(); },
   };

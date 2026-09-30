@@ -2067,7 +2067,9 @@ them); `Plans/piratenkroeg.md` has the prompts and the state of every piece.
 Debug query params: `?hunt` (`__state`/`__camera` on window without the dive: walk with
 `document.getElementById('walk-btn').click()`, teleport with `__state.walk.state.pos.set(x, y, z)`, read
 `__state.hunt.sites()`; the browser pane runs no frames between screenshots, so take one to let time pass),
-`?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
+`?quest=<id>[:<step>]` (the quest book jumps to that quest of shared/quests.mjs with the story before
+it told and its rewards granted - `?quest=a-round-for-the-crew` plays the Salty Kraken without the first
+hunt; it is written to `promptholm.quests`, so it lasts after the reload), `?nointro`, `?hour=21`, `?stats`, `?sky=rain`, `?rave` (the castle's
 Saturday-night rave open at any hour, Plans/DONE/rave-in-het-kasteel.md), `?tipsy=0.8` (start that
 drunk), `?edge` (walk mode starts at the world's east edge, to try the jump round it), `?dive`
 (walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and

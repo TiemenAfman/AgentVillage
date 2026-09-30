@@ -11,7 +11,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 assert.equal(globalThis.document, undefined);
 const { createQuestLog } = await import('../web/js/quest-log.js');
 const { renderLog, renderCard } = await import('../web/js/quest-panel.js');
-const { pirateSpeech, pirateReply, giverSpeech, PIRATE_IDLE } = await import('../web/js/pirate.js');
+const { pirateSpeech, pirateReply, giverSpeech, PIRATE_IDLE, CREW_NOT_YET } = await import('../web/js/pirate.js');
 const { markScale, MARK_LIFT } = await import('../web/js/quest-mark.js');
 const { questOnRadar, QUEST_RING, projectToRadar } = await import('../web/js/minimap.js');
 const { ACTIONS, keysOf, canon } = await import('../web/js/keybinds.js');
@@ -114,6 +114,26 @@ test('the pirate pitches the quest and offers Accept; later he asks and offers H
   log.onTalked('captain');
   // The captain's own quest on a step that is not a word with him: he reminds you.
   assert.match(giverSpeech(log.view(), 'captain', 'Savvy?').lines[0], /Dry work/);
+});
+
+test('while the story is still the pirate\'s the crew send you to him, not an idle line', () => {
+  const log = book();
+  const cap = giverSpeech(log.view(), 'captain', 'Savvy?');
+  assert.equal(cap.button, null);
+  assert.deepEqual(cap.lines, [CREW_NOT_YET]);
+  log.onTalked('pirate'); log.onDug('statue');
+  assert.deepEqual(giverSpeech(log.view(), 'cook', 'Fish stew.').lines, [CREW_NOT_YET]);
+});
+
+test('jumpTo puts the book at a quest with the story before it told', () => {
+  const log = book();
+  assert.equal(log.jumpTo('no-such-quest'), false);
+  assert.equal(log.jumpTo('a-round-for-the-crew'), true);
+  assert.deepEqual(log.state().done, ['first-dig', 'bring-it-home']);
+  assert.equal(giverSpeech(log.view(), 'captain', 'Savvy?').button, 'Accept');
+  log.jumpTo('the-drowned-chart', 1);
+  assert.equal(log.view().active.index, 1);
+  assert.equal(log.businessWith(), null);
 });
 
 test('with nothing to hand over he only reminds you, and has no button', () => {

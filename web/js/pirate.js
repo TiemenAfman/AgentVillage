@@ -18,6 +18,9 @@ const NOTHING_FOR_YOU = "Nothin' for ye today, matey. Ask around.";
 // The pirate's, while the story is with the crew: true below 52 settlers too, when there is no
 // Kraken yet, so it says where the pub will be rather than that it is there.
 export const PIRATE_IDLE = "The crew o' the Salty Kraken want a word with ye, matey. Their pub stands by the harbour once the lighthouse burns.";
+// The crew's, while the story is still the pirate's (The First Dig, Bring It Home): their chapters
+// only open after his, and an idle line alone read as the crew not working at all.
+export const CREW_NOT_YET = "Ye've business with the old pirate at his sea chest first, matey. Finish his hunt and come back - then we'll talk.";
 
 // `view` is quest-log.js's view(); `who` whose words these are ('pirate', or a CREW id), `idle`
 // what they say when the story has nothing for them. `{ title, lines, hint, button }`: `button`
@@ -39,6 +42,7 @@ export function giverSpeech(view, who = 'pirate', idle = null) {
   // Their own quest, on a step that is not a word with them; and the day's chest is the pirate's
   // trade, whoever else there is.
   if (a.giver === who || (a.repeat && who === 'pirate')) return { title: a.title, lines: [a.say], hint: a.goal, button: null };
+  if (who !== 'pirate' && !a.repeat && a.giver === 'pirate') return { title: null, lines: [CREW_NOT_YET], hint: a.goal, button: null };
   return { title: null, lines: [idle || NOTHING_FOR_YOU], hint: a.goal, button: null };
 }
 export const pirateSpeech = (view) => giverSpeech(view, 'pirate', PIRATE_IDLE);

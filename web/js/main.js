@@ -7391,6 +7391,12 @@ async function boot() {
     },
   });
   state.quests.sync();
+  // `?quest=a-round-for-the-crew` (or `:1` for its second step): the book jumps there, the story
+  // before it told - to play the Salty Kraken's chapters without the first hunt.
+  if (params.has('quest')) {
+    const [id, step] = params.get('quest').split(':');
+    if (!state.quests.jumpTo(id, Number(step) || 0)) console.warn(`?quest: no quest called "${id}"`);
+  }
   state.questEvents = questEvents;
   state.questPanel = createQuestPanel({ ui: state.ui, log: state.quests });
   state.pirate = createPirate(document.body, {
