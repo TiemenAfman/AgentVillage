@@ -1350,6 +1350,14 @@ pad's name (`padName`), the labels follow its family (`padLabel`: ✕ ◯ □ �
 capture holds the pad away from the rest of the page (`suspendPad`) so that pressing B does not also
 close Settings.
 
+**A room can have storeys** ([Plans/verdiepingen-binnen.md](Plans/verdiepingen-binnen.md)): `def.surfaces`
+(interior.js -> `walk.setSurfaces`) are floors `{x0,x1,z0,z1,y}` and slopes `{...,y0,y1,axis}` as rectangles,
+which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet) - a stair is drawn as treads
+and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
+an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
+floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
+`levels` (`tests/walk-surfaces.test.mjs`).
+
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
 `ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
@@ -1865,6 +1873,20 @@ x = 0, arm along +x, y = 0 at the board's foot, and `anchor.sign` on the wall fi
 module subtracts (`pirateSignFrame`) so a building names only its facade point and a yaw. Merging
 baked slots by hand, go through `mergeParts` from buildings.js, never `mergeGeometries`: only
 sheeted slots carry `aSheet`, and the bare merge returns null.
+
+**The Salty Kraken's kit is one module per object** (`scripts/krakenkit/<object>.py`: `ASSET =
+'civic_kraken_<object>'` and `build()`, on `geom.py`'s bmesh helpers rather than one Blender object per
+primitive, which at a few thousand coins was minutes of operator calls). `scripts/preview-krakenkit.py --
+<object>` builds and renders one without baking, so several can be worked on at once; `scripts/build-krakenkit.py
+[-- <objects>]` bakes the set. `geom.bake_ao` bakes Cycles ambient occlusion into the vertex colours (the
+exporter reads a colour attribute instead of the material's colour), which is where a painted reference's
+depth comes from with no textures. Two things were needed to make a second bake the same bytes: Cycles on
+**one thread** (the sample order varied), and **`canonical()`** on every primitive in `emit` - bmesh's
+`recalc_face_normals` and `convex_hull` reach the same faces by a different route each run, so faces are
+started at their least corner and sorted. The Blender preview does not show the island's plank and stone
+sheets, so how a kit piece looks is judged in the game (`/demo`, E at the Salty Kraken). The keeper's
+reference sheets live outside git in `D:\git\Martijn\AgentVillage\refs\krakenkit\` (photos of others among
+them); `Plans/piratenkroeg.md` has the prompts and the state of every piece.
 
 ## The two workbench pages
 
