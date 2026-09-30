@@ -587,6 +587,158 @@ const RAVE_LOUD = 0.62;
 const RAVE_OUT = 0.3;
 const RAVE_RANGE = 34;
 
+// --- the shanty ------------------------------------------------------------
+//
+// The Salty Kraken's (Plans/piratenkroeg.md): sixteen bars of 6/8 in A dorian at 100 dotted
+// crotchets, a verse twice and a chorus twice, played by the room - boots stamping on every
+// count with the knock of the floor under them, a tankard clinked on the table every other bar,
+// hands clapping the second count of the chorus, a bass drone under an accordion going oom-pah
+// in the verse and held with the bellows swelling in the chorus, and a fiddle on the tune.
+// Computed like the rave, a bar a step, modulo the loop so it has no seam, and made the first
+// time the Kraken is within earshot. 19.2 s: under the rave's twenty, which tests/sound.test.mjs
+// knows the rave's buffer by.
+function* shantySong(ctx) {
+  const sr = HIT_SR;
+  const { bpm, bars, beatsPerBar, chorus } = SHANTY_SONG;
+  const count = 60 / bpm, eighth = count / 3, E = beatsPerBar * 3;
+  const n = Math.round(sr * count * beatsPerBar * bars);
+  const mix = new Float32Array(n);
+  const rng = makeRng('shanty');
+  const at = (bar, e) => Math.round((bar * E + e) * eighth * sr);
+  const put = (src, i0, gain) => { for (let i = 0; i < src.length; i++) mix[(i0 + i) % n] += src[i] * gain; };
+  const env = (len, fn) => { const a = new Float32Array(Math.floor(len * sr)); for (let i = 0; i < a.length; i++) a[i] = fn(i / sr, i); return a; };
+  const att = (t, s = 0.002) => Math.min(1, t / s);
+
+  // The one-shots. A stamp is a boot on boards: a low thud that drops from 70 to 45 Hz, and
+  // the knock of the plank under it a hair later.
+  let ph = 0;
+  const stamp = env(0.09, (t) => {
+    ph += (45 + 25 * Math.exp(-t / 0.02)) / sr;
+    return Math.tanh(Math.sin(2 * Math.PI * ph) * Math.exp(-t / 0.035) * 2.2 * att(t, 0.001));
+  });
+  const knockNoise = resonate(noise(Math.floor(0.03 * sr), rng), sr, 900, 2);
+  const knock = env(0.02, (t, i) => knockNoise[i] * Math.exp(-t / 0.006));
+  const clapNoise = resonate(noise(Math.floor(0.2 * sr), rng), sr, 1200, 1.1);
+  const clap = env(0.2, (t, i) => {
+    let a = Math.exp(-t / 0.05) * 0.5;
+    for (const o of [0, 0.009, 0.019]) if (t >= o) a += Math.exp(-(t - o) / 0.005);
+    return clapNoise[i] * a;
+  });
+  // Two pewter tankards meeting: two rings a fourth and a bit apart, gone in a sixth of a second.
+  const clinkSrc = noise(Math.floor(0.06 * sr), rng);
+  const clinkA = resonate(clinkSrc, sr, 2800, 18), clinkB = resonate(clinkSrc, sr, 4100, 22);
+  const clink = env(0.06, (t, i) => (clinkA[i] + clinkB[i] * 0.7) * Math.exp(-t / 0.018));
+
+  // The harmony: the verse on A minor with a G on its third bar, the chorus C G Am Am | C G D Am.
+  const VERSE = [[55, 'Am'], [55, 'Am'], [49, 'G'], [55, 'Am']];
+  const CHORUS = [[65.41, 'C'], [49, 'G'], [55, 'Am'], [55, 'Am'], [65.41, 'C'], [49, 'G'], [73.42, 'D'], [55, 'Am']];
+  const CHORDS = { Am: [220, 261.63, 329.63], G: [196, 246.94, 293.66], C: [261.63, 329.63, 392], D: [220, 293.66, 369.99] };
+  const harmony = (bar) => (bar < chorus ? VERSE[bar % 4] : CHORUS[(bar - chorus) % 8]);
+  // The tune, six quavers a bar in semitones over A3; -2 holds the note before, -1 is a rest.
+  const MELODY = [
+    [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, -2, -1],
+    [0, 3, 5, 7, 7, 5], [3, 0, 3, 2, 2, 2], [0, 3, 5, 7, 10, 7], [5, 3, 2, 0, -2, -1],
+    [7, 10, 15, 15, 14, 12], [10, -2, 7, 5, -2, 2], [0, 3, 7, 12, -2, 10], [7, -2, -2, 7, -1, -1],
+    [7, 10, 15, 15, 14, 12], [10, -2, 14, 14, 12, 10], [9, -2, 5, 9, 12, 9], [7, -2, -2, 0, -2, -1],
+  ];
+  yield;
+
+  // The accordion's two poles (about 1.2 kHz) and its reeds, kept from bar to bar so a held
+  // chord does not restart its phase at every barline.
+  const eL = eighth * sr, stabL = Math.floor(eighth * 0.8 * sr), bellows = Math.floor(0.03 * sr);
+  const inc = new Float64Array(9), ps = new Float64Array(9);
+  for (let v = 0; v < 9; v++) ps[v] = rng.next() - 0.5;
+  let a1 = 0, a2 = 0;
+  for (let bar = 0; bar < bars; bar++) {
+    const sung = bar >= chorus;
+    const [root, name] = harmony(bar);
+    const chord = CHORDS[name];
+    for (const e of [0, 3]) {
+      put(stamp, at(bar, e), sung ? 0.8 : 0.65);
+      put(knock, at(bar, e) + Math.floor(0.004 * sr), 0.25);
+    }
+    if (sung) put(clap, at(bar, 3), 0.32);
+    if (bar % 2 === 1) put(clink, at(bar, 4), 0.2);
+    // The bass: a saw through two poles near 280 Hz on each count, longer and softer-edged in
+    // the chorus, where it carries the chord across the bar.
+    for (const e of [0, 3]) {
+      let p = 0, y1 = 0, y2 = 0;
+      const L = Math.floor(eighth * (sung ? 2.9 : 2.2) * sr), i0 = at(bar, e), inc0 = root / sr;
+      const decay = sung ? 0.35 : 0.18;
+      for (let i = 0; i < L; i++) {
+        const t = i / sr;
+        p += inc0; if (p >= 0.5) p -= 1;
+        const x = 2 * p * Math.exp(-t / decay) * att(t, 0.004);
+        y1 += 0.08 * (x - y1); y2 += 0.08 * (y1 - y2);
+        mix[(i0 + i) % n] += y2 * 0.9;
+      }
+    }
+    // The accordion: three reeds a note, a hair apart. Pah-pah on the off quavers of the verse;
+    // in the chorus held through the bar, swelling to the middle of it, with a breath of the
+    // bellows at every barline - which is also what keeps a change of chord from clicking.
+    for (let v = 0; v < 9; v++) inc[v] = chord[Math.floor(v / 3)] * (1 + (v % 3 - 1) * 0.006) / sr;
+    const b0 = at(bar, 0), len = at(bar + 1, 0) - b0;
+    for (let i = 0; i < len; i++) {
+      let s = 0;
+      for (let o = 0; o < 9; o++) { let q = ps[o] + inc[o]; if (q >= 0.5) q -= 1; ps[o] = q; s += q; }
+      a1 += 0.29 * (s - a1); a2 += 0.29 * (a1 - a2);
+      let g;
+      if (sung) {
+        g = (0.8 + 0.2 * Math.sin(Math.PI * i / len)) * Math.min(1, i / bellows, (len - i) / bellows) * 0.075;
+      } else {
+        const e = Math.floor(i / eL), w = i - Math.floor(e * eL);
+        g = (e === 1 || e === 2 || e === 4 || e === 5) && w < stabL
+          ? Math.min(1, w / (0.006 * sr), (stabL - w) / (0.01 * sr)) * Math.exp(-w / sr / 0.12) * 0.09 : 0;
+      }
+      mix[(b0 + i) % n] += a2 * g;
+    }
+    yield;
+  }
+
+  // The fiddle: the tune as notes, each from its quaver to the next thing that is not a hold,
+  // a saw with vibrato coming in after a tenth of a second, through two poles at 2.5 kHz.
+  const notes = [];
+  for (let bar = 0; bar < bars; bar++) {
+    for (let e = 0; e < E; e++) {
+      const s = MELODY[bar][e];
+      if (s === -2) { if (notes.length) notes[notes.length - 1].q++; continue; }
+      if (s >= 0) notes.push({ bar, e, s, q: 1 });
+    }
+  }
+  for (let k = 0; k < notes.length; k++) {
+    const { bar, e, s, q } = notes[k];
+    const f = 220 * Math.pow(2, s / 12), i0 = at(bar, e), L = Math.floor(q * eL * 0.96);
+    const gain = bar >= chorus ? 0.2 : 0.16;
+    let p = rng.next() - 0.5, y1 = 0, y2 = 0;
+    for (let i = 0; i < L; i++) {
+      const t = i / sr;
+      const vib = t > 0.1 ? 0.004 * Math.min(1, (t - 0.1) / 0.1) * Math.sin(2 * Math.PI * 5.5 * t) : 0;
+      p += f * (1 + vib) / sr; if (p >= 0.5) p -= 1;
+      const a = Math.min(1, t / 0.025, (L - i) / (0.04 * sr));
+      y1 += 0.51 * (2 * p - y1); y2 += 0.51 * (y1 - y2);
+      mix[(i0 + i) % n] += y2 * a * gain;
+    }
+    if (k % 16 === 15) yield;
+  }
+  yield;
+
+  const out = new Float32Array(n);
+  for (let q = 0; q < 4; q++) {
+    for (let i = Math.floor(n * q / 4); i < Math.floor(n * (q + 1) / 4); i++) out[i] = Math.tanh(mix[i] * 1.2);
+    yield;
+  }
+  const chs = [out];
+  level(chs, 0.2);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// How loud: in the Kraken it is the room, and on the quay a tune through the wall that is gone
+// a few houses on. Lowpassed to 480 outside, not the rave's 320 - a shanty lives in the middle,
+// and at 320 only the boots came through.
+const SHANTY_LOUD = 0.5;
+const SHANTY_OUT = 0.22;
+const SHANTY_RANGE = 22;
+
 // --------------------------------------------------------------- the island's ears
 
 function remembered() {
@@ -716,49 +868,62 @@ export function createSound({ camera, scene, island }) {
       })),
       gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42 })),
       tavern: mkVoice(buffers.murmur, { ref: 6, rolloff: 2.2, volume: 0 }),
-      // The rave's music, made the first Saturday night it is within earshot (makeRave).
+      // The rave's music, made the first Saturday night it is within earshot, and the Salty
+      // Kraken's shanty, made the first time you come near the harbour (makeSong).
       rave: null,
+      shanty: null,
     };
     built.tavern.audio.setLoop(true);
   }
 
-  // One source for the rave whether you are in the hall or out on the square, so the beat
-  // does not start again at the door: walking in opens the filter, walking out closes it.
-  // Not positional, like the bed - turning your head in a hall that loud changes nothing -
-  // and the loudness outside is the distance to the castle, which main.js measures.
-  function makeRave() {
+  // The two songs, and how each is heard: loud and whole inside, a muffled tune through the
+  // walls outside, nothing past `range`.
+  const SONGS = {
+    rave: { make: raveSong, loud: RAVE_LOUD, out: RAVE_OUT, range: RAVE_RANGE, cut: 320 },
+    shanty: { make: shantySong, loud: SHANTY_LOUD, out: SHANTY_OUT, range: SHANTY_RANGE, cut: 480 },
+  };
+
+  // One source for a song whether you are in the room or outside it, so the beat does not
+  // start again at the door: walking in opens the filter, walking out closes it. Not
+  // positional, like the bed - turning your head in a hall that loud changes nothing - and the
+  // loudness outside is the distance to the building, which main.js measures.
+  function makeSong(kind) {
     const a = new THREE.Audio(listener);
     a.setLoop(true);
     a.setVolume(0);
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 300;
+    filter.frequency.value = SONGS[kind].cut;
     filter.Q.value = 0.9;
     a.setFilters([filter]);
-    return { audio: a, filter, since: 0, want: 0, making: raveSong(ctx) };
+    return { audio: a, filter, since: 0, want: 0, making: SONGS[kind].make(ctx) };
   }
 
-  // A bar of the song a frame, until it is done (raveSong says why).
+  // A bar of each song being written a frame, until it is done (raveSong says why).
   function makeMore() {
-    const r = built.rave;
-    const step = r.making.next();
-    if (!step.done) return;
-    r.making = null;
-    r.audio.setBuffer(step.value);
-    built.buffers.rave = step.value;
+    for (const kind of Object.keys(SONGS)) {
+      const r = built[kind];
+      if (!r || !r.making) continue;
+      const step = r.making.next();
+      if (!step.done) continue;
+      r.making = null;
+      r.audio.setBuffer(step.value);
+      built.buffers[kind] = step.value;
+    }
   }
 
-  // `rave` is main.js's word on it: null when there is no rave to hear, else whether you are
-  // in the hall and how far the castle is when you are not.
-  function steerRave(rave) {
-    if (rave && !built.rave) built.rave = makeRave();
-    const r = built.rave;
+  // `heard` is main.js's word on a song: null when there is nothing to hear, else whether you
+  // are in its room and how far the building is when you are not.
+  function steerSong(kind, heard) {
+    const o = SONGS[kind];
+    if (heard && !built[kind]) built[kind] = makeSong(kind);
+    const r = built[kind];
     if (!r) return;
-    r.want = !rave ? 0 : rave.inside ? RAVE_LOUD
-      : RAVE_OUT * Math.pow(clamp(1 - (rave.dist || 0) / RAVE_RANGE, 0, 1), 2);
+    r.want = !heard ? 0 : heard.inside ? o.loud
+      : o.out * Math.pow(clamp(1 - (heard.dist || 0) / o.range, 0, 1), 2);
     if (r.making) return;                 // still being written; it starts when it is done
     const now = ctx.currentTime;
-    r.filter.frequency.setTargetAtTime(rave && rave.inside ? 16000 : 320, now, 0.12);
+    r.filter.frequency.setTargetAtTime(heard && heard.inside ? 16000 : o.cut, now, 0.12);
     r.audio.gain.gain.setTargetAtTime(r.want, now, r.want > 0 ? 0.25 : 0.6);
     if (r.want > 0 && !r.audio.isPlaying) {
       r.since = now;
@@ -767,17 +932,21 @@ export function createSound({ camera, scene, island }) {
       r.audio.stop();
     }
   }
+  const steerRave = (rave) => steerSong('rave', rave);
+  const steerShanty = (shanty) => steerSong('shanty', shanty);
 
-  // How far into the loop the music is, in seconds, at the moment what is being drawn now
-  // is heard - which is the output latency later than the context's clock - or null when
-  // there is nothing to keep time to. The lights in the hall run on this.
-  function raveClock() {
-    const r = built && built.rave;
+  // How far into the loop a song is, in seconds, at the moment what is being drawn now is
+  // heard - which is the output latency later than the context's clock - or null when there
+  // is nothing to keep time to. The hall's lights and the Kraken's nodding crew run on this.
+  function songClock(kind) {
+    const r = built && built[kind];
     if (!on || !r || r.making || !r.audio.isPlaying || ctx.state !== 'running') return null;
     const dur = r.audio.buffer.duration;
     const t = ctx.currentTime - r.since - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
     return ((t % dur) + dur) % dur;
   }
+  const raveClock = () => songClock('rave');
+  const shantyClock = () => songClock('shanty');
 
   // Re-trigger a one-shot. three.js refuses `play()` on a source that is already running
   // and says so in the console, which on a hammer would be several warnings a second.
@@ -859,22 +1028,25 @@ export function createSound({ camera, scene, island }) {
 
   // The tavern, and only ours. A hum from a neighbour's tavern sixty units of open water
   // away is not a sound that would carry, and looking for one would mean walking every
-  // guest island's records as well.
+  // guest island's records as well. With the Salty Kraken there are two, and the murmur is
+  // one voice: it goes to whichever of them is nearer the ears.
   let tavernAt = null;
   function findTavern(look) {
     tavernAt = null;
     if (!look.records) return;
+    let best = Infinity;
     for (const rec of look.records.values()) {
-      if (rec.spec && rec.spec.civicType === 'tavern' && rec.group && rec.group.visible) {
-        tavernAt = rec.group.position;
-        return;
-      }
+      const type = rec.spec && rec.spec.civicType;
+      if ((type !== 'tavern' && type !== 'piratetavern') || !rec.group || !rec.group.visible) continue;
+      const d = camera ? camera.position.distanceToSquared(rec.group.position) : 0;
+      if (d < best) { best = d; tavernAt = rec.group.position; }
     }
   }
 
   function repick(look) {
     findTavern(look);
     steerRave(look.rave || null);
+    steerShanty(look.shanty || null);
 
     // --- the bed ---
     const wet = coastliness(look);
@@ -988,7 +1160,7 @@ export function createSound({ camera, scene, island }) {
     if (fade < 1.6) listener.setMasterVolume(Math.min(1, fade / 1.5));
 
     if (look) maybeGull(look, PICK_S);
-    if (built.rave && built.rave.making) makeMore();
+    makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
     for (const slot of built.hammers) {
@@ -1054,6 +1226,13 @@ export function createSound({ camera, scene, island }) {
     listener.updateMatrixWorld(true);
   });
 
+  const songStats = (kind) => (built && built[kind] ? {
+    making: !!built[kind].making,
+    playing: built[kind].audio.isPlaying,
+    want: Math.round(built[kind].want * 100) / 100,
+    cut: Math.round(built[kind].filter.frequency.value),
+  } : null);
+
   const api = {
     // What the person asked for, which is what the chip draws. Not whether a note is being
     // played: the two differ for exactly as long as it takes somebody who left it on to
@@ -1064,6 +1243,9 @@ export function createSound({ camera, scene, island }) {
     toggle: () => setOn(!on),
     update,
     raveClock,
+    shantyClock,
+    // The clock of a room's song by its name (interior.js `music`), or null.
+    clockOf: (kind) => (kind === 'rave' ? raveClock() : kind === 'shanty' ? shantyClock() : null),
     // Under the sea, 0..1: the master bus goes through water (see applyMuffle).
     setUnderwater,
     // There is nothing to hear from a test and nothing to see in a screenshot, so the only
@@ -1103,12 +1285,9 @@ export function createSound({ camera, scene, island }) {
       buffers: built ? Object.keys(built.buffers).length : 0,
       // The rave is a bed rather than a placed voice, and it exists only once somebody has
       // been near the castle on a Saturday night: null until then.
-      rave: built && built.rave ? {
-        making: !!built.rave.making,
-        playing: built.rave.audio.isPlaying,
-        want: Math.round(built.rave.want * 100) / 100,
-        cut: Math.round(built.rave.filter.frequency.value),
-      } : null,
+      rave: songStats('rave'),
+      // The Salty Kraken's shanty, the same way: null until somebody has been near the harbour.
+      shanty: songStats('shanty'),
     }),
   };
   if (typeof window !== 'undefined') window.__sound = api;

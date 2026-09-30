@@ -355,6 +355,75 @@ test('the rave loops without a seam, loud and inside the rails', async () => {
   assert.ok(energy(2) > energy(RAVE_SONG.build + 1), 'the break has no kick in it');
 });
 
+// The Salty Kraken's shanty (Plans/piratenkroeg.md): the rave's machinery with a second song in
+// it - made only when the Kraken is within earshot, one source in and out, and its own clock.
+test('the shanty is made near the Kraken, muffled on the quay and whole inside, on one source', () => {
+  store = {};
+  const look = village(3);
+  const sound = made(look);
+  sound.setOn(true);
+  dispatch('pointerdown');
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().shanty, null, 'nobody near the harbour, no shanty');
+  assert.equal(sound.stats().buffers, 5, 'and nothing synthesised for it');
+  assert.equal(sound.shantyClock(), null);
+  assert.equal(sound.clockOf('shanty'), null);
+
+  look.shanty = { inside: false, dist: 8 };
+  sound.update(1 / 6);
+  assert.equal(sound.stats().shanty.making, true, 'written a bar a frame');
+  for (let i = 0; i < 90; i++) sound.update(1 / 60);
+  const out = sound.stats().shanty;
+  assert.ok(out && out.playing, 'heard from the quay');
+  assert.ok(out.want > 0 && out.want < 0.22, `through the walls it is a tune, not the room (${out.want})`);
+  assert.ok(out.cut < 600, `and only the middle comes through (${out.cut} Hz)`);
+  const music = ctx.buffers[ctx.buffers.length - 1];
+  const sources = () => ctx.started.filter((b) => b === music).length;
+  assert.equal(sources(), 1);
+
+  look.shanty = { inside: true };
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  const room = sound.stats().shanty;
+  assert.ok(room.want > out.want * 2, 'inside it is loud');
+  assert.ok(room.cut > 10000, 'and all of it');
+  assert.equal(sources(), 1, 'the same source: stepping in does not start it again');
+
+  ctx.currentTime = 5;
+  const t = sound.shantyClock();
+  assert.ok(t > 4.5 && t <= 5, `the crew nod to the music (${t})`);
+  assert.equal(sound.clockOf('shanty'), t);
+  assert.equal(sound.clockOf('nothing'), null);
+
+  look.shanty = null;
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().shanty.playing, false, 'out of earshot it stops');
+  ctx.currentTime = 0;
+});
+
+test('the shanty loops without a seam, its chorus fuller than its verse', async () => {
+  const { SHANTY_SONG } = await import('../web/js/sound.js');
+  const secs = SHANTY_SONG.bars * SHANTY_SONG.beatsPerBar * 60 / SHANTY_SONG.bpm;
+  assert.ok(secs < 20, 'under the rave\'s twenty, which the rave test knows its buffer by');
+  const music = ctx.buffers.find((b) => Math.abs(b.duration - secs) < 0.001);
+  assert.ok(music, `${SHANTY_SONG.bars} bars, exactly (${secs} s)`);
+  assert.equal(music.numberOfChannels, 1);
+  const d = music.getChannelData(0);
+  let sum = 0, peak = 0, worst = 0;
+  for (let i = 0; i < d.length; i++) {
+    assert.ok(Number.isFinite(d[i]), `sample ${i} is not a number`);
+    sum += d[i] * d[i];
+    peak = Math.max(peak, Math.abs(d[i]));
+    if (i) worst = Math.max(worst, Math.abs(d[i] - d[i - 1]));
+  }
+  const rms = Math.sqrt(sum / d.length);
+  assert.ok(peak <= 1, `it clips at ${peak}`);
+  assert.ok(rms > 0.08, `a shanty that quiet is nobody singing (rms ${rms})`);
+  assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the loop point jumps');
+  const barLen = d.length / SHANTY_SONG.bars;
+  const energy = (bar) => { let e = 0; for (let i = bar * barLen; i < (bar + 1) * barLen; i++) e += d[Math.floor(i)] ** 2; return e; };
+  assert.ok(energy(SHANTY_SONG.chorus + 2) > energy(2), 'the chorus is the whole room');
+});
+
 // --- 3. the noises themselves ---------------------------------------------
 
 test('every voice is synthesised, finite, and inside the rails', () => {

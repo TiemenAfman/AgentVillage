@@ -321,6 +321,8 @@ export function buildRave({ FLOOR, rect }) {
     spawn: { x: 0, z: HALF_D - 1.5 },
     doorway: { z: HALF_D + WALL, hx: DOOR_HALF + 0.02 },
     camera: { back: 2.4, up: 0.8, aim: 0.32 },
+    // Which of sound.js's songs this room keeps time to (main.js asks sound.clockOf it).
+    music: 'rave',
     show: (opts) => createRaveShow({ ...opts, layout }),
   };
 }

@@ -2153,6 +2153,17 @@ function raveHeard() {
   return { inside: false, dist: camera.position.distanceTo(rec.group.position) };
 }
 
+// And about the Salty Kraken's shanty (Plans/piratenkroeg.md): the room when you are in it, the
+// distance to the pub when you are near it, and null further off than 40 - so the 1.7 MB of it
+// is never made for a page that does not go down to the harbour.
+function shantyHeard() {
+  if (state.inside) return state.inside.room === 'piratetavern' ? { inside: true } : null;
+  const rec = state.byId.get('civic:piratetavern');
+  if (!rec || !rec.group.visible) return null;
+  const dist = camera.position.distanceTo(rec.group.position);
+  return dist < 40 ? { inside: false, dist } : null;
+}
+
 // The beat everybody on this screen dances to (Plans/DONE/dansen.md): ourselves (R) and every other
 // player whose pose says they are dancing, since only the bit crosses the wire. The hall's own
 // count when we are in it, which already follows the music when there is music; outside, the
@@ -6569,7 +6580,8 @@ function frame(nowMs) {
   keepRaveHours();
   if (state.inside) {
     const w = state.inside.update(dt, {
-      clock: state.sound ? state.sound.raveClock() : null,
+      // The room's own song (interior.js `music`): the rave's lights, the Kraken's nodding crew.
+      clock: state.sound && state.inside.music ? state.sound.clockOf(state.inside.music) : null,
       // Who the story waits on, for the mark over one of the Kraken's crew.
       business: state.quests ? state.quests.businessWith() : null,
     });
@@ -7928,6 +7940,7 @@ function soundSnapshot() {
     records: state.byId,
     tables: state.borrel ? state.borrel.out : 0,
     rave: raveHeard(),
+    shanty: shantyHeard(),
   };
 }
 
