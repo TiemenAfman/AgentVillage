@@ -35,30 +35,39 @@ de muur).
 
 ## De zaal
 
-Noord boven, deur zuid; half-maten 4.5 x 3.5 (tavern 3.0 x 2.5, rave 5 x 4), plafond 1.9 (tavern 1.25).
-Eén samengevoegde mesh plus een los dak (dat weg mag als de camera erdoorheen moet), een pulserend vuur, en
-de `show` voor wat beweegt.
+Noord boven, deur zuid; de hal 9 x 7 (tavern 6 x 5, rave 10 x 8), plafond 1.9 (tavern 1.25). **Geen doos**:
+de plattegrond is hoekerig - een unie van vier rechthoeken (de camera blijft in de dichtstbijzijnde, zoals bij
+de wc van de tavern), met in- en uitspringende hoeken en twee delen onder een laag plafond. Eén samengevoegde
+mesh plus een los dak (dat weg mag als de camera erdoorheen moet), een pulserend vuur, en de `show` voor wat
+beweegt.
 
-- **Noord: de bar.** Lange toog met koperen voetrail, een liggend rumvat met kraan, zes krukken. Erachter een
-  hoge achterbar met **drie boognissen** die paars en teal gloeien, vol flessen, in de middelste een schedel,
-  een scheepje-in-een-fles, een hangende olielamp. Old Meg tapt (loopt langs de toog naar wie bestelt).
-- **West: de haard.** Grote stenen schouw met vijf kaarsen op de schouwbalk, een scheepswiel erboven,
-  houtstapel, kleed, rood gordijn. One-Eyed Finn leunt ernaast tegen de muur.
-- **Oost: het kapiteinsdek.** Een verhoging van hele cellen met reling, een kaartentafel met zeekaart, kompas
-  en kandelaars, de gesneden stoel van de kapitein, een wereldbol. Geen microfoon, geen scherm.
-- **Midden: drie schraagtafels** met banken, kaarsen in flessen, kroezen, dobbelstenen, een bord. Hier zit de
-  bemanning; wie er niet zit is een vrije bank voor de speler.
+- **Noord: de bar.** Lange toog met koperen voetrail, een keg met kraan erop, vijf krukken. Erachter een hoge
+  achterbar met **drie boognissen** die paars en teal gloeien, vol flessen, in de middelste een schedel met
+  een kroon, een scheepje-in-een-fles, een open juwelenkistje, een hangende olielamp. Old Meg tapt (loopt langs
+  de toog naar wie bestelt). Om het westeind van de toog heen loop je door een stenen boog de
+  **rumkelder-nis** in: laag tongewelf, een rek met **zes kegs** in een piramide, een vat met kraan, een lantaarn,
+  en achter een ijzeren tralie een **open schatkist** met goud dat eroverheen stroomt en munten op de vloer.
+- **West: de haard.** Grote stenen schouw met vijf kaarsen op de schouwbalk, een scheepswiel erboven, een
+  jewelled cutlass en een flintlock aan de muur, houtstapel, kleed, rood gordijn. One-Eyed Finn leunt ernaast.
+- **Oost: de kapiteinserker.** Een uitgebouwde erker met het ronde roedenvenster, een verhoging van hele
+  cellen met reling, een kaartentafel met zeekaart, kompas, zilveren kandelaar en gouden goblets, de gesneden
+  stoel van de kapitein met een **goudhoop** ernaast, een wereldbol met een parelsnoer eroverheen. Geen
+  microfoon, geen scherm.
+- **Zuidwest: de snug.** Een lage hoek achter een halfmuur: het kanon op de deur gericht, **twee kegs als
+  krukken** om een kegtafeltje, een zak dubloenen, een kratje flessen.
+- **Midden: drie schraagtafels** met banken, kaarsen in flessen, kroezen, dobbelstenen, een oesterschelp met
+  parel. Hier zit de bemanning; wie er niet zit is een vrije bank voor de speler.
 - **Plafond:** zware balken, een **hangende sloep als kroonluchter** met druipkaarsen, lantaarns aan
-  kettingen.
-- **Muren en hoeken:** teerplanken met pleister erboven, twee visnetten met glazen vlotters, touwrollen, een
-  rond roedenvenster met nachtblauwe gloed, twee kleine roedenramen, een "WANTED"-bord, een kanon op de deur
-  gericht, de zeekist, tonnen en kratten (bestaande props via `meshAsset`).
+  kettingen; laag en gewelfd boven de kelder-nis, laag met balken boven de snug.
+- **Muren en hoeken:** teerplanken met pleister erboven, twee visnetten met glazen vlotters, touwrollen,
+  patrijspoorten, een roedenraam, een "WANTED"-bord, de zeekist, tonnen en kratten (bestaande props via
+  `meshAsset`). Goud glimt door de lantaarns, niet door emissive; alleen edelstenen mogen gloeien.
 
 ## De bemanning
 
 | id | Naam | Zit | Hoofdstuk |
 |---|---|---|---|
-| `captain` | Captain Ashgrave | de stoel op het dek | *A Round for the Crew* |
+| `captain` | **Captain Spack Jarrow** | aan de kaartentafel op de erker | *A Round for the Crew* |
 | `navigator` | Quill | kruk aan de kaartentafel | *The Drowned Chart* |
 | `bosun` | Bosun Tarr | tafel 1, noordbank | *Three Chests* |
 | `lookout` | Sparrow | tafel 1, zuidbank | sfeer |
@@ -69,6 +78,13 @@ de `show` voor wat beweegt.
 Namen en sfeerregels zijn data in `shared/quests.mjs` (`CREW`); looks en stoelen staan bij de kamer. Hoeden
 alleen uit `HAT_SHAPES` (`wide` leest als tricorn, `band` als bandana): die lijst en `SWATCHES` blijven
 onaangeraakt, want de hele bevolking trekt eruit.
+
+**De kapitein is een eigen model.** Martijn leverde een gerigde FBX (15 delen, 4608 driehoeken, T-pose, zeven
+textures, geen animaties). Hij wordt naar het recept van het piratenschip gebakken tot één statische mesh: in
+Blender geposeerd (armen omlaag, een hand op de kaartentafel), de textures per vlak als vertex-kleur
+gesampled, 0.55 hoog, hero-set `captain` met een eigen budget (5000). In de kroeg staat hij aan de kaartentafel
+op de erker en draait naar je toe als je hem aanspreekt; geen instanced figuur, wel dezelfde spreek-interactable.
+De bron blijft buiten de repo (gitignore) - zie Risico's.
 
 ## Fasen
 
@@ -89,6 +105,9 @@ onaangeraakt, want de hele bevolking trekt eruit.
   tavern en het blok probeert elke scan opnieuw.
 - **Duikdiepte twee** ligt in open zee (bodem −2.5, geulen tot −3.5) - vanaf de haven kan dat een eind zwemmen zijn.
 - **De shanty onder 20 s** houden: de geluidstest kent de rave-buffer aan zijn duur.
+- **De kapitein**: de FBX lijkt een game-rip van een Disney-personage; de bron en textures horen niet in een
+  publieke repo. Alleen de gebakken, geposeerde en in eigen vertex-kleuren geverfde mesh erin (nog steeds een
+  afgeleide - Martijns keuze), en de rig van 615 naamloze botten poseren is proberen en renderen.
 
 ## Later, niet nu
 
