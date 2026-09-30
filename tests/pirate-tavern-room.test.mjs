@@ -63,7 +63,7 @@ const blockedAt = (def, x, z, feet) => def.blockers.some((b) => inside(b, x, z, 
 // stands at the height of the feet. Each place is a [x, z, feet].
 function walkable(def) {
   const STEP = 0.05;
-  const seen = new Set(), out = [], queue = [[def.spawn.x, def.spawn.z, FLOOR]];
+  const seen = new Set(), out = [], queue = [[def.spawn.x, def.spawn.z, groundAt(def, def.spawn.x, def.spawn.z, Infinity)]];
   const key = (x, z, y) => `${Math.round(x / STEP)},${Math.round(z / STEP)},${Math.round(y * 50)}`;
   seen.add(key(...queue[0]));
   while (queue.length) {

@@ -9,18 +9,23 @@ every prop's blocker: a kind drawn bigger here needs its FOOT there grown with i
 What nobody can bump into - coins, candles on a table, bottles on a shelf, gold lying flat, all that
 hangs from the ceiling or the walls - is placed here directly and is in neither list.
 
-The fixed places the game sits people at are the layout's, not this file's: the tables and benches
-(TABLES), the snug's keg and its two keg seats, the chart table, the captain's chair, the sloop. The
-crew's places and the two figures (CREW_PLACES, FIGURES) are left free; KEEP_CLEAR holds nothing
-taller than a coin. Whatever hangs from the ceiling goes in the lid (geom.lid); whatever is fixed to
-the south or east walls in geom.group('near'), which the cutaway preview leaves out.
+The fixed places the game sits people at are the layout's, not this file's: the six tables in the pit
+and their benches (TABLES), the keg table by the cannon and its two keg seats, the chart table, the
+captain's chair, the two sloops (SLOOPS). The crew's places and the two figures (CREW_PLACES, FIGURES)
+are left free; KEEP_CLEAR holds nothing taller than a coin. Whatever hangs from the rock goes in the
+lid (geom.lid); whatever is fixed to the south or east walls in geom.group('near'), which the cutaway
+preview leaves out.
 
-The keeper's brief: rough, cluttered, busy, crowded with crates, barrels, chests and gold, mostly
-wood, ropes, skulls, lots of height difference (refs/krakenkit/renders/concept-grotkroeg-2-richtpunt.jpg).
-Triangles do not count indoors, so a barrel is its staves and a crate its planks and battens. The
-pieces that define the look are placeholders until the keeper has drawn them (`ph_*`, one function
-each, see "placeholders" below).
+The keeper's brief for the big hall (18 x 14 under a vault of 5, a cascade of terraces round an open
+pit; refs/krakenkit/renders/concept-grotkroeg-2-richtpunt.jpg): "a nice spacious view that does not
+need many decorations on every level". So a few groups placed with intent - barrels and crates in the
+corners and against the walls and rails, one heap of gold to a terrace at most, the hold packed with
+cargo, the cellar's keg rack and the treasure behind its bars - and the atrium's floor and every way
+between the stairs bare. Triangles do not count indoors, so a barrel is its staves and a crate its
+planks and battens. The pieces that define the look are placeholders until the keeper has drawn them
+(`ph_*`, one function each, see "placeholders" below).
 """
+import hatch
 import math
 from mathutils import Matrix, Vector
 import geom
@@ -498,16 +503,11 @@ TABLE_H, BENCH_Y = .2, .135
 def tables(L):
     """The trestle tables (1.5 x 0.5, top at 0.2) with a bench each side 0.32 out (seat at 0.135):
     the crew sit on those, the player on what is left, and a drink goes where a place is, so the
-    table's own clutter keeps to its middle strip and its ends."""
-    F = L['F']
+    table's own clutter keeps to its middle strip and its ends. They stand in the pit."""
+    F = L['LEVEL']['pit']
     for n, t in enumerate(L['TABLES']):
         tx, tz, seed = t['x'], t['z'], 71 + n
-        span('table top', tx - .75, tx + .75, F + TABLE_H, F + TABLE_H + .028, tz - .25, tz + .25, TABLEW, bevel=.008)
-        for k in (-1, 0, 1):
-            span('table seam', tx - .75, tx + .75, F + TABLE_H + .027, F + TABLE_H + .0285, tz + k * .125 - .003, tz + k * .125 + .003, DARK)
-        for sx in (-1, 1):
-            for sz in (-1, 1):
-                box('table nail', (tx + sx * .6, F + TABLE_H + .0285, tz + sz * .19), (.008, .002, .008), IRON)
+        hatch.hatch_top(tx, tz, F + TABLE_H, 1.5, .5, seed=seed)   # scripts/krakenkit/hatch.py
         for sx in (-1, 1):
             lx = tx + sx * .6
             span('trestle foot', lx - .03, lx + .03, F, F + .04, tz - .21, tz + .21, DARK, bevel=.008)
@@ -589,10 +589,10 @@ def treasure_map(m, dagger=True):
 
 
 def snug(L):
-    """The snug's keg table (a keg 0.13 round, 0.22 tall) and the two small kegs sat on (0.09, 0.14)
-    with a sack for a cushion: the game sits you at 0.16."""
-    T = L['LEVEL']['terrace']
-    st = L['SNUG_TABLE']
+    """The keg table by the cannon (a keg 0.13 round, 0.22 tall) and the two small kegs sat on (0.09,
+    0.14) with a sack for a cushion: the game sits you at 0.16. On the ground."""
+    T = L['LEVEL']['ground']
+    st = L['KEG_TABLE']
     with frame(M((st['x'], T, st['z']), .3)):
         cask(.13, .22, 901, staves=16, hoops=(.08, .3, .7, .92), bung=False)
         disc('keg table top', (0, .22, 0), .135, .01, OAK, sides=14)
@@ -610,8 +610,8 @@ def hearth(L):
     """What the hearth holds (the stone is the shell's, the fire the game's): andirons and logs in the
     firebox, fire irons, a ship's wheel on the chimney breast with crossed cutlasses over it, candles
     and gold on the mantel, a rug with a gold border before it. The shell's numbers: the jambs' face
-    at HEARTH.x + 0.35, the opening 0.26 each side of HEARTH.z, the mantel's top at F + 0.68 and 0.1
-    proud of the jambs, the breast 0.38 out of the rock at the mantel and 0.32 at the wheel."""
+    at HEARTH.x + 0.35, the opening 0.26 each side of HEARTH.z, the mantel's top at F + 1.05 and 0.1
+    proud of the jambs, the breast 0.38 out of the wall at the mantel and 0.32 at the wheel."""
     F = L['F']
     hx, hz = L['HEARTH']['x'], L['HEARTH']['z']
     W = L['HALL']['x0']
@@ -638,9 +638,9 @@ def hearth(L):
     rod('tongs', (front + .04, F + .01, fz), (front + .065, F + .36, fz), .004, IRON, sides=4)
     # The mantel's things: candlesticks, candle clusters with their wax over the edge, a goblet, a rum
     # bottle, a casket of jewels, a skull.
-    my = F + .68
+    my = F + 1.05
     mx = front - .07
-    lip = front + .08
+    lip = front + .1
     for dz, seed in ((-.64, 1), (.64, 2)):
         candlestick((mx - .05, my, hz + dz), h=.06, seed=seed)
     candles((mx, my, hz - .44), 4, 11, spread=.045)
@@ -663,8 +663,8 @@ def hearth(L):
     for k in range(5):
         coin((mx + .03, my + .002 + k * .0042, hz - .34), turn=k)
     # The wheel on the chimney breast, crossed cutlasses over it.
-    ph_wheel((W + .36, F + 1.22, hz), PI / 2)
-    crossed_cutlasses((W + .34, F + 1.66, hz), PI / 2)
+    ph_wheel((W + .36, F + 1.55, hz), PI / 2)
+    crossed_cutlasses((W + .34, F + 2.0, hz), PI / 2)
     # The rug before the hearthstone, and a scatter of coins someone dropped by the fire.
     x0, x1, z0, z1 = front + .3, front + 1.12, hz - .55, hz + .55
     span('rug', x0, x1, F, F + .004, z0, z1, RUG)
@@ -882,9 +882,10 @@ BLACK_HAT = material('plain:hat', 0x1e1a1c)
 # ---- placeholders ------------------------------------------------------------------------------------
 # The pieces that make the room's look - the sloop, the open chests, the cannon, the jolly boat, the
 # hammocks, the captain's chair, the chart table, the globe, the telescope, the anchor, the Jolly
-# Roger, the wheel - are the keeper's to draw: each is a plain stand-in of the right size in the right
-# place, one function apiece, so a finished model replaces one function and nothing else. What lies
-# round them (gold, candles, coins, the shot, the chart's candlestick) is the dressing's own and stays.
+# Roger, the wheel, the wheel chandelier, the split rudder over the bar, the hatch-cover table tops -
+# are the keeper's to draw: each is a plain stand-in of the right size in the right place, one function
+# apiece, so a finished model replaces one function and nothing else. What lies round them (gold,
+# candles, coins, the shot, the chart's candlestick) is the dressing's own and stays.
 def ph_chest_open(w=.42, d=.26, h=.2, seed=0):
     """An open treasure chest: w x d x h, its lid stood open at the back, gold heaped over the rim
     and run out onto the floor in front (+z)."""
@@ -930,8 +931,8 @@ def ph_telescope():
 
 def ph_chart_table(L):
     """The chart table at CHART: a top 0.64 x 0.42 at L1 + 0.2 on four legs, a chart on it, a compass,
-    an hourglass; the candlestick and the goblets are the dressing's."""
-    L1 = L['LEVEL']['first']
+    an hourglass; the candlestick and the goblets are the dressing's. On the captain's deck."""
+    L1 = L['LEVEL']['captain']
     cx, cz = L['CHART']['x'], L['CHART']['z']
     span('chart table', cx - .32, cx + .32, L1 + .176, L1 + .2, cz - .21, cz + .21, OAK)
     for dx, dz in ((-.28, -.17), (.28, -.17), (-.28, .17), (.28, .17)):
@@ -950,7 +951,7 @@ def ph_chart_table(L):
 def ph_captain_chair(L):
     """The captain's chair at CHAIR: a seat 0.24 x 0.22 at 0.17 on four legs, a back 0.24 wide to
     0.66, facing +z (the chart table)."""
-    L1 = L['LEVEL']['first']
+    L1 = L['LEVEL']['captain']
     ch = L['CHAIR']
     with frame(M((ch['x'], L1, ch['z']))):
         span('chair seat', -.12, .12, .14, .17, -.11, .11, CARVED)
@@ -961,25 +962,13 @@ def ph_captain_chair(L):
         span('chair back', -.12, .12, .17, .66, -.13, -.1, VELVET)
 
 
-def ph_sloop(L):
-    """The chandelier: a boat 1.2 long and 0.4 across, 0.15 deep, hung from the beams on four chains
-    to a ring and one to the ceiling, candles along it. SLOOP is where its flames are (about 0.09
-    over its gunwale)."""
-    S = L['SLOOP']
-    TOP = L['TOP']
-    at = (S['x'], S['y'] - .09, S['z'])
+def sloop_chain(L, S, to=None):
+    """The candle boat itself is the kit's (scripts/krakenkit/sloop.py, placed by pirate-tavern.js at
+    KIT.sloop); the room draws only the long chain from the top of its own short one up to the roof.
+    S (one of SLOOPS) is where its flames are."""
+    top = S['y'] - L['KIT']['sloop']['flame'] + L['KIT']['sloop']['ringTop']
     with lid():
-        with frame(M(at)):
-            hull('sloop hull', [(-.6, 0, -.17), (-.6, 0, .17), (.6, 0, 0), (-.58, -.12, -.1), (-.58, -.12, .1), (.4, -.1, -.06),
-                                (.4, -.1, .06), (0, -.15, 0), (0, 0, -.2), (0, 0, .2), (.35, 0, -.15), (.35, 0, .15)], WOOD)
-            span('sloop board', -.5, .35, 0, .012, -.07, .07, OAK)
-            g = rng(300)
-            for i, x in enumerate([-.45 + k * .1 for k in range(9)]):
-                candle((x, .012, (-.04 if i % 2 else .04)), h=g.uniform(.04, .07), r=.009, drips=2, seed=300 + i)
-            for cx, cz in ((-.45, -.12), (.35, -.1), (-.45, .12), (.35, .1)):
-                chain((cx, .01, cz), (0, .42, 0))
-            torus('sloop ring', (0, .43, 0), .024, .006, IRON, seg=8, sides=4)
-        chain((at[0], at[1] + .45, at[2]), (at[0], TOP, at[2]))
+        chain((S['x'], top, S['z']), (S['x'], L['TOP'] if to is None else to, S['z']))
 
 
 def ph_rowboat(L):
@@ -1048,12 +1037,116 @@ def ph_jolly_roger(m, w=.66, h=.44, seed=0):
             box('jolly roger bones', (0, -h * .16, .006), (w * .45, .02, .006), BONE, roll=a)
 
 
-# ---- the rooms --------------------------------------------------------------------------------------
+def ph_hatch_top(tx, tz, y, w=1.5, d=.5):
+    """A table top that is a ship's hatch cover: a coaming of four boards round a grating of battens
+    half-lapped both ways, their tops flush at y + 0.028 (the table's top, where its clutter stands),
+    over a dark board so the holes read as depth and not as the floor. w x d, on the trestles at y."""
+    top = y + .028
+    c = .035
+    span('hatch board', tx - w / 2 + c, tx + w / 2 - c, y, y + .008, tz - d / 2 + c, tz + d / 2 - c, DARK)
+    span('hatch coaming', tx - w / 2, tx + w / 2, y, top, tz - d / 2, tz - d / 2 + c, TABLEW, bevel=.006)
+    span('hatch coaming', tx - w / 2, tx + w / 2, y, top, tz + d / 2 - c, tz + d / 2, TABLEW, bevel=.006)
+    span('hatch coaming', tx - w / 2, tx - w / 2 + c, y, top, tz - d / 2 + c, tz + d / 2 - c, TABLEW, bevel=.006)
+    span('hatch coaming', tx + w / 2 - c, tx + w / 2, y, top, tz - d / 2 + c, tz + d / 2 - c, TABLEW, bevel=.006)
+    x0, x1, z0, z1 = tx - w / 2 + c, tx + w / 2 - c, tz - d / 2 + c, tz + d / 2 - c
+    n = 6
+    for i in range(1, n):
+        z = z0 + (z1 - z0) * i / n
+        span('hatch batten', x0, x1, top - .012, top, z - .012, z + .012, OAK)
+    m = 20
+    for i in range(1, m):
+        x = x0 + (x1 - x0) * i / m
+        span('hatch batten', x - .012, x + .012, y + .008, top - .004, z0, z1, OAK)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            box('hatch nail', (tx + sx * (w / 2 - .018), top + .001, tz + sz * (d / 2 - .018)), (.01, .002, .01), IRON)
+
+
+def ph_wheel_chandelier(at, R=.45, to=None, seed=400):
+    """A ship's wheel hung flat as a chandelier: a rim R round with its spokes out past it to the
+    handles, a hub, candles standing round the rim (their flames about 0.09 over `at`), four chains
+    to a ring over the hub and one on up to `to`."""
+    x, y, z = at
+    g = rng(seed)
+    with frame(M(at)):
+        torus('chandelier rim', (0, 0, 0), R, .028, WOOD, seg=20, sides=4)
+        torus('chandelier rim band', (0, .012, 0), R, .012, BRASS, seg=20, sides=3)
+        disc('chandelier hub', (0, -.03, 0), .07, .06, WOOD, sides=8)
+        disc('chandelier boss', (0, .03, 0), .04, .012, BRASS, sides=8)
+        for k in range(8):
+            a = TAU * k / 8
+            ca, sa = math.cos(a), math.sin(a)
+            rod('chandelier spoke', (.06 * ca, 0, .06 * sa), ((R + .13) * ca, 0, (R + .13) * sa), .014, WOOD, sides=5)
+            ball('chandelier handle', ((R + .15) * ca, 0, (R + .15) * sa), (.02, .016, .02), CARVED, seg=6, rings=4)
+        for k in range(12):
+            a = TAU * (k + .5) / 12
+            ca, sa = math.cos(a), math.sin(a)
+            candle((R * ca, .028, R * sa), h=g.uniform(.05, .07), r=.012, drips=3, seed=seed + k)
+            for j in range(2):
+                dz = g.uniform(-.01, .01)
+                rod('chandelier wax', ((R + .028) * ca, .02, (R + .028) * sa + dz),
+                    ((R + .03) * ca, .02 - g.uniform(.03, .09), (R + .03) * sa + dz), .006, WAX, top=.002, sides=4)
+        for k in range(4):
+            a = TAU * k / 4 + PI / 4
+            chain(((R - .02) * math.cos(a), .03, (R - .02) * math.sin(a)), (0, .5, 0))
+        torus('chandelier ring', (0, .51, 0), .03, .007, IRON, seg=8, sides=4)
+    if to is not None:
+        chain((x, y + .52, z), (x, to, z))
+
+
+def ph_rudder_sign(at, to=None):
+    """A ship's rudder, split down its length and hung on two chains as the house's sign, facing +z:
+    its stock at the top (`at` is the stock's cap), the blade 0.9 tall and 0.34 wide, the aft half
+    split off and hanging askew, three iron pintle straps holding the halves, a name board nailed
+    across. The chains go up to `to` (a height in the room)."""
+    x, y, z = at
+    with frame(M(at)):
+        rod('rudder stock', (0, -.3, 0), (0, .02, 0), .035, DARK, sides=8)
+        disc('rudder stock cap', (0, .02, 0), .045, .02, IRON, sides=8)
+        hull('rudder blade', [(-.16, -.28, -.025), (-.16, -.28, .025), (0, -.28, -.025), (0, -.28, .025),
+                              (-.14, -1.2, -.025), (-.14, -1.2, .025), (-.01, -1.18, -.025), (-.01, -1.18, .025)], WOOD)
+        with frame(M((.012, 0, 0), roll=-.05)):
+            hull('rudder blade', [(0, -.28, -.024), (0, -.28, .024), (.18, -.3, -.024), (.18, -.3, .024),
+                                  (.02, -1.16, -.024), (.02, -1.16, .024), (.12, -1.14, -.024), (.12, -1.14, .024)], OAK)
+        for yy in (-.36, -.7, -1.04):
+            span('rudder strap', -.19, .19, yy - .018, yy + .018, -.031, .031, IRON)
+            for xx in (-.15, .15):
+                ball('rudder rivet', (xx, yy, .034), .006, IRON, seg=4, rings=3)
+        span('rudder board', -.3, .3, -.62, -.47, .03, .05, PAINT, bevel=.006)
+        for xx in (-.26, .26):
+            ball('rudder nail', (xx, -.545, .054), .007, IRON, seg=4, rings=3)
+        for i in range(7):
+            box('rudder letter', (-.2 + i * .067, -.545, .052), (.03, .07, .004), GOLD, roll=(.3 if i % 2 else -.2))
+        for xx in (-.1, .1):
+            torus('rudder eye', (xx, .06, 0), .025, .006, IRON, seg=8, sides=3, tilt=PI / 2)
+    if to is not None:
+        for xx in (-.1, .1):
+            chain((x + xx, y + .085, z), (x + xx * 3, to, z))
+
+# ---- the hall ---------------------------------------------------------------------------------------
+def slung_net(x0, x1, z0, z1, top, sag, seed, floats, to):
+    """A net slung under the rock: ceiling_net at `top`, and its four lashings carried on up to `to`
+    (the vault's crown; where the rock comes lower they run into it)."""
+    ceiling_net(x0, x1, z0, z1, top, sag, seed, floats=floats)
+    for x in (x0, x1):
+        for z in (z0, z1):
+            rod('net lashing', (x, top, z), (x, to, z), .005, ROPE, sides=3)
+
+
+def slung_sail(x0, x1, z0, z1, top, drop, seed, to):
+    """A torn sail on its spar (sail), the spar hung from the rock by a rope at each end."""
+    sail(x0, x1, z0, z1, top, drop, seed)
+    for x in (x0, x1):
+        rod('sail sling', (x, top - .02, z0), (x, to, z0), .007, ROPE, sides=4)
+
+
 def build(L):
-    F, T = L['F'], L['LEVEL']['terrace']
-    L1, L2, TOP = L['LEVEL']['first'], L['LEVEL']['second'], L['TOP']
+    LV = L['LEVEL']
+    G, P, B, C, U = LV['ground'], LV['pit'], LV['bar'], LV['captain'], LV['top']
+    TOP = L['TOP']
     H = L['HALL']
     W, E, N, S = H['x0'], H['x1'], H['z0'], H['z1']
+    UNDER = .16                     # a deck's underside below its boards (shell.py: boards, sub-floor, joist)
 
     # Everything standing on a floor. A kind with nothing to draw it or no footprint to block with
     # would be an invisible wall or a thing walked through: refuse it here, before anybody does.
@@ -1067,107 +1160,100 @@ def build(L):
         with frame(M((p['x'], p['y'], p['z']), p.get('ry', 0), scale=p.get('s', 1))):
             KINDS[p['kind']](g, seed)
 
+    # The roof: pitched, its ridge north-south over x = 0 at TOP and its eaves on the west and east
+    # walls. What hangs from it hangs from under its rafters, a hand below the pitch.
+    EAVES = L['EAVES']
+
+    def roof(x):
+        return TOP - (TOP - EAVES) * min(abs(x), E) / E - .12
+
     tables(L)
     snug(L)
     ph_chart_table(L)
     ph_captain_chair(L)
-    ph_sloop(L)
+    for i, sl in enumerate(L['SLOOPS']):
+        sloop_chain(L, sl, to=roof(sl['x']))
     ph_rowboat(L)
     hearth(L)
 
     # ---- gold lying about, by the chests and the heaps it ran out of -------------------------
-    for (x, z, y, r, seed) in ((1.95, -2.75, T, .18, 2001), (1.4, -2.95, T, .1, 2002), (-2.1, -4.3, F, .2, 2003),
-                               (-1.75, -4.1, F, .1, 2004), (-4.0, 2.55, T, .12, 2005), (2.05, 3.02, F, .13, 2006),
-                               (-4.2, -3.05, L2, .1, 2007), (5.1, -2.5, L1, .16, 2008), (4.7, -2.4, L2, .15, 2009),
-                               (3.95, .3, L1, .14, 2010), (5.4, -1.8, L1, .1, 2011), (-2.4, 2.75, F, .08, 2012)):
+    for (x, z, y, r, seed) in ((-3.0, -2.3, P, .16, 2001), (-2.75, -2.6, P, .08, 2002),      # the pit's chest
+                               (-3.85, -6.0, B, .2, 2003), (-3.25, -6.2, B, .1, 2004),       # the bar's hoard
+                               (8.15, -6.0, C, .2, 2005), (8.3, -5.05, C, .1, 2006),         # the captain's
+                               (-6.4, -8.35, G, .15, 2007)):                                 # behind the bars
         gold_floor(x, z, r, seed, y=y)
-    scatter(-0.2, 2.2, F, 0, .5, 12, 2020)                           # dropped by the door on the way out
-    scatter(2.2, -1.6, T, 0, .3, 8, 2021)                             # at the foot of the east stair
-    scatter(4.2, -1.8, L1, 0, .35, 10, 2022)                          # before the captain
-    scatter(-4.2, -2.6, L1, 0, .2, 6, 2023)
+    scatter(0.1, 3.8, P, 0, .45, 10, 2020)                           # dropped in the aisle on the way out
+    scatter(-4.9, -1.6, P, 0, .25, 6, 2021)                          # at the foot of the west stair
+    scatter(7.4, -3.9, C, 0, .3, 8, 2022)                            # before the captain
 
-    # ---- the hold's hammock, between the two posts on its west side ------------------------------
-    ph_hammock((3.1, F + .6, -3.36), (3.1, F + .56, -1.52), .26, seed=1)
-    for z in (-3.36, -1.52):
-        rod('hook', (3.06, F + .6 - (0 if z < -2 else .04), z), (3.1, F + .6 - (0 if z < -2 else .04), z), .006, IRON, sides=4)
+    # ---- hammocks: in the hold, and under the west gallery --------------------------------------
+    # Slung higher than a head (their lowest point 0.65 over the ground), from hooks on ropes down
+    # from the deck overhead.
+    for (x, za, zb, y, seed) in ((6.25, -3.0, -1.9, G + .95, 1), (-8.55, -5.75, -4.35, G + 1.0, 2)):
+        ph_hammock((x, y, za), (x, y - .03, zb), .24, seed=seed)
+        for z, dy in ((za, 0), (zb, -.03)):
+            rod('hammock sling', (x, y + dy, z), (x, C - UNDER, z), .005, ROPE, sides=3)
 
-    # A lantern hung from the cabin's joists over the hold's casks, and one from the cellar's vault.
-    lantern((3.8, F + .6, -1.75), hang_to=L1 - .06, s=1.1)
+    # ---- lanterns --------------------------------------------------------------------------------
+    # Under the decks: in the hold, under the west gallery over the way to the cellar, and under the
+    # east upper gallery over the captain.
+    lantern((7.4, G + 1.45, -3.6), hang_to=C - UNDER, s=1.3)
+    lantern((-7.4, G + 1.55, -3.2), hang_to=C - UNDER, s=1.3)
+    lantern((7.9, C + .78, -4.75), hang_to=U - UNDER, s=1.3)
     with lid():
-        lantern((-3.3, F + .82, -4.4), hang_to=F + L['CELLAR']['ceiling'] - .02, s=1.2)
-
-    # ---- the crew loft: two hammocks from stanchions, a peg rail with coats, a lantern ---------------
-    for z in (-3.12, -1.62):
-        rod('stanchion', (-3.75, L2, z), (-3.75, TOP, z), .025, DARK, sides=6)
-        rod('hammock beam', (-3.75, L2 + .64, z), (-3.22, L2 + .64, z), .016, DARK, sides=5)
-    ph_hammock((-3.75, L2 + .6, -3.1), (-3.75, L2 + .56, -1.64), .3, seed=2)
-    ph_hammock((-3.42, L2 + .62, -3.1), (-3.42, L2 + .6, -1.64), .26, seed=3)
-    rod('peg rail', (-4.4, L2 + .62, N + .08), (-3.3, L2 + .62, N + .08), .014, DARK, sides=5)
-    for i, x in enumerate((-3.95, -3.7, -3.45)):
-        rod('peg', (x, L2 + .62, N + .08), (x, L2 + .62, N + .14), .008, WOOD, sides=4)
-    coat((-3.95, L2 + .62, N + .1), .3, .16, COATS[0], 5)
-    coat((-3.7, L2 + .62, N + .1), .28, .14, COATS[1], 6)
-    hat((-3.45, L2 + .6, N + .14), .3)
-    tube('sash', [(-3.45, L2 + .6, N + .12), (-3.43, L2 + .45, N + .13), (-3.45, L2 + .32, N + .12)], .012, VELVET, sides=4)
-    rod('lantern hook', (-3.75, L2 + .58, -1.62), (-3.75, L2 + .58, -1.54), .005, IRON, sides=3)
-    lantern((-3.75, L2 + .44, -1.54), hang_to=L2 + .58, s=1.1)
-
-    # ---- the balcony: a candle on its rail post corner -----------------------------------------------
-    candles((-3.88, L1 + .005, -3.42), 2, 2101, spread=.02)
-    lantern((4.05, L2 + .29 + .058, -3.0), s=1.2)                      # on the lookout's barrel
-    snug_rail = T + .5 + .045                                          # shell.py's half wall and its rail
-    for x, n, seed in ((-4.25, 3, 2103), (-3.55, 2, 2104), (-2.8, 4, 2105)):
-        candles((x, snug_rail, L['SNUG']['z0']), n, seed, spread=.03)
-        g = rng(seed)
-        for i in range(4):
-            dz = g.choice((-1, 1)) * .07
-            rod('rail wax', (x + g.uniform(-.04, .04), snug_rail, L['SNUG']['z0'] + dz),
-                (x + g.uniform(-.04, .04), snug_rail - g.uniform(.03, .1), L['SNUG']['z0'] + dz * 1.05), .006, WAX, top=.002, sides=4)
-    candles((5.72, L2, -1.35), 3, 2102, spread=.04)
+        # From the roof on long chains: over the bar terrace, the south strip, the keg table and both
+        # upper galleries. And the one in the cellar's vault.
+        for (x, y, z) in ((-3.6, B + 1.3, -4.6), (3.4, B + 1.3, -4.6), (-3.4, G + 1.9, 6.2), (2.8, G + 1.9, 6.2),
+                          (-6.8, G + 1.45, 6.0), (-7.9, U + .75, -4.6), (7.9, U + .75, -0.4)):
+            lantern((x, y, z), hang_to=roof(x), s=1.3)
+        lantern((-8.0, G + .95, -8.0), hang_to=G + L['CELLAR']['ceiling'] - .02, s=1.2)
+        # The ship's wheel over the middle of the pit, before the mast, between the two sloops: its
+        # flames 2.7 over the pit, clear of the aisle's heads and of the crow's nest.
+        # The wheel and the rudder themselves are the kit's (wheel.py, rudder.py, placed by
+        # pirate-tavern.js at KIT.wheel and KIT.rudder); the room draws their long chains to the roof.
+        import wheel as kit_wheel, rudder as kit_rudder
+        w, r = L['KIT']['wheel'], L['KIT']['rudder']
+        chain((w['x'], w['y'] + kit_wheel.RING_TOP, w['z']), (w['x'], roof(w['x']), w['z']))
+        for bx in kit_rudder.BRACKETS:
+            chain((r['x'] + bx, r['y'] + kit_rudder.CHAIN_TOP, r['z']), (r['x'] + bx, roof(r['x'] + bx), r['z']))
 
     # ---- shelves, with their bottles, candles and skulls ----------------------------------------------
-    shelf(1.2, 2.95, T + .72, N + .06, 1, 'x', 31)                    # over the treasure beside the stern
-    shelf(2.25, 3.3, T + .62, W + .05, 1, 'z', 33)                    # in the snug, on the rock
-    shelf(-4.8, -4.0, F + .62, W + .05, 1, 'z', 34)                   # in the cellar, over the rack
-    shelf(3.1, 3.85, L1 + .55, N + .05, 1, 'x', 35)                   # in the cabin, over the navigator
+    shelf(-5.3, -3.8, B + .75, N + .06, 1, 'x', 31)                  # on the north wall over the bar's hoard
+    shelf(-8.85, -7.6, G + .7, W + .05, 1, 'z', 34)                  # in the cellar, over the keg rack
+    shelf(5.3, 6.5, G + .7, W + .05, 1, 'z', 33)                     # on the west wall by the cannon
 
     # ---- the walls ------------------------------------------------------------------------------------
-    # The north-east corner: the Jolly Roger and crossed cutlasses on the rock over the hoard.
-    ph_jolly_roger(M((2.1, T + 1.25, N + .12)), seed=1)
-    crossed_cutlasses((1.55, T + 1.05, N + .1), 0)
-    # The lookout: a second one on the oriel's north wall, over its chest.
-    ph_jolly_roger(M((5.15, L2 + .5, L['ORIEL']['z0'] + .012)), w=.5, h=.34, seed=2)
-    # The anchor on the west rock by the woodpile, a pair of cutlasses in the cabin.
-    ph_anchor(M((W + .06, F + .3, 1.45), PI / 2, scale=.9))
-    crossed_cutlasses((3.45, L1 + .95, N + .06), 0)
+    # A Jolly Roger hung over the outside of the east upper gallery's rail, to the hall, and the walls
+    # of the south and east.
+    ph_jolly_roger(M((7.35, U + .22, -4.5), -PI / 2), w=.5, h=.36, seed=1)
     with group('near'):
-        wanted_board(M((1.48, F + .62, S - .012), PI))
-        wall_map(M((-3.5, T + .62, S - .012), PI))
-        # A net with floats on the south wall above the crates east of the door.
-        wall_net(lambda u, v: (1.0 + u * .95, F + 1.95 - v * .8 - .08 * math.sin(PI * u) * (1 - v * .5),
+        wanted_board(M((1.4, G + .62, S - .012), PI))
+        ph_jolly_roger(M((-3.3, G + 1.45, S - .012), PI), w=.5, h=.34, seed=3)
+        crossed_cutlasses((-3.3, G + 1.02, S - .02), PI)
+        ph_anchor(M((-6.3, G + .3, S - .03), PI, scale=.9))
+        # A net with floats on the south wall over the crates east of the door.
+        wall_net(lambda u, v: (3.15 + u * .95, G + 1.95 - v * .8 - .08 * math.sin(PI * u) * (1 - v * .5),
                                S - .02 - .02 * math.sin(PI * u) * math.sin(PI * v)), 51)
-        crossed_cutlasses((-2.3, F + 1.05, S - .02), PI)
-        ph_jolly_roger(M((-.95, F + 1.55, S - .012), PI), w=.5, h=.34, seed=3)
-        # In the cabin, on the east wall: a chart and a pistol pair.
-        wall_map(M((E - .012, L1 + .7, 1.0), -PI / 2))
+        # The captain's chart on the east wall over his table.
+        wall_map(M((E - .012, C + .7, L['CHART']['z']), -PI / 2))
 
-    # ---- under the ceiling: sails, nets, ropes and lanterns ------------------------------------------
+    # ---- under the roof: torn sails on the trusses, nets, ropes, a hook -------------------------------
+    # Never lower than 0.6 over what is under them; nothing over the bridges or the upper galleries,
+    # where the roof is too low for it. The sails are bent to spars lashed under the trusses' tie
+    # beams (kraken-layout.js TRUSSES, at EAVES): the truss over the south rows of tables and the one
+    # over the bar terrace in front of the broken bow, whichever of them are nearest 3.6 and -4.4.
     with lid():
-        sail(-3.3, -1.4, -.9, .3, TOP, .42, 61)
-        sail(.35, 1.75, .15, 1.1, TOP, .36, 62, mat=SAIL)
-        ceiling_net(-1.3, .3, 2.05, 3.2, TOP, .3, 71, floats=5)
-        ceiling_net(3.2, 4.4, 1.75, 3.3, TOP, .35, 72, floats=4)
-        ceiling_net(-2.8, -1.4, -2.9, -2.1, TOP, .2, 73, floats=3)
-        for (a, b, drop) in (((-1.9, TOP, -.5), (-1.1, TOP, -.3), .45), ((.6, TOP, 2.7), (1.4, TOP, 2.9), .5),
-                             ((-3.4, TOP, 1.4), (-2.9, TOP, 1.9), .4), ((1.2, TOP, -1.0), (1.7, TOP, -.7), .35),
-                             ((3.3, TOP, .2), (3.9, TOP, .5), .4), ((-.2, TOP, -2.3), (.5, TOP, -2.0), .3),
-                             ((-4.3, TOP, .9), (-3.9, TOP, 1.5), .5)):
-            rope_loop(a, b, drop)
-        for (x, z, y) in ((-2.55, 1.0, F + 1.35), (1.55, 2.0, F + 1.35), (1.95, -2.6, T + 1.2),
-                          (4.05, .8, L1 + .95), (-3.5, -.4, F + 1.4), (.2, -.2, F + 1.45)):
-            lantern((x, y, z), hang_to=TOP, s=1.3)
-        lantern((-3.55, T + .92, 2.72), hang_to=T + 1.2, s=1.2)          # under the snug's own low ceiling
-        # A few chains hanging from the beams, a hook on one.
-        for (x, z, y) in ((-1.8, 2.4, F + 1.6), (2.0, .6, F + 1.55)):
-            chain((x, TOP, z), (x, y, z))
-            torus('meat hook', (x, y - .04, z), .03, .005, IRON, seg=8, sides=3, tilt=PI / 2, arc=PI * 1.4, start=PI * .8)
+        ts, tn = (min(L['TRUSSES'], key=lambda t: abs(t - want)) for want in (3.6, -4.4))
+        tie = EAVES - .08
+        slung_sail(-4.3, -2.3, ts, ts + .8, tie, .6, 61, tie + .08)      # over the tables, south
+        slung_sail(1.0, 2.9, ts, ts - .75, tie, .55, 62, tie + .08)
+        slung_sail(-5.0, -3.0, tn, tn - .8, tie, .6, 63, tie + .08)      # over the bar terrace
+        slung_sail(2.3, 4.5, tn, tn + .7, tie, .5, 64, tie + .08)
+        slung_net(-5.3, -3.7, -6.7, -5.6, 4.0, .3, 72, 4, roof(-3.7))    # over the bar's hoard
+        slung_net(6.6, 8.6, 2.6, 4.0, 3.9, .35, 73, 4, roof(6.6))       # over the pool
+        for (x0, z0, x1, z1, drop) in ((-2.2, -0.3, -1.2, 0.2, .5), (1.0, 3.4, 2.2, 3.9, .6),
+                                       (-4.6, 3.2, -3.6, 3.9, .5), (4.2, -1.0, 5.0, -0.2, .45)):
+            rope_loop((x0, roof(x0) - .1, z0), (x1, roof(x1) - .1, z1), drop)
+        x, z, y = -7.4, 5.3, G + 1.7
+        chain((x, roof(x), z), (x, y, z))
+        torus('meat hook', (x, y - .04, z), .03, .005, IRON, seg=8, sides=3, tilt=PI / 2, arc=PI * 1.4, start=PI * .8)

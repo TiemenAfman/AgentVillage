@@ -49,13 +49,16 @@ s = K['stools']
 places += [('stool', {'x': s['x0'] + i * s['step'], 'z': s['z'], 'y': s['y']}, 0) for i in range(s['n'])]
 places += [('gunport', {'x': g['x'], 'z': L['HALL']['z1'], 'y': L['F'] + 0.62}, math.pi) for g in K['gunports']]
 places += [('skullsconce', c, c.get('ry', 0)) for c in K['sconces']]
-places += [('skulllamp', {'x': K['skulllamp']['x'], 'z': K['skulllamp']['z'], 'y': L['LEVEL']['terrace'] + 1.0}, 0)]
+places += [('skulllamp', K['skulllamp'], 0)]
+places += [('bow', K['bow'], 0)]
+places += [('wheel', K['wheel'], 0), ('rudder', K['rudder'], 0)]
+places += [('sloop', {'x': sl['x'], 'y': sl['y'] - K['sloop']['flame'], 'z': sl['z']}, 0) for sl in L['SLOOPS']]
 for name, at, ry in places:
     try:
         mod = importlib.import_module(name)
     except ModuleNotFoundError:
         continue
-    with geom.frame(geom.M((at['x'], at.get('y', L['F']), at['z']), ry)):
+    with geom.frame(geom.M((at['x'], at.get('y', L['F']), at['z']), ry, scale=at.get('s', 1))):
         mod.build()
     geom.flush(f'kit {name} {at["x"]:.2f}', groups=False)
 if '--ao' in args:
@@ -98,15 +101,24 @@ scene.world = world
 cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam'))
 scene.collection.objects.link(cam)
 scene.camera = cam
-F, T, L1 = L['F'], L['LEVEL']['terrace'], L['LEVEL']['first']
+F = L['F']
+LV = L['LEVEL']
+P, B, C, U = LV['pit'], LV['bar'], LV['captain'], LV['top']
+TOP = L['TOP']
 VIEWS = {
     # From the door into the hall at a settler's camera height: what you see when you come in.
-    'door': ((0, F + 0.95, 3.3), (0.2, F + 0.6, -2.5), 18),
-    'bar': ((-0.9, T + 0.55, -1.2), (-0.8, T + 0.7, -3.4), 20),
-    'west': ((-1.5, F + 0.8, 0.6), (-4.4, F + 0.9, -2.0), 18),
-    'east': ((0.6, F + 0.8, 0.2), (4.6, F + 0.9, -1.2), 18),
-    'cabin': ((3.3, L1 + 0.5, 1.2), (5.2, L1 + 0.35, -2.4), 18),
-    'up': ((-0.4, F + 0.5, 2.6), (0.4, F + 1.9, -1.0), 16),
+    'door': ((0, F + 1.0, 6.6), (0, B + 0.5, -3.0), 16),
+    'pit': ((-4.6, P + 0.8, 4.8), (0.2, P + 0.8, -3.2), 16),
+    'bar': ((-2.6, B + 0.7, -3.5), (0.6, B + 0.5, -6.6), 18),
+    'west': ((2.0, P + 0.9, 1.2), (-8.6, 1.5, 0.2), 15),
+    'east': ((-3.0, P + 0.9, 1.2), (7.6, 1.6, -0.6), 15),
+    'captain': ((6.2, C + 0.6, -0.6), (9.0, C + 0.9, -5.8), 17),
+    'gallery': ((-8.2, U + 0.55, 2.4), (5.0, U - 0.4, -3.0), 16),
+    'bow': ((0.6, B + 0.7, -3.4), (0.0, B + 2.3, -6.6), 16),
+    'westgal': ((-2.5, P + 0.9, 3.2), (-8.6, C + 0.6, -2.2), 15),
+    'roof': ((0.5, U + 0.4, 4.5), (0.0, TOP - 0.3, -3.0), 13),
+    'pool': ((4.9, F + 0.8, -0.4), (9.0, 1.1, 4.4), 16),
+    'up': ((1.2, P + 0.5, 3.4), (0.0, 4.0, -2.2), 13),
 }
 for name, (eye, target, lens) in VIEWS.items():
     if only and name != only:
@@ -123,9 +135,9 @@ if not only or only == 'cutaway':
         if ' roof ' in o.name or ' near ' in o.name:
             o.hide_render = True
     cam.data.type = 'ORTHO'
-    cam.data.ortho_scale = 13.5
+    cam.data.ortho_scale = 26.0
     d = Vector((-.55, .8, -.62)).normalized()        # looking down from the south-east, like the concept
-    cam.location = b(0.6, 1.0, -0.3) - d * 20
+    cam.location = b(0.4, 2.4, 0.4) - d * 30
     cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
     scene.render.filepath = str(out / 'cutaway.png')
     bpy.ops.render.render(write_still=True)
