@@ -955,6 +955,16 @@ lowered so the surface is at 0.50 m of it, instead of the settlers' `WADE_Y`), `
 `walk-rootmotion` is dropped at load. A new GLB means re-checking `IMP_HEIGHT_M` and the sphere.
 SkeletonUtils is a new vendored file: a checkout that has not run `npm install` (or
 `node scripts/vendor.mjs`) since then gets the logged failure, not imps.
+The second exception is **this machine's own models** (`web/js/local-models.js`): GLBs that may
+never be baked or committed (a bought DAZ asset, say) live in `HOME/models/` with a
+`local-models.json` of `{ file, side, gap, scale, rot, y, hide }`, are served keeper-only by
+`/api/local-models` and `/api/local-model/<name>.glb` (not on `PUBLIC_API`), and are loaded the
+imp's way after the boot, into our scene only - no bundle, no sea, no visitor. `gap` is measured
+from the coast on that side (the last ground above -0.6 from the middle out), not the grid edge.
+A DAZ `.dsf` is plain JSON (`geometry_library[0]`: `vertices`, `polylist` of
+`[group, material, v...]`; UVs in `UV Sets/.../default.dsf` with per-corner
+`polygon_vertex_indices`; diffuse maps in the `.duf`'s `materials[].diffuse.channel.image_file`),
+so it converts to a GLB with a small script and no Blender importer.
 
 **A room's own sets load at its door, never at boot** (the second exception): `models.js` `LAZY` holds the
 Salty Kraken's hall (`piratetavern_room`, 34 MB) and its ship's parts (`krakenkit`), imported on demand by

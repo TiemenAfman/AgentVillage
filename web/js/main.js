@@ -18,6 +18,7 @@ import { isletsNear } from 'shared/islets.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
+import { loadLocalModels } from './local-models.js';
 import { allowImp, setImpNight, setImpBudget, IMP_CAP, IMP_LIMIT } from './imp.js';
 import { createAgentBars } from './agent-bars.js';
 import { createMainMenu } from './mainmenu.js';
@@ -7848,6 +7849,8 @@ async function boot() {
   // The one model that is fetched rather than baked - the volcano's imp - may start loading
   // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.
   allowImp();
+  // So may this machine's own models (HOME/models/), which only the keeper has.
+  if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
   // No islander to hear from and none to install from: /events and sw.js are both its own.
   if (STANDALONE) return;
   connect();

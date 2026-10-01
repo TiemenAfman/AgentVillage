@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, HOME, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -1320,6 +1320,16 @@ if (req.url === '/api/command' && req.method === 'POST') {
     }
     return json(res, 200, { at: whereIsPlayer() });
   }
+
+  // ---- models that live on this machine only -----------------------------------
+  // HOME/models/ holds GLBs somebody may not publish (a bought asset, Blizzard's), so they
+  // never go in the repo, a release or a bundle. Keeper-only by not being on PUBLIC_API;
+  // the name is a bare word so no path can climb out of the folder.
+  if (p === '/api/local-models') {
+    return json(res, 200, { models: readJson(path.join(HOME, 'models', 'local-models.json'), []) });
+  }
+  const localModel = /^\/api\/local-model\/([a-z0-9_-]+\.glb)$/i.exec(p);
+  if (localModel) return sendFile(req, res, path.join(HOME, 'models', localModel[1]), { cache: 'no-cache' });
 
   // ---- what has been built by hand ---------------------------------------------
   // Everything here is a shape, a place and a size. Nothing names a file or a folder,
