@@ -2692,6 +2692,31 @@ function slab(parts, x, z, w, d, h) {
   }
 }
 
+// The camera's boxes (`built.camBoxes`): six numbers a part, x0 y0 z0 x1 y1 z1 in the building's own
+// frame and at its scale, in one Float32Array - a few hundred houses keep a hundred each. A part
+// smaller than CAM_BOX_MIN every way (a lamp, a hinge, a doorknob) is left out: the camera passing
+// through one is not what anybody sees, and it would make the boom twitch along every facade.
+// Measured against the real geometry (tests/camera-boom.test.mjs): a boom stopped by these clears
+// nearly every view that had the building between the camera and the eye.
+const CAM_BOX_MIN = 0.06;
+function camBoxesOf(parts, s) {
+  const out = [];
+  for (const g of parts) {
+    if (!g || !g.attributes.position) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    if (!(x1 >= x0) || Math.max(x1 - x0, y1 - y0, z1 - z0) < CAM_BOX_MIN) continue;
+    out.push(x0 * s, y0 * s, z0 * s, x1 * s, y1 * s, z1 * s);
+  }
+  return new Float32Array(out);
+}
+
 export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
@@ -2790,6 +2815,10 @@ export function buildBuilding(spec, ctx = {}) {
   if (round) {
     for (const r of wallRects) r.r = Math.max(r.hx, r.hz);
   }
+  // What the follow camera's boom stops at (walk.js, Plans/camera-botsing.md), measured before the
+  // merge loses the parts: the box of every part, roof and upper storey and overhang included -
+  // everything the walls above miss, since they are measured in a body's height only.
+  const camBoxes = camBoxesOf(parts, s);
   const geometry = merge(parts);
   let walls = wallRects, solids = wallRects.concat(yardRects);
   if (s !== 1) {
@@ -2812,7 +2841,7 @@ export function buildBuilding(spec, ctx = {}) {
   // parts collected than held onto.
   return {
     geometry, anchors, animated, height, width: w,
-    bbox: geometry.boundingBox.clone(), solids, walls,
+    bbox: geometry.boundingBox.clone(), solids, walls, camBoxes,
     ...(floats ? { floats } : {}),
     // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
     ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),

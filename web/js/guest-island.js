@@ -32,7 +32,7 @@ import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeExtras } from './record-extras.js';
 import { floatingPose } from './batavia.js';
 import { createRecordBatch, VERTICES_PER_BUILDING } from './record-batch.js';
-import { porchFloor, solidAt } from './solids.js';
+import { porchFloor, solidAt, camBodyOf } from './solids.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -286,12 +286,25 @@ export function createGuestIsland({
     return out;
   }
 
+  // And what the camera's boom stops at (main.js cameraBodies), moved the same way.
+  function camBodies() {
+    const out = [];
+    const [ox, oz] = region.origin;
+    for (const rec of records) {
+      const p = rec.group.position;
+      const b = camBodyOf(rec.built.camBoxes, { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y });
+      if (b) out.push(b);
+    }
+    return out;
+  }
+
   return {
     group,
     ground,
     region,
     records,
     blockers,
+    camBodies,
     applyBuildings,
     // Their season turns with ours and a tree felled over there falls rather than
     // vanishing. One call a frame; main.js walks the guests for the mills anyway.

@@ -11,7 +11,7 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
-import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex } from './solids.js';
+import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
@@ -193,6 +193,14 @@ function loungeGeometry() {
 export function createWalkMode({
   scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null, onDrink = null,
+  // What the camera's boom stops at besides the blockers (Plans/camera-botsing.md): the buildings,
+  // as solids.js camBodyOf makes them, asked again whenever the blockers are handed over (main.js
+  // cameraBodies). A room has none: its walls and furniture are its blockers.
+  cameraBodies = null,
+  // How high a blocker with no height of its own stands, to the camera. Outside, nothing without a
+  // height is a camera's business - a tree's trunk, which leaves the crown to be looked through. A
+  // room says its ceiling: every blocker in there (the bar, a post) stands floor to lid.
+  camSolidTop = null,
   // The purple bar's pool. main.js hands the island's walk and the tavern's the same one and
   // steps it itself, so the beer outlasts the door and wears off from the sky too; a walk
   // mode given none (the workbench) keeps and steps its own.
@@ -801,13 +809,14 @@ export function createWalkMode({
   // the head, since a near plane that close costs depth precision at the horizon.
   const FP_NEAR = 0.03, FP_BACK = 0.3;
   const fpEye = new THREE.Vector3(), fpLook = new THREE.Vector3();
-  let farNear = camera.near;
+  // The near plane the camera was made with. The boom (placeCamera) brings it in too while it is short.
+  const nearBase = camera.near;
   function setFirstPerson(on) {
     if (state.firstPerson === on) return;
     state.firstPerson = on;
-    if (on) { farNear = camera.near; camera.near = Math.min(camera.near, FP_NEAR); }
+    if (on) camera.near = Math.min(nearBase, FP_NEAR);
     else {
-      camera.near = farNear;
+      camera.near = nearBase;
       back = camBack * 0.35;
       zoomPref = back / base;
       state.camPitch = clamp(state.camPitch, -0.25, 0.95);
@@ -1125,7 +1134,9 @@ export function createWalkMode({
   let blockerIndex = createSolidIndex();
   // A `floor` in the list (a building's porch: solids.js porchFloor) is only its top: stood on, never
   // bumped into.
+  let camBodies = createSolidIndex();
   function takeBlockers(list) {
+    camBodies = createSolidIndex(cameraBodies ? cameraBodies() : []);
     state.blockers = list || [];
     hulls = state.blockers.filter((b) => b.hull != null);
     blockerIndex = createSolidIndex(state.blockers.filter((b) => !b.floor));
@@ -1654,6 +1665,7 @@ export function createWalkMode({
     zzz.visible = false;
     avatar.visible = true;
     camDive = 0;                             // whatever a dive left of the camera's rules
+    armLen = Infinity;                       // and a boom from wherever we were before
     keys.clear();
     lockKeys(true);
     syncLock();
@@ -1661,6 +1673,9 @@ export function createWalkMode({
 
   function exit() {
     setFirstPerson(false);
+    // The camera is somebody else's from here (the sky's, a room's): its near plane as it was made.
+    setNear(nearBase);
+    armLen = Infinity;
     plane = null;
     camera.up.copy(PLANE_UP);
     state.vehicle = null;
@@ -2257,13 +2272,117 @@ export function createWalkMode({
     else camStep = 0;
     camStep *= Math.exp(-CAM_STEP_RATE * dt);
     stepFrom = state.pos.y;
-    if (state.active) placeCamera(fp);
+    if (state.active) placeCamera(fp, dt);
+    else armLen = Infinity;
+    // A boom pulled in to within a head's width of the eye would put the lens inside the figure: the
+    // body goes, as in first person, and comes back as the boom lets out again.
+    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE);
 
     // what is within reach?
     return reach();
   }
 
-  function placeCamera(fp) {
+  // ---- the boom (Plans/camera-botsing.md) --------------------------------------------------------
+  // The camera hangs at the end of a boom from the point it looks at, and the boom stops at the
+  // first thing it meets: the buildings' part boxes (`cameraBodies`), every blocker with a height,
+  // and - sampled along it - the ground, the quay's stone, every floor of planks, a deck or a cell's
+  // level as a slab, and the hull we stand on below her deck. Pulled in at once, so there is never a
+  // frame with something between the camera and the body; let out again at ARM_OUT, so a camera
+  // turned along a facade does not pump in and out with every window.
+  const CAM_R = 0.15;           // the lens's own room, the boom's radius
+  const ARM_MIN = 0.2;          // never closer than this to the point it looks at
+  const ARM_HIDE = 0.45;        // closer than this the body is in the way of the lens: it goes
+  const ARM_OUT = 3;            // how fast the boom lets out again, per second (exponential)
+  const SLAB = 0.15;            // how thick a floor of planks is to the camera
+  const NEAR_ARM = 1.25;        // a boom shorter than this brings the near plane in with it
+  // The look to either side (placeCamera): how far round, in radians, and how much longer than
+  // what it finds there the boom may still be, per radian round.
+  const ARM_SIDES = [0.1, 0.2, 0.35];
+  const ARM_SOFT = 3;
+  // How fast the boom comes in towards what it sees to the side, per second (exponential). What is
+  // straight down the boom it does not wait for.
+  const ARM_IN = 12;
+  let armLen = Infinity;
+  // The near plane, brought in with a short boom from `nearBase`, or the wall beside the lens is cut
+  // away by a plane half a unit out (the island's 0.5). First person has its own (setFirstPerson).
+  function setNear(n) {
+    if (Math.abs(camera.near - n) < 1e-4) return;
+    camera.near = n;
+    camera.updateProjectionMatrix();
+  }
+  // The hull we are on this frame, read for the boom: her frame, the height of her y = 0 and her
+  // walk map (shared/hullwalk.mjs), or null off one. `reach` is how high a floor of hers counts as
+  // the deck under the camera: no higher than half a unit over the point looked at, or the roof of
+  // her castle - or her yards - would be floors to a camera on the waist.
+  let camHull = null;
+  function hullForCamera(pivotY) {
+    const b = deckBoat || state.vehicle || (climb && climb.boat) || null;
+    const walkMap = b && b.craft && b.craft.walk;
+    if (!walkMap) return null;
+    const base = hullPoint(b, 0, 0, 0).y;
+    return { frame: frameOf(b), base, walk: walkMap, reach: pivotY - base + 0.5 };
+  }
+  const hullLocal = [0, 0];
+  function hullDeckAt(h, x, z) {
+    toLocal(h.frame, x, z, hullLocal);
+    const f = h.walk.floorIn(hullLocal[0], hullLocal[1], h.reach, 0);
+    return f == null ? null : h.base + f;
+  }
+  // Whether the point is inside something the boom must stop at, of what is sampled.
+  function solidPoint(x, y, z) {
+    const g = camDive > 0 ? Math.max(heightUnder(x, z), bedUnder(x, z)) : heightUnder(x, z);
+    if (y < g + CAM_R * 0.5) return true;
+    const k = kadeAt(x, z);
+    if (k != null && y < k + CAM_R) return true;
+    const plank = (h) => h != null && y < h + CAM_R && y > h - SLAB;
+    if (surfaceIndex.some(x, z, 0, (sf) => plank(surfaceY(sf, x, z)))) return true;
+    for (const d of decks) if (plank(deckY(d, x, z))) return true;
+    const lv = levelsIn(x, z);
+    if (lv) for (const h of lv) if (plank(h)) return true;
+    if (camHull) {
+      const deck = hullDeckAt(camHull, x, z);
+      if (deck != null && y < deck + CAM_R * 0.5) return true;
+    }
+    return false;
+  }
+  // Only what stands up out of the ground - the buildings' boxes and the blockers - asked along a
+  // direction: armReach's first half, and all the boom's look to either side (see placeCamera).
+  function standingReach(ax, ay, az, dx, dy, dz, len) {
+    let best = len;
+    const bx = ax + dx * len, bz = az + dz * len;
+    camBodies.along(ax, az, bx, bz, CAM_R, (b) => {
+      const t = camBodyEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R);
+      if (t != null && t < best) best = t;
+      return false;
+    });
+    blockerIndex.along(ax, az, bx, bz, CAM_R, (b) => {
+      let y0 = b.y0, y1 = b.y1;
+      if (y1 == null) {
+        if (camSolidTop == null) return false;
+        y0 = -Infinity; y1 = camSolidTop;
+      }
+      const t = segmentEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R, y0, y1);
+      if (t != null && t >= 0 && t < best) best = t;
+      return false;
+    });
+    return best;
+  }
+  // How far along the unit direction d the boom from a may reach, up to len.
+  function armReach(ax, ay, az, dx, dy, dz, len) {
+    let best = standingReach(ax, ay, az, dx, dy, dz, len);
+    // The rest is sampled. What the start is already in does not count until the boom has been out
+    // of it: a pivot a hand over a gallery's boards is in that floor's slab and must not be stuck there.
+    const step = Math.max(0.06, best / 80);
+    let open = false;
+    for (let t = 0; t <= best; t += step) {
+      if (solidPoint(ax + dx * t, ay + dy * t, az + dz * t)) {
+        if (open) { best = Math.max(0, t - step); break; }
+      } else open = true;
+    }
+    return best;
+  }
+  const pivot = new THREE.Vector3(), armDir = new THREE.Vector3();
+  function placeCamera(fp, dt = 0) {
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
     const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
@@ -2276,13 +2395,31 @@ export function createWalkMode({
     const stoop = state.crouching && !state.dive;
     const eyeDrop = state.lying ? up * 0.55 : stoop || state.sitting ? up * 0.3 : 0;
     const cy = state.pos.y + camStep + up - eyeDrop + Math.sin(state.camPitch) * dist;
+    // The aim follows the eye down as the body folds: crouching and sitting shorten the
+    // figure by exactly these factors, so reusing them keeps the camera on the face rather
+    // than on the air the settler has just vacated. Lying down there is no standing body
+    // left to scale - the figure is flat on the towel, and a fifth of eye level is the
+    // middle of what is left above the ground.
+    const aim = state.lying ? camAim * LIE_AIM
+      : stoop ? camAim * CROUCH_SCALE
+        : state.sitting ? camAim * SIT_SCALE : camAim;
+    camHull = fp ? null : hullForCamera(state.pos.y + aim);
     // Over water the floor is the surface, not the sea bed - see camera-floor.js - until the
     // head goes under: then the camera belongs under it too, floored by the bed and held below
     // the surface (`camDive` eases the change). The bed a diver sees is `bedUnder`, which is
-    // not always what `groundAt` says at the rim of an island's grid, so the camera takes the
+    // not always what the ground says at the rim of an island's grid, so the camera takes the
     // higher of the two.
-    let under = groundAt(cx, cz, cy);
+    //
+    // The ground only - the terrain, and on a ship her deck. What stands on the ground (a pier, a
+    // bridge, the quay, a stair, a building's floor) is the boom's, below: as part of the floor it
+    // lifted the camera in one frame wherever it came over the edge of one (0.24 at the foot of the
+    // Salty Kraken's stair, half a unit over the quay's wall), and with `lift` the aim as well.
+    let under = heightUnder(cx, cz);
     if (camDive > 0) under = Math.max(under, bedUnder(cx, cz));
+    if (camHull) {
+      const deck = hullDeckAt(camHull, cx, cz);
+      if (deck != null) under = Math.max(under, deck);
+    }
     // A smoothstep of the timer, so the camera starts and ends gently: the surface swimmer's
     // camera hangs 2.3 up and the diver's is under the surface, and a plain exponential ease
     // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
@@ -2311,18 +2448,11 @@ export function createWalkMode({
       camera.position.copy(state.pos).add(camOff);
       planeUp.copy(PLANE_UP).applyQuaternion(camTilt);
       camera.up.copy(planeUp);
-    } else camera.up.copy(PLANE_UP);
-    if (clampCam) clampCam(camera.position);
-    // The aim follows the eye down as the body folds: crouching and sitting shorten the
-    // figure by exactly these factors, so reusing them keeps the camera on the face rather
-    // than on the air the settler has just vacated. Lying down there is no standing body
-    // left to scale - the figure is flat on the towel, and a fifth of eye level is the
-    // middle of what is left above the ground.
-    const aim = state.lying ? camAim * LIE_AIM
-      : stoop ? camAim * CROUCH_SCALE
-        : state.sitting ? camAim * SIT_SCALE : camAim;
-    if (plane) camera.lookAt(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
-    else camera.lookAt(state.pos.x, state.pos.y + camStep + aim + lift, state.pos.z);
+      pivot.set(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
+    } else {
+      camera.up.copy(PLANE_UP);
+      pivot.set(state.pos.x, state.pos.y + camStep + aim + lift, state.pos.z);
+    }
     if (fp) {
       // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
       // saddle's lean), and a little behind it so the hands are in front of the lens.
@@ -2332,9 +2462,46 @@ export function createWalkMode({
       fpLook.set(Math.sin(state.camYaw) * cp, -Math.sin(state.camPitch), Math.cos(state.camYaw) * cp);
       if (plane) fpLook.applyQuaternion(plane);
       camera.position.set(eye.x - fpLook.x * FP_BACK, eye.y + camStep - fpLook.y * FP_BACK, eye.z - fpLook.z * FP_BACK);
-      if (clampCam) clampCam(camera.position);
+      if (clampCam) clampCam(camera.position, { firstPerson: true });
       camera.lookAt(camera.position.x + fpLook.x, camera.position.y + fpLook.y, camera.position.z + fpLook.z);
+      return;
     }
+    if (clampCam) clampCam(camera.position);
+    // The boom, from the point looked at out to where the camera would be. A room's clampCam has had
+    // its say first (its walls, and the climb that looks down into a small room) and is told again
+    // where the camera ended up, for its lid.
+    armDir.copy(camera.position).sub(pivot);
+    const want = armDir.length();
+    if (want > 1e-6) {
+      armDir.divideScalar(want);
+      // How far it may reach this frame, at once: nothing between the camera and the body, ever.
+      const hard = Math.max(ARM_MIN, Math.min(want, armReach(pivot.x, pivot.y, pivot.z, armDir.x, armDir.y, armDir.z, want) - 0.03));
+      // And a look to either side of it, which the boom comes in towards ahead of time. Turned round
+      // a corner it went from all its length to a stub in one frame (0.78 at the foot of the Kraken's
+      // stair, a degree a frame; more beside a post close by): it ran into the wall all at once.
+      // Asked a little way round to either side - and held shorter for what is there, the nearer the
+      // side the shorter - it is already coming in over the last degrees before the corner. Only
+      // what stands up is asked: floors and the ground do not come round a corner at you.
+      let soft = hard;
+      for (const a of ARM_SIDES) {
+        const c = Math.cos(a), sn = Math.sin(a);
+        for (const sign of [1, -1]) {
+          const sx = armDir.x * c + armDir.z * sn * sign, sz = armDir.z * c - armDir.x * sn * sign;
+          const side = standingReach(pivot.x, pivot.y, pivot.z, sx, armDir.y, sz, want) + ARM_SOFT * a;
+          if (side < soft) soft = side;
+        }
+      }
+      soft = Math.max(ARM_MIN, soft);
+      if (armLen > hard) armLen = hard;
+      else if (soft < armLen) armLen += (soft - armLen) * (1 - Math.exp(-ARM_IN * dt));
+      else armLen = Math.min(soft, armLen + (soft - armLen) * (1 - Math.exp(-ARM_OUT * dt)));
+      if (armLen < want) {
+        camera.position.copy(pivot).addScaledVector(armDir, armLen);
+        if (clampCam) clampCam(camera.position, { boomed: true });
+      }
+    } else armLen = want;
+    setNear(armLen < NEAR_ARM ? Math.max(0.05, Math.min(nearBase, armLen * 0.4)) : nearBase);
+    camera.lookAt(pivot);
   }
 
   function reach() {

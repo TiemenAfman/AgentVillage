@@ -64,7 +64,7 @@ import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership, edgeKey } from './hamlets.js';
-import { porchFloor, solidAt } from './solids.js';
+import { porchFloor, solidAt, camBodyOf } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -969,6 +969,23 @@ function porchOf(rec) {
   if (!porch) return [];
   const p = rec.group.position;
   return porchFloor(porch, { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y }).map((f) => ({ ...f, id: rec.id }));
+}
+
+// What the follow camera's boom stops at (walk.js `cameraBodies`, Plans/camera-botsing.md): every
+// building we draw, and every guest island's, as its part boxes where it stands. Asked by walk mode
+// whenever it is handed the blockers, so the two never disagree about what stands where.
+function cameraBodies() {
+  const out = [];
+  const add = (rec) => {
+    if (!rec.built || !rec.built.camBoxes) return;
+    const p = rec.group.position;
+    const b = camBodyOf(rec.built.camBoxes, { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y });
+    if (b) out.push(b);
+  };
+  for (const rec of state.byId.values()) if (rec.group.visible) add(rec);
+  if (squareBed && squareBed.group.visible) add(squareBed);
+  for (const g of state.guests) if (g.camBodies) out.push(...g.camBodies());
+  return out;
 }
 
 function walkableBlockers() {
@@ -7709,7 +7726,7 @@ async function boot() {
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
   state.walk = createWalkMode({
-    scene, camera, terrain: state.terrain, ground: state.sea,
+    scene, camera, terrain: state.terrain, ground: state.sea, cameraBodies,
     material: buildingMat, dom: renderer.domElement,
     // Every swing the arm starts goes to the sea, which decides what it reaches
     // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function

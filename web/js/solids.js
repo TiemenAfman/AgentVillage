@@ -119,6 +119,103 @@ export function topOf(b) {
   return s;
 }
 
+// The follow camera's boom (Plans/camera-botsing.md): where along a segment it first runs into
+// something. The segment is a + d t for t in [0, len], d a unit vector; the answer is the entry `t`,
+// null when it misses, and -1 when `a` is inside already - the boom starts at the body, and what the
+// body stands in (a porch roof's box, a gallery's post it is pressed against) is no reason to pull
+// the camera in onto it.
+//
+// An axis-aligned box, grown by `r` on every side: the slab test.
+// No arrays: it is asked for every part of a building near the boom, every frame (the Salty
+// Kraken has over a thousand), and garbage per call adds up.
+let slabT0 = 0, slabT1 = 0;
+function slab(lo, hi, o, v) {
+  if (v > -1e-9 && v < 1e-9) return o >= lo && o <= hi;
+  let ta = (lo - o) / v, tb = (hi - o) / v;
+  if (ta > tb) { const s = ta; ta = tb; tb = s; }
+  if (ta > slabT0) slabT0 = ta;
+  if (tb < slabT1) slabT1 = tb;
+  return slabT0 <= slabT1;
+}
+export function boxEntry(x0, y0, z0, x1, y1, z1, ax, ay, az, dx, dy, dz, len, r = 0) {
+  x0 -= r; y0 -= r; z0 -= r; x1 += r; y1 += r; z1 += r;
+  if (ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1 && az >= z0 && az <= z1) return -1;
+  slabT0 = 0; slabT1 = len;
+  if (!slab(x0, x1, ax, dx) || !slab(y0, y1, ay, dy) || !slab(z0, z1, az, dz)) return null;
+  return slabT0;
+}
+
+// One of walk mode's solids (a circle, a rectangle, a turned rectangle) standing from `y0` to `y1`,
+// grown by `r`. A circle is a cylinder: where the segment's line in plan meets the circle, then the
+// height at that point. A turned rectangle is the box in its own frame, the segment turned into it.
+export function segmentEntry(b, ax, ay, az, dx, dy, dz, len, r = 0, y0 = b.y0, y1 = b.y1) {
+  if (b.r) {
+    const R = b.r + r, ox = ax - b.x, oz = az - b.z;
+    const inPlan = ox * ox + oz * oz < R * R;
+    const inside = inPlan && ay > y0 - r && ay < y1 + r;
+    if (inside) return -1;
+    const A = dx * dx + dz * dz;
+    let t0 = 0, t1 = len;
+    if (A < 1e-12) { if (!inPlan) return null; }
+    else {
+      const B = ox * dx + oz * dz, C = ox * ox + oz * oz - R * R;
+      const disc = B * B - A * C;
+      if (disc < 0) return null;
+      const q = Math.sqrt(disc);
+      t0 = Math.max(0, (-B - q) / A); t1 = Math.min(len, (-B + q) / A);
+      if (t0 > t1) return null;
+    }
+    // and the height interval, along the same stretch
+    if (Math.abs(dy) < 1e-9) return ay > y0 - r && ay < y1 + r ? t0 : null;
+    let ta = (y0 - r - ay) / dy, tb = (y1 + r - ay) / dy;
+    if (ta > tb) { const s = ta; ta = tb; tb = s; }
+    const e = Math.max(t0, ta), x = Math.min(t1, tb);
+    return e <= x ? e : null;
+  }
+  if (b.yaw == null) return boxEntry(b.x - b.hx, y0, b.z - b.hz, b.x + b.hx, y1, b.z + b.hz, ax, ay, az, dx, dy, dz, len, r);
+  const c = b.c ?? Math.cos(b.yaw), s = b.s ?? Math.sin(b.yaw);
+  const lx = ax - b.x, lz = az - b.z;
+  return boxEntry(-b.hx, y0, -b.hz, b.hx, y1, b.hz, lx * c - lz * s, ay, lx * s + lz * c, dx * c - dz * s, dy, dx * s + dz * c, len, r);
+}
+
+// A building as the camera's boom sees it: its part boxes (buildings.js `built.camBoxes`, six numbers a
+// box in its own frame) and where it stands. Kept in its own frame rather than turned into the world's:
+// a box is axis-aligned there, so the test is a slab test once the segment is turned in (camBodyEntry),
+// and nothing is copied per box. `r` is how far its boxes reach from its middle, for the index.
+export function camBodyOf(boxes, { x, z, y = 0, yaw = 0 }) {
+  if (!boxes || !boxes.length) return null;
+  let r = 0;
+  for (let i = 0; i < boxes.length; i += 6) {
+    const ex = Math.max(Math.abs(boxes[i]), Math.abs(boxes[i + 3])), ez = Math.max(Math.abs(boxes[i + 2]), Math.abs(boxes[i + 5]));
+    r = Math.max(r, Math.hypot(ex, ez));
+  }
+  return { x, z, y, r, c: Math.cos(yaw), s: Math.sin(yaw), boxes, cam: true };
+}
+
+// The first box of a camera body the segment runs into (as segmentEntry), or null. A box the start
+// is inside is passed over, not answered with -1: a body has a hundred boxes and standing in one
+// (the box of a porch roof, of a yard) says nothing about the others.
+export function camBodyEntry(body, ax, ay, az, dx, dy, dz, len, r = 0) {
+  const ox = ax - body.x, oz = az - body.z, c = body.c, s = body.s;
+  // Past its reach altogether in plan (the index hands over whatever shares a bucket with the
+  // segment's box): the nearest the segment comes to its middle, against its radius.
+  const hz = Math.hypot(dx, dz);
+  if (hz > 1e-9) {
+    const along = Math.max(0, Math.min(len * hz, -(ox * dx + oz * dz) / hz));
+    const nx = ox + dx / hz * along, nz = oz + dz / hz * along, R = body.r + r;
+    if (nx * nx + nz * nz > R * R) return null;
+  }
+  const lx = ox * c - oz * s, lz = ox * s + oz * c, ly = ay - body.y;
+  const vx = dx * c - dz * s, vz = dx * s + dz * c;
+  const b = body.boxes;
+  let best = null;
+  for (let i = 0; i < b.length; i += 6) {
+    const t = boxEntry(b[i], b[i + 1], b[i + 2], b[i + 3], b[i + 4], b[i + 5], lx, ly, lz, vx, dy, vz, best ?? len, r);
+    if (t != null && t >= 0 && (best == null || t < best)) best = t;
+  }
+  return best;
+}
+
 // Every shape filed under each BUCKET-square it can reach, so a question about one point looks at
 // a handful of shapes instead of every one on the island: with the forest in, that is thousands,
 // asked several times a frame. Kept equal to a plain scan of the list by tests/walk-solids.test.mjs.
@@ -159,5 +256,25 @@ export function createSolidIndex(list = []) {
     }
     return false;
   }
-  return { some, size: list.length };
+  // The same, for every shape that may lie within `pad` of the segment from (ax, az) to (bx, bz):
+  // the buckets of its box. A camera's boom is a few units, so that is a handful of buckets.
+  function along(ax, az, bx, bz, pad, fn) {
+    stamp++;
+    pad *= Math.SQRT2;
+    const i0 = Math.floor((Math.min(ax, bx) - pad) / BUCKET), i1 = Math.floor((Math.max(ax, bx) + pad) / BUCKET);
+    const j0 = Math.floor((Math.min(az, bz) - pad) / BUCKET), j1 = Math.floor((Math.max(az, bz) + pad) / BUCKET);
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        const here = cells.get(key(i, j));
+        if (!here) continue;
+        for (const b of here) {
+          if (seen.get(b) === stamp) continue;
+          seen.set(b, stamp);
+          if (fn(b)) return true;
+        }
+      }
+    }
+    return false;
+  }
+  return { some, along, size: list.length };
 }

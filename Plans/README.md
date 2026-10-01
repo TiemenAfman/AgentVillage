@@ -44,6 +44,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [muren-met-hitboxes.md](muren-met-hitboxes.md) — gebouwen zo solide als ze eruitzien: muren per vlak
   gemeten in plaats van één blok per part (de poort van het grote kasteel in te lopen, de goudkuil open),
   gedraaide gebouwen als gedraaide rechthoek, en nooit vast in een gebouw. Gebouwd, nog niet gecommit.
+- 🚧 [camera-botsing.md](camera-botsing.md) — gebouwd, nog niet gecommit: de follow-camera hangt aan een arm
+  die stopt bij de box van elk onderdeel van een gebouw, bij blockers met een hoogte en bij planken als plaat.
+  Buiten van 6–17% naar ≤ 0,5% van de standen door een gebouw heen, binnen (Kraken) van 37% naar 2%; geen
+  sprong meer bij de kelderboog en vloerranden, lijf weg bij een korte arm, kruinen erdoor. ~40 µs per frame.
 - 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
   wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als
   tabel met primaire toets, secundaire toets en controllerknop per actie (grijs zonder controller,

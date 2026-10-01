@@ -328,6 +328,10 @@ export function buildPirateTavern({ FLOOR, rect }) {
     // so (stairWalls).
     surfaces: [...K.FLOORS, ...K.STAIRS.map((s) => ({ ...s, ...(s.kind === 'stair' ? { steps: treadsOf(s) } : {}), ...stairWalls(s) }))],
     ceiling: K.CEILING,
+    // How high the lid is over (x, z): its ridge over x = 0, down to the eaves on the west and east
+    // walls (interior.js judgeLid). Against the ridge everywhere, a camera up on a gallery was in the
+    // roof's slope with the lid still on.
+    roofAt: (x) => K.EAVES + (K.F + K.CEILING - K.EAVES) * Math.max(0, 1 - Math.abs(x) / HALL.x1),
     // The camera's rooms. The cellar carries its own low ceiling: from in there the lid comes off
     // as soon as the camera has to go above 1.2, not the hall's.
     areas: [{ ...HALL }, { ...CELLAR }],

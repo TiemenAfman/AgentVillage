@@ -1646,6 +1646,25 @@ pushed the camera *up* (`lift`, never first person, never downward - the diver's
 its old view of the diver). So the lens still never sits half under the sea, and the mouse looking up still
 looks up: the body slides out of the bottom of the frame from about -0.6, which is the price of seeing the sky.
 
+**The camera hangs on a boom, and the boom stops at what is drawn** ([Plans/camera-botsing.md](Plans/camera-botsing.md)).
+Third person only: from the point looked at (`pivot`) out to where the camera wants to be, `armReach` finds the
+first thing in the way - the buildings' part boxes (`built.camBoxes`, measured in `buildBuilding` before the
+merge, handed over as `camBodyOf` bodies through the `cameraBodies` option, which main.js and guest-island.js
+answer and walk mode asks again on every `takeBlockers`), every blocker with a height (a room's blockers stand to
+`camSolidTop`; outside a solid with no height - a tree's trunk - is not the camera's, so crowns are looked
+through on purpose), and, sampled along it, the ground, the quay's stone, every plank as a slab (`surfaces`,
+`decks`, `levels`) and the hull we stand on below her deck. So **`cameraFloor` reads the terrain only** (and a
+ship's deck): planks in the floor lifted the camera in one frame at every edge. The boom comes in at once
+(`hard`: never a frame with something between), comes in ahead of time towards what three side rays see
+(`ARM_SIDES`, standing things only, eased at `ARM_IN`), and lets out at `ARM_OUT`. Under `NEAR_ARM` the near
+plane comes in with it (`nearBase` is the camera's own; first person uses the same), under `ARM_HIDE` the
+body is hidden (`classicAvatar.object.visible`, not `avatar.visible`). A room's `clampCam` runs first (it clips
+through the edge into a neighbouring area - the Kraken's arch - instead of switching areas in one frame) and is
+called again with `{ boomed: true }` only to judge its lid (`judgeLid`: hysteresis, `def.roofAt`); in first
+person it does nothing but the lid. `tests/camera-boom.test.mjs` judges all of it by a raycast against the real
+geometry; a raycast at runtime was rejected (the Kraken's 80k triangles are 1.2 ms a ray, and the batch keeps
+the only copy of every building). The boom costs ~40 us a frame beside a street and the Kraken.
+
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
 swimming in water deep enough (`canDive`: a body's height of sea) sinks the body; Space (pad A)
