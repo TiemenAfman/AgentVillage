@@ -1524,8 +1524,11 @@ close Settings.
 which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet) - a stair is drawn as treads
 and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
-floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
-`levels` (`tests/walk-surfaces.test.mjs`).
+floor that hangs over you or it. Rooms hand surfaces over, and on the island a building may too (the
+Salty Kraken's stair, `surfacesOf` in main.js); the sea keeps to cell `levels` (`tests/walk-surfaces.test.mjs`).
+**A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
+`STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
+stairs, slopes and kerbs stay a walk.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
@@ -1874,11 +1877,27 @@ ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__sta
 in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` but not `QUAYSIDE`: its lot comes from **one function,
 `pirateTavernSite`**, which today only calls `harbourSite` and which the quay work (`fix/quay-en-rivier`)
 retargets to the pirate bank of the haven funnel - never change `harbourSite` for it, and hold no test to a
-distance from one harbour. A new civic plot, so a minor. Outside it is a hero bake (`assets/piratetavern`,
-3838 of 4000 with the sign's arm) with **no `anchor.flag`** - main.js hangs the district's flag on every one,
-and it flies its own Jolly Roger - and an `anchor.sign` where `web/js/piratesign.js` hangs the swinging sign at
-`PIRATE_SIGN_YAW` (the upper storey's two-degree twist). E answers from the lot's middle (`kind: 'tavern'`,
-`room: 'piratetavern'`), since its door's step is wet. Inside is `ROOMS.piratetavern`
+distance from one harbour. A new civic plot, so a minor. Outside it is render 17 built literally: a galleon
+standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~80k
+triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
+texture of its own; the mesh module is ~10 MB). The ship is modelled at 1x and scaled `SCALE` 2.5 at the end of
+the script; the stair, door, lanterns and sign are placed after that at a settler's scale. It is made for an
+**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`) that the server does not give
+it yet - on today's 3 x 3 it overlaps its neighbours, so the lot comes first ([Plans/piratenkroeg.md](Plans/piratenkroeg.md),
+"Bijsturing"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
+Rogers - and no porch (`NO_PORCH`: the rock is its footing). **Its zigzag stair is walked**: the bake names every
+floor as an `anchor.deck.<name>.lo|hi` and every ramp as an `anchor.stair.<name>.lo|hi` corner pair, the ship's
+vocabulary (`pirateSurfaces` in buildings.js -> the build's
+`surfaces`, turned and placed by `surfacesOf` in main.js and handed to `walk.setSurfaces`), and its solids carry
+a height (`pirateSolids`: each part from its foot to its top, the rails from `anchor.rail.<n>.a|b` as short
+blocks `PIRATE_RAIL_H` high, a low block under each high floor so nobody walks in under the stair, the hull
+from `anchor.solid.hull.lo|hi`; `WALKED_ANCHOR` in scripts/model-rules.mjs) - `tests/pirate-stair-walk.test.mjs` walks it with the real walk mode.
+`anchor.sign` is on its own post at the stair's foot (`PIRATE_SIGN_YAW` 0, board facing the water);
+`anchor.door` is on the ground at the foot of the stair, and E answers at the stoop by the door with the
+stoop's height as its `floor`. Rebuild with `node scripts/blender.mjs --background --python
+scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
+.blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
+`scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`
 (`web/js/pirate-tavern.js`): four rectangles, the camera kept in the hall, the cellar or the oriel (`areas`, a
 low `ceiling` per area takes the lid off earlier), and **exactly seven PointLights**, the tavern's count, which
 is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onTalk`, a seat's first order to

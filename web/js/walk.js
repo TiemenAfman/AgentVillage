@@ -857,6 +857,9 @@ export function createWalkMode({
   // above its bank, so you walk onto a bridge rather than bump into it; well under a
   // storey, or you would step off the ground straight onto your own roof.
   const STEP_UP = 0.45;
+  // And how far down one frame follows the ground before it is a fall: well over a quay's tread
+  // (0.075) or a steep hillside at a run, well under a pier's height over the water.
+  const STEP_DOWN = 0.35;
 
   // A room's floors and stairs as rectangles rather than cells (Plans/verdiepingen-binnen.md):
   // a cell is four metres, and a balcony is half of one deep and a stair a whole storey in one.
@@ -1905,7 +1908,13 @@ export function createWalkMode({
       state.grounded = true;                 // a diver is not airborne, whatever their height
       if (r.surfaced) endDive();             // floating again, at the very height this left
     } else if (state.grounded) {
-      state.pos.y = underfoot;
+      // Walked off an edge - a quay, a bridge, a rock, a stair's side: fall, the jump's own way,
+      // instead of being set down on the ground below in the same frame. That was every drop on
+      // the island, a hand or a storey alike (the keeper: "instant omlaag teleporteren ipv
+      // vallen"). A step down within STEP_DOWN is still followed, so stairs, slopes and kerbs
+      // are walked as they always were.
+      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; }
+      else state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
       state.pos.y += state.vy * dt;

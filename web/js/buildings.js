@@ -1665,14 +1665,17 @@ function civic(parts, spec, rng) {
       // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
       parts.push(...meshAsset('piratetavern'));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
-      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on the
-      // upper storey's east wall; what swings is hung by main.js on `animated.piratesign`, at the
+      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on its
+      // post at the foot of the stair; what swings is hung by main.js on `animated.piratesign`, at the
       // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
       if (anchors.sign) {
         parts.push(...pirateSignParts({ at: anchors.sign, yaw: PIRATE_SIGN_YAW }));
         animated.piratesign = { yaw: PIRATE_SIGN_YAW };
       }
-      return { anchors, animated, height: models.heightOf('piratetavern') };
+      // Its stair is walked (Plans/piratenkroeg.md, "Bijsturing"): floors and ramps for walk mode,
+      // and solids with a height, so the rock under a flight is no wall to whoever is on it.
+      const surfaces = pirateSurfaces(anchors);
+      return { anchors, animated, height: models.heightOf('piratetavern'), surfaces, solids: pirateSolids(parts, anchors, surfaces) };
     }
     case 'chapel': {
       // A brick village church with a saddleback tower, modelled in
@@ -2270,9 +2273,104 @@ const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
 // The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
 // crate and bollard on the other closed with the walls into one block across the walk up to it.
 const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
-// The turn that brings the sign's arm (+x) to the outward normal of the Salty Kraken's upper east
-// wall: that storey is turned TWIST, two degrees, on the ground floor (scripts/build-piratetavern.py).
-const PIRATE_SIGN_YAW = 2 * Math.PI / 180;
+// The turn that brings the sign's arm (+x) to where the Salty Kraken's sign points: none. It stands
+// on its own post at the foot of the stair, the arm out east over the way up and the board facing
+// the water (+z), where the island's camera reads it (scripts/build-piratetavern.py).
+const PIRATE_SIGN_YAW = 0;
+
+// The Salty Kraken's stair as walk mode stands on it (scripts/build-piratetavern.py): every
+// `anchor.deck.<name>.lo|hi` pair is the two corners of one axis-aligned floor and every
+// `anchor.stair.<name>.lo|hi` a ramp along x from its foot (`lo`) to its head (the ship's own
+// vocabulary, scripts/model-rules.mjs) - walk.js `surfaces`, the rooms'
+// own shape, in the building's frame (main.js turns and places them). The corners are the bake's,
+// so the numbers of the stair live in one place.
+export function pirateSurfaces(anchors) {
+  const out = [];
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^(deck|stair)\.(.+)\.lo$/.exec(key);
+    const hi = m && anchors[`${m[1]}.${m[2]}.hi`];
+    if (!hi) continue;
+    const name = m[2];
+    const x0 = Math.min(lo[0], hi[0]), x1 = Math.max(lo[0], hi[0]);
+    const z0 = Math.min(lo[2], hi[2]), z1 = Math.max(lo[2], hi[2]);
+    if (Math.abs(lo[1] - hi[1]) < 1e-6) out.push({ name, x0, x1, z0, z1, y: lo[1] });
+    else {
+      const first = lo[0] <= hi[0];
+      out.push({ name, x0, x1, z0, z1, axis: 'x', y0: first ? lo[1] : hi[1], y1: first ? hi[1] : lo[1] });
+    }
+  }
+  return out;
+}
+
+// Its solids, with a height each (walk.js `atHeight`): a wall only to a body whose feet-to-head
+// span meets it. From every part as footprintOf takes them - the rectangle of what is low enough to
+// bump into - but standing from the part's foot to its top, so a walker on the landing passes over
+// the rock under it; the stair itself is left out (it is walked, not walked into). Under each floor
+// and each ramp's high end stands a low block, so nobody walks in under the stair instead of up it,
+// and the hull is one solid from its keel to the castle's roof (`anchor.solid.hull.lo|hi`): no
+// vertex of it is a settler's height off the ground, so without it the stair's inner side was open
+// into the ship.
+const PIRATE_WALKED = /^Salty (stair|door)/;
+const UNDER_STAIR = 0.75;       // a floor at least this high has room under it for somebody to walk
+const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in scripts/build-piratetavern.py)
+function pirateSolids(parts, anchors, surfaces) {
+  const out = [];
+  for (const g of parts) {
+    const name = g.userData.part?.args?.[0] || '';
+    if (PIRATE_WALKED.test(name)) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity, low = 0;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (y > WALK_CLEARANCE) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+      low++;
+    }
+    if (low) out.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, y0, y1 });
+  }
+  // The rails: each segment a thin wall from the floor under it to a rail's height over it, in
+  // pieces a pace long so a rail up a flight stops you at the flight's height and not at its top
+  // (the first bake left them to the eye: you walked through them and fell off the stair).
+  for (const [key, a] of Object.entries(anchors)) {
+    const m = /^rail\.(\d+)\.a$/.exec(key);
+    const b = m && anchors[`rail.${m[1]}.b`];
+    if (!b) continue;
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.4));
+    for (let i = 0; i < n; i++) {
+      const p = a.map((v, k) => v + (b[k] - v) * i / n), q = a.map((v, k) => v + (b[k] - v) * (i + 1) / n);
+      out.push({ x: (p[0] + q[0]) / 2, z: (p[2] + q[2]) / 2, hx: Math.abs(q[0] - p[0]) / 2 + 0.02, hz: Math.abs(q[2] - p[2]) / 2 + 0.02,
+        y0: Math.min(p[1], q[1]) - 0.05, y1: Math.max(p[1], q[1]) + PIRATE_RAIL_H });
+    }
+  }
+  // Under each floor high enough to walk under, a low block - inset by a body's width, because
+  // walk.js grows every solid by one: at the floor's own size, anybody who landed beside the stair
+  // was inside it, and every step from there was blocked (the keeper: "karakter zit vast").
+  for (const s of surfaces) {
+    let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
+    const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
+    if (top < UNDER_STAIR) continue;
+    if (s.y == null) {
+      // only where the ramp is high enough to be walked under
+      const t = (UNDER_STAIR - s.y0) / (s.y1 - s.y0);
+      const at = s.x0 + (s.x1 - s.x0) * Math.min(Math.max(t, 0), 1);
+      if (s.y1 > s.y0) a = Math.max(a, at); else b = Math.min(b, at);
+    }
+    const y1 = (s.y != null ? s.y : UNDER_STAIR) - 0.3;
+    const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
+    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: 0, y1 });
+  }
+  const lo = anchors['solid.hull.lo'], hi = anchors['solid.hull.hi'];
+  if (lo && hi) {
+    out.push({ x: (lo[0] + hi[0]) / 2, z: (lo[2] + hi[2]) / 2, hx: Math.abs(hi[0] - lo[0]) / 2, hz: Math.abs(hi[2] - lo[2]) / 2, y0: lo[1], y1: hi[1] });
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -2312,6 +2410,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The gold mine is a hill with an apron of its own, both going under the grass: a step round
   // a hill is a plinth under a mountain.
   'goldmine',
+  // The Salty Kraken is a ship on a rock, and the rock is its footing: a step round it read as a
+  // stone plinth under a wreck.
+  'piratetavern',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',
@@ -2482,12 +2583,13 @@ export function buildBuilding(spec, ctx = {}) {
   // A building that says where it is solid itself (the ship, whose hull is measured off its
   // bake rather than off everything below head height), and one that floats: main.js and
   // guest-island.js set its origin on the sea instead of on the ground under the plot.
-  let ownSolids = null, floats = false;
+  let ownSolids = null, floats = false, ownSurfaces = null;
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
     anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
     ownSolids = r.solids || null;
+    ownSurfaces = r.surfaces || null;
     floats = !!r.floats;
     if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
   } else if (spec.kind === 'shed') {
@@ -2581,6 +2683,8 @@ export function buildBuilding(spec, ctx = {}) {
     geometry, anchors, animated, height, width: w,
     bbox: geometry.boundingBox.clone(), solids, walls,
     ...(floats ? { floats } : {}),
+    // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
+    ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),
     ...(deck && s === 1 ? { porch: deck } : {}),
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
