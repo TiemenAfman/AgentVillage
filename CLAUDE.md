@@ -35,6 +35,8 @@ npm run app:build                  # promptholm-island.exe + promptholm.exe in s
 git tag v0.2.0 && git push origin v0.2.0   # release: .github/workflows/release.yml builds both exes on
                                    # windows-latest and attaches promptholm-windows-x64.zip; the tag must
                                    # equal "version" in src-tauri/tauri.conf.json or the job stops
+                                   # (no tag push, e.g. from a cloud session: run the workflow by hand
+                                   # on main with `publish` - its `tag` job tags v<version> itself)
 ```
 
 Tests are `node:test` with no npm script. On Windows the shell does not expand the glob, so
