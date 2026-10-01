@@ -985,7 +985,13 @@ it, never a light); `gilt`/`metal` get one shared warm room to reflect. No size 
 A piece is made with the personal skill `/kitstuk` (`~/.claude/skills/kitstuk/`: Pixal3D RAW -> N k ->
 kit frame -> HD and/or SD-auto, fit and room checks). Pixal3D keeps its input image's viewpoint, so the
 front differs per image: find it with `kitstuk front` (every 15 degrees at eye level), not off BlenderAI's
-four default renders (325/55/145/235) - those gave the barrel of candles 145 where it is 90.
+four default renders (325/55/145/235) - those gave the barrel of candles 145 where it is 90. It also
+*pitches* the mesh by the picture's elevation (from eye level you see the top of the chest): a piece with
+axes of its own is set upright and square first (`blender/axes.py`, the smallest box, tilt about x only).
+The room's stand-ins (`ph_*` in `scripts/krakenroom/dressing.py`) are kit pieces since then
+(`scripts/krakenkit/standin.py`, `KIT_KINDS` in kraken-dressing.js for the props): the pack can only
+replace a kit piece, and a stand-in is stretched to its HD model's box (`STRETCH`, `geom.settle`), never
+the model squashed - so its blockers (`FOOT`) follow the model. `kit()` takes a placement's `s`.
 `/demo` shows the pack in its rooms (`?sd` for the bake). Under Node, GLTFLoader needs a `ProgressEvent`
 stub.
 

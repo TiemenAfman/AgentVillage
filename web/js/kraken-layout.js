@@ -134,6 +134,19 @@ export const HEARTH = { x: -8.75, z: 4.4, face: 0.375, half: 0.775 };   // in th
 // chimney, and stay under the arch's crown at F + 0.87 (shell.py hearth()), so none shows over the opening.
 export const HEARTH_FIRE = { x: -8.67, z: 4.41, y: F + 0.027, lift: 0.04, w: 0.5, h: 0.78, bed: [0.2, 0.2] };
 
+// On the captain's deck. 0.16 west of where they stood with the stand-ins: the chair is the HD throne's
+// width now (scripts/krakenkit/captainchair.py), and at 7.3 it stood against the old mast post at 7.45.
+export const CHART = { x: 7.14, z: -5.2 };
+export const CHAIR = { x: 7.14, z: -6.1 };
+
+// The jolly boat's gunwale over the pool: her keel 0.17 under it may not go through the room's slab
+// (y = 0 is the lowest point of the bake), and the pool is 0.02 deep, so she rides high in it.
+const BOAT_GUNWALE = Math.max(POOL.surface + 0.07, 0.171);
+// A hammock (scripts/krakenkit/hammock.py) is HAMMOCK.len between its hooks at HAMMOCK.hook over its
+// lowest point (its stand-in's 0.261, stretched to the HD model's 0.466 of sag); each is scaled to its
+// own span, and the room hangs its slings from the hooks.
+export const HAMMOCK = { len: 1.25, hook: 0.462 };
+
 // The ship's parts (web/js/krakenkit-mesh.js), where they stand.
 export const KIT = {
   stern: { x: 0, z: -6.85, y: B },                            // the back bar against the rock
@@ -171,6 +184,28 @@ export const KIT = {
   // wall, between the mast's foot and the tall barrel with candles in its lid (kraken-dressing.js), its
   // skulls to the door.
   candlebarrel: { x: 1.5, z: -2.75, y: P, ry: 0, r: 0.29 },
+  // The room's stand-ins that are kit pieces now (scripts/krakenkit/<object>.py on dressing.py's ph_*),
+  // so the HD pack can put Pixal3D's model of each in their place (Plans/piratenkroeg.md, "The HD pack").
+  // The props among them (chest, hoard, cannon, globe, telescope) are kraken-dressing.js's KIT_KINDS.
+  // A piece's origin is its lowest point, so a `lift` is what its module framed the stand-in up by.
+  charttable: { x: CHART.x, z: CHART.z, y: C, ry: 0, top: 0.31 },       // `top`: its top (charttable.py TOP), the chart lies there
+  captainchair: { x: CHAIR.x, z: CHAIR.z, y: C, ry: 0 },
+  // Moored beside the jetty: `y` her keel, where the stand-in's was, and `gunwale` over it (its 0.17
+  // stretched to the HD model's height, rowboat.py STRETCH).
+  rowboat: { x: (JETTY.x0 + JETTY.x1) / 2 + 0.15, z: JETTY.z1 + 0.24, y: BOAT_GUNWALE - 0.17, ry: 0.06, gunwale: 0.124 },
+  // In the hold and under the west gallery, slung higher than a head from hooks on ropes from the deck
+  // overhead (the room's): `za`/`zb` the hooks, `hook` their height (the second 0.03 lower).
+  hammocks: [{ x: 6.25, za: -3.0, zb: -1.9, hook: G + 0.95 }, { x: -8.55, za: -5.75, zb: -4.35, hook: G + 1.0 }],
+  // The ship's wheel on the chimney breast, its hub F + 1.55 up: its lowest spoke 0.26 under the hub. Its
+  // back on the breast's face, which is HEARTH.x + 0.33 to 0.35 at that height (a ray along -x in /demo);
+  // the stand-in hung at HALL.x0 + 0.36, 0.2 inside the stone, and was never seen.
+  helm: { x: HEARTH.x + 0.375, z: HEARTH.z, y: F + 1.55 - 0.26, ry: Math.PI / 2 },
+  // Hung on the south wall by the door, 0.9 of its size; its arms' foot 0.2527 over the frame it was drawn
+  // in, its back on the wall (the HD model is 0.215 deep).
+  anchor: { x: -6.3, z: HALL.z1 - 0.1, y: G + 0.3 + 0.2527 * 0.9, ry: Math.PI, s: 0.9 },
+  // Over the outside of the east upper gallery's rail, to the hall, and on the south wall: 0.424 tall
+  // (the HD model's), hung from where the stand-in's top was, its back on what it hangs on.
+  jollyrogers: [{ x: 7.35, z: -4.5, y: U + 0.395 - 0.424, ry: -Math.PI / 2 }, { x: -3.3, z: HALL.z1 - 0.03, y: G + 1.625 - 0.424, ry: Math.PI }],
 };
 
 // The tables in the pit (two rows of three, the middle aisle from the door to the mast kept open),
@@ -181,8 +216,6 @@ export const TABLES = [
   { id: 't5', x: -3.2, z: 4.7 }, { id: 't6', x: 1.8, z: 4.7 },
 ];
 export const SLOOPS = [{ x: -3.2, y: P + 2.6, z: 1.45 }, { x: 1.8, y: P + 2.6, z: 1.45 }];   // boats full of candles
-export const CHART = { x: 7.3, z: -5.2 };                    // on the captain's deck
-export const CHAIR = { x: 7.3, z: -6.1 };
 export const CANNON = { x: -8.2, z: 6.3 };                   // in the south-west corner, on the ground
 export const KEG_TABLE = { x: -6.8, z: 6.2 };                // a keg for a table by the cannon
 export const KEG_SEATS = [{ id: 'keg:0', x: -6.4, z: 6.2, yaw: -Math.PI / 2 }, { id: 'keg:1', x: -6.8, z: 5.8, yaw: 0 }];

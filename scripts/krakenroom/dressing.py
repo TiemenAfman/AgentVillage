@@ -615,7 +615,6 @@ def hearth(L):
     jambs, the breast 0.38 out of the wall at the mantel and 0.32 at the wheel."""
     F = L['F']
     hx, hz = L['HEARTH']['x'], L['HEARTH']['z']
-    W = L['HALL']['x0']
     front = hx + .35
     fz = hz + .55
     rod('iron stand', (front + .07, F, fz), (front + .07, F + .36, fz), .006, IRON, sides=4)
@@ -650,9 +649,9 @@ def hearth(L):
     scatter(mx + .02, hz + .36, my, 0, .05, 7, 44)
     for k in range(5):
         coin((mx + .03, my + .002 + k * .0042, hz - .34), turn=k)
-    # The wheel on the chimney breast, crossed cutlasses over it.
-    ph_wheel((W + .36, F + 1.55, hz), PI / 2)
-    crossed_cutlasses((W + .34, F + 2.0, hz), PI / 2)
+    # Crossed cutlasses over the wheel on the chimney breast (the wheel is the kit's, helm.py at KIT.helm),
+    # on the breast's face, hx + 0.30 at that height (at the hall's west wall + 0.34 they were 0.2 inside the stone).
+    crossed_cutlasses((hx + .32, F + 2.0, hz), PI / 2)
     # The rug before the hearthstone, and a scatter of coins someone dropped by the fire.
     x0, x1, z0, z1 = front + .3, front + 1.12, hz - .55, hz + .55
     span('rug', x0, x1, F, F + .004, z0, z1, RUG)
@@ -684,7 +683,9 @@ def cutlass(m, jewel=True):
 def crossed_cutlasses(at, turn):
     with frame(M(at, turn)):
         cutlass(M((-.12, -.1, .012), roll=.65))
-        cutlass(M((.12, -.1, .02), roll=PI - .65, tilt=PI), jewel=False)
+        # Its other face to the room (tilt), which flips y after the roll: PI + 0.65 brings its blade up
+        # to the left, crossing the first. PI - 0.65 pointed it down, through the wheel under it.
+        cutlass(M((.12, -.1, .02), roll=PI + .65, tilt=PI), jewel=False)
 
 
 # ---- on the walls --------------------------------------------------------------------------------
@@ -917,37 +918,38 @@ def ph_telescope():
     rod('telescope', (-.22, .52, 0), (.26, .58, 0), .022, BRASS, top=.032, sides=10)
 
 
-def ph_chart_table(L):
-    """The chart table at CHART: a top 0.64 x 0.42 at L1 + 0.2 on four legs, a chart on it, a compass,
-    an hourglass; the candlestick and the goblets are the dressing's. On the captain's deck."""
-    L1 = L['LEVEL']['captain']
-    cx, cz = L['CHART']['x'], L['CHART']['z']
-    span('chart table', cx - .32, cx + .32, L1 + .176, L1 + .2, cz - .21, cz + .21, OAK)
+def ph_chart_table(top=.2):
+    """The chart table, in its own frame (the kit's charttable.py, at KIT.charttable on the captain's
+    deck): a top 0.64 x 0.42 at `top` on four legs, a compass, an hourglass, a candlestick and two
+    goblets on it. Its chart is the room's (`chart_on_table`), so it lies on the HD model too."""
+    span('chart table', -.32, .32, top - .024, top, -.21, .21, OAK)
     for dx, dz in ((-.28, -.17), (.28, -.17), (-.28, .17), (.28, .17)):
-        sp('chart table leg', cx + dx - .02, cx + dx + .02, L1, L1 + .176, cz + dz - .02, cz + dz + .02, DARK)
-    top = L1 + .2
-    with frame(M((cx - .04, top, cz), .1)):
-        span('chart', -.2, .2, 0, .002, -.14, .14, PARCH)
-    disc('compass', (cx + .2, top, cz + .1), .035, .014, BRASS, sides=12)
-    disc('hourglass', (cx + .24, top, cz - .12), .02, .07, 'plain:bottle-clear', sides=6)
-    candlestick((cx - .25, top, cz - .12), h=.05, seed=501)
+        sp('chart table leg', dx - .02, dx + .02, 0, top - .024, dz - .02, dz + .02, DARK)
+    disc('compass', (.2, top, .1), .035, .014, BRASS, sides=12)
+    disc('hourglass', (.24, top, -.12), .02, .07, 'plain:bottle-clear', sides=6)
+    candlestick((-.25, top, -.12), h=.05, seed=501)
     for dx in (.05, .14):
-        goblet((cx + dx, top, cz - .13), mat=GOLDHI)
-    scatter(cx + .12, cz + .05, top, 0, .04, 5, 502)
+        goblet((dx, top, -.13), mat=GOLDHI)
+    scatter(.12, .05, top, 0, .04, 5, 502)
 
 
-def ph_captain_chair(L):
-    """The captain's chair at CHAIR: a seat 0.24 x 0.22 at 0.17 on four legs, a back 0.24 wide to
-    0.66, facing +z (the chart table)."""
-    L1 = L['LEVEL']['captain']
-    ch = L['CHAIR']
-    with frame(M((ch['x'], L1, ch['z']))):
-        span('chair seat', -.12, .12, .14, .17, -.11, .11, CARVED)
-        span('chair cushion', -.105, .105, .17, .19, -.095, .095, VELVET)
-        for sx in (-1, 1):
-            for sz in (-1, 1):
-                sp('chair leg', sx * .1 - .015, sx * .1 + .015, 0, .14, sz * .09 - .015, sz * .09 + .015, DARK)
-        span('chair back', -.12, .12, .17, .66, -.13, -.1, VELVET)
+def chart_on_table(L):
+    """The captain's chart on the chart table (KIT.charttable, its top at `top`): the treasure map
+    the second table has, without its dagger - Pixal3D's model of the table had only a pale sheet
+    there (the keeper, 1 October 2026)."""
+    t = L['KIT']['charttable']
+    treasure_map(M((t['x'] - .04, t['y'] + t['top'] + .001, t['z']), .1), dagger=False)
+
+
+def ph_captain_chair():
+    """The captain's chair, in its own frame (the kit's captainchair.py, at KIT.captainchair): a seat
+    0.24 x 0.22 at 0.17 on four legs, a back 0.24 wide to 0.66, facing +z (the chart table)."""
+    span('chair seat', -.12, .12, .14, .17, -.11, .11, CARVED)
+    span('chair cushion', -.105, .105, .17, .19, -.095, .095, VELVET)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            sp('chair leg', sx * .1 - .015, sx * .1 + .015, 0, .14, sz * .09 - .015, sz * .09 + .015, DARK)
+    span('chair back', -.12, .12, .17, .66, -.13, -.1, VELVET)
 
 
 def sloop_chain(L, S, to=None):
@@ -959,26 +961,27 @@ def sloop_chain(L, S, to=None):
         chain((S['x'], top, S['z']), (S['x'], L['TOP'] if to is None else to, S['z']))
 
 
-def ph_rowboat(L):
-    """The jolly boat moored beside the jetty: a hull 1.0 long, 0.42 across, 0.17 deep, her gunwale
-    0.07 over the pool; two oars in her, a lantern on her stem post, her painter to the jetty's end."""
-    P, J = L['POOL'], L['JETTY']
-    # Her keel 0.17 under the gunwale may not go through the room's slab (y = 0 is the lowest point of
-    # the bake): the pool is 0.02 deep, so she rides high in it.
-    y = max(P['surface'] + .07, .171)
-    x0 = (J['x0'] + J['x1']) / 2 + .15
-    z0 = J['z1'] + .24
-    with frame(M((x0, y, z0), .06)):
-        hull('boat hull', [(-.5, 0, -.19), (-.5, 0, .19), (.5, .02, 0), (-.48, -.15, -.12), (-.48, -.15, .12), (.35, -.14, -.08),
-                           (.35, -.14, .08), (0, -.17, 0), (0, 0, -.21), (0, 0, .21), (.3, .01, -.16), (.3, .01, .16)], BOATW)
-        span('boat thwart', -.03, .03, .0, .012, -.19, .19, OAK)
-        for sz in (-1, 1):
-            rod('oar', (-.4, .02, sz * .06), (.45, .03, sz * .08), .011, WOOD, sides=6)
-        rod('stem post', (.48, .02, 0), (.48, .3, 0), .01, DARK, sides=5)
-        lantern((.54, .22, 0), s=1.0)
-        rod('stem arm', (.48, .29, 0), (.54, .29, 0), .006, IRON, sides=4)
+def ph_rowboat():
+    """The jolly boat, in its own frame with her gunwale at y = 0 (the kit's rowboat.py frames her on
+    her keel, 0.17 under it): a hull 1.0 long, 0.42 across, 0.17 deep; two oars in her, a lantern on
+    her stem post. Moored beside the jetty at KIT.rowboat; her painter is the room's."""
+    hull('boat hull', [(-.5, 0, -.19), (-.5, 0, .19), (.5, .02, 0), (-.48, -.15, -.12), (-.48, -.15, .12), (.35, -.14, -.08),
+                       (.35, -.14, .08), (0, -.17, 0), (0, 0, -.21), (0, 0, .21), (.3, .01, -.16), (.3, .01, .16)], BOATW)
+    span('boat thwart', -.03, .03, .0, .012, -.19, .19, OAK)
+    for sz in (-1, 1):
+        rod('oar', (-.4, .02, sz * .06), (.45, .03, sz * .08), .011, WOOD, sides=6)
+    rod('stem post', (.48, .02, 0), (.48, .3, 0), .01, DARK, sides=5)
+    lantern((.54, .22, 0), s=1.0)
+    rod('stem arm', (.48, .29, 0), (.54, .29, 0), .006, IRON, sides=4)
+
+
+def rowboat_painter(L):
+    """The jolly boat's painter, from her bow to the jetty's end (the boat is the kit's, at
+    KIT.rowboat, whose y is her keel's, `gunwale` under her gunwale)."""
+    P, J, b = L['POOL'], L['JETTY'], L['KIT']['rowboat']
+    y = b['y'] + b['gunwale']
     end = (J['x1'] - .02, L['F'] - .01, J['z1'] - .02)
-    bow = (x0 + .5, y + .04, z0 + .03)
+    bow = (b['x'] + .5, y + .04, b['z'] + .03)
     tube('painter', [bow, ((bow[0] + end[0]) / 2, P['surface'] + .005, (bow[2] + end[2]) / 2 + .03), end], .006, ROPE, sides=4)
 
 
@@ -1140,9 +1143,11 @@ def build(L):
     # would be an invisible wall or a thing walked through: refuse it here, before anybody does.
     D = L['DRESSING']
     for p in D['PROPS']:
-        if p['kind'] not in KINDS or p['kind'] not in D['FOOT']:
+        if (p['kind'] not in KINDS and p['kind'] not in D['KIT_KINDS']) or p['kind'] not in D['FOOT']:
             raise KeyError(f"prop kind {p['kind']!r} needs both a KINDS drawer here and a FOOT in kraken-dressing.js")
     for i, p in enumerate(D['PROPS']):
+        if p['kind'] in D['KIT_KINDS']:
+            continue                # a kit piece now (scripts/krakenkit/), placed by pirate-tavern.js
         seed = 1000 + i * 17
         g = rng(seed)
         with frame(M((p['x'], p['y'], p['z']), p.get('ry', 0), scale=p.get('s', 1))):
@@ -1157,11 +1162,10 @@ def build(L):
 
     tables(L)
     snug(L)
-    ph_chart_table(L)
-    ph_captain_chair(L)
+    chart_on_table(L)
     for i, sl in enumerate(L['SLOOPS']):
         sloop_chain(L, sl, to=roof(sl['x']))
-    ph_rowboat(L)
+    rowboat_painter(L)
     hearth(L)
 
     # ---- gold lying about, by the chests and the heaps it ran out of -------------------------
@@ -1177,8 +1181,9 @@ def build(L):
     # ---- hammocks: in the hold, and under the west gallery --------------------------------------
     # Slung higher than a head (their lowest point 0.65 over the ground), from hooks on ropes down
     # from the deck overhead.
-    for (x, za, zb, y, seed) in ((6.25, -3.0, -1.9, G + .95, 1), (-8.55, -5.75, -4.35, G + 1.0, 2)):
-        ph_hammock((x, y, za), (x, y - .03, zb), .24, seed=seed)
+    # The hammocks themselves are the kit's (hammock.py, at KIT.hammocks); the room hangs their slings.
+    for h in L['KIT']['hammocks']:
+        x, za, zb, y = h['x'], h['za'], h['zb'], h['hook']
         for z, dy in ((za, 0), (zb, -.03)):
             rod('hammock sling', (x, y + dy, z), (x, C - UNDER, z), .005, ROPE, sides=3)
 
@@ -1211,14 +1216,12 @@ def build(L):
     shelf(5.3, 6.5, G + .7, W + .05, 1, 'z', 33)                     # on the west wall by the cannon
 
     # ---- the walls ------------------------------------------------------------------------------------
-    # A Jolly Roger hung over the outside of the east upper gallery's rail, to the hall, and the walls
-    # of the south and east.
-    ph_jolly_roger(M((7.35, U + .22, -4.5), -PI / 2), w=.5, h=.36, seed=1)
+    # The walls of the south and east. The two Jolly Rogers (one over the outside of the east upper
+    # gallery's rail, to the hall) and the anchor are the kit's (jollyroger.py, anchor.py, at
+    # KIT.jollyrogers and KIT.anchor).
     with group('near'):
         wanted_board(M((1.4, G + .62, S - .012), PI))
-        ph_jolly_roger(M((-3.3, G + 1.45, S - .012), PI), w=.5, h=.34, seed=3)
         crossed_cutlasses((-3.3, G + 1.02, S - .02), PI)
-        ph_anchor(M((-6.3, G + .3, S - .03), PI, scale=.9))
         # A net with floats on the south wall over the crates east of the door.
         wall_net(lambda u, v: (3.15 + u * .95, G + 1.95 - v * .8 - .08 * math.sin(PI * u) * (1 - v * .5),
                                S - .02 - .02 * math.sin(PI * u) * math.sin(PI * v)), 51)

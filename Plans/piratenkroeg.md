@@ -478,6 +478,29 @@ committed to AgentVillage.
 step of that piece's prepare, its target in the script, the texture baked back. The raw output stays where
 Pixal3D wrote it.
 
+**9. The room's stand-ins become kit pieces, and the RAWs go in whole** (1 October, the keeper's call). Thirteen
+RAWs from the second round of reference sheets (schatkist, goudbult, goudbult-hoog, kanon, kaartentafel,
+kapiteinsstoel, globe, telescoop, roeiboot, hangmat, stuurwiel, anker, jolly-roger) go into the pack as Pixal3D
+made them, a million triangles and a 2048 texture each, no N k step (`kitstuk ... --raw`). Their stand-ins
+(`ph_*` in `dressing.py`) were drawn into the hall's bake, and the pack replaces a kit piece and nothing else,
+so each is a kit piece now: `scripts/krakenkit/<object>.py` draws dressing.py's own function (`standin.py`;
+the function stays the one place a finished model replaces), placed by `pirate-tavern.js` through `kit()` -
+the fixed ones at `KIT.charttable`, `captainchair`, `rowboat`, `hammocks`, `helm` (not `wheel`, the
+chandelier), `anchor`, `jollyrogers`; the props of a kind in `kraken-dressing.js KIT_KINDS` (chest, hoard,
+hoard-tall, cannon, globe, telescope) where the dressing stood them, with their `s` and their blockers as
+before. The tall heap is a new prop on the bar terrace in place of its hoard. What a piece's own model holds
+moves into it (the chart table's candlestick and goblets: the HD has its own); what joins it to the room stays
+the room's (the hammocks' slings, the boat's painter, the chart - the treasure map of the second table, laid on
+either version, since Pixal3D's chart was a pale sheet). Every prop of a kind is now one piece, where the bake
+drew each from its seed.
+
+**The stand-in goes to the model's size**, never the model to the stand-in's (that would squash it). Each RAW
+is put square on its stand-in's axes - its front is the object's own, not its picture's three-quarter view, so
+`blender/axes.py` finds the footprint's main axis and renders the four square-on fronts to pick from - and
+scaled so its largest extent is the stand-in's; then the module's `STRETCH` takes the stand-in per axis to the
+model's box (`geom.settle`), the fit check holds, and the blockers (`FOOT`, the chart table's and the chair's)
+follow. `kit()` and `createHdPieces` take a placement's `s`.
+
 ### The skill: a kit piece from a picture, end to end (planned, not built)
 
 The chain as one skill, fully automatic unless the keeper asks for it in phases - in his words: first see

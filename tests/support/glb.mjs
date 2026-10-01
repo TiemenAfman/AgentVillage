@@ -4,7 +4,8 @@
 // GLTFLoader and for glbInfo; no texture is ever decoded.
 //
 // prims: [{ positions: number[], material: 'name', translation?, rotation?, scale? }]
-// images: [{ w, h }] - a PNG signature and IHDR only, which is all glbInfo reads.
+// images: [{ w, h, webp }] - a PNG signature and IHDR only (or a lossy WebP's RIFF and VP8 frame header),
+// which is all glbInfo reads.
 export function makeGlb(prims, { images = [] } = {}) {
   const chunks = [];
   let offset = 0;
@@ -37,7 +38,16 @@ export function makeGlb(prims, { images = [] } = {}) {
     json.scenes[0].nodes.push(i);
   });
   if (images.length) json.images = [];
-  for (const { w, h } of images) {
+  for (const { w, h, webp } of images) {
+    if (webp) {
+      const v = new Uint8Array(30);
+      v.set([0x52, 0x49, 0x46, 0x46, 22, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 10, 0, 0, 0, 0, 0, 0, 0x9d, 0x01, 0x2a]);
+      new DataView(v.buffer).setUint16(26, w, true);
+      new DataView(v.buffer).setUint16(28, h, true);
+      json.bufferViews.push(view(v));
+      json.images.push({ bufferView: json.bufferViews.length - 1, mimeType: 'image/webp' });
+      continue;
+    }
     const png = new Uint8Array(24);
     png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
     new DataView(png.buffer).setUint32(16, w);

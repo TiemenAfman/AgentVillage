@@ -22,6 +22,7 @@
 // against a wall or a rail, one heap of gold to a terrace, the hold packed - and the atrium's floor,
 // the aisle and every way between the stairs left bare.
 
+// The kinds in KIT_KINDS (below) are their kit piece's box: its stand-in stretched to the HD model's.
 export const FOOT = {
   'barrel': { r: 0.125, h: 0.29 },
   'barrel-small': { r: 0.095, h: 0.21 },
@@ -36,20 +37,32 @@ export const FOOT = {
   'crate-wide': { hx: 0.3, hz: 0.15, h: 0.53 },
   'crate-gold': { hx: 0.15, hz: 0.15, h: 0.32 },
   'crate-barrel': { hx: 0.15, hz: 0.15, h: 0.53 },
-  'chest': { hx: 0.24, hz: 0.19, h: 0.43 },
+  'chest': { hx: 0.24, hz: 0.2, h: 0.36 },
   'chest-closed': { hx: 0.19, hz: 0.12, h: 0.25 },
-  'hoard': { r: 0.26, h: 0.18 },
+  'hoard': { r: 0.26, h: 0.19 },
+  'hoard-tall': { r: 0.27, h: 0.57 },
   'hoard-small': { r: 0.15, h: 0.1 },
   'ingots': { hx: 0.08, hz: 0.06, h: 0.07 },
   'sack': { r: 0.13, h: 0.22 },
   'sack-gold': { r: 0.13, h: 0.24 },
-  'cannon': { hx: 0.32, hz: 0.15, h: 0.32 },
+  'cannon': { hx: 0.32, hz: 0.16, h: 0.31 },
   'shot-pile': { r: 0.08, h: 0.09 },
   'woodpile': { hx: 0.15, hz: 0.26, h: 0.26 },
   'coil': { r: 0.11, h: 0.05 },
-  'globe': { r: 0.13, h: 0.5 },
-  'telescope': { r: 0.16, h: 0.6 },
+  'globe': { r: 0.2, h: 0.51 },
+  'telescope': { r: 0.2, h: 0.61 },
   'candle-stand': { r: 0.08, h: 0.62 },
+};
+
+// The kinds that are kit pieces (scripts/krakenkit/<object>.py, civic_kraken_<object>) rather than the
+// room's bake: pirate-tavern.js places each prop of them through kit(), so the HD pack can put
+// Pixal3D's model in its place (Plans/piratenkroeg.md, "The HD pack"). Every prop of a kind is then
+// the same piece; the bake drew each from its own seed. `lift` is how far the piece's lowest coin or
+// foot sinks into the boards (its module's LIFT): it is placed that much under the prop's floor.
+export const KIT_KINDS = {
+  'chest': { object: 'chest', lift: 0.0019 }, 'hoard': { object: 'hoard', lift: 0.0209 },
+  'hoard-tall': { object: 'hoardtall', lift: 0.0343 }, 'cannon': { object: 'cannon', lift: 0 },
+  'globe': { object: 'globe', lift: 0 }, 'telescope': { object: 'telescope', lift: 0.0027 },
 };
 
 // The storeys, as kraken-layout.js LEVEL has them (ground, pit, bar, captain, top).
@@ -88,7 +101,7 @@ export const PROPS = [
 
   // ---- the bar terrace (+1.5) ------------------------------------------------------------------
   // West of the stern: the terrace's hoard, an open chest by it, stacks against the rock.
-  { kind: 'hoard', x: -4.2, z: -6.45, y: B, ry: 0, s: 1.2 },
+  { kind: 'hoard-tall', x: -4.2, z: -6.45, y: B, ry: 0, s: 1 },
   { kind: 'chest', x: -3.5, z: -6.62, y: B, ry: 0.15, s: 1.15 },
   { kind: 'crate-gold', x: -2.85, z: -6.6, y: B, ry: 0.4, s: 1 },
   { kind: 'crate-stack', x: -5.2, z: -6.72, y: B, ry: 0.1, s: 1.2 },

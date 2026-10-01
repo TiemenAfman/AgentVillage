@@ -45,7 +45,7 @@ import { CREW } from 'shared/quests.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import * as K from './kraken-layout.js';
 import { halosOf } from './room-glow.js';
-import { PROPS, FOOT, EXTRA_BLOCKERS } from './kraken-dressing.js';
+import { PROPS, FOOT, EXTRA_BLOCKERS, KIT_KINDS } from './kraken-dressing.js';
 
 const { LEVEL, HALL, CELLAR, WALL, DOOR_HALF } = K;
 const TABLE_H = 0.2;
@@ -98,8 +98,8 @@ export function stairWalls(s) {
   };
   return { solid: s.id !== 'bar-captain', rails: [c0, c1].filter(open) };
 }
-function place(out, asset, { x = 0, y = 0, z = 0, ry = 0 } = {}, keep = () => true) {
-  const at = { x, y, z, ry };
+function place(out, asset, { x = 0, y = 0, z = 0, ry = 0, s = 1 } = {}, keep = () => true) {
+  const at = { x, y, z, ry, sx: s, sy: s, sz: s };
   out.push(...meshAsset(asset, 0xffffff, { ...at, skip: (n) => !keep(n) || NICHE.test(n) || PANE.test(n) }));
   // A pane as broad as the sea arch's opening glowed the whole arch a flat blue at 0.45, the
   // loudest thing in the room: past a unit across a pane is the night itself, and takes 0.18.
@@ -135,7 +135,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
     if (!hdPieceOf(asset)) return place(out, asset, at);
     const geoms = [];
     place(geoms, asset, at);
-    pieces.push({ asset, at: { x: at.x || 0, y: at.y || 0, z: at.z || 0, ry: at.ry || 0 }, roof: out === roof, geoms });
+    pieces.push({ asset, at: { x: at.x || 0, y: at.y || 0, z: at.z || 0, ry: at.ry || 0, s: at.s || 1 }, roof: out === roof, geoms });
   };
   kit('civic_kraken_stern', K.KIT.stern);
   const KIT = K.KIT;
@@ -158,6 +158,24 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (let i = 0; i < stools.n; i++) kit('civic_kraken_stool', { x: stools.x0 + i * stools.step, y: stools.y, z: stools.z });
   const nav = K.CREW_PLACES.navigator;
   kit('civic_kraken_stool', { x: nav.x, y: nav.y, z: nav.z });
+  // The room's stand-ins that are kit pieces now, so the HD pack can put Pixal3D's models in their
+  // place (scripts/krakenkit/standin.py): the captain's furniture, the jolly boat, the hammocks, the
+  // wheel on the chimney breast, the anchor and the flags - and every prop of a kind in KIT_KINDS,
+  // standing where the dressing stood it (its blocker stays the prop's, below).
+  kit('civic_kraken_charttable', KIT.charttable);
+  kit('civic_kraken_captainchair', KIT.captainchair);
+  kit('civic_kraken_rowboat', KIT.rowboat);
+  for (const h of KIT.hammocks) {
+    const s = (h.zb - h.za) / K.HAMMOCK.len;
+    kit('civic_kraken_hammock', { x: h.x, y: h.hook - K.HAMMOCK.hook * s, z: (h.za + h.zb) / 2, s });
+  }
+  kit('civic_kraken_helm', KIT.helm);
+  kit('civic_kraken_anchor', KIT.anchor);
+  for (const j of KIT.jollyrogers) kit('civic_kraken_jollyroger', j);
+  for (const p of PROPS) {
+    const k = KIT_KINDS[p.kind];
+    if (k) kit(`civic_kraken_${k.object}`, { x: p.x, y: p.y - k.lift * p.s, z: p.z, ry: p.ry || 0, s: p.s });
+  }
 
   // ---- the walls ----------------------------------------------------------------------------
   // Every segment a blocker of exactly its own size, as the tavern lays its washroom walls; the
@@ -252,8 +270,9 @@ export function buildPirateTavern({ FLOOR, rect }) {
   block({ x: cb.x, z: cb.z, r: cb.r }, cb.y - 0.1, upTo(cb.y, cb.y + 0.36));
   for (const t of K.TABLES) block(rect(t.x, t.z, 0.75, 0.14), LEVEL.pit - 0.1, upTo(LEVEL.pit, LEVEL.pit + 0.3));
   block({ x: K.KEG_TABLE.x, z: K.KEG_TABLE.z, r: 0.14 }, -1, upTo(LEVEL.ground, LEVEL.ground + 0.3));
-  block(rect(K.CHART.x, K.CHART.z, 0.32, 0.21), LEVEL.captain - 0.1, LEVEL.captain + BODY);
-  block(rect(K.CHAIR.x, K.CHAIR.z, 0.13, 0.13), LEVEL.captain - 0.1, LEVEL.captain + BODY);
+  // The chart table and the chair at their kit pieces' size (charttable.py, captainchair.py: the HD models').
+  block(rect(K.CHART.x, K.CHART.z, 0.32, 0.2), LEVEL.captain - 0.1, LEVEL.captain + BODY);
+  block(rect(K.CHAIR.x, K.CHAIR.z - 0.01, 0.21, 0.19), LEVEL.captain - 0.1, LEVEL.captain + BODY);
   // Everything the dressing stood about the place (kraken-dressing.js): each prop's footprint for its
   // kind, turned and scaled - a turned rectangle as the box round it - from its floor to its top.
   for (const p of PROPS) {

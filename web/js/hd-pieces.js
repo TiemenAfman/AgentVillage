@@ -164,7 +164,7 @@ function hdModel(piece, onReady) {
 }
 
 // ---- in a room ---------------------------------------------------------------------------------
-// `pieces` is what the room left out of its merge: [{ asset, at: { x, y, z, ry }, roof, geoms }],
+// `pieces` is what the room left out of its merge: [{ asset, at: { x, y, z, ry, s }, roof, geoms }],
 // one per placement (seven stools are seven). `scene` takes the floor's pieces, `roof` (an Object3D
 // shown and hidden with the room's lid) the ones that hang from it. Both versions of a piece stand
 // as siblings; `setDetail(hd)` decides which is seen.
@@ -189,6 +189,7 @@ export function createHdPieces({ scene, roof = scene, pieces, material, hd = fal
     const h = t.holder.clone(true);
     h.position.set(pl.at.x || 0, pl.at.y || 0, pl.at.z || 0);
     h.rotation.y = pl.at.ry || 0;
+    h.scale.setScalar(pl.at.s || 1);         // a prop the dressing stood bigger or smaller (kraken-dressing.js)
     h.updateMatrix();
     pl.hd = h;
     pl.parent.add(h);

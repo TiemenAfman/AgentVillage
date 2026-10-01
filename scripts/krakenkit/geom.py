@@ -820,6 +820,26 @@ def coil(at, r0=.1, turns=3, layers=2, thick=.018, mat=ROPE):
     tube('rope coil', pts, thick * .5, mat, sides=4)
 
 
+def settle(stretch=None):
+    """For a kit piece that was one of the room's stand-ins (scripts/krakenroom/dressing.py `ph_*`):
+    check that what its build() emitted stands on y = 0 (a kit asset must; the module frames the
+    stand-in by a LIFT of its own, repeated in KIT, so it says where it went wrong rather than moving
+    it), and `stretch` it per axis about the middle of its footprint, so the bake takes the box of
+    its Pixal3D model in the HD pack - the keeper's call, 1 October 2026: the stand-in goes to the HD
+    model's size, never the model to the stand-in's, which would squash it."""
+    bms = list(BUCKETS.values()) + [s[3] for s in SOLO]
+    vs = [v.co for bm in bms for v in bm.verts]
+    lo = [min(v[k] for v in vs) for k in range(3)]
+    hi = [max(v[k] for v in vs) for k in range(3)]
+    if abs(lo[1]) > 1e-4:
+        raise ValueError(f'the piece\'s lowest point is at y = {lo[1]:.4f}, not 0: frame it by that much')
+    if stretch:
+        c = Vector(((lo[0] + hi[0]) / 2, 0, (lo[2] + hi[2]) / 2))
+        m = Matrix.Translation(c) @ Matrix.Diagonal((*stretch, 1)) @ Matrix.Translation(-c)
+        for bm in bms:
+            bm.transform(m)
+    return lo, hi
+
 
 def flush(prefix, collection=None, groups=True):
     """Turn the buckets into Blender objects and empty them: one per (group, material), named

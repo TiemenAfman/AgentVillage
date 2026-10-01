@@ -178,7 +178,7 @@ function grow(b, x, y, z) {
 }
 
 // Width and height of an embedded image, or null when it is not in the binary chunk or not a
-// PNG/JPEG this reads.
+// PNG/JPEG/WebP this reads (kitstuk exports WebP: a 2048 colour map as PNG made a RAW 40 MB).
 function imageSize(img, json, bin) {
   if (img.bufferView == null || !bin) return null;
   const bv = json.bufferViews[img.bufferView];
@@ -193,6 +193,12 @@ function imageSize(img, json, bin) {
       }
       i += 2 + len;
     }
+  }
+  if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) {         // RIFF....WEBP
+    const kind = String.fromCharCode(b[12], b[13], b[14], b[15]);
+    if (kind === 'VP8 ') return { w: ((b[27] << 8) | b[26]) & 0x3fff, h: ((b[29] << 8) | b[28]) & 0x3fff };
+    if (kind === 'VP8L') return { w: 1 + (((b[22] & 0x3f) << 8) | b[21]), h: 1 + (((b[24] & 0xf) << 10) | (b[23] << 2) | ((b[22] & 0xc0) >> 6)) };
+    if (kind === 'VP8X') return { w: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), h: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) };
   }
   return null;
 }

@@ -30,14 +30,14 @@ test('a GLB box is read through its node transforms, without decoding a mesh', (
   const glb = makeGlb([
     { positions: boxPositions([0, 0, 0, 1, 2, 0.5]), material: 'a', translation: [10, 0, 0] },
     { positions: boxPositions([-1, 0, 0, 0, 1, 1]), material: 'b', rotation: [0, q, 0, q], scale: [2, 2, 2] },
-  ], { images: [{ w: 2048, h: 1024 }] });
+  ], { images: [{ w: 2048, h: 1024 }, { w: 4096, h: 2048, webp: true }] });
   const info = glbInfo(glb);
   // The second box turned +90 about y (x -> -z, z -> x) and doubled: x 0..2, z 0..2, y 0..2.
   const want = [0, 0, 0, 11, 2, 2];
   info.box.forEach((v, i) => assert.ok(Math.abs(v - want[i]) < 1e-6, `box[${i}] ${v} != ${want[i]}`));
   assert.equal(info.tris, 24);
   assert.equal(info.materials, 2);
-  assert.deepEqual(info.textures, [{ w: 2048, h: 1024 }]);
+  assert.deepEqual(info.textures, [{ w: 2048, h: 1024 }, { w: 4096, h: 2048 }]);
 });
 
 test('a quarter turn of a box is three\'s rotation.y, and the scale and offset follow', () => {
@@ -158,6 +158,21 @@ test('the manifest is asked for once, and a listed piece leaves the merge', asyn
   const inPieces = def.pieces.reduce((n, p) => n + count(p.geoms), 0);
   assert.equal(count(def.parts) + inPieces, count(before.parts));
   assert.equal(fetched.filter((u) => u.endsWith('.glb')).length, 0, 'no model before one is wanted');
+});
+
+test('the room\'s stand-ins are kit pieces standing on their foot, so the pack can replace them', async () => {
+  // Plans/piratenkroeg.md, "The HD pack" 9: the pack replaces a kit piece and nothing else, so a stand-in
+  // drawn into the hall's bake could never be swapped for its Pixal3D model.
+  const { KIT_KINDS, PROPS } = await import('../web/js/kraken-dressing.js');
+  const src = fs.readFileSync(path.join(ROOT, 'web/js/pirate-tavern.js'), 'utf8');
+  const fixed = ['charttable', 'captainchair', 'rowboat', 'hammock', 'helm', 'anchor', 'jollyroger'];
+  for (const object of [...fixed, ...Object.values(KIT_KINDS).map((k) => k.object)]) {
+    const asset = `civic_kraken_${object}`;
+    assert.ok(models.assetParts(asset).length > 0, `${asset} is not baked into the kit`);
+    assert.ok(Math.abs(bakeBoxOf(asset)[1]) < 0.002, `${asset}'s foot is not on y = 0`);
+  }
+  for (const object of fixed) assert.match(src, new RegExp(`kit\\('civic_kraken_${object}'`), `${object} is not placed through kit()`);
+  for (const kind of Object.keys(KIT_KINDS)) assert.ok(PROPS.some((p) => p.kind === kind), `no prop of kind ${kind}`);
 });
 
 const settle = () => new Promise((r) => setTimeout(r, 50));
