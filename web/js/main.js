@@ -33,6 +33,7 @@ import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
+import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -4775,8 +4776,10 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
 // web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
 // breadth from where the building then turns up.
-// The shipyard is the one building not stood on the middle of its plot: that is over the sea,
-// and the yard stands on the land at its landward end (shipyardGround in web/js/shipyard.js).
+// The shipyard and the Salty Kraken are the two buildings not stood on the middle of their plot:
+// the yard's is over the sea, and it stands on the land at its landward end (shipyardGround in
+// web/js/shipyard.js); the Kraken's rises from the beach, and its rock stands on the lowest point
+// of its front so that the stair's foot meets the sand (pirateTavernGround, web/js/pirate-ground.js).
 function poseOnPlot(spec, built) {
   // A ship floats: the middle of her plot, on the sea and not on the bed under her
   // (web/js/batavia.js, the one copy guest-island.js asks too).
@@ -4784,7 +4787,8 @@ function poseOnPlot(spec, built) {
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt)
+    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
   return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {

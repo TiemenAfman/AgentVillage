@@ -435,6 +435,34 @@ kroeg stond tegen de stenen kade: *"een piraat hoort op het strand"*. Besluiten:
 en laadt mee bij het opstarten, ook in de APK. De precisie per set van de interieurbranch (`11f2248`, "Geef de
 exporter een precisie per set") kan dat flink kleiner maken, zodra die hier ligt.
 
+### Het kavel op het strand (1 oktober 2026)
+
+**Gebouwd op `claude/salty-kraken-kavel` (vanaf `claude/salty-kraken-exterieur` @456dc72).** Dit vervangt de "Opdracht voor
+de serverkant" hierboven: het kavel werd 11 x 6 in plaats van 5 x 3, en de kroeg die al staat verhuist in plaats van
+te groeien.
+
+| Besluit | Waarom |
+|---|---|
+| `PUB_LOT` = **11 x 6** in `lotOf` (`w` langs de voorkant van het model, `d` de diepte), `stamped` bij een oneven rot, zoals de schepen en de werf | Dat is waar het model voor gebakken is. `parseBundle` neemt tot 16, dus de zee heeft er geen last van. |
+| **`pirateTavernSite` zoekt zelf**, zonder `harbourSite`/`kadeSite`/`coastSite`: land of zand, niet op het dorpsplan, niet bij steigers en hellingen (`wf.near`), niet in de trechter of de ring eromheen (`havenKeys`), minstens `PUB_KADE_CLEAR` (4) cellen van de stenen kade | "Een piraat hoort op het strand" en "een blokje van de kade af". |
+| **De voorkant aan het water**: minstens 6 van de 11 kolommen zien water binnen 5 cellen, over open land (een weg mag, er mag niets staan); de trede van de trap op land | Eerst gevraagd: 8 kolommen binnen 4 cellen, alleen zand. Dat vond op de eilanden van 128 op één seed op zes een kavel: de kust is daar meestal gras tot één steile oevercel, en een strand van 11 lang is een bult in de kust. Op het live eiland loopt een weg over de hele piratenoever en mondt de rivier langs die oever uit in de trechter; allebei moesten meetellen, anders stond de kroeg bij de noordhaven, 220 cellen van de kade. |
+| **Reliëf tot 1,5**, en de pagina zet de rots op **het laagste punt van de voorkant** (`pirateTavernGround`, web/js/pirate-ground.js) | Zes diep vanaf de waterlijn loopt de grond vrijwel altijd meer dan 1 op. Zo komt de trap uit op het zand en loopt de achterkant van de rots de duin in; de rots is 1,75 hoog en de romp begint op 1,8. |
+| Rangorde: eerst hoe dicht het water is, dan hoeveel zand, dan pas de afstand tot de kadehaven | Op afstand gerangschikt stond hij in het gras, met de zee er schuin naast. |
+| **De deur is de voet van de trap** (`PUB_GATE` = `anchor.door`, op de voorrand van het kavel; `plotDoor`), en de weg is een strandpad daarheen | Een kolonist stapt daar naar binnen, en de rots staat in het midden van de voorkant. |
+| **Eénmalige verhuizing** van een kroeg op het oude 3 x 3-kavel (`!fitsLot`): bovenaan `placeAll` opgetild (naast de kist), opnieuw geplaatst, de oude weg weg, en als het snoeien iets afsneed nog één ronde in dezelfde scan. Past hij nergens, dan terug op zijn plek en volgende scan opnieuw. `layout.before-pub-<ts>.json` als backup | Een huis verhuist nooit vanzelf; dit is een bewuste migratie met `fitsLot` als poort, zodat de scan erna dezelfde bytes geeft. |
+| **Een groeiring voor de kroeg**, één per ring (`layout.pubRing`): past hij nergens op een eiland dat nog mag groeien, dan groeit het één ring | Op een eiland dat klein gesticht is (40 op 64) is bij 52 settlers elke kust van een gehucht; het oude 3 x 3 paste ertussen, 11 x 6 niet. Gemeten: zonder ring had 3 van de 6 seeds zelfs bij 80 settlers geen kroeg, met ring 8 van de 8 op de scan van 52. De teller zorgt dat een kroeg die een ring niet helpt, niet elke scan een ring kost. |
+| **Het uitzicht blijft water**: de strook vóór de kroeg (2 x `PUB_SHORE` diep, een cel breder) hoort bij `keptWater`, dus de polderladder graaft er niet | Gemeten op seed 2024: bij 175 settlers polderde de tweede polder de zee vóór de kroeg droog. Het strand werd weiland en het strandpad een weg op bouwgrond. Aan een haven had de kroeg die bescherming vanzelf. |
+| `chestSpots` rekent met `w`/`d`: op een 3 x 3 dezelfde cellen als altijd, op 11 x 6 achter de lange achterkant en naast de korte zijkanten | Een kist die al achter een 3 x 3 staat, blijft daar staan zolang de kroeg niet verhuist. |
+
+Gemeten op een kopie van `~/.promptholm` (zee `single`, `network.public` false, `PROMPTHOLM_HOME` op de kopie), met
+de oude en de nieuwe code direct na elkaar: de kroeg gaat van (171,309) 3 x 3 achter de kade naar **(148,253), rot 2**,
+op het strand aan de kop van de trechter bij de riviermonding, zo'n tien cellen van de kade; de kist gaat mee naar
+(153,252). Verder verschillen alleen de weg van de kroeg en `town.commons` (het kavel wordt dorpsgrond). De twee
+scans daarna zijn byte-identiek. Op de ladder van 128 (twaalf seeds) krijgt elk eiland een kavel.
+
+Een nieuwe kavelmaat in `layout.json`: een **minor**. Niet gebouwd: een test voor het terugzetten als er nergens
+strand is (op de ladder vindt elke seed een kavel, dus dat pad is alleen met de hand nagelopen).
+
 ## Fasen
 
 Bewust in deze volgorde, want alleen de server-kant raakt de haven (zie "De plek"):
