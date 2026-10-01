@@ -161,6 +161,21 @@ Afwijkingen van het ontwerp: de vloerplaten en de romp zijn gesampled langs de a
 (`ARM_SIDES`), want een hoek kwam anders in één frame binnen; de romp telt alleen onder haar dek (masten en
 kasteel niet - de walk map kent alleen hun bovenkant).
 
+**Bijsturing (1 oktober): kleine dingen tellen niet.** De keeper: "zodra er een klein voorwerp voor de karakter
+langskomt zoals een railing zoomt ie in, das niet handig ... de karakter mag wel geblokt worden door voorwerpen,
+zo gaat het in WoW". De arm kijkt dus voorbij een reling, hek, paal of krat (`camSeesPast` in solids.js: dun en
+lager dan 0,45; smaller dan 0,16 beide kanten op; of binnen 0,5 beide kanten en lager dan 0,45), en voorbij alles
+met `hop` of `rail`. Muren, vloeren, rots en romp houden hem nog tegen; de zichtmetingen hierboven halen hun
+drempels nog. Prijs: aan de trap van de Kraken hielden de relingen de arm vroeger al kort vóór een hoek op 0,23
+van het oog; die sprong is nu 0,50 (was ≤ 0,40).
+
+**Bijsturing 2: vaste afstand is de standaard.** Ook met de kleine dingen eruit zoomde hij in bij fonteinen en het
+Jira-bord: "maak maar een default on setting die zegt camera distance always fixed". Settings → On foot → *Fixed
+camera distance* (`web/js/camera-prefs.js`), standaard aan: dan doet de arm niets. En "als de camera niet verder
+omlaag kan moet hij niet naar voren springen maar gewoon omhoog kunnen draaien": op de grond houdt de camera nu zijn
+afstand tot het punt waar hij om draait (hij kwam met `cos(pitch)` over de stenen naar voren, tot in de bestrating
+op de opname van de keeper), en de rest van de muis kantelt de blik omhoog.
+
 ## Open vragen
 
 1. Waar zag je de camera ongevraagd draaien? (2 en 3 zijn beslist: lijf weg, kruinen erdoor.)

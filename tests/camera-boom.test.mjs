@@ -32,6 +32,11 @@ const realWarn = console.warn;
 console.warn = () => {};
 const { boxEntry, segmentEntry, camBodyOf, camBodyEntry } = await import('../web/js/solids.js');
 const { createWalkMode } = await import('../web/js/walk.js');
+// Every test here but the last is about the boom, which is the choice now: the default is a fixed
+// distance (camera-prefs.js, Settings -> On foot).
+const { cameraFixed, setCameraFixed } = await import('../web/js/camera-prefs.js');
+const fixedByDefault = cameraFixed();
+setCameraFixed(false);
 const { buildBuilding } = await import('../web/js/buildings.js');
 const { createInterior, prepareRoom } = await import('../web/js/interior.js');
 const { PLAYER_EYE } = await import('../web/js/avatar.js');
@@ -196,6 +201,9 @@ test('beside the Salty Kraken - its rock, its hull and its stair - neither', () 
 // or take `slack`: no floor to jump onto, and no boom that snaps in round a corner.
 function sweep(walk, camera, slack) {
   const s = walk.state;
+  // Settled where the sweep starts: from the yaw walk mode entered with, the first step was a
+  // quarter turn measured as a degree.
+  s.camYaw = 0;
   for (let i = 0; i < 5; i++) walk.update(FRAME);
   const prev = camera.position.clone();
   let worst = 0, at = null;
@@ -219,7 +227,9 @@ test('looking round at the foot of the Kraken\'s stair, the camera does not jump
     // 0.24 onto the flight and 0.78 round a corner before (2.16 beside a post a hand from the body,
     // once the buildings' boxes came in). What is left is the last step round a corner a few tenths
     // from the eye, where the boom is that short and the body already out of the way of the lens.
-    sweep(walk, camera, 0.45);
+    // 0.50 since the boom looks past rails (solids.js camSeesPast): the flight's rails used to hold
+    // it short before that corner (a post 0.23 from the eye, at -0.9, 2.2 up the stair, 229 degrees).
+    sweep(walk, camera, 0.5);
   }
 });
 
@@ -246,6 +256,102 @@ test('the boom lets out again gently once nothing is in its way', () => {
   }
   assert.ok(Math.max(...steps) < 0.2, `it let out ${Math.max(...steps).toFixed(2)} in one frame`);
   assert.ok(last > 2.5, `and got only ${last.toFixed(2)} back`);
+});
+
+// The keeper: "zodra er een klein voorwerp voor de karakter langskomt zoals een railing zoomt ie in" -
+// and World of Warcraft's camera as the way it should be: a rail, a post or a crate between the camera
+// and the body is looked past, and the body may be behind it for a moment. A wall still stops it.
+test('a rail, a post or a crate behind the body leaves the camera where it is; a wall does not', () => {
+  const camAt = (blockers, boxes) => {
+    fresh();
+    const flat = () => 0.1;
+    const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.5, 1000);
+    const walk = createWalkMode({
+      scene: new THREE.Scene(), camera, terrain: { half: 64, size: 128, worldHeight: flat },
+      ground: { height: flat, bedAt: flat, regionAt: () => null, levelKey: () => null },
+      material: new THREE.MeshBasicMaterial(),
+      dom: { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} },
+      cameraBodies: () => (boxes ? [camBodyOf(new Float32Array(boxes), { x: 30, z: 29 })].filter(Boolean) : []),
+    });
+    walk.enter({ at: [30, 30], facing: [30, 31], blockers, interactables: [], onExit: noop });
+    stand(walk, 30, 30, 0.1);
+    walk.state.camYaw = 0; walk.state.camPitch = 0.1;          // the camera trails at -z, over z 29
+    for (let i = 0; i < 10; i++) walk.update(FRAME);
+    return Math.hypot(camera.position.x - 30, camera.position.z - 30);
+  };
+  const free = camAt([]);
+  assert.ok(free > 2, `with nothing about the camera is only ${free.toFixed(2)} back`);
+  // All of them across the boom at the eye's height, as the wall below is.
+  const rail = { x: 30, z: 29, hx: 1, hz: 0.02, y0: 0.3, y1: 0.7 };
+  for (const [what, blockers, boxes] of [
+    ['a rail', [rail], null],
+    ['a rail said to be one', [{ ...rail, y1: 2, rail: true }], null],
+    ['a hamlet boundary', [{ x: 30, z: 29, hx: 1, hz: 0.05, hop: true }], null],
+    ['a lamp post', [{ x: 30, z: 29, r: 0.05, y0: 0.1, y1: 1.2 }], null],
+    ['a crate', [{ x: 30, z: 29, hx: 0.15, hz: 0.15, y0: 0.3, y1: 0.7, top: true }], null],
+    ['a building\'s rail', [], [-1, 0.3, -0.02, 1, 0.7, 0.02]],
+  ]) {
+    const d = camAt(blockers, boxes);
+    assert.ok(Math.abs(d - free) < 1e-6, `${what} pulled the camera in from ${free.toFixed(2)} to ${d.toFixed(2)}`);
+  }
+  const wall = camAt([], [-1, 0, -0.05, 1, 1.2, 0.05]);
+  assert.ok(wall < 1.2, `a wall left the camera ${wall.toFixed(2)} back, behind it`);
+  // and the rail's own band is across the boom: grown to a wall's height, it stops it
+  const tall = camAt([{ ...rail, y0: 0, y1: 1.2 }]);
+  assert.ok(tall < 1.2, `the rail's band is not across the boom (${tall.toFixed(2)} back)`);
+});
+
+// The keeper: "als de camera niet verder omlaag kan moet hij niet naar voren springen maar gewoon
+// omhoog kunnen draaien". Mouse further and further down onto open ground: the camera, held up by
+// the grass, stays where it is (on its sphere, at the ground's height) and never comes in towards the
+// body, and the view keeps turning up with the mouse.
+test('held up by the ground, the camera slides back rather than in, and the view turns up', () => {
+  setCameraFixed(true);
+  try {
+    // One box far off: the harness wants a building, and this one is nowhere near the boom.
+    const { walk, camera } = island({ solids: [], camBoxes: new Float32Array([100, 0, 100, 101, 1, 101]) });
+    stand(walk, 30, 30, 0.1);
+    walk.state.camYaw = 0;
+    let lastH = 0, lastUp = 0, floored = 0;
+    const look = new THREE.Vector3();
+    for (let pitch = 0.4; pitch >= -1.1; pitch -= 0.02) {
+      walk.state.camPitch = pitch;
+      walk.update(FRAME);
+      const h = Math.hypot(camera.position.x - 30, camera.position.z - 30);
+      camera.getWorldDirection(look);
+      // Until it reaches the ground it swings round its own circle, which comes in a little.
+      const onGround = camera.position.y < 0.1 + 0.55 + 1e-4;    // camera-floor.js HAND over the grass
+      if (onGround && floored > 0) {
+        assert.ok(h >= lastH - 1e-6, `at pitch ${pitch.toFixed(2)} the camera came in from ${lastH.toFixed(2)} to ${h.toFixed(2)}`);
+        assert.ok(look.y >= lastUp - 1e-6, `at pitch ${pitch.toFixed(2)} the view turned down`);
+      }
+      if (onGround) floored++;
+      lastH = h; lastUp = look.y;
+    }
+    assert.ok(floored > 10, 'the camera never reached the ground: nothing measured');
+    assert.ok(lastUp > 0.3, `looking all the way up the view is only ${lastUp.toFixed(2)} up`);
+  } finally { setCameraFixed(false); }
+});
+
+test('by default the camera keeps its distance whatever is in the way', () => {
+  assert.equal(fixedByDefault, true, 'a fixed distance is the default');
+  const built = buildBuilding({ id: 'house:boom-1', kind: 'house', tier: 'house', style: 'claude', sheds: [] }, {});
+  const at = (fixed) => {
+    setCameraFixed(fixed);
+    const { walk, camera } = island(built);
+    stand(walk, built.bbox.max.x + 0.3, 0, 0.1);
+    walk.state.camYaw = Math.PI / 2;           // forward +x, so the camera trails at -x: in the house
+    walk.state.camPitch = 0.1;
+    for (let i = 0; i < 10; i++) walk.update(FRAME);
+    return { d: camera.position.distanceTo(new THREE.Vector3(walk.state.pos.x, walk.state.pos.y + PLAYER_EYE, walk.state.pos.z)), walk, camera };
+  };
+  try {
+    const boomed = at(false).d;
+    const { d, walk, camera } = at(true);
+    assert.ok(boomed < 1.2 && d > 2.5, `with the boom ${boomed.toFixed(2)}, fixed ${d.toFixed(2)} back`);
+    assert.equal(walk.avatar.children[0].visible, true, 'a fixed camera hid the body');
+    assert.equal(camera.near, 0.5, 'a fixed camera moved the near plane');
+  } finally { setCameraFixed(false); }
 });
 
 test('with the boom pulled in to the head the body goes, and the near plane comes in with it', () => {
