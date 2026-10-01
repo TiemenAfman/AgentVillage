@@ -11,7 +11,8 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
-import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry } from './solids.js';
+import { cameraFixed } from './camera-prefs.js';
+import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
@@ -2356,6 +2357,8 @@ export function createWalkMode({
       return false;
     });
     blockerIndex.along(ax, az, bx, bz, CAM_R, (b) => {
+      // A rail, a fence, a post: looked past, not stopped at (solids.js camSeesPast).
+      if (camSeesPastSolid(b)) return false;
       let y0 = b.y0, y1 = b.y1;
       if (y1 == null) {
         if (camSolidTop == null) return false;
@@ -2414,25 +2417,48 @@ export function createWalkMode({
     // bridge, the quay, a stair, a building's floor) is the boom's, below: as part of the floor it
     // lifted the camera in one frame wherever it came over the edge of one (0.24 at the foot of the
     // Salty Kraken's stair, half a unit over the quay's wall), and with `lift` the aim as well.
-    let under = heightUnder(cx, cz);
-    if (camDive > 0) under = Math.max(under, bedUnder(cx, cz));
-    if (camHull) {
-      const deck = hullDeckAt(camHull, cx, cz);
-      if (deck != null) under = Math.max(under, deck);
-    }
     // A smoothstep of the timer, so the camera starts and ends gently: the surface swimmer's
     // camera hangs 2.3 up and the diver's is under the surface, and a plain exponential ease
     // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
     const blend = camDive * camDive * (3 - 2 * camDive);
-    const floor = cameraFloor({ ground: under, waterY: WATER_Y, blend });
-    const camY = applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor });
-    camera.position.set(cx, camY, cz);
+    const heightAt = (x, z) => {
+      let under = heightUnder(x, z);
+      if (camDive > 0) under = Math.max(under, bedUnder(x, z));
+      if (camHull) {
+        const deck = hullDeckAt(camHull, x, z);
+        if (deck != null) under = Math.max(under, deck);
+      }
+      const floor = cameraFloor({ ground: under, waterY: WATER_Y, blend });
+      return applyCeiling(cy, { ground: under, waterY: WATER_Y, blend, floor });
+    };
+    let camX = cx, camZ = cz, camY = heightAt(cx, cz);
     // The floor above the water is what keeps the lens from sitting half under the sea (a swimmer
     // looking up used to put the camera below the surface, its top cutting the view in two). It must
-    // not also flatten the view: a camera pushed up by it aims as far above the body as it was pushed,
-    // so the direction the mouse asked for survives and looking up still looks up. Only upwards, and
-    // only, and never in first person - the diver's ceiling pulling the camera down keeps its old view of the diver.
-    const lift = !fp ? Math.max(0, camY - cy) : 0;
+    // not also flatten the view, nor bring the camera in: held up by the floor, the camera stays as
+    // far from the eye as it was (on its sphere, round the point it orbits), so the further down the
+    // mouse goes the further *back* along the ground it slides, never forward - pitched down by
+    // cos(pitch) alone it came in over the grass at the body, the keeper's "spastisch" - and what is
+    // left of the turn tilts the view up: it aims along the line it would have from where it wanted to
+    // be, so looking up still looks up. Asked twice, because the ground further back can be higher.
+    // Only upwards, and never in first person - the diver's ceiling pulling the camera down keeps its
+    // old view of the diver.
+    let lift = 0;
+    if (!fp && camY > cy + 1e-6) {
+      const hWant = dist * Math.cos(state.camPitch);
+      const orbitY = cy - Math.sin(state.camPitch) * dist;
+      let h = hWant;
+      for (let i = 0; i < 2; i++) {
+        const rise = camY - orbitY;
+        h = Math.max(hWant, Math.sqrt(Math.max(0, dist * dist - rise * rise)));
+        camX = state.pos.x - Math.sin(state.camYaw) * h;
+        camZ = state.pos.z - Math.cos(state.camYaw) * h;
+        camY = Math.max(camY, heightAt(camX, camZ));
+      }
+      // The point over the body on the line the camera would have looked along from (cx, cy, cz).
+      const aimY = state.pos.y + camStep + aim;
+      lift = hWant > 1e-6 ? Math.max(0, camY + (aimY - cy) * (h / hWant) - aimY) : camY - cy;
+    }
+    camera.position.set(camX, camY, camZ);
     // On a plane the camera stands in the plane's own frame: its offset from you turned with her tilt
     // and its up is hers, so the deck holds still on the screen and it is the sea that rocks, which
     // is what standing on a moving thing looks like. A level camera over a deck that tilts under it
@@ -2472,7 +2498,9 @@ export function createWalkMode({
     // where the camera ended up, for its lid.
     armDir.copy(camera.position).sub(pivot);
     const want = armDir.length();
-    if (want > 1e-6) {
+    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all.
+    if (cameraFixed()) armLen = want;
+    else if (want > 1e-6) {
       armDir.divideScalar(want);
       // How far it may reach this frame, at once: nothing between the camera and the body, ever.
       const hard = Math.max(ARM_MIN, Math.min(want, armReach(pivot.x, pivot.y, pivot.z, armDir.x, armDir.y, armDir.z, want) - 0.03));

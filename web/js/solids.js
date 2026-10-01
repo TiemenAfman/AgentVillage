@@ -108,6 +108,7 @@ export function solidAt(r, { x, z, y = 0, yaw = 0 }) {
     Object.assign(at, { hx: Math.abs(r.hx * c) + Math.abs(r.hz * s), hz: Math.abs(r.hx * s) + Math.abs(r.hz * c) });
   } else Object.assign(at, { hx: r.hx, hz: r.hz, yaw });
   if (r.hull != null) at.hull = r.hull;
+  if (r.rail) at.rail = true;
   if (r.y0 != null) { at.y0 = r.y0 + y; at.y1 = r.y1 + y; }
   return at;
 }
@@ -178,12 +179,47 @@ export function segmentEntry(b, ax, ay, az, dx, dy, dz, len, r = 0, y0 = b.y0, y
   return boxEntry(-b.hx, y0, -b.hz, b.hx, y1, b.hz, lx * c - lz * s, ay, lx * s + lz * c, dx * c - dz * s, dy, dx * s + dz * c, len, r);
 }
 
+// What the boom looks past rather than stops at: a rail, a fence, a post. A rail going by between the
+// camera and the body pulled the camera in onto the head for as long as it took to pass and let it
+// out again after (the keeper: "zoomt ie in, das niet handig") - a few frames of a close-up for a
+// thing a few centimetres thick that hides nothing. So the camera stays where it is and the rail
+// crosses the picture, and the body may be behind it for a moment - World of Warcraft's camera, which
+// the keeper pointed at: it stops at the ground and the buildings and looks through every fence,
+// crate and lamp post. Thin and low (narrower than CAM_THIN one way and lower than CAM_LOW) is a rail
+// or a low wall; narrower than CAM_POST both ways, however tall, is a post or a lamp; within CAM_ITEM
+// both ways and lower than CAM_LOW is a thing standing about - a crate, a barrel, a bench, a cart. A
+// wall is thin one way but tall, a floor low but wide both ways: both still stop it.
+export const CAM_THIN = 0.1;
+export const CAM_LOW = 0.45;
+export const CAM_POST = 0.16;
+export const CAM_ITEM = 0.5;
+export function camSeesPast(w, d, h) {
+  if (h < CAM_LOW && (Math.min(w, d) < CAM_THIN || Math.max(w, d) < CAM_ITEM)) return true;
+  return Math.max(w, d) < CAM_POST;
+}
+// The same for one of walk mode's solids. A rail is said so (`hop`, a hamlet's low boundary; `rail`,
+// the Salty Kraken's pieces a pace long, which on a diagonal are no narrower than a pace one way).
+// A solid with no height of its own is measured in plan only.
+export function camSeesPastSolid(b) {
+  if (b.hop || b.rail) return true;
+  const w = b.r ? 2 * b.r : 2 * b.hx, d = b.r ? 2 * b.r : 2 * b.hz;
+  return camSeesPast(w, d, b.y1 != null && b.y0 != null ? b.y1 - b.y0 : Infinity);
+}
+
 // A building as the camera's boom sees it: its part boxes (buildings.js `built.camBoxes`, six numbers a
 // box in its own frame) and where it stands. Kept in its own frame rather than turned into the world's:
 // a box is axis-aligned there, so the test is a slab test once the segment is turned in (camBodyEntry),
-// and nothing is copied per box. `r` is how far its boxes reach from its middle, for the index.
-export function camBodyOf(boxes, { x, z, y = 0, yaw = 0 }) {
-  if (!boxes || !boxes.length) return null;
+// and nothing is copied per box. `r` is how far its boxes reach from its middle, for the index. The
+// boxes the boom sees past (camSeesPast) are left out here, once, rather than asked every frame.
+export function camBodyOf(all, { x, z, y = 0, yaw = 0 }) {
+  if (!all || !all.length) return null;
+  const keep = [];
+  for (let i = 0; i < all.length; i += 6) {
+    if (!camSeesPast(all[i + 3] - all[i], all[i + 5] - all[i + 2], all[i + 4] - all[i + 1])) keep.push(i);
+  }
+  if (!keep.length) return null;
+  const boxes = keep.length * 6 === all.length ? all : new Float32Array(keep.length * 6);
+  if (boxes !== all) keep.forEach((i, k) => { for (let j = 0; j < 6; j++) boxes[k * 6 + j] = all[i + j]; });
   let r = 0;
   for (let i = 0; i < boxes.length; i += 6) {
     const ex = Math.max(Math.abs(boxes[i]), Math.abs(boxes[i + 3])), ez = Math.max(Math.abs(boxes[i + 2]), Math.abs(boxes[i + 5]));

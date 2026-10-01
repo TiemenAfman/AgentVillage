@@ -21,6 +21,7 @@ globalThis.document = {
 globalThis.addEventListener = noop;
 globalThis.removeEventListener = noop;
 const { createWalkMode } = await import('../web/js/walk.js');
+const { setCameraFixed } = await import('../web/js/camera-prefs.js');
 
 const FRAME = 1 / 60;
 // A sea 2.5 deep everywhere, apart from a beach along x > 20 that climbs out of the water.
@@ -164,6 +165,12 @@ test('a diver at the foot of a shallow shelf keeps a camera under the water, and
   // where a ground floor (bed + a hand and a half) lies over the surface. It used to put the
   // camera up in the air, looking down on an opaque sea with the diver hidden behind it.
   const shelf = (x) => (x < 10 ? -0.4 : -1.6);
+  // The boom's (Settings -> On foot, Fixed camera distance off): a fixed camera may have the
+  // sand between it and the diver, as it may a wall.
+  setCameraFixed(false);
+  try { shelfDive(shelf); } finally { setCameraFixed(true); }
+});
+function shelfDive(shelf) {
   const { walk, camera } = fresh(shelf);
   walk.state.pos.set(11.5, walk.state.pos.y, 0);
   walk.state.camYaw = Math.PI / 2;      // looking along +x, the camera trails at x - 2.7
@@ -184,7 +191,7 @@ test('a diver at the foot of a shallow shelf keeps a camera under the water, and
   }
   assert.ok(camera.position.y < 0, `the camera is over the water, at ${camera.position.y}, and the diver behind the surface`);
   assert.ok(camera.position.y >= shelf(camera.position.x) - 1e-9, 'the camera is in the sand');
-});
+}
 
 // ---- steering by the mouse ------------------------------------------------------------------
 
@@ -317,7 +324,10 @@ test('out of the water the mouse still looks far up: the sky belongs to a walker
 });
 test('walk.js lifts the aim only upwards, and never in first person', () => {
   const src = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
-  assert.match(src, /const lift = !fp \? Math\.max\(0, camY - cy\) : 0;/);
+  // Only when the floor pushed the camera up, and the lift itself never below zero
+  // (tests/camera-boom.test.mjs drives it: held up by the ground the camera slides back, not in).
+  assert.match(src, /if \(!fp && camY > cy \+ 1e-6\) \{/);
+  assert.match(src, /lift = hWant > 1e-6 \? Math\.max\(0, /);
   // (camStep: the eased share of a stair tread the feet just took, tests/stair-walk.test.mjs)
   assert.match(src, /pivot\.set\(state\.pos\.x, state\.pos\.y \+ camStep \+ aim \+ lift, state\.pos\.z\)/);
   assert.match(src, /camera\.lookAt\(pivot\)/);

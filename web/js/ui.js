@@ -7,6 +7,7 @@ import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, padOf, keyLabel, 
 import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
+import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -854,12 +855,20 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${qualityAuto
         ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
         : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
+    // The follow camera on foot (camera-prefs.js): kept at its distance, or pulled in by what is in
+    // the way (walk.js placeCamera's boom).
+    const fixedOn = cameraFixed();
+    const onFoot = '<h3 class="sec">On foot</h3>'
+      + `<div class="chips wrap"><button class="chip${fixedOn ? ' on' : ''}" data-camfixed="1" aria-pressed="${fixedOn}">Fixed camera distance</button></div>`
+      + `<p class="muted" style="margin-top:9px">${fixedOn
+        ? 'On: the camera always stays as far back as you scrolled it. A wall, a fountain or a board may hide you for a moment; the camera does not zoom in for it.'
+        : 'Off: the camera comes in towards you when something stands between it and you, and goes back out once it is clear. Rails, posts and crates it still looks past.'}</p>`;
     const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
         : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
-    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${graphicsSection()}${timeline}${buttons}</section>`
+    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
@@ -905,6 +914,10 @@ export function createUI(handlers) {
       try { if (qualityAuto) localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, '0'); } catch { /* kept for this page only */ }
       renderSettings();
       if (handlers.onQualityAuto) handlers.onQualityAuto(qualityAuto);
+    }));
+    el('settings-body').querySelectorAll('[data-camfixed]').forEach((b) => b.addEventListener('click', () => {
+      setCameraFixed(!cameraFixed());
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-director]').forEach((b) => b.addEventListener('click', () => {
       directorOn = !directorOn;

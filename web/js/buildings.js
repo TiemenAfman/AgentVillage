@@ -2461,7 +2461,7 @@ function pirateSolids(parts, anchors, surfaces) {
     for (let i = 0; i < n; i++) {
       const p = a.map((v, k) => v + (b[k] - v) * i / n), q = a.map((v, k) => v + (b[k] - v) * (i + 1) / n);
       out.push({ x: (p[0] + q[0]) / 2, z: (p[2] + q[2]) / 2, hx: Math.abs(q[0] - p[0]) / 2 + 0.02, hz: Math.abs(q[2] - p[2]) / 2 + 0.02,
-        y0: Math.min(p[1], q[1]) - 0.05, y1: Math.max(p[1], q[1]) + PIRATE_RAIL_H });
+        y0: Math.min(p[1], q[1]) - 0.05, y1: Math.max(p[1], q[1]) + PIRATE_RAIL_H, rail: true });
     }
   }
   // Under each floor high enough to walk under, a low block - inset by a body's width, because

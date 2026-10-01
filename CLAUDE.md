@@ -1656,6 +1656,13 @@ pushed the camera *up* (`lift`, never first person, never downward - the diver's
 its old view of the diver). So the lens still never sits half under the sea, and the mouse looking up still
 looks up: the body slides out of the bottom of the frame from about -0.6, which is the price of seeing the sky.
 
+**By default the camera keeps its distance and there is no boom** (`web/js/camera-prefs.js`, Settings → This
+screen → On foot → *Fixed camera distance*, per browser, on unless switched off; walk.js reads it every frame,
+so the island and every room follow it). The boom below is the choice. Either way, **held up by the ground the
+camera stays on its sphere** (placeCamera: it keeps `dist` from the point it orbits, so pitched further down it
+does not come in by `cos(pitch)` but stays and the view turns up, `lift` aiming along the line it would have had)
+- the keeper's recording of the camera diving into the paving. Tests about the boom switch it on themselves
+(`setCameraFixed(false)` in tests/camera-boom.test.mjs and the shelf test in tests/diving-walk.test.mjs).
 **The camera hangs on a boom, and the boom stops at what is drawn** ([Plans/camera-botsing.md](Plans/camera-botsing.md)).
 Third person only: from the point looked at (`pivot`) out to where the camera wants to be, `armReach` finds the
 first thing in the way - the buildings' part boxes (`built.camBoxes`, measured in `buildBuilding` before the
@@ -1663,7 +1670,11 @@ merge, handed over as `camBodyOf` bodies through the `cameraBodies` option, whic
 answer and walk mode asks again on every `takeBlockers`), every blocker with a height (a room's blockers stand to
 `camSolidTop`; outside a solid with no height - a tree's trunk - is not the camera's, so crowns are looked
 through on purpose), and, sampled along it, the ground, the quay's stone, every plank as a slab (`surfaces`,
-`decks`, `levels`) and the hull we stand on below her deck. So **`cameraFloor` reads the terrain only** (and a
+`decks`, `levels`) and the hull we stand on below her deck. **What is small it looks past** (`camSeesPast` /
+`camSeesPastSolid` in solids.js, World of Warcraft's camera, the keeper's ask): a rail, a fence, a post, a
+crate - a building's part box in `camBodyOf`, a blocker in `standingReach`, and anything marked `hop` or `rail`
+(the Salty Kraken's stair rails); the body may be behind them for a moment, the camera does not zoom in for
+them. So **`cameraFloor` reads the terrain only** (and a
 ship's deck): planks in the floor lifted the camera in one frame at every edge. The boom comes in at once
 (`hard`: never a frame with something between), comes in ahead of time towards what three side rays see
 (`ARM_SIDES`, standing things only, eased at `ARM_IN`), and lets out at `ARM_OUT`. Under `NEAR_ARM` the near
