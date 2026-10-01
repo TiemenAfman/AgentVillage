@@ -28,6 +28,8 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   overkant blijven liggen door iemand die wegliep en niet terugkwam. Alleen een boot zonder
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
 
+- 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory.
+
 ## Plannen
 
 Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is (🚧). Een sectie

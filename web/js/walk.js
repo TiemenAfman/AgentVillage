@@ -8,7 +8,7 @@ import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } fr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
-import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
+import { createClassicAvatar } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
@@ -2207,7 +2207,8 @@ export function createWalkMode({
       bikeMesh.place(b.x, b.y, b.z, b.yaw);
       bikeMesh.pose(b);
       bikeMesh.object.updateMatrixWorld(true);
-      seatAt.set(RIDER.saddle[0], RIDER.saddle[1] - HIP_Y, RIDER.saddle[2]);
+      // The hips of whichever body is riding (Plans/tweede-avonturier.md): the Adventurer's are higher.
+      seatAt.set(RIDER.saddle[0], RIDER.saddle[1] - classicAvatar.hipY, RIDER.saddle[2]);
       bikeMesh.object.localToWorld(seatAt);
       avatar.position.copy(seatAt);
       avatar.rotation.set(RIDE_PITCH - b.pitch, b.yaw, b.lean + roll * 0.3);
@@ -2483,7 +2484,7 @@ export function createWalkMode({
       // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
       // saddle's lean), and a little behind it so the hands are in front of the lens.
       avatar.updateMatrixWorld(true);
-      const eye = avatar.localToWorld(fpEye.set(0, EYE, 0));
+      const eye = avatar.localToWorld(fpEye.set(0, classicAvatar.eye, 0));
       const cp = Math.cos(state.camPitch);
       fpLook.set(Math.sin(state.camYaw) * cp, -Math.sin(state.camPitch), Math.cos(state.camYaw) * cp);
       if (plane) fpLook.applyQuaternion(plane);
