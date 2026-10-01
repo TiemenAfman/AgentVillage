@@ -60,9 +60,10 @@ for name, hex in COLORS.items():
     m['emissive'] = 1.0 if name in GLOW else 0.0
     materials[name] = m
 
-def material(name, hex, glow=False):
+def material(name, hex, glow=False, ao=True):
     """A colour of an object's own (`plank:figurehead`), made once. The shared ones above stay the
-    shared ones; an object that needs another adds it here from its own module."""
+    shared ones; an object that needs another adds it here from its own module. `ao=False` keeps
+    bake_ao off it: polished gold among candles was shaded to brown."""
     if name in materials:
         return name
     m = bpy.data.materials.new(name)
@@ -70,6 +71,8 @@ def material(name, hex, glow=False):
     rgb = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in rgb]
     m.diffuse_color = (*rgb, 1)
     m['emissive'] = 1.0 if glow else 0.0
+    if not ao:
+        m['no_ao'] = 1
     materials[name] = m
     if glow:
         GLOW.add(name)
@@ -873,7 +876,8 @@ def bake_ao(objects, distance=.08, strength=.75, samples=48):
     scene.render.bake.target = 'VERTEX_COLORS'
     scene.world = scene.world or bpy.data.worlds.new('ao')
     scene.world.light_settings.distance = distance
-    todo = [o for o in objects if o.type == 'MESH' and not o.data.materials[0].get('emissive', 0)]
+    todo = [o for o in objects if o.type == 'MESH' and not o.data.materials[0].get('emissive', 0)
+            and not o.data.materials[0].get('no_ao', 0)]
     for o in todo:
         o.data.color_attributes.new('ao', 'FLOAT_COLOR', 'CORNER')
         o.data.color_attributes.active_color = o.data.color_attributes['ao']

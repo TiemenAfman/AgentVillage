@@ -151,6 +151,9 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (const c of KIT.sconces) kit('civic_kraken_skullsconce', c);
   kit('civic_kraken_skulllamp', KIT.skulllamp, roof);
   kit('civic_kraken_firebasket', KIT.firebasket);
+  // The barrel of candles: the bake is the low graphics; the HD pack (HOME/hd/) swaps in Pixal3D's
+  // textured model of it through kit(), which is why it goes through kit() and not place().
+  kit('civic_kraken_candlebarrel', KIT.candlebarrel);
   const stools = KIT.stools;
   for (let i = 0; i < stools.n; i++) kit('civic_kraken_stool', { x: stools.x0 + i * stools.step, y: stools.y, z: stools.z });
   const nav = K.CREW_PLACES.navigator;
@@ -244,6 +247,9 @@ export function buildPirateTavern({ FLOOR, rect }) {
   block(rect(KIT.stern.x, KIT.stern.z, 1.8, 0.15));
   block(rect(BAR.x, BAR.z, BAR.hx, BAR.hz));
   block(rect(KIT.jukebox.x, KIT.jukebox.z, 0.17, 0.12));
+  // The candles are no step: from the pit's floor to a body over them, as the dressing's barrels.
+  const cb = KIT.candlebarrel;
+  block({ x: cb.x, z: cb.z, r: cb.r }, cb.y - 0.1, upTo(cb.y, cb.y + 0.36));
   for (const t of K.TABLES) block(rect(t.x, t.z, 0.75, 0.14), LEVEL.pit - 0.1, upTo(LEVEL.pit, LEVEL.pit + 0.3));
   block({ x: K.KEG_TABLE.x, z: K.KEG_TABLE.z, r: 0.14 }, -1, upTo(LEVEL.ground, LEVEL.ground + 0.3));
   block(rect(K.CHART.x, K.CHART.z, 0.32, 0.21), LEVEL.captain - 0.1, LEVEL.captain + BODY);

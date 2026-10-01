@@ -982,6 +982,10 @@ transforms included) after the manifest's `at` (whole quarter turns only - share
 `HD_FIT` of the bake's, or the page keeps the bake and says so once; `tests/hd-pack.test.mjs` checks whatever
 pack is on this machine and skips without one. Glow is a material the manifest names `flame` (halos from
 it, never a light); `gilt`/`metal` get one shared warm room to reflect. No size budgets: the keeper tweaks.
+A piece is made with the personal skill `/kitstuk` (`~/.claude/skills/kitstuk/`: Pixal3D RAW -> N k ->
+kit frame -> HD and/or SD-auto, fit and room checks). Pixal3D keeps its input image's viewpoint, so the
+front differs per image: find it with `kitstuk front` (every 15 degrees at eye level), not off BlenderAI's
+four default renders (325/55/145/235) - those gave the barrel of candles 145 where it is 90.
 `/demo` shows the pack in its rooms (`?sd` for the bake). Under Node, GLTFLoader needs a `ProgressEvent`
 stub.
 

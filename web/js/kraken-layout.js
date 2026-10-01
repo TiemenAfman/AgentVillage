@@ -166,6 +166,11 @@ export const KIT = {
   // standing on the firebed (shell.py's, whose top is F + 0.005) under HEARTH_FIRE.
   firebasket: { x: HEARTH_FIRE.x, z: HEARTH_FIRE.z, y: G + 0.005, ry: Math.PI / 2 },
   sconces: [{ x: -8.97, z: -3.0, y: G + 0.8, ry: Math.PI / 2 }, { x: 8.97, z: -4.0, y: C + 0.4, ry: -Math.PI / 2 }],
+  // The barrel of candles (scripts/krakenkit/candlebarrel.py; in the HD pack Pixal3D's textured model of
+  // it, 0.57 across: `r` is how far the pool and rocks reach from its axis) on the pit against the bar's
+  // wall, between the mast's foot and the tall barrel with candles in its lid (kraken-dressing.js), its
+  // skulls to the door.
+  candlebarrel: { x: 1.5, z: -2.75, y: P, ry: 0, r: 0.29 },
 };
 
 // The tables in the pit (two rows of three, the middle aisle from the door to the mast kept open),

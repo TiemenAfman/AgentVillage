@@ -50,7 +50,7 @@ for m in bpy.data.materials:
     m.use_nodes = True
     bsdf = m.node_tree.nodes['Principled BSDF']
     bsdf.inputs['Base Color'].default_value = m.diffuse_color
-    if '--flat' not in args:
+    if '--flat' not in args and not m.get('no_ao', 0):     # as the exporter: no 'ao' layer, the material's colour
         attr = m.node_tree.nodes.new('ShaderNodeVertexColor')
         attr.layer_name = 'ao'
         m.node_tree.links.new(attr.outputs['Color'], bsdf.inputs['Base Color'])
