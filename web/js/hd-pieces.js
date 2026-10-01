@@ -181,6 +181,8 @@ export function createHdPieces({ scene, roof = scene, pieces, material, hd = fal
     return { ...p, parent, sd, sdHalos, hd: null, hdHalos: null };
   });
   let want = false;
+  // Real bloom is drawing (post.js): the halos step aside, as the room's own do (interior.js setBloom).
+  let bloom = false;
 
   // Raise one placement's HD copy: the model shares its geometry and materials with every other.
   function raise(pl, t) {
@@ -209,7 +211,8 @@ export function createHdPieces({ scene, roof = scene, pieces, material, hd = fal
       const hdOn = want && !!pl.hd;
       pl.sd.visible = !hdOn;
       if (pl.hd) pl.hd.visible = hdOn;
-      if (pl.hdHalos) pl.hdHalos.object.visible = hdOn;
+      if (pl.sdHalos) pl.sdHalos.object.visible = !bloom;
+      if (pl.hdHalos) pl.hdHalos.object.visible = hdOn && !bloom;
     }
   }
 
@@ -218,6 +221,7 @@ export function createHdPieces({ scene, roof = scene, pieces, material, hd = fal
 
   return {
     setDetail,
+    setBloom(on) { if (bloom !== !!on) { bloom = !!on; show(); } },
     update(t) {
       for (const pl of placed) {
         if (pl.sdHalos && pl.sd.visible) pl.sdHalos.update(t);

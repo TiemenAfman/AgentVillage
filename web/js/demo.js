@@ -2,6 +2,8 @@
 // can be judged and tuned without hunting for one on the map. Nothing here reads the
 // village; it builds specs by hand, which is also the quickest way to see a piece that
 // no village has unlocked yet.
+import { createPost } from './post.js';
+import { loadPost, postDefaults } from './graphics-settings.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -133,6 +135,10 @@ const FIELD_Y = 0.06;              // the height walk mode is willing to stand o
 
 const canvas = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// The rooms' bloom, as this browser chose it on the island (Settings → Graphics; post.js).
+const postFx = createPost(renderer);
+window.__post = postFx;    // for the console: __post.set({ bloomStrength: 1 })
+postFx.set(loadPost(postDefaults()));
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -1329,7 +1335,8 @@ function frame(now) {
   } else {
     controls.update();
   }
-  renderer.render(inside ? inside.scene : scene, camera);
+  if (inside && inside.setBloom) inside.setBloom(postFx.blooming(true));
+  postFx.render(inside ? inside.scene : scene, camera, { room: !!inside });
 
   // labels ride along with the objects they name
   if (!labels.hidden) for (const t of tags) {

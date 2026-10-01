@@ -386,7 +386,8 @@ test('the frame runs it last: after the weather and the haze, before the cull an
   const haze = body.indexOf('applyFogRange();');
   const uw = body.indexOf('state.underwater.update(dt, underwaterSeen)');
   const cull = body.indexOf('cullRecords();');
-  const render = body.indexOf('renderer.render(');
+  // The one render goes through post.js (bloom in rooms), a plain renderer.render before it.
+  const render = body.search(/(renderer|postFx)\.render\(/);
   assert.ok(sky > 0 && haze > sky && uw > haze && cull > uw && render > cull, `order ${[sky, haze, uw, cull, render]}`);
   // Built with the world, thrown away with it, and reset before the planner stashes the haze.
   assert.match(m, /state\.underwater = createUnderwater\(/);

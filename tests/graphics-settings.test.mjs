@@ -218,7 +218,7 @@ test('the fireflies go out in the haze, and the cut is taken where the camera is
   assert.match(ff, /a \*= 1\.0 - smoothstep\(fogNear, fogFar, vFogDepth\)/);
   // The cut runs right before the render, after every branch has moved the camera.
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
-  assert.match(main, /cullRecords\(\);\r?\n\s*renderer\.render\(state\.inside \? state\.inside\.scene : scene, eye\);/);
+  assert.match(main, /cullRecords\(\);\r?\n\s*postFx\.render\(state\.inside \? state\.inside\.scene : scene, eye/);   // post.js: the one render
 });
 
 test('View Distance lets the haze out only past the desktop default, smoothly, and the far plane goes with it', () => {

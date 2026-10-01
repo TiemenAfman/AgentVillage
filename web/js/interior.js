@@ -812,7 +812,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
     roofPieces.visible = roofWanted;
-    if (roofHalos) roofHalos.object.visible = roofWanted;
+    if (roofHalos) roofHalos.object.visible = roofWanted && (!halos || halos.object.visible);
     if (shafts) shafts.object.visible = roofWanted;
 
     // The doorway is a door: walk out through the gap and you are outside again.
@@ -876,6 +876,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // null in a room with no show.
     beat: hallBeat,
     setPaused: (v) => walk.setPaused(v),
+    // Real bloom is drawing (post.js): the halos that stand in for it step aside.
+    setBloom(on) {
+      if (halos) halos.object.visible = !on;
+      if (roofHalos) roofHalos.object.visible = !on && roofWanted;
+      if (pieces) pieces.setBloom(on);
+    },
     // The room has its own walk mode, so it needs its own way in for the controller.
     pad: (a, dt) => walk.pad(a, dt),
     isInside: () => !left,

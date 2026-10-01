@@ -46,8 +46,9 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost } from './graphics-settings.js';
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
+import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
@@ -225,15 +226,18 @@ const RENDERER_TRIES = [
   { antialias: false, powerPreference: 'low-power', failIfMajorPerformanceCaveat: false },
 ];
 
+// Bloom and anti-aliasing as this browser chose them (Plans/bloom-en-aa.md). Anti-aliasing off
+// starts the canvas without MSAA, which a canvas only takes when it is made: hence "after reload".
+const postChoice = loadPost(postDefaults({ phone: !!STANDALONE }));
 function makeRenderer() {
   let last = null;
-  for (const opts of RENDERER_TRIES) {
+  for (const opts of postChoice.aa === 'off' ? RENDERER_TRIES.filter((o) => !o.antialias) : RENDERER_TRIES) {
     try {
       // alpha: the boards' layer lies under the canvas and shows through where a board's
       // hole wrote alpha 0 (web/js/panels.js). Everything else is cleared opaque.
       const r = new THREE.WebGLRenderer({ canvas, alpha: true, ...opts });
       r.setClearAlpha(1);
-      if (opts !== RENDERER_TRIES[0]) console.warn('island running with reduced graphics', opts);
+      if (opts !== RENDERER_TRIES[0] && postChoice.aa !== 'off') console.warn('island running with reduced graphics', opts);
       return r;
     } catch (e) { last = e; }
   }
@@ -271,6 +275,9 @@ try {
   recoverCanvas(e);
   throw e;
 }
+// Between the frame and the screen where a room asks for bloom (post.js); a plain render elsewhere.
+const postFx = createPost(renderer);
+postFx.set(postChoice);
 
 function countdownReload(seconds, attempt) {
   const boot = document.getElementById('boot');
@@ -3214,9 +3221,17 @@ function hdMissingSaid() {
   hdMissingTold = true;
   state.ui.toast('The HD pack is not installed, so rooms keep their own models.');
 }
+function onPostSetting(key, value) {
+  const v = clampPost(key, value);
+  if (v == null) return;
+  savePost(key, v);
+  postFx.set({ [key]: v });
+}
 // Settings → Graphics → "This machine's defaults": every choice forgotten, back to the tier.
 function onGraphicsReset() {
   forgetGraphics();
+  forgetPost();
+  postFx.set(postDefaults({ phone: !!STANDALONE }));
   Object.assign(state.graphics, GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]);
   applyGraphics();
 }
@@ -7090,8 +7105,10 @@ function frame(nowMs) {
   // cullRecords, which is unaffected either way: the sea's haze closes nearer than the air's.
   if (state.underwater) state.underwater.update(dt, underwaterSeen);
   seaFloorFrame(dt, nowMs);
+  // A room with real bloom puts its drawn-in glow away (room-glow.js halos), or it glows twice.
+  if (state.inside && state.inside.setBloom) state.inside.setBloom(postFx.blooming(true));
   cullRecords();
-  renderer.render(state.inside ? state.inside.scene : scene, eye);
+  postFx.render(state.inside ? state.inside.scene : scene, eye, { room: !!state.inside });
   if (renderStats) {
     // Both passes now, the shadow map's apart (render-stats.js). Comparing two runs is what
     // they are for; the frame times are this machine's and nobody else's.
@@ -7331,6 +7348,8 @@ async function boot() {
     // slider moved its own label and nothing else.
     onGraphicsSetting,
     onGraphicsReset,
+    onPostSetting,
+    post: () => postFx.get(),
     graphics: () => state.graphics,
     // The HD pack under Settings -> Graphics: false on the phone (no islander, no rooms, no choice
     // to offer), else what HOME/hd holds (null for nothing).

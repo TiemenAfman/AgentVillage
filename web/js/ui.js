@@ -5,7 +5,7 @@ import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey, suspendPad } from './input.js';
 import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, padOf, keyLabel, bindKey, bindPad, resetKeys, resetPad } from './keybinds.js';
 import { padName, padLabel } from './gamepad.js';
-import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES } from './graphics-settings.js';
+import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 
@@ -805,6 +805,22 @@ export function createUI(handlers) {
     ['npcDistance', 'NPC distance'],
     ['shadowDistance', 'Shadow distance'],
   ];
+  // Bloom and anti-aliasing (post.js, Plans/bloom-en-aa.md): read from main.js each time the panel
+  // is drawn, and applied at once. Bloom is only drawn in rooms for now.
+  const POST_ROWS = [
+    ['bloom', 'Bloom', [['off', 'Off'], ['rooms', 'In rooms']]],
+    ['aa', 'Anti-aliasing', [['msaa', 'MSAA'], ['smaa', 'SMAA'], ['off', 'Off (after reload)']]],
+  ];
+  function postRows() {
+    const p = handlers.post ? handlers.post() : null;
+    if (!p) return '';
+    const chips = ([key, label, opts]) => `<div class="setting-row"><label>${label}</label><div class="chips wrap">`
+      + opts.map(([v, t]) => `<button class="chip${p[key] === v ? ' on' : ''}" data-post="${key}" data-post-value="${v}">${t}</button>`).join('')
+      + '</div></div>';
+    return POST_ROWS.map(chips).join('')
+      + `<div class="setting-row"><label>Bloom strength <span class="muted" id="bloom-strength-value">${p.bloomStrength.toFixed(2)}</span></label>`
+      + `<input type="range" min="${BLOOM_STRENGTH.min}" max="${BLOOM_STRENGTH.max}" step="${BLOOM_STRENGTH.step}" value="${p.bloomStrength}" data-post-range="bloomStrength"></div>`;
+  }
   function graphicsSection() {
     const row = ([key, label]) => {
       const lim = GRAPHICS_LIMITS[key];
@@ -817,6 +833,7 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
       + GRAPHICS_ROWS.map(row).join('')
       + detailRow()
+      + postRows()
       + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-graphics-reset="1">This machine's defaults</button></div>`
       + `</div>`;
   }
@@ -921,6 +938,16 @@ export function createUI(handlers) {
       state.graphics.detail = b.dataset.detail;
       if (handlers.onGraphicsSetting) handlers.onGraphicsSetting('detail', b.dataset.detail);
       renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-post]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onPostSetting) handlers.onPostSetting(b.dataset.post, b.dataset.postValue);
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-post-range]').forEach((r) => r.addEventListener('input', () => {
+      const v = Number(r.value);
+      if (handlers.onPostSetting) handlers.onPostSetting(r.dataset.postRange, v);
+      const out = document.getElementById('bloom-strength-value');
+      if (out) out.textContent = v.toFixed(2);
     }));
     el('settings-body').querySelectorAll('[data-graphics-reset]').forEach((b) => b.addEventListener('click', () => {
       if (handlers.onGraphicsReset) handlers.onGraphicsReset();

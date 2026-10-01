@@ -151,3 +151,45 @@ export function saveGraphic(key, value, storage = browserStorage()) {
 export function forgetGraphics(storage = browserStorage()) {
   try { if (storage) storage.removeItem(GRAPHICS_KEY); } catch { /* nothing kept to forget */ }
 }
+
+// Bloom and anti-aliasing (post.js, Plans/bloom-en-aa.md): choices, not distances, so a store of
+// their own beside the four - `.v3` above keeps only numbers, and its tests hold it to that. Per
+// browser for the same reason: it is this machine's graphics card. A phone starts with bloom off.
+export const POST_KEY = 'promptholm.post.v1';
+export const POST_CHOICES = Object.freeze({
+  bloom: ['off', 'rooms'],
+  aa: ['msaa', 'smaa', 'off'],
+});
+export const BLOOM_STRENGTH = { min: 0, max: 1.5, step: 0.05 };
+export function postDefaults({ phone = false } = {}) {
+  return { bloom: phone ? 'off' : 'rooms', aa: 'msaa', bloomStrength: 0.7 };
+}
+// A choice as stored, or null for one that is not on offer.
+export function clampPost(key, value) {
+  if (key === 'bloomStrength') {
+    const n = Number(value);
+    if (typeof value === 'boolean' || value === null || value === '' || !Number.isFinite(n)) return null;
+    return Math.min(BLOOM_STRENGTH.max, Math.max(BLOOM_STRENGTH.min, n));
+  }
+  return POST_CHOICES[key] && POST_CHOICES[key].includes(value) ? value : null;
+}
+export function loadPost(defaults = postDefaults(), storage = browserStorage()) {
+  const out = { ...defaults };
+  let kept = {};
+  try { kept = JSON.parse((storage && storage.getItem(POST_KEY)) || 'null') || {}; } catch { kept = {}; }
+  for (const k of Object.keys(out)) {
+    const v = clampPost(k, kept[k]);
+    if (v != null) out[k] = v;
+  }
+  return out;
+}
+export function savePost(key, value, storage = browserStorage()) {
+  if (clampPost(key, value) == null) return;
+  let kept = {};
+  try { kept = JSON.parse((storage && storage.getItem(POST_KEY)) || 'null') || {}; } catch { kept = {}; }
+  kept[key] = value;
+  try { if (storage) storage.setItem(POST_KEY, JSON.stringify(kept)); } catch { /* kept for this page only */ }
+}
+export function forgetPost(storage = browserStorage()) {
+  try { if (storage) storage.removeItem(POST_KEY); } catch { /* nothing kept to forget */ }
+}
