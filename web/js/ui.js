@@ -209,6 +209,7 @@ export function createUI(handlers) {
   // island may grow - the Island tab's two lists - before it is.
   const menu = createSysMenu({
     closers: ['legend-btn', 'phone-btn'],
+    onClose: () => { if (handlers.onMenuClose) handlers.onMenuClose(); },
     onOpen: () => {
       if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
       renderSettings();
@@ -1292,12 +1293,13 @@ export function createUI(handlers) {
           + `<span class="lit"><kbd>${padKey('inside', 'interact')}</kbd> sit down</span>`
           + `<span><kbd>${padKey('inside', 'jump')}</kbd> jump</span><span><kbd>${padKey('inside', 'crouch')}</kbd> crouch</span>`
           + `<span><kbd>${padKey('inside', 'dance')}</kbd> dance</span>`
-          + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> step outside</span>`
+          + `<span><kbd>${padKey('inside', 'sprint')}</kbd> run</span><span><kbd>${padKey('inside', 'exit')}</kbd> menu</span>`
+          + `<span>out through the door</span>`
         : `<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>`
           + `<span>mouse to look, <kbd>Esc</kbd> frees it, click takes it back</span>`
           + drinks
           + `<span><kbd>Shift</kbd> run</span><span class="lit"><kbd>E</kbd> sit down</span><span><kbd>R</kbd> dance</span>`
-          + `<span><kbd>Esc</kbd><kbd>Esc</kbd> step outside</span>`;
+          + `<span><kbd>Esc</kbd><kbd>Esc</kbd> menu</span><span>out through the door</span>`;
       return;
     }
     el('walk-keys').innerHTML = padConnected

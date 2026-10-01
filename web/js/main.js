@@ -2347,6 +2347,12 @@ function enterInterior(room, at) {
         onTalk: (it) => openCrewTalk(it),
         onOrder: (r) => questEvents.drank(r),
         hd: hdOn(),
+        // Esc opens the menu here too, with the room paused under it; you leave through the door.
+        onEscape: () => {
+          if (!state.sysmenu || !state.inside) return;
+          state.inside.setPaused(true);
+          state.sysmenu.open();
+        },
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -7351,6 +7357,10 @@ async function boot() {
     onPostSetting,
     post: () => postFx.get(),
     graphics: () => state.graphics,
+    // The menu opened from inside a room (Esc there, interior.js onEscape) hands the room back when
+    // it closes - a turn later, or the Escape that closed it reaches the room's walk mode unpaused
+    // and opens the menu again.
+    onMenuClose: () => setTimeout(() => { if (state.inside && !openPanel()) state.inside.setPaused(false); }, 0),
     // The HD pack under Settings -> Graphics: false on the phone (no islander, no rooms, no choice
     // to offer), else what HOME/hd holds (null for nothing).
     hdStatus: () => (STANDALONE ? false : hdStatus()),

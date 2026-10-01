@@ -1639,7 +1639,9 @@ where it stands, and the islander starts it on the square (`parkOnSquare`). Asle
 has to pause the walker, never touch the lock. A re-request without a gesture is allowed only
 after a lock the *page* released; after the user's Escape it needs a click, which is why a
 single click on the canvas takes it back and does not also swing. That first Escape only frees
-the mouse (`unlockedAt` swallows it), the second leaves walk mode. Drag-to-look is the fallback
+the mouse (`unlockedAt` swallows it), the second leaves walk mode - except in a room, where it opens the
+menu with the room paused under it (interior.js `onEscape`, from main.js; `onMenuClose` hands the room back a
+turn later, or the closing Escape reopens it) and you leave by the door. Drag-to-look is the fallback
 where every request is refused: the desktop app's browser pane throws `WrongDocumentError`, so
 pointer lock cannot be tested there — use a real Chrome or the Tauri window. That pane, hidden,
 also runs no frames between screenshots: a drink or a walk only advances while one is taken,
