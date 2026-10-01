@@ -19,6 +19,8 @@ import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
 import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
+import { createHalos, createShafts } from './room-glow.js';
+import { createHearthFire } from './hearth-fire.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -511,10 +513,13 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const roofMesh = def.roof && def.roof.length ? new THREE.Mesh(mergeGeom(def.roof), material) : null;
   if (roofMesh) scene.add(roofMesh);
 
-  // The fire is its own mesh because it is pulsed, and geometry that gets scaled has to be
-  // built about the origin or it walks away from the hearth as it flickers. Only a room with
-  // a hearth has one.
-  const fire = def.fireAt ? new THREE.Mesh(mergeGeom([
+  // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
+  // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
+  // their own mesh because they are pulsed, and geometry that gets scaled has to be built about
+  // the origin or it walks away from the hearth as it flickers. Only a room with a hearth has one.
+  const flame = def.flame ? createHearthFire(def.flame) : null;
+  if (flame) scene.add(flame.object);
+  const fire = !flame && def.fireAt ? new THREE.Mesh(mergeGeom([
     cone(0.085, 0.24, 6, C.ember, { emissive: 1 }),
     cone(0.05, 0.155, 6, C.flame, { y: 0.035, emissive: 1 }),
   ]), material) : null;
@@ -559,11 +564,18 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   scene.add(new THREE.HemisphereLight(amb.sky, amb.ground, amb.hemi));
   scene.add(new THREE.AmbientLight(amb.hex, amb.amb));
   const lamps = def.lights.map((l) => {
-    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, 2);
+    // decay 2 is a lamp's own falloff; a broad fill from high up (the Kraken's moon) asks for less.
+    const light = new THREE.PointLight(l.hex, l.intensity, l.dist, l.decay ?? 2);
     light.position.set(...l.at);
     scene.add(light);
-    return { light, base: l.intensity, flicker: !!l.flicker };
+    return { light, base: l.intensity, flicker: !!l.flicker, hearth: !!l.hearth };
   });
+  // Glow round the flames and light shafts from the roof (room-glow.js): the room's bloom and its
+  // volumetrics, drawn over what the lamps lit. The roof's own go with the roof when it is lifted.
+  const halos = def.halos?.length ? createHalos(def.halos) : null;
+  const roofHalos = def.roofHalos?.length ? createHalos(def.roofHalos) : null;
+  const shafts = def.shafts?.length ? createShafts(def.shafts) : null;
+  for (const g of [halos, roofHalos, shafts]) if (g) scene.add(g.object);
 
   // A flat floor of its own, standing in for the island's terrain. Constant and above the
   // water line, or walk mode would call the whole room open sea.
@@ -609,20 +621,72 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     return best;
   }
 
-  function clampCam(v) {
+  // The rooms the camera may be in: the one you stand in, and through its edge any room that edge
+  // opens into. Clipped to the room you stand in alone, the camera changed rooms with you in one
+  // frame - 2.25 units at once through the Salty Kraken's cellar arch, and up over the cellar's lid
+  // (Plans/camera-botsing.md). Clipped through the shared edge it comes after you; what stands in
+  // the way on that edge - the wall beside the arch - is the boom's to stop at (walk.js), since the
+  // room's blockers are walk mode's.
+  const EDGE = 0.05;
+  function inArea(a, x, z, pad = 0) {
+    return x >= a.x0 - pad && x <= a.x1 + pad && z >= a.z0 - pad && z <= a.z1 + pad;
+  }
+  // From (px, pz), inside `a`, how far along (dx, dz) the camera may go through the rooms: the
+  // fraction t, and the room it ends in. Within a room it stops MARGIN short of the walls; where the
+  // line reaches the room's very edge and goes on into another room, it goes on in there.
+  function toEdge(area, x, z, dx, dz, pad) {
+    let s = Infinity;
+    if (dx > 1e-9) s = Math.min(s, (area.x1 - pad - x) / dx);
+    else if (dx < -1e-9) s = Math.min(s, (area.x0 + pad - x) / dx);
+    if (dz > 1e-9) s = Math.min(s, (area.z1 - pad - z) / dz);
+    else if (dz < -1e-9) s = Math.min(s, (area.z0 + pad - z) / dz);
+    return Math.max(0, s);
+  }
+  function clipThrough(a, px, pz, dx, dz) {
+    let t = 0, area = a, x = px, z = pz;
+    const len = Math.hypot(dx, dz);
+    for (let hop = 0; hop < 4 && len > 1e-6; hop++) {
+      const inner = toEdge(area, x, z, dx, dz, MARGIN);
+      if (t + inner >= 1) return { t: 1, area };
+      const edge = toEdge(area, x, z, dx, dz, 0) + EDGE / len;
+      const qx = x + dx * edge, qz = z + dz * edge;
+      const next = t + edge < 1 ? AREAS.find((b) => b !== area && inArea(b, qx, qz)) : null;
+      if (!next) return { t: t + inner, area };
+      t += edge; x = qx; z = qz; area = next;
+    }
+    return { t, area };
+  }
+
+  // The lid comes off when the camera is up in it and goes back on only once the camera is well
+  // below it again: on the one height both ways, a camera looking round on the upper gallery took it
+  // off and put it back six times in twelve seconds. And it is the roof over the camera that counts,
+  // where the room says how its roof runs (`roofAt`: the Kraken's slopes from its eaves to its ridge),
+  // not the ridge everywhere - between the two the camera was in the roof with the lid still on.
+  const LID_OFF = 0.04, LID_ON = 0.25;
+  let lidOff = false;
+  function lidOver(a, x, z) {
+    if (a.ceiling != null) return FLOOR + a.ceiling;
+    return def.roofAt ? def.roofAt(x, z) : ROOF_AT;
+  }
+  function judgeLid(v, a) {
+    const roof = lidOver(a, v.x, v.z);
+    if (!lidOff && v.y > roof - LID_OFF) lidOff = true;
+    else if (lidOff && v.y < roof - LID_ON) lidOff = false;
+    roofWanted = !lidOff;
+  }
+
+  function clampCam(v, { firstPerson = false, boomed = false } = {}) {
     const p = walk.state.pos;
     const a = areaAt(p.x, p.z);
+    // From behind the eyes, or once walk mode's boom has brought it in, the camera is where it
+    // should be: only the lid is still to judge. In first person the climb below put the eye
+    // above itself (feet + aim + 0.18 is 0.50, the eye 0.42), and crouching did not lower it.
+    if (firstPerson || boomed) { judgeLid(v, AREAS.find((b) => inArea(b, v.x, v.z)) || a); return; }
     const px = clamp(p.x, a.x0 + MARGIN, a.x1 - MARGIN);
     const pz = clamp(p.z, a.z0 + MARGIN, a.z1 - MARGIN);
     const dx = v.x - px, dz = v.z - pz;
     const len = Math.hypot(dx, dz);
-    let t = 1;
-    const clip = (o, d, lo, hi) => {
-      if (d > 1e-6) t = Math.min(t, (hi - o) / d);
-      else if (d < -1e-6) t = Math.min(t, (lo - o) / d);
-    };
-    clip(px, dx, a.x0 + MARGIN, a.x1 - MARGIN);
-    clip(pz, dz, a.z0 + MARGIN, a.z1 - MARGIN);
+    let { t, area } = clipThrough(a, px, pz, dx, dz);
     t = clamp(t, len > 0.001 ? Math.min(1, MIN_BACK / len) : 1, 1);
     // Only the sideways reach is shortened. Bringing the height in with it dropped the camera
     // below the point it aims at, which turned every step towards a wall into a look at the
@@ -645,8 +709,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       if ((over(v.x, v.z) || over(p.x, p.z)) && v.y > f.y - 0.06) v.y = Math.max(p.y + CAM.aim, f.y - 0.06);
     }
     // Once it is up through the ceiling, the ceiling is in the way of the only view there is -
-    // this room's own ceiling, where a part of it is lower than the rest (the Kraken's cellar).
-    roofWanted = v.y < (a.ceiling != null ? FLOOR + a.ceiling : ROOF_AT) - 0.04;
+    // the ceiling of the room the camera is in, where a part of it is lower than the rest (the
+    // Kraken's cellar).
+    judgeLid(v, inArea(area, v.x, v.z) ? area : a);
   }
 
   // Over the shoulder, as everywhere else on the island, but closer in, lower, and aimed at
@@ -665,6 +730,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   const walk = createWalkMode({
     scene, camera, terrain, material, dom,
     camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy, onDrink, dance: danceHere,
+    // Every blocker in a room stands floor to lid to the camera's boom, unless it says otherwise.
+    camSolidTop: ROOF_AT,
   });
 
   // What moves in a room beyond its fire and its barman - the castle's lights and its dancing
@@ -708,6 +775,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // tonight that you cannot walk through - the horse - is the show's to say, after its enter.
   function enter({ avatar, guests = null, stable = false } = {}) {
     left = false;
+    lidOff = false;
     if (avatar) walk.setAvatar(avatar);
     if (show) show.enter({ dancers: guests, stable });
     const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
@@ -735,6 +803,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     roofWanted = true;
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
+    if (roofHalos) roofHalos.object.visible = roofWanted;
+    if (shafts) shafts.object.visible = roofWanted;
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
@@ -743,7 +813,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
     if (fire) fire.scale.set(flick, 1 + 0.16 * Math.sin(t * 9.1), flick);
-    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * flick;
+    // The hearth's own lamp breathes with its fire, not in step with the candles.
+    const burn = flame ? flame.flicker(t) : flick;
+    for (const l of lamps) if (l.flicker) l.light.intensity = l.base * (l.hearth ? burn : flick);
+    if (flame) flame.update(t);
+    if (halos) halos.update(t);
+    if (roofHalos) roofHalos.update(t);
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
     for (const f of figures) {
       if (f.tends) f.mesh.position[f.along] += (barmanX - f.mesh.position[f.along]) * Math.min(1, dt * 3.4);
@@ -774,6 +849,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     shell.geometry.dispose();
     if (roofMesh) roofMesh.geometry.dispose();
     if (fire) fire.geometry.dispose();
+    if (flame) flame.dispose();
+    for (const g of [halos, roofHalos, shafts]) if (g) g.dispose();
     if (show) show.dispose();
     pint.dispose();
     snack.dispose();

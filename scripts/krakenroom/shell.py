@@ -114,6 +114,7 @@ def _init(L):
     ARCH, FLOORS, STAIRS, RAILS, POSTS = L['ARCH'], L['FLOORS'], L['STAIRS'], L['RAILS'], L['POSTS']
     SLOOPS = L.get('SLOOPS', [])
     TRUSSES = L['TRUSSES']
+    SKYLIGHTS[:] = [tuple(sk) for sk in L['SKYLIGHTS']]
     POST_R = L.get('POST_R', .09)
     FL = {f['id']: f for f in FLOORS}
     ST = {s['id']: s for s in STAIRS}
@@ -1047,7 +1048,7 @@ def roof_slab(label, xa, xb, za, zb, below, above, mat):
     hull(label, pts, mat)
 
 
-SKYLIGHTS = [(-5.1, -3.9, 1.95, 3.25), (3.0, 4.2, -4.05, -2.75)]
+SKYLIGHTS = []                  # kraken-layout.js SKYLIGHTS, set by load()
 
 
 def roof():

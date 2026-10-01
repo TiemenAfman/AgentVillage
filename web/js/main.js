@@ -8,7 +8,8 @@ import { createRenderStats, statsLine } from './render-stats.js';
 import { createQualityGovernor, MIN_PIXEL_RATIO } from './quality.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { quayDeckHeights } from 'shared/quay-basin.mjs';
+import { quayDeckHeights, quayKade } from 'shared/quay-basin.mjs';
+import { kadeSurfaces } from './quay-basin.js';
 import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
 import { createYouMarker } from './you-marker.js';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
@@ -34,11 +35,12 @@ import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
+import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
-  buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry, resortParts,
+  buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry, pierSurfaces,
+  buildBridgeGeometry, bridgeDeckHeights, bridgeDeckOf, createFlagMesh, buildDeckGeometry, resortParts,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
@@ -62,7 +64,8 @@ import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
-import { decodeOwnership } from './hamlets.js';
+import { decodeOwnership, edgeKey } from './hamlets.js';
+import { porchFloor, solidAt, camBodyOf } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -778,20 +781,50 @@ function talkTo(id) {
 
 // --------------------------------------------------------------- walking
 // What walk mode cannot step through, for one thing standing in the world: its own solid
-// rectangles, turned with the house and moved onto it. Enclosing bounds also
-// cover the small free angles of residential buildings.
+// rectangles, moved onto it, turned with it rather than boxed (solids.js solidAt) and lifted with
+// it, so a solid's height (buildings.js wallsOf, the Salty Kraken's pirateSolids) is the world's.
 function blockersOf(rec) {
+  const p = rec.group.position;
+  const where = { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y };
+  return rec.built.solids.map((r) => ({ ...solidAt(r, where), id: rec.id }));
+}
+
+// And the floors a building hands walk mode (the Salty Kraken's stair: buildings.js pirateSurfaces),
+// turned with it and put where it stands - walk.js `surfaces`, which on the island nothing else sets.
+// A ramp along the building's x can be along the world's z once it is turned, and then rises from
+// whichever end it rises from.
+function surfacesOf(rec) {
+  const list = rec.built && rec.built.surfaces;
+  if (!list) return [];
   const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-  return rec.built.solids.map((r) => ({
-    x: rec.group.position.x + r.x * c + r.z * s,
-    z: rec.group.position.z - r.x * s + r.z * c,
-    hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
-    hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
-    ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
-    // A ship's side, which is also what a boat meets (buildings.js shipSolids, walk.js hulls).
-    ...(r.hull != null ? { hull: r.hull } : {}),
-    id: rec.id,
-  }));
+  const p = rec.group.position;
+  const at = (x, z) => [p.x + x * c + z * s, p.z - x * s + z * c];
+  return list.map((f) => {
+    const corners = [at(f.x0, f.z0), at(f.x1, f.z1), at(f.x0, f.z1), at(f.x1, f.z0)];
+    const xs = corners.map((q) => q[0]), zs = corners.map((q) => q[1]);
+    const box = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+    if (f.y != null) return { ...box, y: f.y + p.y };
+    const zm = (f.z0 + f.z1) / 2;
+    const [ax, az] = at(f.x0, zm), [bx, bz] = at(f.x1, zm);
+    const axis = Math.abs(bx - ax) > Math.abs(bz - az) ? 'x' : 'z';
+    const aFirst = axis === 'x' ? ax <= bx : az <= bz;
+    return { ...box, axis, y0: (aFirst ? f.y0 : f.y1) + p.y, y1: (aFirst ? f.y1 : f.y0) + p.y };
+  });
+}
+
+function walkSurfaces() {
+  const out = [];
+  for (const rec of state.byId.values()) if (rec.group.visible) out.push(...surfacesOf(rec));
+  return out;
+}
+
+// The island's planks that a cell cannot say (handOutDecks: docks' ramps and heads, the quays'
+// fingers and coping), kept apart from the buildings' floors above because the two change at
+// different moments - and walk.setSurfaces replaces the whole list, so whichever was handed over
+// last used to wipe the other. Both go through handSurfaces.
+let plankSurfaces = [];
+function handSurfaces() {
+  if (state.walk) state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
 }
 
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
@@ -817,6 +850,9 @@ function parkOnSquare() {
 // stretch to the point itself unless that is inside something (a door's step is not).
 // False, and a word, when there is no way there - the sea, another island, a walled yard.
 const FENCE_STEPS = 12;
+// Where in a cell a route may pass when its middle is taken: the middle first, then a third of a
+// cell off it each way.
+const ROUTE_SPOTS = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3], [0.3, 0.3], [-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3]];
 const DECK_STEP = 0.44;          // just under walk.js's STEP_UP (0.45)
 // Every cell of road, as `gx + gz * size`, for a route to prefer: the layout's paths, the town's
 // paving, every hamlet's own and the bridges built by hand. Worked out again only when the
@@ -852,14 +888,24 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || (!t.isLand(to[0], to[1]) && !onDeck(to[0], to[1]))) return say();
   // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
   // on a grown island, and A* looks at a few hundred.
+  // A cell whose middle is taken - a trunk, a boulder, a gatepost (world.js solids) - is still a
+  // way through when a body fits somewhere else in it, and the route then goes by that spot (`spot`)
+  // rather than the middle.
   const memo = new Map();
+  const spot = new Map();
   const blocked = { has(k) {
     let v = memo.get(k);
     if (v === undefined) {
       if (deck && deck.has(k)) v = false;
       else {
         const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
-        v = w.blockedAt(cx, cz);
+        v = true;
+        for (const [ox, oz] of ROUTE_SPOTS) {
+          if (w.blockedAt(cx + ox, cz + oz)) continue;
+          v = false;
+          if (ox || oz) spot.set(k, [cx + ox, cz + oz]);
+          break;
+        }
       }
       memo.set(k, v);
     }
@@ -880,10 +926,16 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   // at its ends and walked along, never boarded from the side.
   const surface = (k) => (deck && deck.has(k) ? deck.get(k)
     : t.worldHeight(...t.cellWorld(k % t.size, (k - (k % t.size)) / t.size)));
-  const step = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  const deckStep = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  // A hedge or a wall between two cells is no way through, only its gate is (hamlets.js
+  // buildBorders `closed`). A rail is: the body jumps it (walk.js, a parked body on a route).
+  const closed = state.world && state.world.closedEdges ? state.world.closedEdges() : null;
+  const step = closed && closed.size
+    ? (a, b) => !closed.has(edgeKey(a, b)) && (!deckStep || deckStep(a, b))
+    : deckStep;
   const path = findPath(t, from, to, blocked, { open: deck, prefer: roads, crossing, step });
   if (!path) return say();
-  const pts = path.slice(1);
+  const pts = path.slice(1).map(([px, pz]) => spot.get(Math.floor(px + half) + Math.floor(pz + half) * t.size) || [px, pz]);
   if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
   if (!pts.length) pts.push(path[0]);
   return w.goTo(pts);
@@ -911,11 +963,40 @@ function walkToBuilding(id) {
   } else walkBodyTo(p.x, p.z, { exact: false });
 }
 
+// The step a building stands on, as a floor for the feet (solids.js porchFloor): 0.18 over the plot's
+// middle, which without it the walker stood sunk into.
+function porchOf(rec) {
+  const porch = rec.built && rec.built.porch;
+  if (!porch) return [];
+  const p = rec.group.position;
+  return porchFloor(porch, { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y }).map((f) => ({ ...f, id: rec.id }));
+}
+
+// What the follow camera's boom stops at (walk.js `cameraBodies`, Plans/camera-botsing.md): every
+// building we draw, and every guest island's, as its part boxes where it stands. Asked by walk mode
+// whenever it is handed the blockers, so the two never disagree about what stands where.
+function cameraBodies() {
+  const out = [];
+  const add = (rec) => {
+    if (!rec.built || !rec.built.camBoxes) return;
+    const p = rec.group.position;
+    const b = camBodyOf(rec.built.camBoxes, { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y });
+    if (b) out.push(b);
+  };
+  for (const rec of state.byId.values()) if (rec.group.visible) add(rec);
+  if (squareBed && squareBed.group.visible) add(squareBed);
+  for (const g of state.guests) if (g.camBodies) out.push(...g.camBodies());
+  return out;
+}
+
 function walkableBlockers() {
+  // Whoever is handed the walls is handed the floors that go with them (surfacesOf): the two
+  // come from the same records and change together.
+  handSurfaces();
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
-    out.push(...blockersOf(rec));
+    out.push(...blockersOf(rec), ...porchOf(rec));
   }
   // The flower bed in the middle of the square has a stone kerb, so you walk round it the
   // way you will walk round the fountain that replaces it. It is not a building and is not
@@ -928,6 +1009,11 @@ function walkableBlockers() {
   for (const g of state.guests) out.push(...g.blockers());
   // A palm on an islet: its trunk, not the crown (web/js/islets.js).
   if (state.islets) out.push(...state.islets.blockers());
+  // And what a neighbour put down by hand, in the world where their island lies.
+  for (const g of state.guests) if (g.props) out.push(...g.props.blockers(g.region.origin));
+  // Our wood, our stones and the boundaries round every hamlet, yard and field (world.js solids,
+  // Plans/hitboxes-en-looppaden.md). Home hangs in the scene on its own coordinates, so no origin.
+  if (state.world && state.world.solids) out.push(...state.world.solids());
   return out;
 }
 
@@ -1061,10 +1147,16 @@ function interactables() {
       });
     } else if (rec.spec.civicType === 'piratetavern') {
       // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
-      // so `kind: 'tavern'` - but answered from the middle of the lot, not the door, because its
-      // door is on the water and the step in front of it is wet.
+      // so `kind: 'tavern'` - answered at its door, at the top of the stair up the rock, with the
+      // stoop's height as its floor so the beach under it does not answer too. A bake from before
+      // the stair has no stoop, and falls back to the middle of the lot.
+      const stoop = (rec.built.surfaces || []).find((f) => f.name === 'stoop');
+      const [sx, sz] = stoop ? [(stoop.x0 + stoop.x1) / 2, (stoop.z0 + stoop.z1) / 2] : [0, 0];
+      const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
       out.push({
-        id: rec.id, kind: 'tavern', room: 'piratetavern', x: p.x, z: p.z, r: 2.6,
+        id: rec.id, kind: 'tavern', room: 'piratetavern',
+        x: p.x + sx * c + sz * s, z: p.z - sx * s + sz * c, r: stoop ? 0.9 : 2.6,
+        ...(stoop ? { floor: stoop.y + p.y } : {}),
         label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
       });
     } else if (rec.spec.civicType === 'castle') {
@@ -4735,8 +4827,10 @@ const LAND_PROBE = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071],
 // planner draws a ghost of a building on a plot it does not stand on yet (`ghostPose`, for
 // web/js/plan-mode.js), and a ghost worked out by a second copy of this would stand a hand's
 // breadth from where the building then turns up.
-// The shipyard is the one building not stood on the middle of its plot: that is over the sea,
-// and the yard stands on the land at its landward end (shipyardGround in web/js/shipyard.js).
+// The shipyard and the Salty Kraken are the two buildings not stood on the middle of their plot:
+// the yard's is over the sea, and it stands on the land at its landward end (shipyardGround in
+// web/js/shipyard.js); the Kraken's rises from the beach, and its rock stands on the lowest point
+// of its front so that the stair's foot meets the sand (pirateTavernGround, web/js/pirate-ground.js).
 function poseOnPlot(spec, built) {
   // A ship floats: the middle of her plot, on the sea and not on the bed under her
   // (web/js/batavia.js, the one copy guest-island.js asks too).
@@ -4744,7 +4838,8 @@ function poseOnPlot(spec, built) {
   const nudge = yardNudge(spec, built);
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
-  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+  const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt)
+    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
   return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {
@@ -5264,6 +5359,10 @@ function buildScene(village) {
 const bridgeGroup = new THREE.Group();
 const bridgeMeshes = new Map();
 let decks = new Map();
+// The same crossings as the planks are drawn, for walk mode's feet (buildings.js bridgeDeckOf):
+// `decks` gives a height per cell, which is right for the settlers and a staircase to a walker.
+let bridgeShapes = [];
+let bridgeCells = new Set();
 
 function syncBridges(village) {
   if (!bridgeGroup.parent) scene.add(bridgeGroup);
@@ -5282,11 +5381,14 @@ function syncBridges(village) {
     mesh.geometry.dispose();
     bridgeMeshes.delete(key);
   }
+  bridgeShapes = [];
   for (const [i, b] of list.entries()) {
     const key = `${b.id}#${i}`;
     for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis)) {
       decks.set(gx + gz * terrain.size, y);
     }
+    const shape = bridgeDeckOf(b.cells, terrain, b.axis);
+    if (shape) bridgeShapes.push(shape);
     if (bridgeMeshes.has(key)) continue;
     const [x, z] = terrain.cellWorld(b.cells[0][0], b.cells[0][1]);
     const g = buildBridgeGeometry(b.cells, terrain, [x, z], b.axis);
@@ -5299,6 +5401,11 @@ function syncBridges(village) {
     bridgeMeshes.set(key, m);
   }
   for (const [cell, y] of quayDeckHeights(village, terrain.size)) decks.set(cell, y);
+  // What walk mode stands on as the drawn planks instead: the cells the crossings carried out to,
+  // less the quay's boardwalk, which wins a cell the two share (as it does in `decks`).
+  bridgeCells = new Set();
+  for (const s of bridgeShapes) for (const [gx, gz] of s.cells) bridgeCells.add(gx + gz * terrain.size);
+  for (const [cell] of quayDeckHeights(village, terrain.size)) bridgeCells.delete(cell);
   handOutDecks();
 }
 
@@ -5387,8 +5494,25 @@ function handOutDecks() {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
+  // The bridges as their planks are drawn (walk.js setDecks), ours, the ones built by hand and a
+  // neighbour's; what they cover is left out of the per-cell levels below, or a cell's one height -
+  // the middle of its slope - would still win half of it, over the boards or under them.
+  const shapes = [...bridgeShapes];
+  const handBuilt = state.props && state.terrain ? state.props.deckCells(state.terrain) : new Map();
+  if (state.props && state.terrain) shapes.push(...state.props.deckShapes(state.terrain));
+  const guestCells = new Set();
+  for (const r of state.sea ? state.sea.regions() : []) {
+    if (r === state.region || !r.village || !r.terrain) continue;
+    for (const b of r.village.bridges || []) {
+      const s = bridgeDeckOf(b.cells, r.terrain, b.axis);
+      if (!s) continue;
+      shapes.push({ ...s, o: r.toWorld(s.o[0], s.o[1]) });
+      for (const [gx, gz] of s.cells) guestCells.add(r.levelBase + gx + gz * r.size);
+    }
+  }
+  if (state.walk) state.walk.setDecks(shapes);
   const stacked = new Map();
-  for (const [cell, y] of flat) stacked.set(base + cell, [y]);
+  for (const [cell, y] of flat) if (!bridgeCells.has(cell) && !handBuilt.has(cell)) stacked.set(base + cell, [y]);
   // The quay's planks are a floor over water, exactly as a bridge deck is - without this
   // you wade alongside your own dock instead of walking out along it, which is both wrong
   // and the difference between a dock and a decoration. Keyed per region, so a guest
@@ -5406,10 +5530,28 @@ function handOutDecks() {
   for (const r of state.sea ? state.sea.regions() : []) {
     if (r === state.region || !r.village || !r.village.decks) continue;
     for (const [cell, y] of Object.entries(r.village.decks)) {
-      if (!stacked.has(r.levelBase + Number(cell))) stacked.set(r.levelBase + Number(cell), [y]);
+      const key = r.levelBase + Number(cell);
+      if (!stacked.has(key) && !guestCells.has(key)) stacked.set(key, [y]);
     }
   }
   if (state.walk) state.walk.setLevels(stacked);
+  // And what a cell cannot say, as rectangles (walk.js `surfaces`): every dock's ramp and the wings
+  // of its head, and every quay's finger jetties - drawn, and until this stood beside in the water
+  // (Hoogezand: the four heads' wings, the four ramps, all five fingers). Every region's, in the
+  // frame walk mode reads, which is the region's own terrain moved to its origin.
+  {
+    const planks = [];
+    const put = (r, list) => {
+      const [ox, oz] = r.origin;
+      for (const p of list) planks.push({ ...p, x0: p.x0 + ox, x1: p.x1 + ox, z0: p.z0 + oz, z1: p.z1 + oz, lid: true });
+    };
+    for (const d of state.docks) put(d.region, pierSurfaces(d.cells, d.region.terrain, d.from));
+    for (const r of state.sea ? state.sea.regions() : []) {
+      if (r.village) put(r, kadeSurfaces(quayKade(r.village, r.terrain), r.terrain));
+    }
+    plankSurfaces = planks;
+  }
+  handSurfaces();
   // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
   // the same keying createStandHeight wants - and it is built above for walk mode anyway.
   homeStand = state.terrain && state.region && state.region.village
@@ -7591,7 +7733,7 @@ async function boot() {
   state.ui.boot(false, 'Raising the island…');
   buildScene(village);
   state.walk = createWalkMode({
-    scene, camera, terrain: state.terrain, ground: state.sea,
+    scene, camera, terrain: state.terrain, ground: state.sea, cameraBodies,
     material: buildingMat, dom: renderer.domElement,
     // Every swing the arm starts goes to the sea, which decides what it reaches
     // (lib/combat.mjs). net.js refuses it anywhere but on foot on the sea. A function

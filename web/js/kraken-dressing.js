@@ -62,13 +62,15 @@ export const PROPS = [
   { kind: 'chest', x: -3.2, z: -2.92, y: P, ry: 0, s: 1.1 },
   { kind: 'hoard-small', x: -3.25, z: -2.42, y: P, ry: 0, s: 1 },
   { kind: 'barrel-skull', x: -3.82, z: -2.95, y: P, ry: 0, s: 1 },
-  { kind: 'crate-stack', x: -2.55, z: -2.97, y: P, ry: 0.15, s: 1.1 },
-  { kind: 'barrel-small', x: -2.2, z: -3.0, y: P, ry: 0, s: 1 },
-  // And east of it, the same wall: barrels and a crate, a sack.
-  { kind: 'barrel-tall', x: 1.9, z: -2.95, y: P, ry: 0, s: 1.1 },
-  { kind: 'barrel', x: 2.28, z: -2.98, y: P, ry: 0, s: 1.1 },
-  { kind: 'crate', x: 2.68, z: -2.95, y: P, ry: 0.2, s: 1.1 },
-  { kind: 'sack', x: 2.4, z: -2.58, y: P, ry: 0, s: 1 },
+  { kind: 'crate-stack', x: -2.38, z: -2.97, y: P, ry: 0.15, s: 1.1 },
+  { kind: 'barrel-small', x: -2.03, z: -3.0, y: P, ry: 0, s: 1 },
+  // And east of it, the same wall: barrels and a crate, a sack. Clear of the two open gun ports
+  // (shell.py `muzzles`, x -2.8 and 1.8): their lids swing up and out over the pit and a muzzle is
+  // run out under them, and a tall barrel's candles stood in the lid.
+  { kind: 'barrel-tall', x: 2.3, z: -2.95, y: P, ry: 0, s: 1.1 },
+  { kind: 'barrel', x: 2.66, z: -2.98, y: P, ry: 0, s: 1.1 },
+  { kind: 'crate', x: 3.1, z: -2.95, y: P, ry: 0.2, s: 1.1 },
+  { kind: 'sack', x: 2.62, z: -2.6, y: P, ry: 0, s: 1 },
   // By the west rail, between the two rows of tables.
   { kind: 'crate-stack', x: -5.2, z: 1.4, y: P, ry: 0.1, s: 1.1 },
   { kind: 'barrel-tall', x: -5.22, z: 1.88, y: P, ry: 0, s: 1.1 },

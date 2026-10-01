@@ -137,7 +137,22 @@ export function createSurface(map) {
   }
 
   const inMap = (x, z) => cellOf(x, z) >= 0;
-  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(cellOf(x, z), y, reach), blockedAt, standAt, landAt, inMap, map };
+  // The lowest and highest surface in the cell under (x, z), or null where the line meets nothing:
+  // the hull's envelope there, which the follow camera keeps out of (walk.js, Plans/camera-botsing.md).
+  function spanAt(x, z) {
+    const c = cellOf(x, z);
+    if (c < 0) return null;
+    const a = c === 0 ? 0 : end(c - 1), b = end(c);
+    if (b <= a) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = a; i < b; i++) {
+      const h = heightOf(hits[i]);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+    return [lo, hi];
+  }
+  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(cellOf(x, z), y, reach), blockedAt, standAt, landAt, inMap, spanAt, map };
 }
 
 // The nearest place to (x, z) where a body can stand and is not inside anything: for putting somebody

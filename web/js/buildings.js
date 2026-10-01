@@ -487,7 +487,7 @@ export function partAt(asset, name) {
 export const MINE_DATUM = 0.34;
 // The static shops of the town's plan (Plans/DONE/knus-dorpscentrum.md), each one baked asset
 // `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
-// part by part (APART) so the door can be reached between the crates on the pavement, and
+// face by face (wallsOf) so the door can be reached between the crates on the pavement, and
 // set on the tavern's step (porchOverhang). The bakery and the butcher's are
 // shops too, but they have a fire and a shopkeeper and cases of their own.
 export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
@@ -1665,14 +1665,17 @@ function civic(parts, spec, rng) {
       // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
       parts.push(...meshAsset('piratetavern'));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
-      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on the
-      // upper storey's east wall; what swings is hung by main.js on `animated.piratesign`, at the
+      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on its
+      // post at the foot of the stair; what swings is hung by main.js on `animated.piratesign`, at the
       // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
       if (anchors.sign) {
         parts.push(...pirateSignParts({ at: anchors.sign, yaw: PIRATE_SIGN_YAW }));
         animated.piratesign = { yaw: PIRATE_SIGN_YAW };
       }
-      return { anchors, animated, height: models.heightOf('piratetavern') };
+      // Its stair is walked (Plans/piratenkroeg.md, "Bijsturing"): floors and ramps for walk mode,
+      // and solids with a height, so the rock under a flight is no wall to whoever is on it.
+      const surfaces = pirateSurfaces(anchors);
+      return { anchors, animated, height: models.heightOf('piratetavern'), surfaces, solids: pirateSolids(parts, anchors, surfaces) };
     }
     case 'chapel': {
       // A brick village church with a saddleback tower, modelled in
@@ -2240,8 +2243,131 @@ export function footprintOf(parts, clearance = WALK_CLEARANCE, { merge = true } 
   }));
 }
 
+// ---------------------------------------------------------------- walls as they stand
+// What walk mode walks into (Plans/muren-met-hitboxes.md). footprintOf() above takes one
+// rectangle per part, of every corner of it under head height, and glues those within a gap
+// of each other - and one Blender object is often a whole curtain wall or an open silo, whose
+// rectangle closes the courtyard it stands round: the great castle was one block over its
+// seven cells with a gate nobody could walk into (a body got 0.54 from the gate, 0.14 against
+// the stone), the gold pit a block where its mouth is open for the barrow, a yard of crates and
+// logs one block from the shed to the last log. So a wall is measured off its faces instead:
+// every triangle cut to the band a body stands in, the rectangle of what is left, and two of
+// those joined only where the one rectangle round them holds almost nothing the two did not
+// (WALK_TIGHT). No gluing across a gap is needed any more - walk.js grows every solid by a
+// body's radius, so a gap narrower than a body closes by itself - and nothing has to be kept
+// APART from its neighbours by name, which is the list that used to say which buildings the
+// gluing got wrong.
+//
+// The band starts a step up, not at the ground: what is lower than WALK_STEP is walked onto,
+// the way the porch (PORCH_RISE, 0.18) always has been. From the ground, a shop's own plinth and
+// the sill in front of its door closed the whole front of the library, the warehouse and the
+// sweet shop into one block.
+//
+// Each solid also says how high it stands (`y0`/`y1`, in the frame the parts were built in, so
+// before the porch lifts them): the top of the highest face that went into it, for a jump to
+// clear a crate or a barrel, and a bottom well under the porch's skirt, so nobody walks under a
+// house on the downhill side of its plot. main.js hands those on with the building's own height.
+export const WALK_STEP = 0.15;
+const WALK_TIGHT = 0.05;          // the most of a joined rectangle that may be empty ground
+const WALK_SLIVER = 0.03;         // how far over the step a face has to reach to be in the way
+
+// A triangle cut to y0..y1, as the rectangle round what is left of it and the top of the whole
+// triangle; null when none of it is in the band.
+function bandRect(ax, ay, az, bx, by, bz, cx, cy, cz, y0, y1, out) {
+  const hi = Math.max(ay, by, cy);
+  // A face that only just reaches over the step is still the step: the grocer's stall front tops
+  // out 3 mm over it, and its sliver of band was a wall across the walk up to the door.
+  if (hi < y0 + WALK_SLIVER || Math.min(ay, by, cy) > y1) return null;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const take = (x, z) => {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (z < z0) z0 = z;
+    if (z > z1) z1 = z;
+  };
+  // The corners inside the band, and where each edge crosses its two lines.
+  const P = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+  for (let i = 0; i < 3; i++) {
+    const [px, py, pz] = P[i], [qx, qy, qz] = P[(i + 1) % 3];
+    if (py >= y0 && py <= y1) take(px, pz);
+    for (const y of [y0, y1]) {
+      if ((py - y) * (qy - y) < 0) {
+        const t = (y - py) / (qy - py);
+        take(px + (qx - px) * t, pz + (qz - pz) * t);
+      }
+    }
+  }
+  if (!Number.isFinite(x0)) return null;
+  out.x0 = x0; out.x1 = x1; out.z0 = z0; out.z1 = z1; out.top = hi;
+  return out;
+}
+
+const rectArea = (r) => (r.x1 - r.x0) * (r.z1 - r.z0);
+const overlapOf = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0))
+  * Math.max(0, Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0));
+
+// Join rectangles while the one round two of them is no emptier than WALK_TIGHT. Biggest
+// first, so the small pieces of a wall are swallowed by its long faces rather than joined to
+// each other into strips first; a rectangle wholly inside another is simply dropped.
+function joinTight(rects) {
+  const list = rects.slice().sort((a, b) => rectArea(b) - rectArea(a));
+  const out = [];
+  for (const r of list) {
+    let cur = { ...r };
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < out.length; i++) {
+        const o = out[i];
+        const u = { x0: Math.min(cur.x0, o.x0), x1: Math.max(cur.x1, o.x1), z0: Math.min(cur.z0, o.z0), z1: Math.max(cur.z1, o.z1) };
+        const au = rectArea(u);
+        if (au - (rectArea(cur) + rectArea(o) - overlapOf(cur, o)) > WALK_TIGHT * au + 1e-5) continue;
+        u.top = Math.max(cur.top, o.top);
+        u.bottom = Math.min(cur.bottom, o.bottom);
+        cur = u;
+        out.splice(i, 1);
+        again = true;
+        break;
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+// The solid rectangles of a shape as walk mode meets them, in its own frame: centre, half
+// extents and the height it stands, `step` and `clearance` in the same frame as the parts.
+export function wallsOf(parts, clearance = WALK_CLEARANCE, step = WALK_STEP) {
+  const rects = [];
+  const tri = {};
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position, index = g.index;
+    const n = index ? index.count : p.count;
+    let bottom = Infinity;
+    for (let i = 0; i < p.count; i++) bottom = Math.min(bottom, p.getY(i));
+    const mine = [];
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i0 = index ? index.getX(t) : t, i1 = index ? index.getX(t + 1) : t + 1, i2 = index ? index.getX(t + 2) : t + 2;
+      const r = bandRect(p.getX(i0), p.getY(i0), p.getZ(i0), p.getX(i1), p.getY(i1), p.getZ(i1),
+        p.getX(i2), p.getY(i2), p.getZ(i2), step, clearance, tri);
+      if (r) mine.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, top: r.top, bottom });
+    }
+    // Within the part first: that is where almost every face lies against another.
+    rects.push(...joinTight(mine));
+  }
+  return joinTight(rects).map((r) => ({
+    x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2,
+    hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2,
+    y0: Math.min(r.bottom, -PORCH_SKIRT), y1: r.top,
+  }));
+}
+
 function scaleSolids(solids, s) {
-  return solids.map((r) => ({ x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s, ...(r.r ? { r: r.r * s } : {}) }));
+  return solids.map((r) => ({
+    x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s,
+    ...(r.r ? { r: r.r * s } : {}),
+    ...(r.y0 != null ? { y0: r.y0 * s, y1: r.y1 * s } : {}),
+  }));
 }
 
 // What is round is walked round, not into the corners of the square it fits in. A box
@@ -2254,25 +2380,113 @@ function scaleSolids(solids, s) {
 // foot) the corners of its box stood 0.3 off the stone on every diagonal - on a coast cell,
 // where the way round it is often the strip between the tower and the water.
 const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
-// And what stands in an L is walked round the L. The two trestle tables and their benches
-// overlap at one corner, so merging closes the empty corner of the L into one box - and on
-// the square that corner faces the fountain one cell away, diagonally, which with the
-// fountain's own solid left no way between them. Unmerged, a gap narrower than a body
-// still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
-// The harbour's buildings for the shops' reason. Merged, the warehouse's crates and barrels closed
-// with its walls into one block reaching 1.22 out, past the door at 0.80, and the fisherman's boat,
-// rack and barrels made his whole yard one block to 0.97, with the hut's door at -0.22 inside it.
-// The shipyard is kept apart too, for its size: merged, the shed, the sheerlegs'
-// feet, the stacks and the slipway lie within a gap of each other and became one solid over the
-// whole sixteen-long lot, the strip along the ship to the water included. Apart, the slipway is
-// one solid (nobody walks the ways - they have no deck level), the ship's parts fall inside it,
-// and the shed, the logs, the planks and the hearth are each walked round.
-// The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
-// crate and bollard on the other closed with the walls into one block across the walk up to it.
-const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
-// The turn that brings the sign's arm (+x) to the outward normal of the Salty Kraken's upper east
-// wall: that storey is turned TWIST, two degrees, on the ground floor (scripts/build-piratetavern.py).
-const PIRATE_SIGN_YAW = 2 * Math.PI / 180;
+// Everything else is measured face by face (wallsOf), which is what the list that stood here -
+// the tables' L, the shops and harbour houses with crates by the door, the shipyard's sixteen
+// cells, the Salty Kraken's barrels - kept apart by name, one building the gluing got wrong at a
+// time. Measured that way, each of them is walked round as it stands without being named.
+// Bar one, which is the other way round: the shipyard's slipway is one solid as a whole part
+// (its ways have no deck level, and run out over the water), and the ship on it falls inside it.
+// Face by face, the ways were walked between. The shed, the stacks and the hearth are parts of
+// their own, each walked round.
+const BY_PART = new Set(['shipyard']);
+// The turn that brings the sign's arm (+x) to where the Salty Kraken's sign points: none. It stands
+// on its own post at the foot of the stair, the arm out east over the way up and the board facing
+// the water (+z), where the island's camera reads it (scripts/build-piratetavern.py).
+const PIRATE_SIGN_YAW = 0;
+
+// The Salty Kraken's stair as walk mode stands on it (scripts/build-piratetavern.py): every
+// `anchor.deck.<name>.lo|hi` pair is the two corners of one axis-aligned floor and every
+// `anchor.stair.<name>.lo|hi` a ramp along x from its foot (`lo`) to its head (the ship's own
+// vocabulary, scripts/model-rules.mjs) - walk.js `surfaces`, the rooms'
+// own shape, in the building's frame (main.js turns and places them). The corners are the bake's,
+// so the numbers of the stair live in one place.
+export function pirateSurfaces(anchors) {
+  const out = [];
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^(deck|stair)\.(.+)\.lo$/.exec(key);
+    const hi = m && anchors[`${m[1]}.${m[2]}.hi`];
+    if (!hi) continue;
+    const name = m[2];
+    const x0 = Math.min(lo[0], hi[0]), x1 = Math.max(lo[0], hi[0]);
+    const z0 = Math.min(lo[2], hi[2]), z1 = Math.max(lo[2], hi[2]);
+    if (Math.abs(lo[1] - hi[1]) < 1e-6) out.push({ name, x0, x1, z0, z1, y: lo[1] });
+    else {
+      const first = lo[0] <= hi[0];
+      out.push({ name, x0, x1, z0, z1, axis: 'x', y0: first ? lo[1] : hi[1], y1: first ? hi[1] : lo[1] });
+    }
+  }
+  return out;
+}
+
+// Its solids, with a height each (walk.js `atHeight`): a wall only to a body whose feet-to-head
+// span meets it. From every part as footprintOf takes them - the rectangle of what is low enough to
+// bump into - but standing from the part's foot to its top, so a walker on the landing passes over
+// the rock under it; the stair itself is left out (it is walked, not walked into). Under each floor
+// and each ramp's high end stands a low block, so nobody walks in under the stair instead of up it,
+// and the hull is one solid from its keel to the castle's roof (`anchor.solid.hull.lo|hi`): no
+// vertex of it is a settler's height off the ground, so without it the stair's inner side was open
+// into the ship.
+const PIRATE_WALKED = /^Salty (stair|door)/;
+const UNDER_STAIR = 0.75;       // a floor at least this high has room under it for somebody to walk
+const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in scripts/build-piratetavern.py)
+function pirateSolids(parts, anchors, surfaces) {
+  const out = [];
+  for (const g of parts) {
+    const name = g.userData.part?.args?.[0] || '';
+    if (PIRATE_WALKED.test(name)) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity, low = 0;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (y > WALK_CLEARANCE) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+      low++;
+    }
+    if (low) out.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, y0, y1 });
+  }
+  // The rails: each segment a thin wall from the floor under it to a rail's height over it, in
+  // pieces a pace long so a rail up a flight stops you at the flight's height and not at its top
+  // (the first bake left them to the eye: you walked through them and fell off the stair).
+  for (const [key, a] of Object.entries(anchors)) {
+    const m = /^rail\.(\d+)\.a$/.exec(key);
+    const b = m && anchors[`rail.${m[1]}.b`];
+    if (!b) continue;
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.4));
+    for (let i = 0; i < n; i++) {
+      const p = a.map((v, k) => v + (b[k] - v) * i / n), q = a.map((v, k) => v + (b[k] - v) * (i + 1) / n);
+      out.push({ x: (p[0] + q[0]) / 2, z: (p[2] + q[2]) / 2, hx: Math.abs(q[0] - p[0]) / 2 + 0.02, hz: Math.abs(q[2] - p[2]) / 2 + 0.02,
+        y0: Math.min(p[1], q[1]) - 0.05, y1: Math.max(p[1], q[1]) + PIRATE_RAIL_H });
+    }
+  }
+  // Under each floor high enough to walk under, a low block - inset by a body's width, because
+  // walk.js grows every solid by one: at the floor's own size, anybody who landed beside the stair
+  // was inside it, and every step from there was blocked (the keeper: "karakter zit vast").
+  for (const s of surfaces) {
+    let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
+    const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
+    if (top < UNDER_STAIR) continue;
+    if (s.y == null) {
+      // only where the ramp is high enough to be walked under
+      const t = (UNDER_STAIR - s.y0) / (s.y1 - s.y0);
+      const at = s.x0 + (s.x1 - s.x0) * Math.min(Math.max(t, 0), 1);
+      if (s.y1 > s.y0) a = Math.max(a, at); else b = Math.min(b, at);
+    }
+    const y1 = (s.y != null ? s.y : UNDER_STAIR) - 0.3;
+    const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
+    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: 0, y1 });
+  }
+  const lo = anchors['solid.hull.lo'], hi = anchors['solid.hull.hi'];
+  if (lo && hi) {
+    out.push({ x: (lo[0] + hi[0]) / 2, z: (lo[2] + hi[2]) / 2, hx: Math.abs(hi[0] - lo[0]) / 2, hz: Math.abs(hi[2] - lo[2]) / 2, y0: lo[1], y1: hi[1] });
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------- the porch
 // main.js sets a building down at the height of the middle of its plot and leaves it
@@ -2312,6 +2526,9 @@ const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'boar
   // The gold mine is a hill with an apron of its own, both going under the grass: a step round
   // a hill is a plinth under a mountain.
   'goldmine',
+  // The Salty Kraken is a ship on a rock, and the rock is its footing: a step round it read as a
+  // stone plinth under a wreck.
+  'piratetavern',
   // The water tower came with four stone pads of its own and stands on open grass between
   // them. A step round the outside of that would be a plinth under a thing on stilts.
   'watertower',
@@ -2438,7 +2655,8 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
   // What it comes to, for whatever has to stand on it and walk off it: the upper course's
   // outline and its height (web/js/goldrun.js walks the goldsmith off his).
-  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE };
+  // `tread` and `low`: how much further the lower course reaches, and its top (walk mode stands on both).
+  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE, tread, low: PORCH_RISE * 0.45 };
   if (earthen) {
     // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
     // plateau to the actual tent, while keeping the top exactly under the groundsheet.
@@ -2474,6 +2692,31 @@ function slab(parts, x, z, w, d, h) {
   }
 }
 
+// The camera's boxes (`built.camBoxes`): six numbers a part, x0 y0 z0 x1 y1 z1 in the building's own
+// frame and at its scale, in one Float32Array - a few hundred houses keep a hundred each. A part
+// smaller than CAM_BOX_MIN every way (a lamp, a hinge, a doorknob) is left out: the camera passing
+// through one is not what anybody sees, and it would make the boom twitch along every facade.
+// Measured against the real geometry (tests/camera-boom.test.mjs): a boom stopped by these clears
+// nearly every view that had the building between the camera and the eye.
+const CAM_BOX_MIN = 0.06;
+function camBoxesOf(parts, s) {
+  const out = [];
+  for (const g of parts) {
+    if (!g || !g.attributes.position) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    if (!(x1 >= x0) || Math.max(x1 - x0, y1 - y0, z1 - z0) < CAM_BOX_MIN) continue;
+    out.push(x0 * s, y0 * s, z0 * s, x1 * s, y1 * s, z1 * s);
+  }
+  return new Float32Array(out);
+}
+
 export function buildBuilding(spec, ctx = {}) {
   const pal = PALETTE[spec.style] || PALETTE.unknown;
   const rng = makeRng(hash32(spec.id));
@@ -2482,12 +2725,13 @@ export function buildBuilding(spec, ctx = {}) {
   // A building that says where it is solid itself (the ship, whose hull is measured off its
   // bake rather than off everything below head height), and one that floats: main.js and
   // guest-island.js set its origin on the sea instead of on the ground under the plot.
-  let ownSolids = null, floats = false;
+  let ownSolids = null, floats = false, ownSurfaces = null;
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
     anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
     ownSolids = r.solids || null;
+    ownSurfaces = r.surfaces || null;
     floats = !!r.floats;
     if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
   } else if (spec.kind === 'shed') {
@@ -2540,11 +2784,22 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  const wallRects = ownSolids || footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
+  // What is round keeps the one rectangle of old, and becomes its circle below.
+  const round = spec.kind === 'civic' && ROUND.has(spec.civicType);
+  // A house on stilts keeps the one block of old, with no height to it: its walls start at
+  // HARBOUR_DECK, over head height from the ground it is measured from, so measured face by face
+  // only its piles and platform are in the band - and their top is the boardwalk's, so a body on
+  // the boardwalk would have walked over the platform and through the walls. Its deck is the quay
+  // work's (Plans/quay-op-zee.md); until that stands it on its own floor, it stays a wall.
+  const wallRects = ownSolids || (round || spec.harbour ? footprintOf(parts, WALK_CLEARANCE / s)
+    : BY_PART.has(spec.civicType) ? footprintOf(parts, WALK_CLEARANCE / s, { merge: false })
+      : wallsOf(parts, WALK_CLEARANCE / s, WALK_STEP / s));
   let deck = null;
   if (wantsPorch(spec)) {
     deck = porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
+    // The walls were measured before the porch lifted them; their heights go up with them.
+    if (!ownSolids) for (const r of wallRects) if (r.y0 != null) { r.y0 += PORCH_RISE; r.y1 += PORCH_RISE; }
   }
   // And the yard last of all, which is the whole reason houseBody() handed it back rather
   // than putting it in itself: porch() lifts everything already in the loaf onto its step
@@ -2555,11 +2810,15 @@ export function buildBuilding(spec, ctx = {}) {
   // it can bump into, and the scaffold wants the walls - a builder's frame goes round the
   // house, not round the woodpile ten feet away.
   for (const g of yard) parts.push(g);
-  const yardRects = yard.length ? footprintOf(yard, WALK_CLEARANCE / s) : [];
+  const yardRects = yard.length ? wallsOf(yard, WALK_CLEARANCE / s, WALK_STEP / s) : [];
 
-  if (spec.kind === 'civic' && ROUND.has(spec.civicType)) {
+  if (round) {
     for (const r of wallRects) r.r = Math.max(r.hx, r.hz);
   }
+  // What the follow camera's boom stops at (walk.js, Plans/camera-botsing.md), measured before the
+  // merge loses the parts: the box of every part, roof and upper storey and overhang included -
+  // everything the walls above miss, since they are measured in a body's height only.
+  const camBoxes = camBoxesOf(parts, s);
   const geometry = merge(parts);
   let walls = wallRects, solids = wallRects.concat(yardRects);
   if (s !== 1) {
@@ -2568,6 +2827,9 @@ export function buildBuilding(spec, ctx = {}) {
     geometry.computeBoundingSphere();
     walls = scaleSolids(walls, s);
     solids = scaleSolids(solids, s);
+    // A small building's skirt is scaled with it, but the ground on a slope is not: the bottom
+    // of a solid stays as far down as a full-sized one's.
+    for (const r of solids) if (r.y0 != null) r.y0 = Math.min(r.y0, -PORCH_SKIRT);
   }
   if (boardish) {
     height *= s;
@@ -2579,9 +2841,13 @@ export function buildBuilding(spec, ctx = {}) {
   // parts collected than held onto.
   return {
     geometry, anchors, animated, height, width: w,
-    bbox: geometry.boundingBox.clone(), solids, walls,
+    bbox: geometry.boundingBox.clone(), solids, walls, camBoxes,
     ...(floats ? { floats } : {}),
-    ...(deck && s === 1 ? { porch: deck } : {}),
+    // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
+    ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),
+    // Scaled with the rest: every house is 0.96 to 1.04 of itself, and a porch handed back only at
+    // s === 1 was a porch no house had, so walk mode could not stand anybody on one (main.js porchOf).
+    ...(deck ? { porch: s === 1 ? deck : Object.fromEntries(Object.entries(deck).map(([k, v]) => [k, v * s])) } : {}),
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }
@@ -2699,9 +2965,10 @@ const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside 
 // wide. Mooring posts stand outside the walkway, in pairs down the run and at the four
 // corners of the head. They carry nothing; they are what a dock is recognised by from the
 // air, where the deck is one line on the water and the posts are the row of marks along it.
-export function buildPierGeometry(cells, terrain, from) {
-  if (!cells || !cells.length) return null;
-  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+// Which way a pier runs, which way is across it, and whether it ends in the wide head: the three
+// decisions buildPierGeometry lays the dock set out by, kept in one place because pierSurfaces
+// has to make them the same way - the planks you see and the planks you stand on.
+function pierFrame(cells, terrain, from) {
   const n = cells.length;
   // Which way the run goes, as a unit step over the cell grid. A pier is a straight line
   // out from one shore cell along one of the four axes, so the first two cells say it -
@@ -2715,10 +2982,20 @@ export function buildPierGeometry(cells, terrain, from) {
     const [dx, dz] = [x - from[0], z - from[1]];
     step = Math.abs(dx) > Math.abs(dz) ? [Math.sign(dx) || 1, 0] : [0, Math.sign(dz) || 1];
   }
+  const across = [step[1], -step[0]];
+  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
+    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
+  return { step, across, head: wide(cells[n - 1]) };
+}
+
+export function buildPierGeometry(cells, terrain, from) {
+  if (!cells || !cells.length) return null;
+  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+  const n = cells.length;
+  const { step, across, head } = pierFrame(cells, terrain, from);
   // The set is modelled running along +z, like the fence and the bridge, so one rotation
   // turns the whole pier to face whichever way the sea is.
   const ry = Math.atan2(step[0], step[1]);
-  const across = [step[1], -step[0]];
   const lift = QUAY_DECK - DOCK_DECK;
 
   const parts = [];
@@ -2739,9 +3016,6 @@ export function buildPierGeometry(cells, terrain, from) {
   // and the beach it leaves from is the cell behind the first of them.
   put('prop_dock_ramp', [cells[0][0] - step[0], cells[0][1] - step[1]]);
 
-  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
-    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
-  const head = wide(cells[n - 1]);
   for (let i = 0; i < n; i++) {
     const last = i === n - 1;
     // Alternating bays, because four copies of one bay along a run is a corrugation. Off
@@ -2757,6 +3031,58 @@ export function buildPierGeometry(cells, terrain, from) {
     } else if (last || i % 2 === 0) posts(cells[i], last ? 0.3 : 0);
   }
   return parts.length ? merge(parts) : null;
+}
+
+// The parts of a pier that walk mode's cells cannot say (web/js/walk.js `surfaces`), as rectangles
+// in the terrain's own frame: the ramp on the shore cell, which climbs from the sand to the deck -
+// the cell under it is the beach, so the feet stood in the ramp and the step off the pier onto it
+// was the whole 0.4 - and the wide head, whose wings reach 0.3 into the water cells either side,
+// where the feet went through the planks into the sea. The decking itself is a whole cell of
+// `levels` already (main.js handOutDecks), and stays so: that is also what a swimmer under it
+// bumps their head on. Measured off the dock set, so a rebake moves the feet with the planks.
+let dockTread = null;
+function dockTreads() {
+  if (dockTread) return dockTread;
+  const lift = QUAY_DECK - DOCK_DECK;
+  const extent = (asset) => {
+    let x = 0, foot = -Infinity, top = -Infinity;
+    for (const name of models.assetParts(asset)) {
+      const p = models.part(name);
+      for (let i = 0; i < p.positions.length; i += 3) {
+        const vx = p.positions[i] + p.at[0], vy = p.positions[i + 1] + p.at[1] + lift, vz = p.positions[i + 2] + p.at[2];
+        x = Math.max(x, Math.abs(vx));
+        // The ramp's two ends, landward (-z) and at the pier (+z): the highest board in the
+        // outer tenth of each, which the walk then joins with a straight slope.
+        if (vz < -0.4) foot = Math.max(foot, vy);
+        if (vz > 0.4) top = Math.max(top, vy);
+      }
+    }
+    return { half: x, foot, top };
+  };
+  dockTread = { ramp: extent('prop_dock_ramp'), head: extent('prop_dock_head') };
+  return dockTread;
+}
+
+export function pierSurfaces(cells, terrain, from) {
+  if (!cells || !cells.length || !models.hasAsset('prop_dock_ramp')) return [];
+  const { step, across, head } = pierFrame(cells, terrain, from);
+  const { ramp, head: wings } = dockTreads();
+  const n = cells.length;
+  // A rectangle round a cell's middle, `along` half its length down the run and `side` half its
+  // width across it, turned onto the grid (a pier only ever runs along an axis).
+  const rect = (cell, side, y) => {
+    const [x, z] = terrain.cellWorld(cell[0], cell[1]);
+    const hx = step[0] ? 0.5 : side, hz = step[0] ? side : 0.5;
+    return { x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz, ...y };
+  };
+  const out = [];
+  // The ramp rises towards the sea, which is `step`: from x0/z0 when the run goes the + way.
+  const up = step[0] + step[1] > 0;
+  out.push(rect([cells[0][0] - step[0], cells[0][1] - step[1]], ramp.half, {
+    y0: up ? ramp.foot : ramp.top, y1: up ? ramp.top : ramp.foot, axis: step[0] ? 'x' : 'z',
+  }));
+  if (head) out.push(rect(cells[n - 1], wings.half, { y: QUAY_DECK }));
+  return out;
 }
 
 // What a pier was before there was a model of one, kept for a checkout where the set has
@@ -2936,6 +3262,31 @@ export function bridgeDeckHeights(cells, terrain, axis) {
   return run.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
+// The same deck as walk mode stands on it: exactly the planks buildBridgeGeometry lays, as a
+// line of stops along the run (walk.js `setDecks`), rather than one height per cell. Per cell,
+// the arch was a staircase: every cell at the height of its middle, so half a cell either way
+// the drawn planks were up to 0.13 above the feet or below them - you walked in the deck going
+// up and over it coming down - and the deck was the whole cell wide, a hand past the rails.
+// In the terrain's own frame; `cells` is what bridgeStops carried the run out to, for the
+// caller to take out of the per-cell levels.
+export function bridgeDeckOf(cells, terrain, axis) {
+  if (!cells || !cells.length) return null;
+  const { cells: run, world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  const o = world[0], end = world[world.length - 1];
+  const dir = Math.sign(end[k] - o[k]) || 1;
+  const stops = [];
+  for (let i = 0; i < world.length; i++) {
+    stops.push(world[i]);
+    if (i < world.length - 1) stops.push([(world[i][0] + world[i + 1][0]) / 2, (world[i][1] + world[i + 1][1]) / 2]);
+  }
+  return {
+    o: [o[0], o[1]], d: k === 0 ? [dir, 0] : [0, dir], w: BRIDGE_DECK_W,
+    stops: stops.map((p) => [Math.abs(p[k] - o[k]), deckYAt(p)]),
+    rail: BRIDGE_RAIL, cells: run,
+  };
+}
+const BRIDGE_DECK_W = 0.44;          // half the deck's width, buildBridgeGeometry's W
+
 // A plank bridge: a decked arch, a post-and-rail down each side, a kerb board along each
 // edge of the planking, and a trestle in the water under every cell of the crossing. The
 // rail is posts and a beam rather than a solid parapet - a wall the right height for a
@@ -2954,7 +3305,7 @@ export function buildBridgeGeometry(cells, terrain, from, axis) {
   stops.push(world[world.length - 1]);
   const ys = stops.map(deckYAt);
   const at = stops.map(([x, z]) => [x - from[0], z - from[1]]);
-  const W = 0.44;                                    // half the deck width
+  const W = BRIDGE_DECK_W;                           // half the deck width
   const parts = [];
   const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
   // The boards are laid across the run, so the grain lies across it too - which is the

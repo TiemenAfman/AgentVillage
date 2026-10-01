@@ -220,7 +220,10 @@ test('the castle on its seven by seven is built at that size, with a gate a sett
   const reach = (rects) => Math.max(...rects.map((r) => Math.max(Math.abs(r.x) + r.hx, Math.abs(r.z) + r.hz)));
   assert.ok(reach(big.walls) > reach(small.walls) * 2, `the walls reach ${reach(big.walls).toFixed(2)} against ${reach(small.walls).toFixed(2)}`);
   const over = (b) => Math.max(-b.bbox.min.x, b.bbox.max.x, -b.bbox.min.z, b.bbox.max.z);
-  assert.ok(Math.abs((over(big) - reach(big.walls)) - (over(small) - reach(small.walls))) < 0.02, 'the porch grew with the castle');
+  // Read off the porch's own deck rather than the walls: the walls are measured a step up off the
+  // floor (WALK_STEP, Plans/muren-met-hitboxes.md) and leave out the foot course the step is fitted to.
+  const tread = (b) => over(b) - Math.max(b.porch.x1, b.porch.z1);
+  assert.ok(Math.abs(tread(big) - tread(small)) < 0.02, 'the porch grew with the castle');
   assert.ok(over(big) < CASTLE_LOT / 2, `the castle reaches ${over(big).toFixed(2)} past the middle of a lot ${CASTLE_LOT / 2} deep`);
   assert.ok(over(small) < 1.5, 'the old castle still fits its three by three');
   // The gate stands on the step, which is the same height under both, at the front.

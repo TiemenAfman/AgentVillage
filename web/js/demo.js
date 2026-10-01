@@ -15,7 +15,7 @@ import { figureGeometry } from './settlers.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 import { bedGeometry } from './crops.js';
-import { propGeometry, propFootprint, propReach, propLift } from './props.js';
+import { propGeometry, propSolids, propReach, propLift } from './props.js';
 import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
@@ -183,20 +183,36 @@ const cubeEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
 const ring = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(
   [-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5], 3,
 ));
+// A round solid (a well, a trunk: web/js/solids.js) is drawn round, as walk mode tests it.
+const circle = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(
+  Array.from({ length: 24 }, (_, i) => [Math.cos(i / 24 * Math.PI * 2) * 0.5, 0, Math.sin(i / 24 * Math.PI * 2) * 0.5]).flat(), 3,
+));
+const drum = new THREE.EdgesGeometry(new THREE.CylinderGeometry(0.5, 0.5, 1, 16), 30);
 
 // `y` is the ground the thing stands on, for the one that does not stand on the field: the
 // shipyard, on its bank of land over its strip of sea.
+// A solid may be round (`r`), turned (`yaw`) and as high as its `y1` (a crate you can jump onto):
+// all three are drawn as walk mode reads them, and handed to it the same way.
 function drawHitbox(built, x, z, y = 0) {
   for (const r of built.solids) {
-    const solid = new THREE.LineSegments(cubeEdges, solidLine);
-    solid.position.set(x + r.x, y + WALK_CLEARANCE / 2, z + r.z);
-    // What walk mode is handed is the same rectangle, moved onto the field. Nothing on
-    // the model sheet is rotated, so there is no quarter turn to undo.
-    blockers.push({ x: x + r.x, z: z + r.z, hx: r.hx, hz: r.hz });
-    solid.scale.set(Math.max(r.hx * 2, 0.004), WALK_CLEARANCE, Math.max(r.hz * 2, 0.004));
-    const reach = new THREE.LineLoop(ring, reachLine);
+    const tall = r.y1 != null ? r.y1 : WALK_CLEARANCE;
+    const solid = new THREE.LineSegments(r.r ? drum : cubeEdges, solidLine);
+    solid.position.set(x + r.x, y + tall / 2, z + r.z);
+    solid.rotation.y = r.yaw || 0;
+    blockers.push({
+      ...r, x: x + r.x, z: z + r.z,
+      ...(r.y1 != null ? { y0: y + r.y0, y1: y + r.y1 } : {}),
+    });
+    const reach = new THREE.LineLoop(r.r ? circle : ring, reachLine);
     reach.position.set(x + r.x, (y || FIELD_Y) + 0.03, z + r.z);
-    reach.scale.set((r.hx + WALK_BODY_R) * 2, 1, (r.hz + WALK_BODY_R) * 2);
+    reach.rotation.y = r.yaw || 0;
+    if (r.r) {
+      solid.scale.set(r.r * 2, tall, r.r * 2);
+      reach.scale.set((r.r + WALK_BODY_R) * 2, 1, (r.r + WALK_BODY_R) * 2);
+    } else {
+      solid.scale.set(Math.max(r.hx * 2, 0.004), tall, Math.max(r.hz * 2, 0.004));
+      reach.scale.set((r.hx + WALK_BODY_R) * 2, 1, (r.hz + WALK_BODY_R) * 2);
+    }
     hitboxes.add(solid, reach);
   }
 }
@@ -525,7 +541,7 @@ for (let i = 0; i < KINDS.length; i += 7) {
   const slice = KINDS.slice(i, i + 7).filter(DRY);
   line(slice, (kind, x, z) => {
     const spec = { kind, x: 0, z: 0 };
-    const solids = propFootprint(spec);
+    const solids = propSolids(spec, 0);
     placeMesh(propGeometry(spec), x, z, kind,
       `${models.hasAsset(`prop_${kind}`) ? 'Blender' : 'drawn in props.js'} · reach ${propReach(spec).toFixed(2)}`);
     drawHitbox({ solids }, x, z);

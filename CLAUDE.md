@@ -152,7 +152,8 @@ open page refetches).
 **A house never moves by itself.** `data/layout.json` is append-only and is the only
 irreplaceable file under `data/`; `village.json` and `cache.json` rebuild themselves. The
 scanner never moves a plot - with two deliberate exceptions for the quay district's Cowork houses,
-`unsettleQuay` and the one move onto the resort on the sea (`moveToResort`, below); the keeper may, deliberately, through one door — `POST /api/plan`
+`unsettleQuay` and the one move onto the resort on the sea (`moveToResort`, below) - and the Salty Kraken's one move off
+the three by three it had before it was a galleon (`liftedPub`, below); the keeper may, deliberately, through one door — `POST /api/plan`
 (`lib/plan.mjs`, applied in the same slot in `scan.mjs` as `clearRoads`, under the scan
 queue), which moves **whole hamlets** (lobes, with every house, shed and the land itself, by
 a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
@@ -417,7 +418,10 @@ every side). On the page the quay is ground painted as plaza (world.js `squareCe
 face) and feet stand on `quayKade(village, terrain).height` (shared/quay-basin.mjs: the foot cell at
 `level`, the treads) in walk.js `groundAt`/`bedUnder` and settlerwalk `createStandHeight` - **so the open
 sea must be redeployed for the settlers' stand height**; `parcelWaterField`/`quayWaterField`, the ground
-shader's discard and the basin mesh are gone. Known gap: the bridge at `havenBridgeSite` is not built.
+shader's discard and the basin mesh are gone. The commons keeps no ground the harbour drowned:
+`releaseHarbourCommons` (every pass, after `planResort`) drops a commons super-cell that is all water, touches
+the funnel or a dig and has nothing on it - the old shore's claims for crane, warehouse and yard were drawn by the
+planner as "the town" in the middle of the harbour. Known gap: the bridge at `havenBridgeSite` is not built.
 The quay stands at `kadeHarbour` (the harbour whose planks lie in the funnel's ring: the quay district's
 own first - Hoogezand - else the one nearest the funnel's top); beside any harbour but the district's own,
 or a district parcel wider than `KADE_PARCEL.across`, it is laid past `KADE_PARCEL` (Hoogezand's parcel in
@@ -974,7 +978,17 @@ moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
-change a floor or a prop there and rebake, never in two places.
+change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
+(`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
+count; the halos are read off every glowing part of the room's own geometry, never listed by hand.
+The Kraken's hearth burns `web/js/hearth-fire.js` (`def.flame`, numbers in `kraken-layout.js HEARTH_FIRE`;
+the tavern keeps its two cones on `fireAt`): a flame ray-marched through noise inside a box, embers, sparks
+and two halos, all additive and none of them a light, and the lamp in `LIGHTS` marked `hearth: true`
+flickers off `flame.flicker(t)`. It burns over the kit's `civic_kraken_firebasket` (`KIT.firebasket`: iron
+basket, charred logs with glowing cracks, ash and coals - no flame in the bake), `HEARTH_FIRE.y` on its ash
+and the flame `lift` over that; the old andirons and logs in `dressing.py hearth()` are gone. It is a port of mattatz's THREE.Fire (MIT, notice in the file); the
+GPL-3.0 Tarnished House it was found in is not copied from, and that project's Dark Souls bonfire model
+(CC-BY, but FromSoftware's design) stays out of git. `tests/hearth-fire.test.mjs`.
 
 **The bicycle is `state.bike`, never `state.vehicle`** ([Plans/DONE/fiets.md](Plans/DONE/fiets.md)).
 `vehicle` means the boat to every `aboard()` in main.js and net.js (hull sync, berth, the
@@ -1516,13 +1530,69 @@ pad's name (`padName`), the labels follow its family (`padLabel`: ✕ ◯ □ �
 capture holds the pad away from the rest of the page (`suspendPad`) so that pressing B does not also
 close Settings.
 
+**Outside, what you bump into is a shape, looked up through an index** ([Plans/hitboxes-en-looppaden.md](Plans/hitboxes-en-looppaden.md)).
+`web/js/solids.js` (pure) is the one reading: a blocker is a circle (`r`), a rectangle, or a rectangle turned by
+`yaw` (the group's rotation.y - never the box round it); `createSolidIndex` files them in 2 x 2 buckets and
+walk.js asks only those (Hoogezand: ~32k blockers, 2.5 us a `blocked()`), so adding solids costs nothing per
+frame. `top: true` with `y0`/`y1` makes `y1` a floor as well (a crate, a boulder), walked onto up to
+`STEP_ONTO` (0.2) and jumped onto above; `hop: true` is a wall on the ground and open in the air (a rail: by
+height alone a walker never clears one), walked out of when landed astride, and jumped by a parked body on a
+route. The sources: `blockersOf` (buildings), `propSolids` (props.js - `propFootprint` is only the ghost's
+"does it fit"), `createLandscape().solids()` (trunks, orchard, boulders with a top, and `buildBorders(…, out)`'s
+boundaries: one thin rectangle a straight run, a hop below `HOP_H` 0.4, gateposts as circles) and the guests'
+own, and `walkBodyTo` keeps `closedEdges()` (hamlets.js `edgeKey`) shut and routes round a trunk in a cell's
+middle (`ROUTE_SPOTS`). A building's porch is `floor: true` in the same list (`porchFloor`: only a top, never a
+wall; both courses, each grown by a body's radius because the upper one shows only 0.12 past the wall), and
+`built.porch` now comes back scaled for every building, houses included. The settlers and the sea read none of it.
+A building's own solids are measured face by face ([Plans/muren-met-hitboxes.md](Plans/muren-met-hitboxes.md)):
+`wallsOf` in buildings.js cuts every triangle to the band from `WALK_STEP` (0.15, lower is a step, like the porch)
+to `WALK_CLEARANCE` and joins two rectangles only where that holds at most `WALK_TIGHT` (5%) of empty ground - the
+old one-rectangle-per-part with gluing (`footprintOf`, still what `yardOn` places carts by, and what `ROUND`,
+houses on stilts and the shipyard's `BY_PART` keep) closed the great castle's gate and the gold pit's mouth. Each
+carries `y0`/`y1` in the building's frame; `solidAt` (solids.js) moves, turns (`yaw`) and lifts them - main.js
+`blockersOf` and guest-island.js both go through it - except a circle and a ship's `hull`, which stay boxes because
+boat.js `hullOver` reads only the world's axes. A body already inside a solid (a building put up round it) may
+step only the way out of it (`leaving` in walk.js `blocked`, `depthInSolid`); `tests/building-solids.test.mjs`
+holds every building against its own geometry.
+
 **A room can have storeys** ([Plans/verdiepingen-binnen.md](Plans/verdiepingen-binnen.md)): `def.surfaces`
 (interior.js -> `walk.setSurfaces`) are floors `{x0,x1,z0,z1,y}` and slopes `{...,y0,y1,axis}` as rectangles,
-which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet) - a stair is drawn as treads
-and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
+which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet). A slope with `steps: n` is
+stood on tread by tread (each tread's top on the slope at its middle, the Kraken bake's `stair()`, `treadsOf`
+in pirate-tavern.js) - as a plain ramp the feet were half a riser into every tread; the camera takes the
+risers up eased (`camStep`, walk.js afterMove). A slope's `solid` (built up to its treads) makes it a wall to
+feet more than a step under it, and `rails: ['x0'|'z1'...]` hold whoever is on it and keep the floor beside
+it off it (`stairWall`, `stairWalls` in pirate-tavern.js, shell.py's `open_sides`) - only against a step
+*into* either, never out, so nobody inside one is trapped (`tests/stair-walk.test.mjs`). A blocker with
+`y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
-floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
-`levels` (`tests/walk-surfaces.test.mjs`).
+floor that hangs over you or it (`tests/walk-surfaces.test.mjs`). The island hands surfaces over too, for
+the planks a cell cannot say (main.js `handOutDecks`, every region's, moved to its origin): a pier's ramp and
+the wings of its head (`pierSurfaces` beside `buildPierGeometry`, sharing `pierFrame`) and the quay's finger
+jetties and its coping (`kadeSurfaces` beside `buildQuayKade`) - drawn, and until then stood beside in the
+water or in the stone. The wall itself is a wall to a body more than `STEP_UP` below its top (`blocked` asks
+`kadeAt`): `groundAt` reads the top absolutely and put a swimmer at the face on the quay in one frame. Those
+carry `lid`, which `ceilingAt` reads (a room's floors do not); a boat's ground (`boatGround`) leaves every
+surface out. A building may hand floors over too (the Salty Kraken's stair, `surfacesOf`), and main.js
+`handSurfaces` joins the two lists, since `setSurfaces` replaces the whole set. The sea keeps to cell `levels`. A new plank drawn over water gets its floor from the same
+module that draws it, and `tests/walk-planks.test.mjs` compares the triangles with what the feet stand on.
+**A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
+`STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
+stairs, slopes and kerbs stay a walk.
+A jump rises 0.38 and in the air `blocked` asks the rising feet, so a blocker whose top is under that is
+cleared and the body comes down on the floor *inside* it: in a room nothing standing on a floor ends
+below floor + `BODY` (`upTo` in pirate-tavern.js). A gap in a wall blocker is open to the roof, so an
+opening under a storey (the Kraken's cellar arch) needs the wall over it as a blocker of its own.
+`tests/room-walls-walk.test.mjs` walks every room's walls with the real walk mode.
+
+**A bridge is walked as its drawn planks, not per cell** (`walk.setDecks`, `tests/bridge-walk.test.mjs`):
+a cell's one height (the middle of its slope) made an arch a staircase whose treads stood up to 0.2 over or
+under the boards, a cell wide instead of the deck's width. `bridgeDeckOf` (buildings.js, the layout's and
+every guest's crossings, off the same `bridgeStops`) and `deckShapesOf` (props.js, bridge and arch bridge,
+at any rot) give `{ o, d, w, stops, rail, open?, soffit? }`; handOutDecks hands them over and leaves their
+cells out of walk mode's `levels`. The settlers, the router and the sea keep the per-cell heights
+(`deckCellsOf`, `bridgeDeckHeights`, the bundle's `decks`). Rails and an arch's abutments (outside `open`,
+up to the soffit) are walls the same way stairs are.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
@@ -1585,6 +1655,25 @@ in the water and on land alike - it was -0.25 on land, which left a walker no sk
 pushed the camera *up* (`lift`, never first person, never downward - the diver's ceiling keeps
 its old view of the diver). So the lens still never sits half under the sea, and the mouse looking up still
 looks up: the body slides out of the bottom of the frame from about -0.6, which is the price of seeing the sky.
+
+**The camera hangs on a boom, and the boom stops at what is drawn** ([Plans/camera-botsing.md](Plans/camera-botsing.md)).
+Third person only: from the point looked at (`pivot`) out to where the camera wants to be, `armReach` finds the
+first thing in the way - the buildings' part boxes (`built.camBoxes`, measured in `buildBuilding` before the
+merge, handed over as `camBodyOf` bodies through the `cameraBodies` option, which main.js and guest-island.js
+answer and walk mode asks again on every `takeBlockers`), every blocker with a height (a room's blockers stand to
+`camSolidTop`; outside a solid with no height - a tree's trunk - is not the camera's, so crowns are looked
+through on purpose), and, sampled along it, the ground, the quay's stone, every plank as a slab (`surfaces`,
+`decks`, `levels`) and the hull we stand on below her deck. So **`cameraFloor` reads the terrain only** (and a
+ship's deck): planks in the floor lifted the camera in one frame at every edge. The boom comes in at once
+(`hard`: never a frame with something between), comes in ahead of time towards what three side rays see
+(`ARM_SIDES`, standing things only, eased at `ARM_IN`), and lets out at `ARM_OUT`. Under `NEAR_ARM` the near
+plane comes in with it (`nearBase` is the camera's own; first person uses the same), under `ARM_HIDE` the
+body is hidden (`classicAvatar.object.visible`, not `avatar.visible`). A room's `clampCam` runs first (it clips
+through the edge into a neighbouring area - the Kraken's arch - instead of switching areas in one frame) and is
+called again with `{ boomed: true }` only to judge its lid (`judgeLid`: hysteresis, `def.roofAt`); in first
+person it does nothing but the lid. `tests/camera-boom.test.mjs` judges all of it by a raycast against the real
+geometry; a raycast at runtime was rejected (the Kraken's 80k triangles are 1.2 ms a ray, and the batch keeps
+the only copy of every building). The boom costs ~40 us a frame beside a street and the Kraken.
 
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
@@ -1826,8 +1915,9 @@ tavern at rot 2), and follows the tavern like the postbox follows the hall (`mig
 keeper (`KEEPERS.pirate`) stands out in front of the chest with no `aside`: pushed sideways he lands
 in the corner cell of the seventieth settler's statue. The sea's starters carry the chest too
 (`starterBundle`, held to the town's rule by `tests/pirate.test.mjs`). **From 52 settlers the chest moves once,
-behind the Salty Kraken** (`PUB_ID`, below): onto the first of `chestSpots(pub)` (`shared/treasure.mjs`, `[u, v]` off
-the lot's middle, behind and beside, never in front; `LOOK` held equal to `DOOR_DIR`) whose cell is bare land or
+behind the Salty Kraken** (`PUB_ID`, below): onto the first of `chestSpots(pub)` (`shared/treasure.mjs`, `[u, v]` in
+the lot's own frame from its `w`/`d` - on a three by three the cells they always were, on the Kraken's eleven by six
+behind its long back and beside its short sides - never in front; `LOOK` held equal to `DOOR_DIR`) whose cell is bare land or
 paving on no road, doorstep or plot, with the keeper's cell in front of it dry ground and never a pier. It is
 *lifted* at the top of `placeAll`, before the plot replay, whenever the pub is earned and not yet standing or
 stands with the chest elsewhere, so the cell it leaves is bare this very scan; `placeChest` runs at the chest
@@ -1867,15 +1957,47 @@ its current step. Known gap: once the statue stands in the town, a second browse
 ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__state` on window.
 
 **The Salty Kraken is a pub at the water, a third room, and the crew that tells the rest of the story**
-([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), a three by three
-in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` but not `QUAYSIDE`: its lot comes from **one function,
-`pirateTavernSite`**, which today only calls `harbourSite` and which the quay work (`fix/quay-en-rivier`)
-retargets to the pirate bank of the haven funnel - never change `harbourSite` for it, and hold no test to a
-distance from one harbour. A new civic plot, so a minor. Outside it is a hero bake (`assets/piratetavern`,
-3838 of 4000 with the sign's arm) with **no `anchor.flag`** - main.js hangs the district's flag on every one,
-and it flies its own Jolly Roger - and an `anchor.sign` where `web/js/piratesign.js` hangs the swinging sign at
-`PIRATE_SIGN_YAW` (the upper storey's two-degree twist). E answers from the lot's middle (`kind: 'tavern'`,
-`room: 'piratetavern'`), since its door's step is wet. Inside is `ROOMS.piratetavern`
+([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), on **`PUB_LOT`,
+eleven by six** (`lotOf`; `w` across the model's front, `d` its depth, swapped by `stamped` at an odd rot, like the
+ships and the yard), in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` (all its cells, `claimCellsForTown`) but not
+`QUAYSIDE`: its lot comes from **one function, `pirateTavernSite`**, and never from `harbourSite`/`kadeSite`/
+`coastSite` - "a pirate belongs on the beach": land or sand, off every harbour's planks and slipway (`wf.near`),
+the funnel and its ring (`havenKeys`) and `PUB_KADE_CLEAR` cells off the stone quay, at least `PUB_FRONT_MIN` of
+its eleven front columns seeing water within `PUB_SHORE` over open land (a road may run there, nothing may
+stand), relief at most `PUB_RELIEF` 1.5, the stair's step on land, nearest the water first, then the most sand,
+then the kadehaven's shore; a road to the stair's foot on the same scan (`civicRoad`'s strandpad). On an island
+founded small every coast is a hamlet's by rung 52, so a pub with no lot on an island that can still grow grows it
+**one ring** (`layout.pubRing` = the ring count after it, so it asks again only once houses grew the island further;
+measured, eight of eight small-founded seeds then have it on the scan that earns it), and the strip it looks out
+over is `keptWater` (`pubView`), or the polder ladder drains its sea (seed 2024, 175 settlers). Its door is
+**`PUB_GATE`**, the baked `anchor.door` on the lot's front edge (`plotDoor` -> `lotGate`, the yard's gate
+generalised), not the middle of the front. The page stands it on the **lowest ground of its front edge**
+(`pirateTavernGround`, web/js/pirate-ground.js, main.js and guest-island.js), so the stair meets the beach and
+the back of the rock runs into the dune. A pub still on the three by three it had before (`!fitsLot`) is
+**lifted once** at the top of `placeAll` (`liftedPub`, beside the chest's lift) and placed by the loop, its old
+road dropped and a pass re-run if pruning cut anything (`pubMoved`); with no lot it is put back where it stood
+(`putBackAt`, the chest too) and asked again next scan; scan.mjs keeps `layout.before-pub-<ts>.json`
+(`backUpBeforePub`). Measured on a copy of Hoogezand: from behind the quay to the beach at the funnel's head,
+(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor. Outside it is render 17 built literally: a galleon
+standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~80k
+triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
+texture of its own; the mesh module is ~10 MB). The ship is modelled at 1x and scaled `SCALE` 2.5 at the end of
+the script; the stair, door, lanterns and sign are placed after that at a settler's scale. It is made for an
+**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
+([Plans/piratenkroeg.md](Plans/piratenkroeg.md), "Bijsturing" and "Het kavel op het strand"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
+Rogers - and no porch (`NO_PORCH`: the rock is its footing). **Its zigzag stair is walked**: the bake names every
+floor as an `anchor.deck.<name>.lo|hi` and every ramp as an `anchor.stair.<name>.lo|hi` corner pair, the ship's
+vocabulary (`pirateSurfaces` in buildings.js -> the build's
+`surfaces`, turned and placed by `surfacesOf` in main.js and handed to `walk.setSurfaces`), and its solids carry
+a height (`pirateSolids`: each part from its foot to its top, the rails from `anchor.rail.<n>.a|b` as short
+blocks `PIRATE_RAIL_H` high, a low block under each high floor so nobody walks in under the stair, the hull
+from `anchor.solid.hull.lo|hi`; `WALKED_ANCHOR` in scripts/model-rules.mjs) - `tests/pirate-stair-walk.test.mjs` walks it with the real walk mode.
+`anchor.sign` is on its own post at the stair's foot (`PIRATE_SIGN_YAW` 0, board facing the water);
+`anchor.door` is on the ground at the foot of the stair, and E answers at the stoop by the door with the
+stoop's height as its `floor`. Rebuild with `node scripts/blender.mjs --background --python
+scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
+.blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
+`scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`
 (`web/js/pirate-tavern.js`): four rectangles, the camera kept in the hall, the cellar or the oriel (`areas`, a
 low `ceiling` per area takes the lid off earlier), and **exactly seven PointLights**, the tavern's count, which
 is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onTalk`, a seat's first order to

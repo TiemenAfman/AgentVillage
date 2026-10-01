@@ -122,12 +122,27 @@ export const JETTY = { x0: 6.0, x1: 7.6, z0: 4.2, z1: 4.6, y: G };
 // The iron bars in the cellar round the treasure, and their return to the north wall.
 export const CELLAR_BARS = { z: -8.1, x0: -7.0, x1: -5.5 };
 
+// The hearth in the west rock and the fire in it; the basket that holds the fire is KIT.firebasket.
+// `face` and `half` are where its jambs stand as shell.py hearth() lays them: their fronts out to x +
+// 0.35 (and up to 0.025 of jitter), 0.42 of opening and 0.34 of jamb each side of z (and the odd
+// courses' 0.015) - the blocker in pirate-tavern.js, which was a third short at each end.
+export const HEARTH = { x: -8.75, z: 4.4, face: 0.375, half: 0.775 };   // in the west rock, on the ground
+// The fire in it (hearth-fire.js) over the fire basket (KIT.firebasket, scripts/krakenkit/firebasket.py):
+// `y` is the top of the basket's ash, where the embers lie, and the flame starts `lift` over that,
+// among the logs. 0.5 across so it stays inside the opening (0.42 either side) and 0.78 high: its tips
+// (0.9 of that) go up past the hood's front edge at F + 0.66, where the hood hides them going up the
+// chimney, and stay under the arch's crown at F + 0.87 (shell.py hearth()), so none shows over the opening.
+export const HEARTH_FIRE = { x: -8.67, z: 4.41, y: F + 0.027, lift: 0.04, w: 0.5, h: 0.78, bed: [0.2, 0.2] };
+
 // The ship's parts (web/js/krakenkit-mesh.js), where they stand.
 export const KIT = {
   stern: { x: 0, z: -6.85, y: B },                            // the back bar against the rock
   counter: { x: 0, z: -5.9, y: B },
   stools: { x0: -1.45, step: 0.725, n: 5, z: -5.45, y: B },
-  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P },   // its yard along z, up into the ridge
+  // Its yard along z, up into the ridge. `nestR` is the crow's nest's round rail (mast.py NEST_R), `foot`
+  // the half extents of what stands round its foot on the pit: the staved plinth across, and along the
+  // yard the feet of the two ladders up to the nest (mast.py ladders(), 0.46 out, 0.06 each side).
+  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P, nestR: 0.65, foot: { hx: 0.3, hz: 0.5 } },
   gunports: [{ x: -4.2 }, { x: -2.4 }, { x: 2.4 }],           // in the south wall, sill at F + 0.62
   jukebox: { x: -1.5, z: HALL.z1 - 0.13, y: G, ry: Math.PI },
   // The broken bow jutting out of the north gable over the bar (scripts/krakenkit/bow.py: 1.4 deep,
@@ -147,6 +162,9 @@ export const KIT = {
   // The split rudder over the bar's front as the house's sign, west of the mast so the door sees it
   // (scripts/krakenkit/rudder.py: the blade's top 0.9 over its lowest splinter).
   rudder: { x: -2.7, z: -3.35, y: B + 2.45 - 0.9 },
+  // The hearth's fill (scripts/krakenkit/firebasket.py: 0.5 across, 0.4 deep), its front to the hall,
+  // standing on the firebed (shell.py's, whose top is F + 0.005) under HEARTH_FIRE.
+  firebasket: { x: HEARTH_FIRE.x, z: HEARTH_FIRE.z, y: G + 0.005, ry: Math.PI / 2 },
   sconces: [{ x: -8.97, z: -3.0, y: G + 0.8, ry: Math.PI / 2 }, { x: 8.97, z: -4.0, y: C + 0.4, ry: -Math.PI / 2 }],
 };
 
@@ -157,7 +175,6 @@ export const TABLES = [
   { id: 't3', x: -3.2, z: 2.6 }, { id: 't4', x: 1.8, z: 2.6 },
   { id: 't5', x: -3.2, z: 4.7 }, { id: 't6', x: 1.8, z: 4.7 },
 ];
-export const HEARTH = { x: -8.75, z: 4.4 };                  // in the west rock, on the ground
 export const SLOOPS = [{ x: -3.2, y: P + 2.6, z: 1.45 }, { x: 1.8, y: P + 2.6, z: 1.45 }];   // boats full of candles
 export const CHART = { x: 7.3, z: -5.2 };                    // on the captain's deck
 export const CHAIR = { x: 7.3, z: -6.1 };
@@ -198,14 +215,30 @@ export const KEEP_CLEAR = [
   { why: 'the ladders', x0: 6.7, x1: 7.5, z0: -3.1, z1: -2.1, y: C },
 ];
 
-// The seven lights (pirate-tavern.js; exactly seven, the tavern's number, see its top): warm candles
-// and lamps against the one cool light, the moon coming in over the pool under the sea arch.
+// The seven lights (pirate-tavern.js; exactly seven, the tavern's number, see its top), as a light
+// plan (Plans/piratenkroeg.md, "Licht"): warm practical light low down - the sloops over the tables,
+// the hearth the strongest and reddest, the skull lamp over the counter and the captain's lamp - at
+// about 2000 K and with reach enough to light the tables, the floor and the people round them, not a
+// ring round each flame; the niches' purple spilling onto the bar as the far focal point; one cool
+// light, the moon, high over the atrium under the skylights with a gentle falloff (decay 1), so it
+// finds the galleries, the beams and the rigging from above and leaves the floor to the lamps; the
+// hemisphere (`ambience` in pirate-tavern.js) adds a little cool from above, and the corners stay out
+// of every lamp's reach. The sea arch's glow and the shafts through the skylights are its visible source.
 export const LIGHTS = [
-  { hex: 0xff8c3a, intensity: 1.8, dist: 3.4, at: [-8.4, G + 0.3, 4.4], flicker: true },          // the hearth
-  { hex: 0xffc98a, intensity: 1.4, dist: 3.0, at: [0, B + 1.24, -5.85] },                          // the skull lamp
-  { hex: 0x8a5cff, intensity: 1.1, dist: 2.6, at: [0, B + 0.75, -6.55] },                          // the niches
-  { hex: 0xffd9a0, intensity: 1.7, dist: 4.6, at: [-3.2, P + 2.5, 1.45], flicker: true },          // the west sloop
-  { hex: 0xffd9a0, intensity: 1.7, dist: 4.6, at: [1.8, P + 2.5, 1.45], flicker: true },           // the east sloop
-  { hex: 0xffd9a0, intensity: 1.3, dist: 3.4, at: [7.4, C + 0.5, -4.4] },                          // the captain
-  { hex: 0x6ad0e8, intensity: 1.2, dist: 4.0, at: [7.4, G + 0.5, 4.4] },                           // the moon on the pool
+  { hex: 0xff6a2c, intensity: 3.2, dist: 6.5, at: [-8.3, G + 0.35, 4.4], flicker: true, hearth: true }, // the hearth
+  { hex: 0xffb070, intensity: 1.7, dist: 4.5, at: [0, B + 1.24, -5.85] },                          // the skull lamp
+  { hex: 0x7a58ff, intensity: 1.5, dist: 4.8, at: [0, B + 0.8, -6.3] },                            // the niches
+  { hex: 0xffa850, intensity: 4.2, dist: 8.5, at: [-3.2, P + 2.4, 1.45], flicker: true },          // the west sloop
+  { hex: 0xffa850, intensity: 4.2, dist: 8.5, at: [1.8, P + 2.4, 1.45], flicker: true },           // the east sloop
+  { hex: 0xffb068, intensity: 1.8, dist: 5.0, at: [7.4, C + 0.5, -4.4] },                          // the captain
+  { hex: 0x8fb0d8, intensity: 1.6, dist: 14, decay: 1, at: [-0.6, EAVES - 0.2, 0.6] },             // the moon, from above
+];
+
+// The two skylights in the roof (x0, x1, z0, z1; shell.py cuts the boards round them), and the
+// moonlight falling through them as broad, faint shafts (room-glow.js): leaning as if the moon
+// stood to the south-west, onto the pit's tables and the bar's edge.
+export const SKYLIGHTS = [[-5.1, -3.9, 1.95, 3.25], [3.0, 4.2, -4.05, -2.75]];
+export const SHAFTS = [
+  { sky: 0, bottom: P, hex: 0x9fc0e8, strength: 0.11, lean: [0.1, -0.06] },
+  { sky: 1, bottom: B, hex: 0x9fc0e8, strength: 0.096, lean: [0.1, -0.06] },
 ];

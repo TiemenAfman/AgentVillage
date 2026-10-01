@@ -11,6 +11,7 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
+import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
@@ -192,6 +193,14 @@ function loungeGeometry() {
 export function createWalkMode({
   scene, camera, terrain, ground = null, material, dom, avatar: avatarSpec,
   camBack = CAM_BACK, camUp = CAM_UP, camAim = EYE, clampCam = null, onSwing = null, onDrink = null,
+  // What the camera's boom stops at besides the blockers (Plans/camera-botsing.md): the buildings,
+  // as solids.js camBodyOf makes them, asked again whenever the blockers are handed over (main.js
+  // cameraBodies). A room has none: its walls and furniture are its blockers.
+  cameraBodies = null,
+  // How high a blocker with no height of its own stands, to the camera. Outside, nothing without a
+  // height is a camera's business - a tree's trunk, which leaves the crown to be looked through. A
+  // room says its ceiling: every blocker in there (the bar, a post) stands floor to lid.
+  camSolidTop = null,
   // The purple bar's pool. main.js hands the island's walk and the tavern's the same one and
   // steps it itself, so the beer outlasts the door and wears off from the sky too; a walk
   // mode given none (the workbench) keeps and steps its own.
@@ -800,13 +809,14 @@ export function createWalkMode({
   // the head, since a near plane that close costs depth precision at the horizon.
   const FP_NEAR = 0.03, FP_BACK = 0.3;
   const fpEye = new THREE.Vector3(), fpLook = new THREE.Vector3();
-  let farNear = camera.near;
+  // The near plane the camera was made with. The boom (placeCamera) brings it in too while it is short.
+  const nearBase = camera.near;
   function setFirstPerson(on) {
     if (state.firstPerson === on) return;
     state.firstPerson = on;
-    if (on) { farNear = camera.near; camera.near = Math.min(camera.near, FP_NEAR); }
+    if (on) camera.near = Math.min(nearBase, FP_NEAR);
     else {
-      camera.near = farNear;
+      camera.near = nearBase;
       back = camBack * 0.35;
       zoomPref = back / base;
       state.camPitch = clamp(state.camPitch, -0.25, 0.95);
@@ -857,19 +867,146 @@ export function createWalkMode({
   // above its bank, so you walk onto a bridge rather than bump into it; well under a
   // storey, or you would step off the ground straight onto your own roof.
   const STEP_UP = 0.45;
+  // And how far down one frame follows the ground before it is a fall: well over a quay's tread
+  // (0.075) or a steep hillside at a run, well under a pier's height over the water.
+  const STEP_DOWN = 0.35;
 
   // A room's floors and stairs as rectangles rather than cells (Plans/verdiepingen-binnen.md):
   // a cell is four metres, and a balcony is half of one deep and a stair a whole storey in one.
   // `{ x0, x1, z0, z1, y }` is a floor; `{ ..., y0, y1, axis: 'x' | 'z' }` a slope rising from y0
   // at the x0 (or z0) end to y1 at the other, which is how a stair is walked - drawn as treads,
   // stood on as a ramp, so every step up is a frame's worth and a stair down is simply followed.
-  // Only a room hands any over; the island and the sea keep to `levels`.
+  // A room hands over its storeys; the island hands over the planks that do not fill a cell - a
+  // pier's ramp and the wings of its head (buildings.js pierSurfaces), the quay's finger jetties
+  // (quay-basin.js kadeSurfaces) - which it drew and walk mode stood in the water beside. Those
+  // carry `lid`: a floor over the water is also what a swimmer under it hits their head on, as
+  // a cell of `levels` is (ceilingAt). A room's floors do not, which is how rooms always were.
+  // Outside, the tops of the solids that have one join them (`top`: a crate, a boulder - web/js/solids.js),
+  // and the whole lot is looked up through an index rather than scanned (Plans/hitboxes-en-looppaden.md).
   let surfaces = [];
+  let tops = [];
+  let surfaceIndex = createSolidIndex();
+  const indexSurfaces = () => { surfaceIndex = createSolidIndex(surfaces.concat(tops)); };
   function surfaceY(s, x, z) {
+    // a solid's top (solids.js topOf: round, or turned by `yaw`) has no corners of its own
+    if (s.x0 == null) return surfaceHeight(s, x, z);
     if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return null;
     if (s.y != null) return s.y;
     const t = s.axis === 'x' ? (x - s.x0) / (s.x1 - s.x0) : (z - s.z0) / (s.z1 - s.z0);
-    return s.y0 + (s.y1 - s.y0) * t;
+    if (!s.steps) return s.y0 + (s.y1 - s.y0) * t;
+    // A stair drawn as `steps` treads, each with its top on the slope at its own middle (the
+    // Kraken's, scripts/krakenroom/shell.py stair()): stood on tread by tread, as drawn. On the
+    // ramp the feet were half a riser into the front of every tread and half one over the back of
+    // it. The camera takes the risers up smoothly (camStep).
+    const lo = Math.min(s.y0, s.y1), hi = Math.max(s.y0, s.y1);
+    const u = s.y1 >= s.y0 ? t : 1 - t;
+    const i = Math.min(s.steps - 1, Math.max(0, Math.floor(u * s.steps)));
+    return lo + (hi - lo) * (i + 0.5) / s.steps;
+  }
+
+  // A stair's sides, as walls (Plans/verdiepingen-binnen.md). From below: a `solid` stair is built
+  // up to its treads (the Kraken's, a block of timber under every one), so it is a wall to feet more
+  // than a step under it; one on stringers only where its boards would meet the body. From on it:
+  // a side in its `rails` ('x0' | 'x1' | 'z0' | 'z1', the drawn handrail's edge) holds whoever is
+  // on the treads, as a deck's rail does - you went off the side of a railed flight to the floor,
+  // or walked in under it and stood in its treads. Only ever against a step into it, never out, so
+  // whoever is somehow already in there is let go.
+  const STAIR_RAIL = 0.35;
+  function stairWall(s, x, z, from) {
+    const px = state.pos.x, pz = state.pos.z;
+    // The stair under a body's edge, not only under its middle: a body half into the flight is in it.
+    const near = (qx, qz) => {
+      const cx = Math.min(s.x1, Math.max(s.x0, qx)), cz = Math.min(s.z1, Math.max(s.z0, qz));
+      return Math.abs(cx - qx) < BODY_R && Math.abs(cz - qz) < BODY_R ? surfaceY(s, cx, cz) : null;
+    };
+    const y = near(x, z);
+    if (y != null) {
+      const was = near(px, pz);
+      const under = (h) => (s.solid ? h - from > STEP_UP : h - from > STEP_UP && h - from < HEAD);
+      if (under(y) && !(was != null && under(was))) return true;
+    }
+    for (const side of s.rails || []) {
+      const alongX = side[0] === 'z';                  // a rail on a z edge runs along x
+      const edge = s[side], inward = side[1] === '0' ? 1 : -1;
+      const e = ((alongX ? z : x) - edge) * inward, e0 = ((alongX ? pz : px) - edge) * inward;
+      if (Math.abs(e) >= BODY_R || !(Math.abs(e) < Math.abs(e0) || Math.sign(e) !== Math.sign(e0))) continue;
+      const a = alongX ? x : z;
+      if (a < (alongX ? s.x0 : s.z0) || a > (alongX ? s.x1 : s.z1)) continue;
+      const cx = alongX ? x : Math.min(s.x1, Math.max(s.x0, x)), cz = alongX ? Math.min(s.z1, Math.max(s.z0, z)) : z;
+      const h = surfaceY(s, cx, cz);
+      // The rail stands from the treads up: a wall to any body that span meets, on the flight or
+      // beside it on the floor, where it would otherwise have stepped up onto the flight through it.
+      if (h != null && from < h + STAIR_RAIL && from + HEAD > h) return true;
+    }
+    return false;
+  }
+
+  // The bridges, as the planks are drawn (buildings.js bridgeDeckOf, props.js deckShapesOf): a run
+  // along any direction, straight between its stops, `w` either side of its line, with a rail
+  // along both edges and, for an arch, stone under it outside its opening. Per cell (`levels`) an
+  // arch was a staircase whose treads stood up to 0.2 above or below the boards, which you
+  // climbed through going up and came down floating over, and wider than the deck: a hand past
+  // the rails. What `setDecks` hands in is taken out of the levels by its caller.
+  let decks = [];
+  function takeDecks(list) {
+    decks = (list || []).filter((d) => d && d.stops && d.stops.length > 1).map((d) => {
+      const [ux, uz] = d.d, t1 = d.stops[d.stops.length - 1][0];
+      const ends = [d.o, [d.o[0] + ux * t1, d.o[1] + uz * t1]];
+      const pad = d.w + BODY_R + 0.05;
+      return {
+        ...d, t1,
+        x0: Math.min(ends[0][0], ends[1][0]) - pad, x1: Math.max(ends[0][0], ends[1][0]) + pad,
+        z0: Math.min(ends[0][1], ends[1][1]) - pad, z1: Math.max(ends[0][1], ends[1][1]) + pad,
+      };
+    });
+  }
+  // Along the run and across it, or null well off it.
+  function deckFrame(d, x, z) {
+    if (x < d.x0 || x > d.x1 || z < d.z0 || z > d.z1) return null;
+    const rx = x - d.o[0], rz = z - d.o[1];
+    return [rx * d.d[0] + rz * d.d[1], rx * d.d[1] - rz * d.d[0]];
+  }
+  function deckHeight(d, t) {
+    const s = d.stops;
+    if (t <= s[0][0]) return s[0][1];
+    for (let i = 1; i < s.length; i++) {
+      if (t > s[i][0]) continue;
+      const [ta, ya] = s[i - 1], [tb, yb] = s[i];
+      return tb > ta ? ya + (yb - ya) * (t - ta) / (tb - ta) : yb;
+    }
+    return s[s.length - 1][1];
+  }
+  // The planks at (x, z), or null off them.
+  function deckY(d, x, z) {
+    const f = deckFrame(d, x, z);
+    if (!f || f[0] < 0 || f[0] > d.t1 || Math.abs(f[1]) > d.w) return null;
+    return deckHeight(d, f[0]);
+  }
+  // What a deck is underneath: the boards' own thickness, or under an arch its soffit.
+  const DECK_THICK = 0.06;
+  // A deck's rail and its stone, as a wall: only ever to a step that goes into it from outside,
+  // or closer to a rail's line from beside it, so nobody who is somehow in one is held there (the
+  // Kraken's stair taught that: "karakter zit vast"). A rail stops the storey its deck is on - the
+  // feet on the boards, not a swimmer under them, whose head is below the boards plus RAIL_FROM.
+  const RAIL_FROM = 0.2;
+  function deckWall(d, x, z, from) {
+    const f = deckFrame(d, x, z);
+    if (!f) return false;
+    const was = deckFrame(d, state.pos.x, state.pos.z) || [f[0], Infinity];
+    const [t, w] = f;
+    if (d.rail && t >= 0 && t <= d.t1) {
+      const e = Math.abs(w) - d.w, e0 = Math.abs(was[1]) - d.w;
+      if (Math.abs(e) < BODY_R && (Math.abs(e) < Math.abs(e0) || Math.sign(e) !== Math.sign(e0))) {
+        const y = deckHeight(d, t);
+        if (from < y + d.rail && from + BODY_H > y + RAIL_FROM) return true;
+      }
+    }
+    if (d.open && Math.abs(w) < d.w + BODY_R) {
+      const inStone = (tt) => (tt >= -BODY_R && tt < d.open[0]) || (tt > d.open[1] && tt <= d.t1 + BODY_R);
+      const oldIn = Math.abs(was[1]) < d.w + BODY_R && inStone(was[0]);
+      if (inStone(t) && !oldIn && from < deckHeight(d, t) - d.soffit) return true;
+    }
+    return false;
   }
 
   function levelsIn(x, z) {
@@ -882,17 +1019,27 @@ export function createWalkMode({
   // The highest surface that is not over your head. `from` is where your feet are now;
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
-  function groundAt(x, z, from = Infinity) {
-    // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
-    // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
-    // same answer the sea gives its settlers. So a swimmer meets a wall and climbs out by a stair.
+  // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
+  // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
+  // same answer the sea gives its settlers - or null off it. So a swimmer meets a wall (blocked,
+  // below) and climbs out by a stair.
+  function kadeAt(x, z) {
     const region = ground?.regionAt?.(x, z);
     const kade = region && quayKade(region.village, region.terrain);
-    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    return kade ? kade.height(...region.toLocal(x, z)) : null;
+  }
+  function groundAt(x, z, from = Infinity, withSurfaces = true) {
+    const wall = kadeAt(x, z);
     let best = wall != null ? wall : heightUnder(x, z);
     const reach = from + STEP_UP;
-    for (const s of surfaces) {
+    surfaceIndex.some(x, z, 0, (s) => {
+      if (!withSurfaces && s.lid) return false;
       const y = surfaceY(s, x, z);
+      if (y != null && y <= reach && y > best) best = y;
+      return false;
+    });
+    for (const d of decks) {
+      const y = deckY(d, x, z);
       if (y != null && y <= reach && y > best) best = y;
     }
     const above = levelsIn(x, z);
@@ -910,9 +1057,7 @@ export function createWalkMode({
   // quay's wall and its stairs stand on that floor, as groundAt reads them.
   const bedOf = ground && ground.bedAt ? (x, z) => ground.bedAt(x, z) : heightUnder;
   function bedUnder(x, z) {
-    const region = ground?.regionAt?.(x, z);
-    const kade = region && quayKade(region.village, region.terrain);
-    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    const wall = kadeAt(x, z);
     return wall != null ? wall : bedOf(x, z);
   }
 
@@ -920,10 +1065,23 @@ export function createWalkMode({
   // makes "under" mean anything: without it a swimmer below a deck jumps straight through
   // it and lands on top, and a tunnel is just a differently shaped hill.
   function ceilingAt(x, z, from) {
-    const above = levelsIn(x, z);
-    if (!above) return Infinity;
     let best = Infinity;
     const reach = from + STEP_UP;
+    // A deck over your head: its boards' underside, or under an arch its soffit.
+    for (const d of decks) {
+      const y = deckY(d, x, z);
+      if (y == null || y <= reach) continue;
+      const lid = y - (d.open ? d.soffit : DECK_THICK);
+      if (lid < best) best = lid;
+    }
+    // And an island plank over your head (a pier head, a finger jetty): the ones that carry `lid`.
+    for (const s of surfaces) {
+      if (!s.lid) continue;
+      const y = surfaceY(s, x, z);
+      if (y != null && y > reach && y < best) best = y;
+    }
+    const above = levelsIn(x, z);
+    if (!above) return best;
     for (const y of above) if (y > reach && y < best) best = y;
     return best;
   }
@@ -950,21 +1108,22 @@ export function createWalkMode({
   // peer only blocks a step that brings you closer. Placing somebody (`placing`: stepping
   // onto the square, ashore) is still strict - the whole point there is to find a free spot.
   // One solid, grown by a body's radius: a circle for what is round (`r`, see ROUND in
-  // buildings.js), the rectangle for everything else.
-  function inside(b, x, z, pad) {
-    // A blocker with a height (`y0`..`y1`, a room's upper floor: Plans/verdiepingen-binnen.md) is a
-    // wall only to a body whose feet-to-head span meets it - the table below does not close the
-    // gallery over it. `blocked` asks that (`atHeight`, which knows the feet); without the two
-    // it is a wall at every height, as every blocker always was.
-    if (b.r) {
-      const dx = x - b.x, dz = z - b.z, reach = b.r + pad;
-      return dx * dx + dz * dz < reach * reach;
-    }
-    return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
-  }
+  // buildings.js), a rectangle - turned by its `yaw` if it has one - for everything else
+  // (web/js/solids.js insideSolid).
+  // A blocker with a height (`y0`..`y1`, a room's upper floor: Plans/verdiepingen-binnen.md) is a
+  // wall only to a body whose feet-to-head span meets it - the table below does not close the
+  // gallery over it. `blocked` asks that (`atHeight`, which knows the feet); without the two
+  // it is a wall at every height, as every blocker always was.
+  const inside = insideSolid;
 
   const BODY_H = 0.45;
-  const atHeight = (b, feet) => b.y0 == null || (feet < b.y1 && feet + BODY_H > b.y0);
+  // How high a solid's `top` may be over your feet and still be walked onto: a porch's step (0.18) or
+  // a flat stone, not a crate or a bench - those take a jump (JUMP_V reaches 0.38). Not STEP_UP, which
+  // is how far a *floor* is followed up (a bridge's deck over its bank) and would climb you onto every
+  // bench you walked past.
+  const STEP_ONTO = 0.2;
+  const atHeight = (b, feet) => b.y0 == null || (feet < b.y1 && feet + BODY_H > b.y0
+    && !(b.top && b.y1 - feet <= STEP_ONTO));
 
   // The blockers that are a ship's side (a Batavia at anchor: buildings.js shipSolids) are
   // kept apart as well, for the boats. Feet and swimmers meet every blocker as a wall at any
@@ -972,18 +1131,55 @@ export function createWalkMode({
   // roads is not in the ground - so the ground a boat is handed is the terrain and the levels
   // with her sides stood up out of the water on top (boat.js hullOver).
   let hulls = [];
+  let blockerIndex = createSolidIndex();
+  // A `floor` in the list (a building's porch: solids.js porchFloor) is only its top: stood on, never
+  // bumped into.
+  let camBodies = createSolidIndex();
   function takeBlockers(list) {
+    camBodies = createSolidIndex(cameraBodies ? cameraBodies() : []);
     state.blockers = list || [];
     hulls = state.blockers.filter((b) => b.hull != null);
+    blockerIndex = createSolidIndex(state.blockers.filter((b) => !b.floor));
+    tops = state.blockers.filter((b) => (b.top || b.floor) && b.y1 != null).map(topOf);
+    indexSurfaces();
   }
-  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity));
+  // Without the island's surfaces: a hull has always met a pier as its cells, and the head's wings
+  // reach out towards the berths either side of it - a boat lying there must not find itself aground.
+  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity, false));
 
-  function blocked(x, z, from = state.pos.y, placing = false) {
+  // A blocker with `hop` is a low boundary - a rail, a paling fence (hamlets.js borderSolids) - that a
+  // jump takes you over: in the air it is open, on the ground a wall. By height alone it could not be
+  // done: at a walk a jump carries you 0.3 and stays over a rail's top for a fifth of that, and a
+  // body and a rail together are 0.42 across. `hopping` asks as if in the air, which is how a parked
+  // body on a route finds out that a jump would get it on (update below). And one you came down in
+  // the middle of is one you walk out of, as out of a person: a jump that falls short lands astride it.
+  // And any other solid you already stand in is one you may walk out of, never further in
+  // (`leaving`, Plans/muren-met-hitboxes.md): a scan, an Apply or a guest island putting a building
+  // up round you, or a jump coming down on a crate's side, used to leave every step blocked and you
+  // stood in it until you left walk mode.
+  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
     if (placing && groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
-    for (const b of state.blockers) if (inside(b, x, z, BODY_R) && atHeight(b, from)) return true;
+    // The quay's wall is a wall to whoever is further below its top than a step: a swimmer beside
+    // the face, a diver at its foot. groundAt reads the top absolutely, so without this a swimmer
+    // pushing at the face was put on the quay in one frame, half a metre up, and a diver found the
+    // quay's top as the bed under them. From the stairs (in front of the face, never a foot cell)
+    // and from the quay itself it is a step, as before.
+    const wall = kadeAt(x, z);
+    if (wall != null && wall - from > STEP_UP) return true;
+    const open = hopping && !placing;
+    const astride = (b) => !placing && inside(b, state.pos.x, state.pos.z, BODY_R);
+    const leaving = (b) => {
+      if (placing) return false;
+      const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
+      return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
+    };
+    if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
+      && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
+    for (const d of decks) if (deckWall(d, x, z, from)) return true;
+    for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
     for (const b of state.peerBlockers) {
       const dx = x - b.x, dz = z - b.z;
       const reach = (b.r + BODY_R) * (b.r + BODY_R);
@@ -1081,6 +1277,9 @@ export function createWalkMode({
   const camOff = new THREE.Vector3();
   const planeUp = new THREE.Vector3();
   let plane = null;
+  // The camera's share of a tread the feet have just taken (see afterMove), and where they stood.
+  let camStep = 0, stepFrom = null;
+  const CAM_STEP_RATE = 12;
   function hullPoint(b, lx, y, lz) {
     if (poseHull) poseHull(b);
     return hullPointOf(b, lx, y, lz, swellAt);
@@ -1446,8 +1645,10 @@ export function createWalkMode({
     state.onExit = onExit;
     state.onToggleMinimap = onToggleMinimap;
     let [x, z] = at;
-    // step back until we are standing somewhere legal
-    for (let i = 0; i < 40 && blocked(x, z, undefined, true); i++) { x += 0.4; z += 0.25; }
+    // step back until we are standing somewhere legal - judged from the height we would stand at
+    // there, not from wherever the body last was: from the floor under it, a stair built solid is a
+    // wall, and a spawn on its treads was walked off to the side of it.
+    for (let i = 0; i < 40 && blocked(x, z, groundAt(x, z), true); i++) { x += 0.4; z += 0.25; }
     state.pos.set(x, groundAt(x, z), z);
     state.floor = state.pos.y;
     state.vy = 0;
@@ -1464,6 +1665,7 @@ export function createWalkMode({
     zzz.visible = false;
     avatar.visible = true;
     camDive = 0;                             // whatever a dive left of the camera's rules
+    armLen = Infinity;                       // and a boom from wherever we were before
     keys.clear();
     lockKeys(true);
     syncLock();
@@ -1471,6 +1673,9 @@ export function createWalkMode({
 
   function exit() {
     setFirstPerson(false);
+    // The camera is somebody else's from here (the sky's, a room's): its near plane as it was made.
+    setNear(nearBase);
+    armLen = Infinity;
     plane = null;
     camera.up.copy(PLANE_UP);
     state.vehicle = null;
@@ -1497,9 +1702,12 @@ export function createWalkMode({
   // keys, the lock, the camera, the bike, a lounge) goes, but the figure stays drawn and
   // update() keeps stepping it - asleep, or walking a route given from above. `at` puts it
   // somewhere first: the islander's start (main.js parkOnSquare) has never walked yet.
-  function park({ at = null, facing = null } = {}) {
+  function park({ at = null, facing = null, blockers = null } = {}) {
     exit();
     state.dancing = false;
+    // main.js hands the island's solids with every park. They were dropped here, so a body parked
+    // at boot walked its routes - and its route search, blockedAt - through every house on the island.
+    if (blockers) takeBlockers(blockers);
     if (at) {
       let [x, z] = at;
       for (let i = 0; i < 40 && blocked(x, z, undefined, true); i++) { x += 0.4; z += 0.25; }
@@ -1840,6 +2048,10 @@ export function createWalkMode({
       else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
       state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
       frameDistance = Math.hypot(state.pos.x-beforeX, state.pos.z-beforeZ);
+      // A parked body walking its route into a rail jumps it, as you would: held up (sliding along
+      // it is not getting on), and the step open to somebody in the air.
+      if (state.route && state.grounded && frameDistance < speed * 0.5 && blocked(nx, nz)
+        && !blocked(nx, nz, undefined, false, true)) jump();
       if (!state.swimming) { state.moving = frameDistance > 1e-6; state.running = run && state.moving; }
       state.bob += frameDistance * Math.PI * 2 / (run ? .40 : .29);
     } else {
@@ -1905,7 +2117,13 @@ export function createWalkMode({
       state.grounded = true;                 // a diver is not airborne, whatever their height
       if (r.surfaced) endDive();             // floating again, at the very height this left
     } else if (state.grounded) {
-      state.pos.y = underfoot;
+      // Walked off an edge - a quay, a bridge, a rock, a stair's side: fall, the jump's own way,
+      // instead of being set down on the ground below in the same frame. That was every drop on
+      // the island, a hand or a storey alike (the keeper: "instant omlaag teleporteren ipv
+      // vallen"). A step down within STEP_DOWN is still followed, so stairs, slopes and kerbs
+      // are walked as they always were.
+      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; }
+      else state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
       state.pos.y += state.vy * dt;
@@ -2044,13 +2262,127 @@ export function createWalkMode({
     // over about 0.4 s, or the head going under would throw it two units.
     camDive = clamp(camDive + (state.diving ? dt : -dt) / CAM_DIVE_S, 0, 1);
     relaxPitch(dt);
-    if (state.active) placeCamera(fp);
+    // The feet go up a stair tread by tread, as the treads are drawn (a stair's `steps`, the quay's
+    // flights); the camera does not have to. What the feet rose or dropped this frame within a step
+    // is taken back off the camera and eased out again, so a flight is climbed with a steady eye -
+    // not jolted a riser at a time. A fall, a jump, the water or a hull is followed as it always was.
+    const rose = stepFrom == null ? 0 : state.pos.y - stepFrom;
+    const afoot = state.grounded && !state.swimming && !state.vehicle && !plane && !state.sitting;
+    if (afoot && Math.abs(rose) <= STEP_UP) camStep = clamp(camStep - rose, -STEP_UP, STEP_UP);
+    else camStep = 0;
+    camStep *= Math.exp(-CAM_STEP_RATE * dt);
+    stepFrom = state.pos.y;
+    if (state.active) placeCamera(fp, dt);
+    else armLen = Infinity;
+    // A boom pulled in to within a head's width of the eye would put the lens inside the figure: the
+    // body goes, as in first person, and comes back as the boom lets out again.
+    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE);
 
     // what is within reach?
     return reach();
   }
 
-  function placeCamera(fp) {
+  // ---- the boom (Plans/camera-botsing.md) --------------------------------------------------------
+  // The camera hangs at the end of a boom from the point it looks at, and the boom stops at the
+  // first thing it meets: the buildings' part boxes (`cameraBodies`), every blocker with a height,
+  // and - sampled along it - the ground, the quay's stone, every floor of planks, a deck or a cell's
+  // level as a slab, and the hull we stand on below her deck. Pulled in at once, so there is never a
+  // frame with something between the camera and the body; let out again at ARM_OUT, so a camera
+  // turned along a facade does not pump in and out with every window.
+  const CAM_R = 0.15;           // the lens's own room, the boom's radius
+  const ARM_MIN = 0.2;          // never closer than this to the point it looks at
+  const ARM_HIDE = 0.45;        // closer than this the body is in the way of the lens: it goes
+  const ARM_OUT = 3;            // how fast the boom lets out again, per second (exponential)
+  const SLAB = 0.15;            // how thick a floor of planks is to the camera
+  const NEAR_ARM = 1.25;        // a boom shorter than this brings the near plane in with it
+  // The look to either side (placeCamera): how far round, in radians, and how much longer than
+  // what it finds there the boom may still be, per radian round.
+  const ARM_SIDES = [0.1, 0.2, 0.35];
+  const ARM_SOFT = 3;
+  // How fast the boom comes in towards what it sees to the side, per second (exponential). What is
+  // straight down the boom it does not wait for.
+  const ARM_IN = 12;
+  let armLen = Infinity;
+  // The near plane, brought in with a short boom from `nearBase`, or the wall beside the lens is cut
+  // away by a plane half a unit out (the island's 0.5). First person has its own (setFirstPerson).
+  function setNear(n) {
+    if (Math.abs(camera.near - n) < 1e-4) return;
+    camera.near = n;
+    camera.updateProjectionMatrix();
+  }
+  // The hull we are on this frame, read for the boom: her frame, the height of her y = 0 and her
+  // walk map (shared/hullwalk.mjs), or null off one. `reach` is how high a floor of hers counts as
+  // the deck under the camera: no higher than half a unit over the point looked at, or the roof of
+  // her castle - or her yards - would be floors to a camera on the waist.
+  let camHull = null;
+  function hullForCamera(pivotY) {
+    const b = deckBoat || state.vehicle || (climb && climb.boat) || null;
+    const walkMap = b && b.craft && b.craft.walk;
+    if (!walkMap) return null;
+    const base = hullPoint(b, 0, 0, 0).y;
+    return { frame: frameOf(b), base, walk: walkMap, reach: pivotY - base + 0.5 };
+  }
+  const hullLocal = [0, 0];
+  function hullDeckAt(h, x, z) {
+    toLocal(h.frame, x, z, hullLocal);
+    const f = h.walk.floorIn(hullLocal[0], hullLocal[1], h.reach, 0);
+    return f == null ? null : h.base + f;
+  }
+  // Whether the point is inside something the boom must stop at, of what is sampled.
+  function solidPoint(x, y, z) {
+    const g = camDive > 0 ? Math.max(heightUnder(x, z), bedUnder(x, z)) : heightUnder(x, z);
+    if (y < g + CAM_R * 0.5) return true;
+    const k = kadeAt(x, z);
+    if (k != null && y < k + CAM_R) return true;
+    const plank = (h) => h != null && y < h + CAM_R && y > h - SLAB;
+    if (surfaceIndex.some(x, z, 0, (sf) => plank(surfaceY(sf, x, z)))) return true;
+    for (const d of decks) if (plank(deckY(d, x, z))) return true;
+    const lv = levelsIn(x, z);
+    if (lv) for (const h of lv) if (plank(h)) return true;
+    if (camHull) {
+      const deck = hullDeckAt(camHull, x, z);
+      if (deck != null && y < deck + CAM_R * 0.5) return true;
+    }
+    return false;
+  }
+  // Only what stands up out of the ground - the buildings' boxes and the blockers - asked along a
+  // direction: armReach's first half, and all the boom's look to either side (see placeCamera).
+  function standingReach(ax, ay, az, dx, dy, dz, len) {
+    let best = len;
+    const bx = ax + dx * len, bz = az + dz * len;
+    camBodies.along(ax, az, bx, bz, CAM_R, (b) => {
+      const t = camBodyEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R);
+      if (t != null && t < best) best = t;
+      return false;
+    });
+    blockerIndex.along(ax, az, bx, bz, CAM_R, (b) => {
+      let y0 = b.y0, y1 = b.y1;
+      if (y1 == null) {
+        if (camSolidTop == null) return false;
+        y0 = -Infinity; y1 = camSolidTop;
+      }
+      const t = segmentEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R, y0, y1);
+      if (t != null && t >= 0 && t < best) best = t;
+      return false;
+    });
+    return best;
+  }
+  // How far along the unit direction d the boom from a may reach, up to len.
+  function armReach(ax, ay, az, dx, dy, dz, len) {
+    let best = standingReach(ax, ay, az, dx, dy, dz, len);
+    // The rest is sampled. What the start is already in does not count until the boom has been out
+    // of it: a pivot a hand over a gallery's boards is in that floor's slab and must not be stuck there.
+    const step = Math.max(0.06, best / 80);
+    let open = false;
+    for (let t = 0; t <= best; t += step) {
+      if (solidPoint(ax + dx * t, ay + dy * t, az + dz * t)) {
+        if (open) { best = Math.max(0, t - step); break; }
+      } else open = true;
+    }
+    return best;
+  }
+  const pivot = new THREE.Vector3(), armDir = new THREE.Vector3();
+  function placeCamera(fp, dt = 0) {
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
     const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
@@ -2062,14 +2394,32 @@ export function createWalkMode({
     // C is "swim down" to a diver, so it does not fold the eye (see `stoop` in afterMove).
     const stoop = state.crouching && !state.dive;
     const eyeDrop = state.lying ? up * 0.55 : stoop || state.sitting ? up * 0.3 : 0;
-    const cy = state.pos.y + up - eyeDrop + Math.sin(state.camPitch) * dist;
+    const cy = state.pos.y + camStep + up - eyeDrop + Math.sin(state.camPitch) * dist;
+    // The aim follows the eye down as the body folds: crouching and sitting shorten the
+    // figure by exactly these factors, so reusing them keeps the camera on the face rather
+    // than on the air the settler has just vacated. Lying down there is no standing body
+    // left to scale - the figure is flat on the towel, and a fifth of eye level is the
+    // middle of what is left above the ground.
+    const aim = state.lying ? camAim * LIE_AIM
+      : stoop ? camAim * CROUCH_SCALE
+        : state.sitting ? camAim * SIT_SCALE : camAim;
+    camHull = fp ? null : hullForCamera(state.pos.y + aim);
     // Over water the floor is the surface, not the sea bed - see camera-floor.js - until the
     // head goes under: then the camera belongs under it too, floored by the bed and held below
     // the surface (`camDive` eases the change). The bed a diver sees is `bedUnder`, which is
-    // not always what `groundAt` says at the rim of an island's grid, so the camera takes the
+    // not always what the ground says at the rim of an island's grid, so the camera takes the
     // higher of the two.
-    let under = groundAt(cx, cz, cy);
+    //
+    // The ground only - the terrain, and on a ship her deck. What stands on the ground (a pier, a
+    // bridge, the quay, a stair, a building's floor) is the boom's, below: as part of the floor it
+    // lifted the camera in one frame wherever it came over the edge of one (0.24 at the foot of the
+    // Salty Kraken's stair, half a unit over the quay's wall), and with `lift` the aim as well.
+    let under = heightUnder(cx, cz);
     if (camDive > 0) under = Math.max(under, bedUnder(cx, cz));
+    if (camHull) {
+      const deck = hullDeckAt(camHull, cx, cz);
+      if (deck != null) under = Math.max(under, deck);
+    }
     // A smoothstep of the timer, so the camera starts and ends gently: the surface swimmer's
     // camera hangs 2.3 up and the diver's is under the surface, and a plain exponential ease
     // moved it 0.16 in the first frame (measured, tests/diving-walk.test.mjs).
@@ -2098,18 +2448,11 @@ export function createWalkMode({
       camera.position.copy(state.pos).add(camOff);
       planeUp.copy(PLANE_UP).applyQuaternion(camTilt);
       camera.up.copy(planeUp);
-    } else camera.up.copy(PLANE_UP);
-    if (clampCam) clampCam(camera.position);
-    // The aim follows the eye down as the body folds: crouching and sitting shorten the
-    // figure by exactly these factors, so reusing them keeps the camera on the face rather
-    // than on the air the settler has just vacated. Lying down there is no standing body
-    // left to scale - the figure is flat on the towel, and a fifth of eye level is the
-    // middle of what is left above the ground.
-    const aim = state.lying ? camAim * LIE_AIM
-      : stoop ? camAim * CROUCH_SCALE
-        : state.sitting ? camAim * SIT_SCALE : camAim;
-    if (plane) camera.lookAt(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
-    else camera.lookAt(state.pos.x, state.pos.y + aim + lift, state.pos.z);
+      pivot.set(state.pos.x + planeUp.x * aim, state.pos.y + planeUp.y * aim, state.pos.z + planeUp.z * aim);
+    } else {
+      camera.up.copy(PLANE_UP);
+      pivot.set(state.pos.x, state.pos.y + camStep + aim + lift, state.pos.z);
+    }
     if (fp) {
       // The eye, carried through the body's own transform (a crouch, a swimmer's tilt, the
       // saddle's lean), and a little behind it so the hands are in front of the lens.
@@ -2118,10 +2461,47 @@ export function createWalkMode({
       const cp = Math.cos(state.camPitch);
       fpLook.set(Math.sin(state.camYaw) * cp, -Math.sin(state.camPitch), Math.cos(state.camYaw) * cp);
       if (plane) fpLook.applyQuaternion(plane);
-      camera.position.set(eye.x - fpLook.x * FP_BACK, eye.y - fpLook.y * FP_BACK, eye.z - fpLook.z * FP_BACK);
-      if (clampCam) clampCam(camera.position);
+      camera.position.set(eye.x - fpLook.x * FP_BACK, eye.y + camStep - fpLook.y * FP_BACK, eye.z - fpLook.z * FP_BACK);
+      if (clampCam) clampCam(camera.position, { firstPerson: true });
       camera.lookAt(camera.position.x + fpLook.x, camera.position.y + fpLook.y, camera.position.z + fpLook.z);
+      return;
     }
+    if (clampCam) clampCam(camera.position);
+    // The boom, from the point looked at out to where the camera would be. A room's clampCam has had
+    // its say first (its walls, and the climb that looks down into a small room) and is told again
+    // where the camera ended up, for its lid.
+    armDir.copy(camera.position).sub(pivot);
+    const want = armDir.length();
+    if (want > 1e-6) {
+      armDir.divideScalar(want);
+      // How far it may reach this frame, at once: nothing between the camera and the body, ever.
+      const hard = Math.max(ARM_MIN, Math.min(want, armReach(pivot.x, pivot.y, pivot.z, armDir.x, armDir.y, armDir.z, want) - 0.03));
+      // And a look to either side of it, which the boom comes in towards ahead of time. Turned round
+      // a corner it went from all its length to a stub in one frame (0.78 at the foot of the Kraken's
+      // stair, a degree a frame; more beside a post close by): it ran into the wall all at once.
+      // Asked a little way round to either side - and held shorter for what is there, the nearer the
+      // side the shorter - it is already coming in over the last degrees before the corner. Only
+      // what stands up is asked: floors and the ground do not come round a corner at you.
+      let soft = hard;
+      for (const a of ARM_SIDES) {
+        const c = Math.cos(a), sn = Math.sin(a);
+        for (const sign of [1, -1]) {
+          const sx = armDir.x * c + armDir.z * sn * sign, sz = armDir.z * c - armDir.x * sn * sign;
+          const side = standingReach(pivot.x, pivot.y, pivot.z, sx, armDir.y, sz, want) + ARM_SOFT * a;
+          if (side < soft) soft = side;
+        }
+      }
+      soft = Math.max(ARM_MIN, soft);
+      if (armLen > hard) armLen = hard;
+      else if (soft < armLen) armLen += (soft - armLen) * (1 - Math.exp(-ARM_IN * dt));
+      else armLen = Math.min(soft, armLen + (soft - armLen) * (1 - Math.exp(-ARM_OUT * dt)));
+      if (armLen < want) {
+        camera.position.copy(pivot).addScaledVector(armDir, armLen);
+        if (clampCam) clampCam(camera.position, { boomed: true });
+      }
+    } else armLen = want;
+    setNear(armLen < NEAR_ARM ? Math.max(0.05, Math.min(nearBase, armLen * 0.4)) : nearBase);
+    camera.lookAt(pivot);
   }
 
   function reach() {
@@ -2162,17 +2542,17 @@ export function createWalkMode({
   // What stands above the terrain, per cell, lowest first. main.js merges the layout's
   // bridges with the ones somebody built before handing it over.
   function setLevels(map) { levels = map || new Map(); }
-  function setSurfaces(list) { surfaces = list || []; }
+  function setSurfaces(list) { surfaces = list || []; indexSurfaces(); }
+  function setDecks(list) { takeDecks(list); }
 
   // Is there room here for something wider than a person? Walk mode already knows what
   // cannot be walked through, so "can a vegetable bed go where I am standing" is that
   // same question asked with a bed's radius instead of a settler's.
   function roomFor(x, z, r) {
-    for (const b of state.blockers) if (inside(b, x, z, r)) return false;
-    return true;
+    return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

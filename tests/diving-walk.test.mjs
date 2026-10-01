@@ -174,7 +174,14 @@ test('a diver at the foot of a shallow shelf keeps a camera under the water, and
   run(walk, 1.5);
   const s = walk.state;
   assert.equal(s.diving, true);
-  assert.ok(camera.position.x < 10, `the camera should trail over the shelf: x = ${camera.position.x}`);
+  // Back towards the shelf - and, since the boom (Plans/camera-botsing.md), no further than its face:
+  // trailing on over the shallows the camera looked at the diver through the step in the sand.
+  assert.ok(camera.position.x < 10.5, `the camera should trail back to the shelf: x = ${camera.position.x}`);
+  const eye = new THREE.Vector3(s.pos.x, s.pos.y + 0.42, s.pos.z);
+  for (let t = 0; t <= 1; t += 0.02) {
+    const p = eye.clone().lerp(camera.position, t);
+    assert.ok(p.y >= shelf(p.x) - 1e-6, `the sand is between the camera and the diver at x ${p.x.toFixed(2)}`);
+  }
   assert.ok(camera.position.y < 0, `the camera is over the water, at ${camera.position.y}, and the diver behind the surface`);
   assert.ok(camera.position.y >= shelf(camera.position.x) - 1e-9, 'the camera is in the sand');
 });
@@ -311,6 +318,8 @@ test('out of the water the mouse still looks far up: the sky belongs to a walker
 test('walk.js lifts the aim only upwards, and never in first person', () => {
   const src = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
   assert.match(src, /const lift = !fp \? Math\.max\(0, camY - cy\) : 0;/);
-  assert.match(src, /camera\.lookAt\(state\.pos\.x, state\.pos\.y \+ aim \+ lift, state\.pos\.z\)/);
+  // (camStep: the eased share of a stair tread the feet just took, tests/stair-walk.test.mjs)
+  assert.match(src, /pivot\.set\(state\.pos\.x, state\.pos\.y \+ camStep \+ aim \+ lift, state\.pos\.z\)/);
+  assert.match(src, /camera\.lookAt\(pivot\)/);
   assert.match(src, /const SWIM_PITCH_MIN = -1\.1;/);
 });

@@ -607,28 +607,16 @@ def snug(L):
 
 # ---- the hearth -------------------------------------------------------------------------------------
 def hearth(L):
-    """What the hearth holds (the stone is the shell's, the fire the game's): andirons and logs in the
-    firebox, fire irons, a ship's wheel on the chimney breast with crossed cutlasses over it, candles
-    and gold on the mantel, a rug with a gold border before it. The shell's numbers: the jambs' face
-    at HEARTH.x + 0.35, the opening 0.26 each side of HEARTH.z, the mantel's top at F + 1.05 and 0.1
-    proud of the jambs, the breast 0.38 out of the wall at the mantel and 0.32 at the wheel."""
+    """What the hearth holds round its fire (the stone is the shell's; the fire basket with its logs
+    and ash is the kit's firebasket, placed by pirate-tavern.js; the flame is the game's): fire irons,
+    a ship's wheel on the chimney breast with crossed cutlasses over it, candles and gold on the
+    mantel, a rug with a gold border before it. The shell's numbers: the jambs' face at HEARTH.x +
+    0.35, the opening 0.42 each side of HEARTH.z, the mantel's top at F + 1.05 and 0.1 proud of the
+    jambs, the breast 0.38 out of the wall at the mantel and 0.32 at the wheel."""
     F = L['F']
     hx, hz = L['HEARTH']['x'], L['HEARTH']['z']
     W = L['HALL']['x0']
     front = hx + .35
-    for dz in (-.14, .14):
-        z = hz + dz
-        rod('andiron', (W + .12, F + .02, z), (front - .05, F + .02, z), .01, IRON, sides=4)
-        rod('andiron post', (front - .07, F, z), (front - .07, F + .1, z), .012, IRON, sides=6)
-        ball('andiron knob', (front - .07, F + .11, z), .016, BRASS, seg=6, rings=4)
-    for i, (dz, a) in enumerate(((-.1, .3), (.03, -.2), (.13, .25))):
-        z = hz + dz
-        a0 = (W + .14, F + .045 + i * .012, z - .07 * math.sin(a))
-        a1 = (front - .08, F + .05 + i * .014, z + .07 * math.sin(a))
-        rod('log', a0, a1, .026, DARK, sides=7)
-        disc('log end', a1, .02, .004, SOOT_, sides=7, roll=-PI / 2)
-    for k in range(6):
-        ball('coal', (front - .1 - k * .045, F + .012, hz - .12 + k * .05), .02, SOOT_, seg=5, rings=3)
     fz = hz + .55
     rod('iron stand', (front + .07, F, fz), (front + .07, F + .36, fz), .006, IRON, sides=4)
     disc('iron stand foot', (front + .07, F, fz), .04, .008, IRON, sides=6)

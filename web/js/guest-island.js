@@ -27,10 +27,12 @@ import { buildBuilding, buildBridgeGeometry, mergeParts } from './buildings.js';
 import { addScaffold } from './scaffold.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
+import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
 import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeExtras } from './record-extras.js';
 import { floatingPose } from './batavia.js';
 import { createRecordBatch, VERTICES_PER_BUILDING } from './record-batch.js';
+import { porchFloor, solidAt, camBodyOf } from './solids.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -187,7 +189,8 @@ export function createGuestIsland({
     const z = built.floats ? pose.z : c[1] + nudge[1] + pose.z;
     // The shipyard on the land at its landward end, as main.js's poseOnPlot stands ours.
     let y = built.floats ? pose.y
-      : isShipyard(spec) ? shipyardGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz)) : local.worldHeight(x, z);
+      : isShipyard(spec) ? shipyardGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz))
+        : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz)) : local.worldHeight(x, z);
     if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
 
     const g = new THREE.Group();
@@ -268,18 +271,29 @@ export function createGuestIsland({
     const out = [];
     const [ox, oz] = region.origin;
     for (const rec of records) {
-      const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-      for (const r of rec.built.solids) {
-        out.push({
-          x: ox + rec.group.position.x + r.x * c + r.z * s,
-          z: oz + rec.group.position.z - r.x * s + r.z * c,
-          hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
-          hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
-          ...(r.r ? { r: r.r } : {}),
-          ...(r.hull != null ? { hull: r.hull } : {}),
-          id: `guest:${region.id}:${rec.id}`,
-        });
-      }
+      const p = rec.group.position;
+      const where = { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y };
+      for (const r of rec.built.solids) out.push({ ...solidAt(r, where), id: `guest:${region.id}:${rec.id}` });
+    }
+    // Their porches, as floors (solids.js porchFloor).
+    for (const rec of records) {
+      if (!rec.built.porch) continue;
+      const p = rec.group.position;
+      for (const f of porchFloor(rec.built.porch, { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y })) out.push({ ...f, id: `guest:${region.id}:${rec.id}` });
+    }
+    // Their wood, their stones and their boundaries (world.js solids), moved the same way.
+    for (const b of land.solids()) out.push({ ...b, x: b.x + ox, z: b.z + oz, id: `guest:${region.id}:land` });
+    return out;
+  }
+
+  // And what the camera's boom stops at (main.js cameraBodies), moved the same way.
+  function camBodies() {
+    const out = [];
+    const [ox, oz] = region.origin;
+    for (const rec of records) {
+      const p = rec.group.position;
+      const b = camBodyOf(rec.built.camBoxes, { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y });
+      if (b) out.push(b);
     }
     return out;
   }
@@ -290,6 +304,7 @@ export function createGuestIsland({
     region,
     records,
     blockers,
+    camBodies,
     applyBuildings,
     // Their season turns with ours and a tree felled over there falls rather than
     // vanishing. One call a frame; main.js walks the guests for the mills anyway.

@@ -43,6 +43,7 @@ import { SHANTY_SONG } from './sound.js';
 import { CREW } from 'shared/quests.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import * as K from './kraken-layout.js';
+import { halosOf } from './room-glow.js';
 import { PROPS, FOOT, EXTRA_BLOCKERS } from './kraken-dressing.js';
 
 const { LEVEL, HALL, CELLAR, WALL, DOOR_HALF } = K;
@@ -71,10 +72,42 @@ const MARK_AT = { seated: 0.8, captain: 0.95 };
 // towards its vault - the soft light in the niche the keeper asked for, not a lit panel - and a
 // window's night, or the sea through the arch, at a steady 0.45.
 const NICHE = /niche glow/, PANE = / pane /;
+// How many treads the bake gives a stair: `n = max(3, round(rise / .1))` in
+// scripts/krakenroom/shell.py stair(), every tread's top on the slope at its own middle - so walk
+// mode stands you on those (a surface's `steps`) instead of on the slope between them, which put the
+// feet half a riser into the front of each tread. tests/stair-walk.test.mjs holds the two sums together.
+export const treadsOf = (s) => Math.max(3, Math.round(Math.abs(s.y1 - s.y0) / 0.1));
+// What walk mode walls a way up with (walk.js stairWall), as the bake builds it: a stair is solid to
+// the floor under it - a block of timber under every tread - except the one over the hold
+// (`solid = s['id'] != 'bar-captain'` in shell.py stair()), and railed on its open sides
+// (shell.py open_sides(): not against the hall's wall, nor beside a floor as high as its top, which
+// rails the stairwell itself); a gangplank and a ship's ladder carry a handrail down both sides.
+// Without them you walked off the side of every flight to the floor, and in under its treads.
+export function stairWalls(s) {
+  const [c0, c1] = s.axis === 'z' ? ['x0', 'x1'] : ['z0', 'z1'];
+  if (s.kind !== 'stair') return { rails: [c0, c1] };
+  const hi = Math.max(s.y0, s.y1);
+  const open = (side) => {
+    const c = s[side];
+    if (s.axis === 'z' && (Math.abs(c - HALL.x0) < 0.06 || Math.abs(c - HALL.x1) < 0.06)) return false;
+    if (s.axis === 'x' && (Math.abs(c - HALL.z0) < 0.06 || Math.abs(c - HALL.z1) < 0.06)) return false;
+    const mx = (s.x0 + s.x1) / 2;
+    return !(s.axis === 'x' && K.FLOORS.some((f) => f.y >= hi - 0.01 && f.x0 <= mx && mx <= f.x1
+      && (Math.abs(f.z1 - c) < 0.02 || Math.abs(f.z0 - c) < 0.02)));
+  };
+  return { solid: s.id !== 'bar-captain', rails: [c0, c1].filter(open) };
+}
 function place(out, asset, { x = 0, y = 0, z = 0, ry = 0 } = {}, keep = () => true) {
   const at = { x, y, z, ry };
   out.push(...meshAsset(asset, 0xffffff, { ...at, skip: (n) => !keep(n) || NICHE.test(n) || PANE.test(n) }));
-  out.push(...meshAsset(asset, 0xffffff, { ...at, emissive: 0.45, skip: (n) => !keep(n) || !PANE.test(n) }));
+  // A pane as broad as the sea arch's opening glowed the whole arch a flat blue at 0.45, the
+  // loudest thing in the room: past a unit across a pane is the night itself, and takes 0.18.
+  for (const g of meshAsset(asset, 0xffffff, { ...at, emissive: 0.45, skip: (n) => !keep(n) || !PANE.test(n) })) {
+    g.computeBoundingBox();
+    const s = g.boundingBox.getSize(new THREE.Vector3());
+    if (Math.max(s.x, s.y, s.z) > 1) g.attributes.aEmissive.array.fill(0.18);
+    out.push(g);
+  }
   for (const g of meshAsset(asset, 0xffffff, { ...at, emissive: 0.65, skip: (n) => !keep(n) || !NICHE.test(n) })) {
     g.computeBoundingBox();
     const { min, max } = g.boundingBox, pos = g.attributes.position, e = g.attributes.aEmissive;
@@ -109,6 +142,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (const g of KIT.gunports) kit('civic_kraken_gunport', { x: g.x, y: FLOOR + 0.62, z: HALL.z1, ry: Math.PI });
   for (const c of KIT.sconces) kit('civic_kraken_skullsconce', c);
   kit('civic_kraken_skulllamp', KIT.skulllamp, roof);
+  kit('civic_kraken_firebasket', KIT.firebasket);
   const stools = KIT.stools;
   for (let i = 0; i < stools.n; i++) kit('civic_kraken_stool', { x: stools.x0 + i * stools.step, y: stools.y, z: stools.z });
   const nav = K.CREW_PLACES.navigator;
@@ -120,8 +154,14 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const O = WALL / 2;
   const wallX = (x0, x1, z) => block(rect((x0 + x1) / 2, z, (x1 - x0) / 2, O));
   const wallZ = (z0, z1, x) => block(rect(x, (z0 + z1) / 2, O, (z1 - z0) / 2));
-  wallX(HALL.x0 - WALL, K.ARCH[0] - 0.08, HALL.z0 - O);
-  wallX(K.ARCH[1] + 0.08, HALL.x1 + WALL, HALL.z0 - O);
+  // The gap is the arch itself: its jambs' faces stand on ARCH (shell.py cellar_arch()), and a gap
+  // 0.08 wider each side let a body stand with a shoulder in the stone.
+  wallX(HALL.x0 - WALL, K.ARCH[0], HALL.z0 - O);
+  wallX(K.ARCH[1], HALL.x1 + WALL, HALL.z0 - O);
+  // Over the arch the wall is wall again, from the cellar's ceiling up: the west gallery's north end
+  // stands against it a storey up, and with the gap open to the roof it walked you off the gallery
+  // into the cellar's mouth.
+  block(rect((K.ARCH[0] + K.ARCH[1]) / 2, HALL.z0 - O, (K.ARCH[1] - K.ARCH[0]) / 2, O), FLOOR + CELLAR.ceiling, K.TOP);
   wallX(HALL.x0 - WALL, -DOOR_HALF, HALL.z1 + O);
   wallX(DOOR_HALF, HALL.x1 + WALL, HALL.z1 + O);
   wallZ(HALL.z0 - WALL, HALL.z1 + WALL, HALL.x0 - O);
@@ -134,7 +174,8 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const CB = K.CELLAR_BARS;
   block(rect((CB.x0 + CB.x1) / 2, CB.z, (CB.x1 - CB.x0) / 2, 0.03));
   block(rect(CB.x0, (CELLAR.z0 + CB.z) / 2, 0.03, (CB.z - CELLAR.z0) / 2));
-  block(rect(HALL.x0 + 0.35, K.HEARTH.z, 0.35, 0.6));
+  const HE = K.HEARTH;
+  block(rect((HALL.x0 + HE.x + HE.face) / 2, HE.z, (HE.x + HE.face - HALL.x0) / 2, HE.half));
   // The pool, which the eye takes for water and the feet for a wall, with the jetty left open; only
   // up to the captain's deck, whose own south edge is its rail.
   const P = K.POOL, J = K.JETTY;
@@ -149,6 +190,22 @@ export function buildPirateTavern({ FLOOR, rect }) {
   for (const f of K.FLOORS) {
     if (f.solid) block(rect((f.x0 + f.x1) / 2, (f.z0 + f.z1) / 2, (f.x1 - f.x0) / 2, (f.z1 - f.z0) / 2), -1, f.y - 0.46);
   }
+  // Where a deck on posts stands a storey up beside a solid terrace (the captain's deck beside the
+  // bar), the terrace's edge goes on up to the deck as a knee wall (shell.py bar()): a wall to a body
+  // on the terrace and to nobody under the deck or on it. Without it the bar ran on under the deck at
+  // head height and dropped you into the hold, into the bar's own block down there.
+  for (const t of K.FLOORS.filter((f) => f.solid)) {
+    for (const d of K.FLOORS.filter((f) => !f.solid && f.y > t.y + 0.45)) {
+      const z0 = Math.max(t.z0, d.z0), z1 = Math.min(t.z1, d.z1), x0 = Math.max(t.x0, d.x0), x1 = Math.min(t.x1, d.x1);
+      const knee = (b) => block(b, t.y - 0.1, d.y);
+      if (z1 > z0 && (Math.abs(d.x0 - t.x1) < 1e-6 || Math.abs(d.x1 - t.x0) < 1e-6)) {
+        knee(rect(Math.abs(d.x0 - t.x1) < 1e-6 ? t.x1 : t.x0, (z0 + z1) / 2, 0.02, (z1 - z0) / 2));
+      }
+      if (x1 > x0 && (Math.abs(d.z0 - t.z1) < 1e-6 || Math.abs(d.z1 - t.z0) < 1e-6)) {
+        knee(rect((x0 + x1) / 2, Math.abs(d.z0 - t.z1) < 1e-6 ? t.z1 : t.z0, (x1 - x0) / 2, 0.02));
+      }
+    }
+  }
   for (const p of K.POSTS) block({ x: p.x, z: p.z, r: K.POST_R }, p.y0 - BODY, p.y1);
   for (const r of K.RAILS) {
     const [x0, z0, x1, z1] = r.line;
@@ -157,27 +214,41 @@ export function buildPirateTavern({ FLOOR, rect }) {
   // The low end of the gangplank up to the west gallery, which a body on the ground would otherwise
   // walk into rather than onto (where it is between a step and a head high).
   block(rect(-6.65, 1.67, 0.35, 0.47), -1, 0.2);
-  // The mast through all of it, and its plinth on the pit.
+  // The crow's nest is round (its rail at KIT.mast.nestR) and its RAILS a square round that: in the
+  // square's corners a body stood on the rim, the rail through its middle. A post in each corner, out
+  // to where the rim is, keeps the centre of a body as far inside the rail as the square's sides do.
+  const nest = K.FLOORS.find((f) => f.id === 'crows-nest');
+  for (const x of [nest.x0, nest.x1]) {
+    for (const z of [nest.z0, nest.z1]) {
+      block({ x, z, r: Math.hypot(x - KIT.mast.x, z - KIT.mast.z) - KIT.mast.nestR }, nest.y - 0.1, nest.y + BODY);
+    }
+  }
+  // The mast through all of it, and what stands round its foot on the pit: the plinth, and along the
+  // yard the feet of the two ladders up to the nest, which the ladders' rope went through a body at.
   block({ x: KIT.mast.x, z: KIT.mast.z, r: 0.14 });
-  block({ x: KIT.mast.x, z: KIT.mast.z, r: 0.3 }, KIT.mast.y - BODY, KIT.mast.y + 0.12);
+  block(rect(KIT.mast.x, KIT.mast.z, KIT.mast.foot.hx, KIT.mast.foot.hz), KIT.mast.y - BODY, KIT.mast.y + BODY);
 
   // ---- the furniture ------------------------------------------------------------------------
+  // Nothing that stands on a floor is anything to stand on, so nothing is lower than a body to the
+  // feet in the air either: a jump rises 0.38, and over a table's 0.3 or a barrel's 0.29 it came down
+  // on the floor inside the thing and could only jump out again.
+  const upTo = (floor, top) => Math.max(top, floor + BODY);
   block(rect(KIT.stern.x, KIT.stern.z, 1.8, 0.15));
   block(rect(BAR.x, BAR.z, BAR.hx, BAR.hz));
   block(rect(KIT.jukebox.x, KIT.jukebox.z, 0.17, 0.12));
-  for (const t of K.TABLES) block(rect(t.x, t.z, 0.75, 0.14), LEVEL.pit - 0.1, LEVEL.pit + 0.3);
-  block({ x: K.KEG_TABLE.x, z: K.KEG_TABLE.z, r: 0.14 }, -1, LEVEL.ground + 0.3);
+  for (const t of K.TABLES) block(rect(t.x, t.z, 0.75, 0.14), LEVEL.pit - 0.1, upTo(LEVEL.pit, LEVEL.pit + 0.3));
+  block({ x: K.KEG_TABLE.x, z: K.KEG_TABLE.z, r: 0.14 }, -1, upTo(LEVEL.ground, LEVEL.ground + 0.3));
   block(rect(K.CHART.x, K.CHART.z, 0.32, 0.21), LEVEL.captain - 0.1, LEVEL.captain + BODY);
   block(rect(K.CHAIR.x, K.CHAIR.z, 0.13, 0.13), LEVEL.captain - 0.1, LEVEL.captain + BODY);
   // Everything the dressing stood about the place (kraken-dressing.js): each prop's footprint for its
   // kind, turned and scaled - a turned rectangle as the box round it - from its floor to its top.
   for (const p of PROPS) {
-    const f = FOOT[p.kind], h = { y0: p.y, y1: p.y + f.h * p.s };
+    const f = FOOT[p.kind], h = { y0: p.y, y1: upTo(p.y, p.y + f.h * p.s) };
     if (f.r != null) { blockers.push({ x: p.x, z: p.z, r: f.r * p.s, ...h }); continue; }
     const c = Math.abs(Math.cos(p.ry || 0)), sn = Math.abs(Math.sin(p.ry || 0));
     blockers.push({ x: p.x, z: p.z, hx: (f.hx * c + f.hz * sn) * p.s, hz: (f.hx * sn + f.hz * c) * p.s, ...h });
   }
-  for (const b of EXTRA_BLOCKERS) blockers.push(b);
+  for (const b of EXTRA_BLOCKERS) blockers.push({ ...b, y1: upTo(b.y0, b.y1) });
 
   // ---- seats ---------------------------------------------------------------------------------
   // `floor` is the storey a seat is on: walk mode offers it only to somebody standing there.
@@ -242,10 +313,25 @@ export function buildPirateTavern({ FLOOR, rect }) {
   return {
     name: 'the Salty Kraken',
     parts, roof, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
-    fireAt: [K.HEARTH.x + 0.3, FLOOR + 0.03, K.HEARTH.z],
+    // The glow round every flame and lit window, read off the parts themselves, and the moonlight
+    // through the skylights (room-glow.js; the light plan is kraken-layout.js LIGHTS).
+    halos: halosOf(parts), roofHalos: halosOf(roof),
+    shafts: K.SHAFTS.map((f) => {
+      const [x0, x1, z0, z1] = K.SKYLIGHTS[f.sky];
+      return { x0, x1, z0, z1, top: K.EAVES + 0.3, bottom: f.bottom, hex: f.hex, strength: f.strength, lean: f.lean };
+    }),
+    // The hearth burns the ray-marched fire (hearth-fire.js), not the tavern's two cones.
+    flame: { at: [K.HEARTH_FIRE.x, K.HEARTH_FIRE.y, K.HEARTH_FIRE.z], lift: K.HEARTH_FIRE.lift, w: K.HEARTH_FIRE.w, h: K.HEARTH_FIRE.h, bed: [...K.HEARTH_FIRE.bed] },
     // The storeys and their stairs, as walk mode's surfaces (Plans/verdiepingen-binnen.md).
-    surfaces: [...K.FLOORS, ...K.STAIRS],
+    // A stair (not a gangplank or a ladder, whose planks and rungs lie on the slope) is stood on
+    // tread by tread, as the bake draws it (treadsOf), and every way up is walled where it is drawn
+    // so (stairWalls).
+    surfaces: [...K.FLOORS, ...K.STAIRS.map((s) => ({ ...s, ...(s.kind === 'stair' ? { steps: treadsOf(s) } : {}), ...stairWalls(s) }))],
     ceiling: K.CEILING,
+    // How high the lid is over (x, z): its ridge over x = 0, down to the eaves on the west and east
+    // walls (interior.js judgeLid). Against the ridge everywhere, a camera up on a gallery was in the
+    // roof's slope with the lid still on.
+    roofAt: (x) => K.EAVES + (K.F + K.CEILING - K.EAVES) * Math.max(0, 1 - Math.abs(x) / HALL.x1),
     // The camera's rooms. The cellar carries its own low ceiling: from in there the lid comes off
     // as soon as the camera has to go above 1.2, not the hall's.
     areas: [{ ...HALL }, { ...CELLAR }],
@@ -253,9 +339,13 @@ export function buildPirateTavern({ FLOOR, rect }) {
     spawn: { x: 0, z: HALL.z1 - 0.9 },
     doorway: { z: HALL.z1 + WALL, hx: DOOR_HALF + 0.02 },
     camera: { back: 2.6, up: 0.8, aim: 0.32 },
-    background: 0x0d0806,
-    fog: [10, 34],
-    ambience: { sky: 0x4a3a30, ground: 0x160c08, hemi: 0.32, hex: 0xffd6b0, amb: 0.16 },
+    // A night that is not black: the haze a touch cool so the far galleries fade into the moonlit
+    // dark instead of into soot, and a cool sky in the hemisphere as the moon's fill from above -
+    // it lights what faces up (decks, beams, the tops of the rigging) and leaves the undersides and
+    // the corners to the lamps, or to the dark.
+    background: 0x0b0a0f,
+    fog: [12, 40],
+    ambience: { sky: 0x44557a, ground: 0x1a0f0a, hemi: 0.7, hex: 0xffc898, amb: 0.08 },
     music: 'shanty',
     show: (opts) => createCrewShow({ ...opts, layout: { FLOOR, crew } }),
   };

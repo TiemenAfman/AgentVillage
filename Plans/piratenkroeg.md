@@ -32,7 +32,7 @@ de muur).
 | De dagkist | **Herhaalbare quests tellen parallel** met het verhaal. | Anders blokkeert een eiland zonder kroeg *Treasure of the Day* voorgoed zodra het verhaal op de bemanning wacht. `QUEST_STATE_V` blijft 1: een bestaand boekje gaat verder bij de kapitein. |
 | Praten binnen | Het venster van de piraat (`web/js/pirate.js`) wordt één spreekvenster voor elke gever (`createQuestGiver`); de kamer-walk pauzeert zolang het open is; geen `faceUp` (dat is voor zee-figuren), de show draait de piraat zelf naar je toe. | Hergebruik in plaats van een tweede dialoogsysteem. |
 | Muziek | **Een shanty-loop** in `sound.js`, berekend zoals de rave (6/8, ~100 BPM, A-dorisch, 16 maten, onder de 20 s): binnen luid en open, op de kade gedempt door de muur; de bemanning knikt mee op de tel. | Zoals al het geluid hier: berekend, niet opgehaald, en pas gemaakt als hij voor het eerst nodig is. |
-| Exterieur | **Een hero-bake** (`assets/piratetavern/`, ≤ 4000 driehoeken, precedent het grote kasteel): een scheve tweelaagse vakwerk-haveninn met overstekende bovenverdieping, erker, boeg met kraakkop boven de deur, grote lantaarn, tonnen, meerpaal en een gebakken Jolly Roger. **Zonder `anchor.flag`.** | Op elke `anchors.flag` hangt main.js de districtsvlag; een piratenkroeg draagt zijn eigen vlag. |
+| Exterieur | ~~Een scheve vakwerk-haveninn van ≤ 4000 driehoeken.~~ **Render 17 letterlijk: een galjoen dat heel op een rots staat, met krakenarmen**, ~72k driehoeken, op een kavel van **5 x 3** (zie "Het exterieur"). **Zonder `anchor.flag`.** | Pleister is niet piraterig, en het interieur werd een kroeg uit scheepsdelen; op elke `anchors.flag` hangt main.js de districtsvlag, en een piratenkroeg draagt zijn eigen vlag. |
 | Ingang | Het E-bereik ligt op het kavelmidden (`r 2.6`), niet bij de deur. | `coastSite` legt de deurstap op het water; vanaf de kade naast het pand is het midden binnen bereik. |
 | Licht binnen | **Precies zeven point lights**, zoals de tavern. | Het aantal lichten zit in de shader-key van het gebouwmateriaal: zeven hergebruikt het al gecompileerde programma, elk ander aantal is een hapering in de deuropening. |
 
@@ -124,8 +124,9 @@ veraf dicht, maar de originele stand is goedgekeurd. Zie Risico's over de herkom
 
 Gebouwd op `claude/salty-kraken` (niet gepusht; mergen doet de keeper):
 
-- **Exterieur**: de hero-bake (`scripts/build-piratetavern.py`, 3838 van 4000 driehoeken met de arm van het bord),
-  zonder `anchor.flag`, met `anchor.sign` waar het schommelende uithangbord van `feat/piratesign` aan hangt.
+- **Exterieur**: het gestrande galjoen van render 17 (`scripts/build-piratetavern.py`, 71.615 driehoeken), zonder
+  `anchor.flag`, met `anchor.sign` op het achterkasteel waar het schommelende uithangbord van `feat/piratesign`
+  aan hangt. Op `claude/salty-kraken-exterieur`; wacht op het kavel van 5 x 3 (zie "Het exterieur").
 - **Kamer en bemanning**: `ROOMS.piratetavern` (`web/js/pirate-tavern.js`), zeven lampen, de bemanning zittend
   (`'sit'`, alleen tekenkant), Captain Spack Jarrow als opgehaald GLB (`web/js/captain.js`).
 - **Quests**: de drie hoofdstukken, herhaalbare quests parallel, één spreekvenster voor elke gever.
@@ -143,7 +144,8 @@ Open:
 2. **De plek op de piratenoever**: de quay-sessie richt `pirateTavernSite` daarop bij het mergen van
    `fix/quay-en-rivier`, met een regel die het kavel afleidt (het vrije waterfront-3x3 op de piratenoever met een
    weg, het dichtst bij de haven; op Hoogezand (136,282), dat de keeper goed vindt), geen vaste cel.
-3. Klein: de *Wellerman* is uit het hoofd uitgeschreven; een foute noot is een regel in `TUNES` (`web/js/sound.js`).
+3. **Het kavel van 5 x 3** voor het nieuwe exterieur, aan de serverkant (zie "Het exterieur", opdracht).
+4. Klein: de *Wellerman* is uit het hoofd uitgeschreven; een foute noot is een regel in `TUNES` (`web/js/sound.js`).
    De keeper vond de berekende muziek dof; wie eigen nummers heeft, zet ze in de map.
 
 ## Ontwerpvraag voor Fable: het interieur als bake (30 september 2026)
@@ -266,6 +268,30 @@ layout. De zaal zit op **391k van de 400k** driehoeken (`HERO_BUDGETS`); de gale
 kosten meer dan de huidige van de schil, dus bij het inbouwen moet er elders iets af (het touw van de luiktafels is
 2250 per tafel) of het budget omhoog, en de module is al 47 MB.
 
+**Licht** (30 september, naar het advies van de keeper: "donkere, filmische piratenkroeg bij nacht", niet feller
+maar in lagen). Het lichtplan staat in `LIGHTS` in de layout: warm en laag bij de sloepen, de haard (de sterkste,
+roodst, flikkert), de schedellamp en de kapitein; het paars van de nissen als brandpunt achterin; de maan hoog boven
+het atrium met een zachte afval (decay 1) plus een koele hemisphere als fill van boven; de hoeken buiten elk bereik.
+Bloom en god rays zitten in three.js, niet in de bake (`web/js/room-glow.js`): een halo rond elk gloeiend deel, uit
+de geometrie zelf gelezen, en bundels maanlicht onder de dakramen (`SKYLIGHTS`, `SHAFTS`). Additief en zonder eigen
+licht, dus het programma en de zeven lampen blijven zoals ze zijn. Echte bloom (UnrealBloomPass) zou postprocessing
+vendoren en een tweede renderpad naast het eiland vragen. Met de keeper live bijgesteld in de DevTools-Chrome.
+
+**Het haardvuur** (30 september, gevonden door de keeper in Tahsin Önemli's *Tarnished House*): geen twee kegels
+meer maar `web/js/hearth-fire.js` - een vlam die per pixel door ruis in een doos wordt geray-marcht, gloeiende
+sintels op de vuurbodem, vonken die de schoorsteen in gaan en twee halo's, allemaal additief en zonder eigen licht;
+de haardlamp (`hearth: true` in `LIGHTS`) flikkert mee op het ritme van het vuur. Maten in `HEARTH_FIRE`. Tarnished
+House is GPL-3.0, dus daar is niets uit overgenomen: de vlam is een port van het MIT-origineel waar die van hen op
+gebaseerd is (mattatz' THREE.Fire), met een eigen profiel - het MIT-plaatje is een traan op zijn punt en las in de
+haard als een zwevende bal - en een verschoven startpunt per pixel tegen de strepen van vaste stappen. Hun model
+(een Dark Souls-kampvuur, CC-BY maar het ontwerp van FromSoftware) komt niet in git.
+De vulling eronder is een kitstuk, `scripts/krakenkit/firebasket.py` (`civic_kraken_firebasket`, ~3100
+driehoeken): een smeedijzeren vuurkorf op vier palen met messing knoppen en gekrulde voeten, drie
+kruislings verkoolde eiken blokken met gloeiende haarscheurtjes, en as met snippers, houtskool en
+gloeiende kooltjes - naar de FLUX-referentie `refs/krakenkit/objecten/haard/haardvulling-flux-15-4palen-messing.png`
+(gekozen uit zestien, het hout op verzoek donkerder). De haardijzers en blokken in `dressing.py hearth()`
+zijn eruit.
+
 **De referenties van de tweede ronde** staan in `objecten/` onder hun eigen naam (`sloep-kroonluchter`, `boeg`,
 `galerijdek` met twee alternatieven, `loopplank`, `stuurwiel-kroon`, `roer`, `spant`, `luiktafel`, `touwbrug`,
 `ribben`). Nieuwe beelden maakt Claude voortaan zelf met FLUX op de 4090 (`/blenderai`, `python -m blendai imagine
@@ -322,6 +348,120 @@ met dikke druipers, goud als een laag op de vloer.
 occlusion uit Cycles). De Blender-previews tonen de plankstructuur van het eiland niet, dus het oordeel valt in
 het spel. Is het daar te kaal, dan is de volgende stap texturen (een GLB zoals de kapitein, met een eigen
 materiaal onder de zeven lampen) - meer werk en een risico op stijlbreuk met de rest van het eiland.
+
+## Het exterieur: een galjoen dat op een rots is gelopen (30 september 2026)
+
+**Status: gebouwd op `claude/salty-kraken-exterieur` (vanaf `claude/salty-kraken`), niet gemerged; wacht op het
+kavel van 5 x 3.** De vakwerkherberg paste niet meer bij het interieur (een kroeg uit scheepsdelen in een grot), en
+pleister vond de keeper niet piraterig. Gewerkt in poorten, met eerst renders en dan pas bouwen:
+
+1. **2D.** Referentiebladen uit Perchance (`/perchance`). De eerste ronde had drie gehelen en vier details. Daaruit
+   bleven de bolle hekgevel (08), de houten trap op de rots (12) en het kraaiennest als kamertje met ramen (14)
+   over. De tweede ronde bestond uit samenstellingen, en de keeper koos **17**: een heel schip op een rots, met de
+   lange flank naar het water en een trap langs de rots naar de deur bij de achtersteven.
+2. **Blokmodel** (`refs/krakenkit/exterieur/blok/`, grijze vormen naast een settler, de taverne en het echte bord).
+   Op 3 x 3 was het schip een speelgoedbootje, dus werd het kavel **5 x 3**. De trap van ~40° was te steil; eerst
+   werd het de houten trap van 12, daarna één vlucht strak langs de rots. Het bord kwam **op de flank**, niet op de
+   achtersteven. De keeper voegde **3° slagzij** toe.
+3. **Detail.** Een eigen ontwerp van 13k, een HD-versie van 56k, en daarna, omdat de keeper het beeld zelf wilde,
+   **17 letterlijk, met krakens**: 71.615 driehoeken. Het budget van 4000 liet de keeper los (*"ik wil een prachtig
+   gebouw"*).
+4. **Oordeel op `/demo`**: goedgekeurd (*"dit is hem"*).
+
+Wat het is, uit 17: een diepe, bolle romp op een rots van 0.7, masten tot ~5 hoog (twintig meter, zoals het beeld).
+De romp heeft 18 plankgangen per kant die elk een richel hoger staan dan de gang eronder, drie berghouten met bouten
+en opgelapte planken. Daarop:
+- de voormast midscheeps met een gebold onderzeil en een marszeil;
+- de achtermast op het achterkasteel met een vechtmars, een opgerold onderzeil en een groot marszeil;
+- bruine, gescheurde zeilen, en wanten met webbelingen;
+- de grote Jolly Roger aan een schuine stok bij de boeg en een zwaluwstaart op de voormast;
+- lantaarns onder de boegspriet, achter het schip en naast de deur;
+- een schoorbalk van de boeg naar de rots;
+- op het achterkasteel een koepeltje, een schuine spriet en twee zeeduivels;
+- de steile plankentrap naar een boogdeur met een schedel.
+
+Door de keeper toegevoegd: vier krakenarmen die uit de rots langs de romp klimmen en over de reling haken. Wat 17
+niet laat zien, is ingevuld: de landkant spiegelt de waterkant, en het touwwerk is dat van een echt schip.
+
+| Besluit | Waarom |
+|---|---|
+| Kavel **5 x 3** (5 langs het water) | Op 3 x 3 las het schip als een speelgoedbootje. Een schip diagonaal op het kavel of tot de kavelrand gaf maar +12 tot 27%. |
+| ~72k driehoeken, `HERO_BUDGETS.piratetavern` 95000 | Een gebouw heeft geen eigen textuur, alleen vertexkleur en zes gedeelde vellen. Wat 17 als naden en bouten toont, moet dus geometrie zijn. Het is één instantie in de batch: geen draw call, wel driehoeken. |
+| Bord op de voorste hoek van het achterkasteel, `PIRATE_SIGN_YAW` −90° | De arm staat naar het water en het bord is langs de kade te lezen. Verder naar achteren verstopte de zijgalerij het. Het bord hangt loodrecht: de slagzij geldt niet voor het bord. |
+| `anchor.door` op de grond aan de voet van de trap | Daar staat een settler om naar binnen te gaan, binnen het E-bereik vanuit het kavelmidden. De test houdt die plek vrij van solids. |
+| Geen porch (`NO_PORCH`) | De rots is de voet. Een stenen trede eromheen las als een sokkel onder een wrak. |
+| Trap, dek en masten zijn nog decor | Het dek ligt als echte vloer binnen de verschansing, zodat het later beloopbaar kan worden met de `build-shipwalk.mjs`-aanpak van het piratenschip. |
+
+Afgewezen:
+- **de rots of grot als silhouet**: de keeper wilde een huis van een kapot schip;
+- **een scheepshuis op palen** (refs 01 en 02): gaf de richting aan, maar was te veel huis;
+- **de naald met de kraken (21) en de dubbele naald (18)**: de voorkeur van de ontwerper, maar de keeper koos 17;
+- **het schip in twee helften (06)**: twee schepen op één kavel;
+- **het eigen ontwerp van 13k**: te kaal van dichtbij;
+- **de HD-versie van 56k**: niet letterlijk 17.
+
+De tussenversies staan in de sessie-scratchpad. Alle beelden staan in `refs/krakenkit/exterieur/` (buiten git,
+beelden van derden): `17-samen-heel-schip.jpg` is het richtpunt, en de renders staan in `blok/`, `detail/`, `hd/`
+en `letterlijk/`.
+
+**Opdracht voor de serverkant, vóór het mergen** (in `lib/layout.mjs`, de quay-sessie of een eigen sessie):
+- `lotOf('piratetavern')` → `{ w: 5, d: 3 }`, en `pirateTavernSite`/`coastSite` moeten dan een waterkant van 5 lang
+  vinden.
+- Het plot dat al staat (het live eiland heeft er een van 3 x 3): één keer laten groeien, zoals `growCastle` doet,
+  alleen over vrije cellen, en anders één keer verhuizen.
+- `chestSpots` rekent met `w`/`d` in plaats van 3.
+- Tests op een kopie van het live eiland.
+- Een nieuw formaat in `layout.json`, dus een **minor**. `parseBundle` accepteert tot 16, dus 5 x 3 geeft geen
+  probleem voor de zee.
+
+Tot dat er is, overlapt het schip op een kavel van 3 x 3 zijn buren. Op `/demo` doet het dat ook, omdat het
+werkblad uitgaat van kavels van 3.
+
+### Bijsturing na het eerste oordeel in het spel (1 oktober 2026)
+
+Op een kopie van Hoogezand vond de keeper het schip *"veel te klein"*. De trap kon je *"niet eens omhoog"*, en de
+kroeg stond tegen de stenen kade: *"een piraat hoort op het strand"*. Besluiten:
+
+| Besluit | Waarom |
+|---|---|
+| **2,5×**: het schip en de rots, op een kavel van **11 x 6** (vervangt het kavel van 5 x 3). De deur, de treden, de leuningen, de lantaarns bij de deur en het bord blijven op settler-maat | Een landmark van zo'n 50 m, op de schaal van de Batavia. Wat je aanraakt blijft even groot als jij. |
+| **Een beloopbare zigzagtrap**: een onderste trap van de voet (oost) naar een bordes (west), en een bovenste trap terug naar het stoepje bij de deur. Het gebouw geeft die als `surfaces` (vloeren en hellingen, zoals in de kamers) aan de walk van het eiland. De rots eronder wordt onder de treden afgevlakt | Walk mode kende buiten alleen celhoogtes. De kamers hebben al rechthoekige vloeren en hellingen, dus dat werkt ook op het eiland. |
+| **De muren van dit gebouw hebben een hoogte** (`y0`/`y1` per blok, door `blockersOf` meegegeven). De delen van de trap tellen niet als muur; onder het bordes en de bovenste trap staat een laag blok | Wie op de trap staat, loopt over de rots eronder. Wie eronder loopt, komt er niet doorheen. |
+| **E werkt bij de deur**, bovenaan de trap (`floor` op het doel) | Je gaat naar binnen door de trap op te lopen, niet vanaf het strand. |
+| **Op het strand, een blokje van de stenen kade af** (`pirateTavernSite` gebruikt `kadeSite` niet meer) | Een piratenkroeg hoort aan het zand, niet aan de kraan en het pakhuis. |
+| **Eénmalig verhuizen** op een eiland waar de kroeg al achter de kade staat | Een plot verhuist nooit vanzelf. Dit is een bewuste, eenmalige verhuizing, zoals die van de kist, gemeten op een kopie van het live eiland. Een nieuwe kavelmaat en een verhuizing: een **minor**. |
+
+**Kosten**: `web/js/piratetavern-mesh.js` is 11,7 MB (het oude exterieur was 0,5 MB, het piratenschip is 4,6 MB)
+en laadt mee bij het opstarten, ook in de APK. De precisie per set van de interieurbranch (`11f2248`, "Geef de
+exporter een precisie per set") kan dat flink kleiner maken, zodra die hier ligt.
+
+### Het kavel op het strand (1 oktober 2026)
+
+**Gebouwd op `claude/salty-kraken-kavel` (vanaf `claude/salty-kraken-exterieur` @456dc72).** Dit vervangt de "Opdracht voor
+de serverkant" hierboven: het kavel werd 11 x 6 in plaats van 5 x 3, en de kroeg die al staat verhuist in plaats van
+te groeien.
+
+| Besluit | Waarom |
+|---|---|
+| `PUB_LOT` = **11 x 6** in `lotOf` (`w` langs de voorkant van het model, `d` de diepte), `stamped` bij een oneven rot, zoals de schepen en de werf | Dat is waar het model voor gebakken is. `parseBundle` neemt tot 16, dus de zee heeft er geen last van. |
+| **`pirateTavernSite` zoekt zelf**, zonder `harbourSite`/`kadeSite`/`coastSite`: land of zand, niet op het dorpsplan, niet bij steigers en hellingen (`wf.near`), niet in de trechter of de ring eromheen (`havenKeys`), minstens `PUB_KADE_CLEAR` (4) cellen van de stenen kade | "Een piraat hoort op het strand" en "een blokje van de kade af". |
+| **De voorkant aan het water**: minstens 6 van de 11 kolommen zien water binnen 5 cellen, over open land (een weg mag, er mag niets staan); de trede van de trap op land | Eerst gevraagd: 8 kolommen binnen 4 cellen, alleen zand. Dat vond op de eilanden van 128 op één seed op zes een kavel: de kust is daar meestal gras tot één steile oevercel, en een strand van 11 lang is een bult in de kust. Op het live eiland loopt een weg over de hele piratenoever en mondt de rivier langs die oever uit in de trechter; allebei moesten meetellen, anders stond de kroeg bij de noordhaven, 220 cellen van de kade. |
+| **Reliëf tot 1,5**, en de pagina zet de rots op **het laagste punt van de voorkant** (`pirateTavernGround`, web/js/pirate-ground.js) | Zes diep vanaf de waterlijn loopt de grond vrijwel altijd meer dan 1 op. Zo komt de trap uit op het zand en loopt de achterkant van de rots de duin in; de rots is 1,75 hoog en de romp begint op 1,8. |
+| Rangorde: eerst hoe dicht het water is, dan hoeveel zand, dan pas de afstand tot de kadehaven | Op afstand gerangschikt stond hij in het gras, met de zee er schuin naast. |
+| **De deur is de voet van de trap** (`PUB_GATE` = `anchor.door`, op de voorrand van het kavel; `plotDoor`), en de weg is een strandpad daarheen | Een kolonist stapt daar naar binnen, en de rots staat in het midden van de voorkant. |
+| **Eénmalige verhuizing** van een kroeg op het oude 3 x 3-kavel (`!fitsLot`): bovenaan `placeAll` opgetild (naast de kist), opnieuw geplaatst, de oude weg weg, en als het snoeien iets afsneed nog één ronde in dezelfde scan. Past hij nergens, dan terug op zijn plek en volgende scan opnieuw. `layout.before-pub-<ts>.json` als backup | Een huis verhuist nooit vanzelf; dit is een bewuste migratie met `fitsLot` als poort, zodat de scan erna dezelfde bytes geeft. |
+| **Een groeiring voor de kroeg**, één per ring (`layout.pubRing`): past hij nergens op een eiland dat nog mag groeien, dan groeit het één ring | Op een eiland dat klein gesticht is (40 op 64) is bij 52 settlers elke kust van een gehucht; het oude 3 x 3 paste ertussen, 11 x 6 niet. Gemeten: zonder ring had 3 van de 6 seeds zelfs bij 80 settlers geen kroeg, met ring 8 van de 8 op de scan van 52. De teller zorgt dat een kroeg die een ring niet helpt, niet elke scan een ring kost. |
+| **Het uitzicht blijft water**: de strook vóór de kroeg (2 x `PUB_SHORE` diep, een cel breder) hoort bij `keptWater`, dus de polderladder graaft er niet | Gemeten op seed 2024: bij 175 settlers polderde de tweede polder de zee vóór de kroeg droog. Het strand werd weiland en het strandpad een weg op bouwgrond. Aan een haven had de kroeg die bescherming vanzelf. |
+| `chestSpots` rekent met `w`/`d`: op een 3 x 3 dezelfde cellen als altijd, op 11 x 6 achter de lange achterkant en naast de korte zijkanten | Een kist die al achter een 3 x 3 staat, blijft daar staan zolang de kroeg niet verhuist. |
+
+Gemeten op een kopie van `~/.promptholm` (zee `single`, `network.public` false, `PROMPTHOLM_HOME` op de kopie), met
+de oude en de nieuwe code direct na elkaar: de kroeg gaat van (171,309) 3 x 3 achter de kade naar **(148,253), rot 2**,
+op het strand aan de kop van de trechter bij de riviermonding, zo'n tien cellen van de kade; de kist gaat mee naar
+(153,252). Verder verschillen alleen de weg van de kroeg en `town.commons` (het kavel wordt dorpsgrond). De twee
+scans daarna zijn byte-identiek. Op de ladder van 128 (twaalf seeds) krijgt elk eiland een kavel.
+
+Een nieuwe kavelmaat in `layout.json`: een **minor**. Niet gebouwd: een test voor het terugzetten als er nergens
+strand is (op de ladder vindt elke seed een kavel, dus dat pad is alleen met de hand nagelopen).
 
 ## Fasen
 
