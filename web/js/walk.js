@@ -11,7 +11,7 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
-import { insideSolid, surfaceHeight, topOf, createSolidIndex } from './solids.js';
+import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
@@ -1142,6 +1142,10 @@ export function createWalkMode({
   // body and a rail together are 0.42 across. `hopping` asks as if in the air, which is how a parked
   // body on a route finds out that a jump would get it on (update below). And one you came down in
   // the middle of is one you walk out of, as out of a person: a jump that falls short lands astride it.
+  // And any other solid you already stand in is one you may walk out of, never further in
+  // (`leaving`, Plans/muren-met-hitboxes.md): a scan, an Apply or a guest island putting a building
+  // up round you, or a jump coming down on a crate's side, used to leave every step blocked and you
+  // stood in it until you left walk mode.
   function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -1156,8 +1160,13 @@ export function createWalkMode({
     if (wall != null && wall - from > STEP_UP) return true;
     const open = hopping && !placing;
     const astride = (b) => !placing && inside(b, state.pos.x, state.pos.z, BODY_R);
+    const leaving = (b) => {
+      if (placing) return false;
+      const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
+      return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
+    };
     if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
-      && !(b.hop && (open || astride(b))))) return true;
+      && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
     for (const b of state.peerBlockers) {

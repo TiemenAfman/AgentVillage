@@ -487,7 +487,7 @@ export function partAt(asset, name) {
 export const MINE_DATUM = 0.34;
 // The static shops of the town's plan (Plans/DONE/knus-dorpscentrum.md), each one baked asset
 // `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
-// part by part (APART) so the door can be reached between the crates on the pavement, and
+// face by face (wallsOf) so the door can be reached between the crates on the pavement, and
 // set on the tavern's step (porchOverhang). The bakery and the butcher's are
 // shops too, but they have a fire and a shopkeeper and cases of their own.
 export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
@@ -2243,8 +2243,131 @@ export function footprintOf(parts, clearance = WALK_CLEARANCE, { merge = true } 
   }));
 }
 
+// ---------------------------------------------------------------- walls as they stand
+// What walk mode walks into (Plans/muren-met-hitboxes.md). footprintOf() above takes one
+// rectangle per part, of every corner of it under head height, and glues those within a gap
+// of each other - and one Blender object is often a whole curtain wall or an open silo, whose
+// rectangle closes the courtyard it stands round: the great castle was one block over its
+// seven cells with a gate nobody could walk into (a body got 0.54 from the gate, 0.14 against
+// the stone), the gold pit a block where its mouth is open for the barrow, a yard of crates and
+// logs one block from the shed to the last log. So a wall is measured off its faces instead:
+// every triangle cut to the band a body stands in, the rectangle of what is left, and two of
+// those joined only where the one rectangle round them holds almost nothing the two did not
+// (WALK_TIGHT). No gluing across a gap is needed any more - walk.js grows every solid by a
+// body's radius, so a gap narrower than a body closes by itself - and nothing has to be kept
+// APART from its neighbours by name, which is the list that used to say which buildings the
+// gluing got wrong.
+//
+// The band starts a step up, not at the ground: what is lower than WALK_STEP is walked onto,
+// the way the porch (PORCH_RISE, 0.18) always has been. From the ground, a shop's own plinth and
+// the sill in front of its door closed the whole front of the library, the warehouse and the
+// sweet shop into one block.
+//
+// Each solid also says how high it stands (`y0`/`y1`, in the frame the parts were built in, so
+// before the porch lifts them): the top of the highest face that went into it, for a jump to
+// clear a crate or a barrel, and a bottom well under the porch's skirt, so nobody walks under a
+// house on the downhill side of its plot. main.js hands those on with the building's own height.
+export const WALK_STEP = 0.15;
+const WALK_TIGHT = 0.05;          // the most of a joined rectangle that may be empty ground
+const WALK_SLIVER = 0.03;         // how far over the step a face has to reach to be in the way
+
+// A triangle cut to y0..y1, as the rectangle round what is left of it and the top of the whole
+// triangle; null when none of it is in the band.
+function bandRect(ax, ay, az, bx, by, bz, cx, cy, cz, y0, y1, out) {
+  const hi = Math.max(ay, by, cy);
+  // A face that only just reaches over the step is still the step: the grocer's stall front tops
+  // out 3 mm over it, and its sliver of band was a wall across the walk up to the door.
+  if (hi < y0 + WALK_SLIVER || Math.min(ay, by, cy) > y1) return null;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const take = (x, z) => {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (z < z0) z0 = z;
+    if (z > z1) z1 = z;
+  };
+  // The corners inside the band, and where each edge crosses its two lines.
+  const P = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+  for (let i = 0; i < 3; i++) {
+    const [px, py, pz] = P[i], [qx, qy, qz] = P[(i + 1) % 3];
+    if (py >= y0 && py <= y1) take(px, pz);
+    for (const y of [y0, y1]) {
+      if ((py - y) * (qy - y) < 0) {
+        const t = (y - py) / (qy - py);
+        take(px + (qx - px) * t, pz + (qz - pz) * t);
+      }
+    }
+  }
+  if (!Number.isFinite(x0)) return null;
+  out.x0 = x0; out.x1 = x1; out.z0 = z0; out.z1 = z1; out.top = hi;
+  return out;
+}
+
+const rectArea = (r) => (r.x1 - r.x0) * (r.z1 - r.z0);
+const overlapOf = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0))
+  * Math.max(0, Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0));
+
+// Join rectangles while the one round two of them is no emptier than WALK_TIGHT. Biggest
+// first, so the small pieces of a wall are swallowed by its long faces rather than joined to
+// each other into strips first; a rectangle wholly inside another is simply dropped.
+function joinTight(rects) {
+  const list = rects.slice().sort((a, b) => rectArea(b) - rectArea(a));
+  const out = [];
+  for (const r of list) {
+    let cur = { ...r };
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < out.length; i++) {
+        const o = out[i];
+        const u = { x0: Math.min(cur.x0, o.x0), x1: Math.max(cur.x1, o.x1), z0: Math.min(cur.z0, o.z0), z1: Math.max(cur.z1, o.z1) };
+        const au = rectArea(u);
+        if (au - (rectArea(cur) + rectArea(o) - overlapOf(cur, o)) > WALK_TIGHT * au + 1e-5) continue;
+        u.top = Math.max(cur.top, o.top);
+        u.bottom = Math.min(cur.bottom, o.bottom);
+        cur = u;
+        out.splice(i, 1);
+        again = true;
+        break;
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+// The solid rectangles of a shape as walk mode meets them, in its own frame: centre, half
+// extents and the height it stands, `step` and `clearance` in the same frame as the parts.
+export function wallsOf(parts, clearance = WALK_CLEARANCE, step = WALK_STEP) {
+  const rects = [];
+  const tri = {};
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position, index = g.index;
+    const n = index ? index.count : p.count;
+    let bottom = Infinity;
+    for (let i = 0; i < p.count; i++) bottom = Math.min(bottom, p.getY(i));
+    const mine = [];
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i0 = index ? index.getX(t) : t, i1 = index ? index.getX(t + 1) : t + 1, i2 = index ? index.getX(t + 2) : t + 2;
+      const r = bandRect(p.getX(i0), p.getY(i0), p.getZ(i0), p.getX(i1), p.getY(i1), p.getZ(i1),
+        p.getX(i2), p.getY(i2), p.getZ(i2), step, clearance, tri);
+      if (r) mine.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, top: r.top, bottom });
+    }
+    // Within the part first: that is where almost every face lies against another.
+    rects.push(...joinTight(mine));
+  }
+  return joinTight(rects).map((r) => ({
+    x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2,
+    hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2,
+    y0: Math.min(r.bottom, -PORCH_SKIRT), y1: r.top,
+  }));
+}
+
 function scaleSolids(solids, s) {
-  return solids.map((r) => ({ x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s, ...(r.r ? { r: r.r * s } : {}) }));
+  return solids.map((r) => ({
+    x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s,
+    ...(r.r ? { r: r.r * s } : {}),
+    ...(r.y0 != null ? { y0: r.y0 * s, y1: r.y1 * s } : {}),
+  }));
 }
 
 // What is round is walked round, not into the corners of the square it fits in. A box
@@ -2257,22 +2380,15 @@ function scaleSolids(solids, s) {
 // foot) the corners of its box stood 0.3 off the stone on every diagonal - on a coast cell,
 // where the way round it is often the strip between the tower and the water.
 const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
-// And what stands in an L is walked round the L. The two trestle tables and their benches
-// overlap at one corner, so merging closes the empty corner of the L into one box - and on
-// the square that corner faces the fountain one cell away, diagonally, which with the
-// fountain's own solid left no way between them. Unmerged, a gap narrower than a body
-// still closes by itself: blocked() grows every rectangle by WALK_BODY_R.
-// The harbour's buildings for the shops' reason. Merged, the warehouse's crates and barrels closed
-// with its walls into one block reaching 1.22 out, past the door at 0.80, and the fisherman's boat,
-// rack and barrels made his whole yard one block to 0.97, with the hut's door at -0.22 inside it.
-// The shipyard is kept apart too, for its size: merged, the shed, the sheerlegs'
-// feet, the stacks and the slipway lie within a gap of each other and became one solid over the
-// whole sixteen-long lot, the strip along the ship to the water included. Apart, the slipway is
-// one solid (nobody walks the ways - they have no deck level), the ship's parts fall inside it,
-// and the shed, the logs, the planks and the hearth are each walked round.
-// The Salty Kraken for the warehouse's reason: merged, the barrels on one side of its door and the
-// crate and bollard on the other closed with the walls into one block across the walk up to it.
-const APART = new Set(['tables', 'shipyard', 'piratetavern', ...SHOPS, ...HARBOUR_HOUSES]);
+// Everything else is measured face by face (wallsOf), which is what the list that stood here -
+// the tables' L, the shops and harbour houses with crates by the door, the shipyard's sixteen
+// cells, the Salty Kraken's barrels - kept apart by name, one building the gluing got wrong at a
+// time. Measured that way, each of them is walked round as it stands without being named.
+// Bar one, which is the other way round: the shipyard's slipway is one solid as a whole part
+// (its ways have no deck level, and run out over the water), and the ship on it falls inside it.
+// Face by face, the ways were walked between. The shed, the stacks and the hearth are parts of
+// their own, each walked round.
+const BY_PART = new Set(['shipyard']);
 // The turn that brings the sign's arm (+x) to where the Salty Kraken's sign points: none. It stands
 // on its own post at the foot of the stair, the arm out east over the way up and the board facing
 // the water (+z), where the island's camera reads it (scripts/build-piratetavern.py).
@@ -2643,11 +2759,22 @@ export function buildBuilding(spec, ctx = {}) {
   // and before the porch, twice over. The porch is a step you walk onto rather than a
   // wall you walk into, and measuring the building where it stood before it was lifted
   // keeps every settler on the island walking the lines it already walks.
-  const wallRects = ownSolids || footprintOf(parts, WALK_CLEARANCE / s, { merge: !(spec.kind === 'civic' && APART.has(spec.civicType)) });
+  // What is round keeps the one rectangle of old, and becomes its circle below.
+  const round = spec.kind === 'civic' && ROUND.has(spec.civicType);
+  // A house on stilts keeps the one block of old, with no height to it: its walls start at
+  // HARBOUR_DECK, over head height from the ground it is measured from, so measured face by face
+  // only its piles and platform are in the band - and their top is the boardwalk's, so a body on
+  // the boardwalk would have walked over the platform and through the walls. Its deck is the quay
+  // work's (Plans/quay-op-zee.md); until that stands it on its own floor, it stays a wall.
+  const wallRects = ownSolids || (round || spec.harbour ? footprintOf(parts, WALK_CLEARANCE / s)
+    : BY_PART.has(spec.civicType) ? footprintOf(parts, WALK_CLEARANCE / s, { merge: false })
+      : wallsOf(parts, WALK_CLEARANCE / s, WALK_STEP / s));
   let deck = null;
   if (wantsPorch(spec)) {
     deck = porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
     height += PORCH_RISE;
+    // The walls were measured before the porch lifted them; their heights go up with them.
+    if (!ownSolids) for (const r of wallRects) if (r.y0 != null) { r.y0 += PORCH_RISE; r.y1 += PORCH_RISE; }
   }
   // And the yard last of all, which is the whole reason houseBody() handed it back rather
   // than putting it in itself: porch() lifts everything already in the loaf onto its step
@@ -2658,9 +2785,9 @@ export function buildBuilding(spec, ctx = {}) {
   // it can bump into, and the scaffold wants the walls - a builder's frame goes round the
   // house, not round the woodpile ten feet away.
   for (const g of yard) parts.push(g);
-  const yardRects = yard.length ? footprintOf(yard, WALK_CLEARANCE / s) : [];
+  const yardRects = yard.length ? wallsOf(yard, WALK_CLEARANCE / s, WALK_STEP / s) : [];
 
-  if (spec.kind === 'civic' && ROUND.has(spec.civicType)) {
+  if (round) {
     for (const r of wallRects) r.r = Math.max(r.hx, r.hz);
   }
   const geometry = merge(parts);
@@ -2671,6 +2798,9 @@ export function buildBuilding(spec, ctx = {}) {
     geometry.computeBoundingSphere();
     walls = scaleSolids(walls, s);
     solids = scaleSolids(solids, s);
+    // A small building's skirt is scaled with it, but the ground on a slope is not: the bottom
+    // of a solid stays as far down as a full-sized one's.
+    for (const r of solids) if (r.y0 != null) r.y0 = Math.min(r.y0, -PORCH_SKIRT);
   }
   if (boardish) {
     height *= s;

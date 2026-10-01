@@ -64,7 +64,7 @@ import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership, edgeKey } from './hamlets.js';
-import { porchFloor } from './solids.js';
+import { porchFloor, solidAt } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -780,23 +780,12 @@ function talkTo(id) {
 
 // --------------------------------------------------------------- walking
 // What walk mode cannot step through, for one thing standing in the world: its own solid
-// rectangles, turned with the house and moved onto it. Enclosing bounds also
-// cover the small free angles of residential buildings.
+// rectangles, moved onto it, turned with it rather than boxed (solids.js solidAt) and lifted with
+// it, so a solid's height (buildings.js wallsOf, the Salty Kraken's pirateSolids) is the world's.
 function blockersOf(rec) {
-  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-  return rec.built.solids.map((r) => ({
-    x: rec.group.position.x + r.x * c + r.z * s,
-    z: rec.group.position.z - r.x * s + r.z * c,
-    hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
-    hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
-    ...(r.r ? { r: r.r } : {}),       // a circle needs no turning
-    // A ship's side, which is also what a boat meets (buildings.js shipSolids, walk.js hulls).
-    ...(r.hull != null ? { hull: r.hull } : {}),
-    // A solid with a height (the Salty Kraken's: buildings.js pirateSolids) is a wall only to a
-    // body whose feet-to-head span meets it (walk.js atHeight), lifted with the building.
-    ...(r.y0 != null ? { y0: r.y0 + rec.group.position.y, y1: r.y1 + rec.group.position.y } : {}),
-    id: rec.id,
-  }));
+  const p = rec.group.position;
+  const where = { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y };
+  return rec.built.solids.map((r) => ({ ...solidAt(r, where), id: rec.id }));
 }
 
 // And the floors a building hands walk mode (the Salty Kraken's stair: buildings.js pirateSurfaces),

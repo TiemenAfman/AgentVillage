@@ -1534,6 +1534,16 @@ own, and `walkBodyTo` keeps `closedEdges()` (hamlets.js `edgeKey`) shut and rout
 middle (`ROUTE_SPOTS`). A building's porch is `floor: true` in the same list (`porchFloor`: only a top, never a
 wall; both courses, each grown by a body's radius because the upper one shows only 0.12 past the wall), and
 `built.porch` now comes back scaled for every building, houses included. The settlers and the sea read none of it.
+A building's own solids are measured face by face ([Plans/muren-met-hitboxes.md](Plans/muren-met-hitboxes.md)):
+`wallsOf` in buildings.js cuts every triangle to the band from `WALK_STEP` (0.15, lower is a step, like the porch)
+to `WALK_CLEARANCE` and joins two rectangles only where that holds at most `WALK_TIGHT` (5%) of empty ground - the
+old one-rectangle-per-part with gluing (`footprintOf`, still what `yardOn` places carts by, and what `ROUND`,
+houses on stilts and the shipyard's `BY_PART` keep) closed the great castle's gate and the gold pit's mouth. Each
+carries `y0`/`y1` in the building's frame; `solidAt` (solids.js) moves, turns (`yaw`) and lifts them - main.js
+`blockersOf` and guest-island.js both go through it - except a circle and a ship's `hull`, which stay boxes because
+boat.js `hullOver` reads only the world's axes. A body already inside a solid (a building put up round it) may
+step only the way out of it (`leaving` in walk.js `blocked`, `depthInSolid`); `tests/building-solids.test.mjs`
+holds every building against its own geometry.
 
 **A room can have storeys** ([Plans/verdiepingen-binnen.md](Plans/verdiepingen-binnen.md)): `def.surfaces`
 (interior.js -> `walk.setSurfaces`) are floors `{x0,x1,z0,z1,y}` and slopes `{...,y0,y1,axis}` as rectangles,

@@ -32,7 +32,7 @@ import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeExtras } from './record-extras.js';
 import { floatingPose } from './batavia.js';
 import { createRecordBatch, VERTICES_PER_BUILDING } from './record-batch.js';
-import { porchFloor } from './solids.js';
+import { porchFloor, solidAt } from './solids.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -271,18 +271,9 @@ export function createGuestIsland({
     const out = [];
     const [ox, oz] = region.origin;
     for (const rec of records) {
-      const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-      for (const r of rec.built.solids) {
-        out.push({
-          x: ox + rec.group.position.x + r.x * c + r.z * s,
-          z: oz + rec.group.position.z - r.x * s + r.z * c,
-          hx: Math.abs(r.hx * c) + Math.abs(r.hz * s),
-          hz: Math.abs(r.hx * s) + Math.abs(r.hz * c),
-          ...(r.r ? { r: r.r } : {}),
-          ...(r.hull != null ? { hull: r.hull } : {}),
-          id: `guest:${region.id}:${rec.id}`,
-        });
-      }
+      const p = rec.group.position;
+      const where = { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y };
+      for (const r of rec.built.solids) out.push({ ...solidAt(r, where), id: `guest:${region.id}:${rec.id}` });
     }
     // Their porches, as floors (solids.js porchFloor).
     for (const rec of records) {

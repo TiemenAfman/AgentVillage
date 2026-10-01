@@ -35,6 +35,15 @@ export function insideSolid(b, x, z, pad = 0) {
   return Math.abs(lx) < b.hx + pad && Math.abs(lz) < b.hz + pad;
 }
 
+// How far (x, z) is inside the solid grown by `pad`: the shortest way out, positive inside and
+// zero or less outside. walk.js lets a body that is already in one step only the way out of it
+// (Plans/muren-met-hitboxes.md): a building put up round you, or a ledge you came down on.
+export function depthInSolid(b, x, z, pad = 0) {
+  if (b.r) return b.r + pad - Math.hypot(x - b.x, z - b.z);
+  const [lx, lz] = local(b, x, z);
+  return Math.min(b.hx + pad - Math.abs(lx), b.hz + pad - Math.abs(lz));
+}
+
 // How high a surface is at (x, z), or null off it.
 export function surfaceHeight(s, x, z) {
   if (s.x0 != null) {
@@ -80,6 +89,27 @@ export function porchFloor(porch, { x, z, y, yaw = 0 }, pad = 0.16) {
   const out = [{ ...at, hx, hz, y1: y + porch.top }];
   if (porch.tread > 0 && porch.low != null) out.push({ ...at, hx: hx + porch.tread, hz: hz + porch.tread, y1: y + porch.low });
   return out;
+}
+
+// One of a building's own solids (buildings.js `built.solids`, in its frame) where the building
+// stands: moved, turned by its `yaw` (the group's rotation.y) and lifted to its `y`. Turned, not
+// boxed: the box round a house on one of the residential plots' free angles (9 to 25 degrees,
+// house-placement.js) reached 0.09 to 0.21 past each wall, and past the porch's step at the door
+// (Plans/muren-met-hitboxes.md). Main.js's blockersOf and guest-island.js both ask this.
+//
+// Two kinds keep the box: a circle needs no turn, and a ship's side (`hull`, buildings.js
+// shipSolids) is read by boat.js hullOver, which knows only rectangles along the world's axes and
+// is why her slabs are a unit long.
+export function solidAt(r, { x, z, y = 0, yaw = 0 }) {
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const at = { x: x + r.x * c + r.z * s, z: z - r.x * s + r.z * c };
+  if (r.r) return { ...at, r: r.r, ...(r.y0 != null ? { y0: r.y0 + y, y1: r.y1 + y } : {}) };
+  if (r.hull != null || !yaw) {
+    Object.assign(at, { hx: Math.abs(r.hx * c) + Math.abs(r.hz * s), hz: Math.abs(r.hx * s) + Math.abs(r.hz * c) });
+  } else Object.assign(at, { hx: r.hx, hz: r.hz, yaw });
+  if (r.hull != null) at.hull = r.hull;
+  if (r.y0 != null) { at.y0 = r.y0 + y; at.y1 = r.y1 + y; }
+  return at;
 }
 
 // The floor a solid with `top` is, in the surface form: the same shape at `y1`.

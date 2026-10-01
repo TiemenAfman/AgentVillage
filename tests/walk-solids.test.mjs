@@ -168,9 +168,9 @@ test('a house porch is a floor: the feet snap onto it at the door and off it aga
   assert.equal(floor.floor, true);
   assert.ok(low && Math.abs(low.y1 - base - 0.081) < 0.01, 'no lower course');
   assert.ok(Math.abs(floor.y1 - base - 0.18) < 0.01, `porch top ${floor.y1 - base}`);
-  // The walls turned the same way, as their own shape (`yaw`). blockersOf still hands the box round a
-  // turned wall, which stands further out than the porch on a house at this angle: the upper step is
-  // only reached once the walls session gives blockersOf `yaw` (Plans/hitboxes-en-looppaden.md).
+  // The walls turned the same way, as their own shape (`yaw`), which is what blockersOf hands walk mode
+  // (solids.js solidAt): the box round a turned wall stood further out than the porch on a house at
+  // this angle (Plans/muren-met-hitboxes.md, tests/building-blockers.test.mjs).
   const c = Math.cos(yaw), s = Math.sin(yaw);
   const walls = built.solids.map((r) => ({ x: r.x * c + r.z * s, z: -r.x * s + r.z * c, hx: r.hx, hz: r.hz, yaw }));
   // Out in front of the door (+z in the house's frame), walking back towards it.
