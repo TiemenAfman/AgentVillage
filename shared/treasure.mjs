@@ -187,10 +187,14 @@ export function bottleWashesUp(day, lastAtDays) {
 
 // Behind the pub, on its landward side, a corner you come upon rather than a signboard
 // (Plans/piratenkroeg.md, Plans/schatkaarten.md "Wacht op de nieuwe tavern"). The spots as
-// `[u, v]` from the middle of a three by three lot: `u` along the way it looks (negative is
-// behind it), `v` along its front. Best first: straight behind the middle, then behind either
-// side, then along the back half of the flanks, the back corners, and the flanks at the middle.
-// Never in front: at a pub on the water the front is the sea, and a door's step is a path's.
+// `[u, v]` in the lot's own frame: `u` along the way it looks - -2 the row just behind the lot,
+// -1 its back row, 0 its middle row - and `v` along its front - 0 its middle column, +-1 either
+// side of it, +-2 just beside the lot. On a three by three those are cells from its middle, as
+// they were when every pub was one; on the Salty Kraken's eleven by six (PUB_LOT in lib/layout.mjs)
+// "behind the middle" is behind the middle of its long back, and "the flank" is the short side.
+// Best first: straight behind the middle, then behind either side, then along the back half of
+// the flanks, the back corners, and the flanks at the middle. Never in front: at a pub on the
+// water the front is the sea, and a door's step is a path's.
 export const CHEST_SPOTS = [[-2, 0], [-2, 1], [-2, -1], [-1, 2], [-2, 2], [-1, -2], [-2, -2], [0, 2], [0, -2]];
 // Which way a lot looks at each `rot` - shared/settlerwalk.mjs DOOR_DIR, as data here so this
 // file imports no walk (tests/pirate-tavern-layout.test.mjs holds the two equal) - and which way
@@ -198,14 +202,28 @@ export const CHEST_SPOTS = [[-2, 0], [-2, 1], [-2, -1], [-1, 2], [-2, 2], [-1, -
 export const LOOK = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const ALONG = LOOK.map(([lx, lz]) => [-lz, lx]);
 
-// `{ cell, rot, keeper }` for every spot round the lot `p` ({ gx, gz, rot }), best first: the
-// chest's cell, the way it faces - away from the wall it stands against - and the cell in front
-// of it, where the pirate stands (lib/crowd.mjs puts a keeper one step along DOOR_DIR[rot]).
+// `{ cell, rot, keeper }` for every spot round the lot `p` ({ gx, gz, w, d, rot }, `w` along x
+// and `d` along z as it lies - a missing `w`/`d` is three), best first: the chest's cell, the way
+// it faces - away from the wall it stands against - and the cell in front of it, where the pirate
+// stands (lib/crowd.mjs puts a keeper one step along DOOR_DIR[rot]).
+//
+// Worked in doubled coordinates from the lot's middle, so an even side (the Kraken is six deep)
+// has a middle between two cells and still comes out on whole cells: the middle row is the one
+// at or behind the middle, never in front of it, and the middle column the one at or left of it.
 export function chestSpots(p) {
   const [lx, lz] = LOOK[p.rot], [ax, az] = ALONG[p.rot];
-  const mx = p.gx + 1, mz = p.gz + 1;
+  const w = p.w || 3, d = p.d || 3;
+  // Depth along the look and width along the front, whichever way the lot is turned.
+  const [deep, wide] = p.rot % 2 ? [w, d] : [d, w];
+  const mx2 = 2 * p.gx + w - 1, mz2 = 2 * p.gz + d - 1;
+  const mid = (n) => ((n - 1) >> 1);
+  // Row and column as doubled offsets from the middle: `u` -2 is the row outside the back (-1),
+  // -1 the back row (0), 0 the middle row; `v` +-2 outside the sides, +-1 either side of the middle.
+  const row = (u) => 2 * (u === -2 ? -1 : u === -1 ? 0 : mid(deep)) - (deep - 1);
+  const col = (v) => (v === 2 ? wide + 1 : v === -2 ? -(wide + 1) : 2 * (mid(wide) + v) - (wide - 1));
   return CHEST_SPOTS.map(([u, v]) => {
-    const cell = [mx + u * lx + v * ax, mz + u * lz + v * az];
+    const f = row(u), a = col(v);
+    const cell = [(mx2 + f * lx + a * ax) / 2, (mz2 + f * lz + a * az) / 2];
     const rot = u === -2 ? (p.rot + 2) % 4 : v > 0 ? (p.rot + 1) % 4 : (p.rot + 3) % 4;
     return { cell, rot, keeper: [cell[0] + LOOK[rot][0], cell[1] + LOOK[rot][1]] };
   });

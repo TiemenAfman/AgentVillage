@@ -152,7 +152,8 @@ open page refetches).
 **A house never moves by itself.** `data/layout.json` is append-only and is the only
 irreplaceable file under `data/`; `village.json` and `cache.json` rebuild themselves. The
 scanner never moves a plot - with two deliberate exceptions for the quay district's Cowork houses,
-`unsettleQuay` and the one move onto the resort on the sea (`moveToResort`, below); the keeper may, deliberately, through one door — `POST /api/plan`
+`unsettleQuay` and the one move onto the resort on the sea (`moveToResort`, below) - and the Salty Kraken's one move off
+the three by three it had before it was a galleon (`liftedPub`, below); the keeper may, deliberately, through one door — `POST /api/plan`
 (`lib/plan.mjs`, applied in the same slot in `scan.mjs` as `clearRoads`, under the scan
 queue), which moves **whole hamlets** (lobes, with every house, shed and the land itself, by
 a super-cell delta), gives a hamlet land or takes it away (`parcel`: `Super.eligible` for
@@ -1829,8 +1830,9 @@ tavern at rot 2), and follows the tavern like the postbox follows the hall (`mig
 keeper (`KEEPERS.pirate`) stands out in front of the chest with no `aside`: pushed sideways he lands
 in the corner cell of the seventieth settler's statue. The sea's starters carry the chest too
 (`starterBundle`, held to the town's rule by `tests/pirate.test.mjs`). **From 52 settlers the chest moves once,
-behind the Salty Kraken** (`PUB_ID`, below): onto the first of `chestSpots(pub)` (`shared/treasure.mjs`, `[u, v]` off
-the lot's middle, behind and beside, never in front; `LOOK` held equal to `DOOR_DIR`) whose cell is bare land or
+behind the Salty Kraken** (`PUB_ID`, below): onto the first of `chestSpots(pub)` (`shared/treasure.mjs`, `[u, v]` in
+the lot's own frame from its `w`/`d` - on a three by three the cells they always were, on the Kraken's eleven by six
+behind its long back and beside its short sides - never in front; `LOOK` held equal to `DOOR_DIR`) whose cell is bare land or
 paving on no road, doorstep or plot, with the keeper's cell in front of it dry ground and never a pier. It is
 *lifted* at the top of `placeAll`, before the plot replay, whenever the pub is earned and not yet standing or
 stands with the chest elsewhere, so the cell it leaves is bare this very scan; `placeChest` runs at the chest
@@ -1870,18 +1872,34 @@ its current step. Known gap: once the statue stands in the town, a second browse
 ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__state` on window.
 
 **The Salty Kraken is a pub at the water, a third room, and the crew that tells the rest of the story**
-([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), a three by three
-in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` but not `QUAYSIDE`: its lot comes from **one function,
-`pirateTavernSite`**, which today only calls `harbourSite` and which the quay work (`fix/quay-en-rivier`)
-retargets to the pirate bank of the haven funnel - never change `harbourSite` for it, and hold no test to a
-distance from one harbour. A new civic plot, so a minor. Outside it is render 17 built literally: a galleon
+([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), on **`PUB_LOT`,
+eleven by six** (`lotOf`; `w` across the model's front, `d` its depth, swapped by `stamped` at an odd rot, like the
+ships and the yard), in `AT_THE_WATER`, `FACES_WATER` and `CLAIMS_LAND` (all its cells, `claimCellsForTown`) but not
+`QUAYSIDE`: its lot comes from **one function, `pirateTavernSite`**, and never from `harbourSite`/`kadeSite`/
+`coastSite` - "a pirate belongs on the beach": land or sand, off every harbour's planks and slipway (`wf.near`),
+the funnel and its ring (`havenKeys`) and `PUB_KADE_CLEAR` cells off the stone quay, at least `PUB_FRONT_MIN` of
+its eleven front columns seeing water within `PUB_SHORE` over open land (a road may run there, nothing may
+stand), relief at most `PUB_RELIEF` 1.5, the stair's step on land, nearest the water first, then the most sand,
+then the kadehaven's shore; a road to the stair's foot on the same scan (`civicRoad`'s strandpad). On an island
+founded small every coast is a hamlet's by rung 52, so a pub with no lot on an island that can still grow grows it
+**one ring** (`layout.pubRing` = the ring count after it, so it asks again only once houses grew the island further;
+measured, eight of eight small-founded seeds then have it on the scan that earns it), and the strip it looks out
+over is `keptWater` (`pubView`), or the polder ladder drains its sea (seed 2024, 175 settlers). Its door is
+**`PUB_GATE`**, the baked `anchor.door` on the lot's front edge (`plotDoor` -> `lotGate`, the yard's gate
+generalised), not the middle of the front. The page stands it on the **lowest ground of its front edge**
+(`pirateTavernGround`, web/js/pirate-ground.js, main.js and guest-island.js), so the stair meets the beach and
+the back of the rock runs into the dune. A pub still on the three by three it had before (`!fitsLot`) is
+**lifted once** at the top of `placeAll` (`liftedPub`, beside the chest's lift) and placed by the loop, its old
+road dropped and a pass re-run if pruning cut anything (`pubMoved`); with no lot it is put back where it stood
+(`putBackAt`, the chest too) and asked again next scan; scan.mjs keeps `layout.before-pub-<ts>.json`
+(`backUpBeforePub`). Measured on a copy of Hoogezand: from behind the quay to the beach at the funnel's head,
+(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor. Outside it is render 17 built literally: a galleon
 standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~80k
 triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
 texture of its own; the mesh module is ~10 MB). The ship is modelled at 1x and scaled `SCALE` 2.5 at the end of
 the script; the stair, door, lanterns and sign are placed after that at a settler's scale. It is made for an
-**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`) that the server does not give
-it yet - on today's 3 x 3 it overlaps its neighbours, so the lot comes first ([Plans/piratenkroeg.md](Plans/piratenkroeg.md),
-"Bijsturing"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
+**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
+([Plans/piratenkroeg.md](Plans/piratenkroeg.md), "Bijsturing" and "Het kavel op het strand"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
 Rogers - and no porch (`NO_PORCH`: the rock is its footing). **Its zigzag stair is walked**: the bake names every
 floor as an `anchor.deck.<name>.lo|hi` and every ramp as an `anchor.stair.<name>.lo|hi` corner pair, the ship's
 vocabulary (`pirateSurfaces` in buildings.js -> the build's

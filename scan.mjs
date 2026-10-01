@@ -130,6 +130,25 @@ export function backUpBeforeResort(file, hadResort, layout, now = new Date()) {
   }
 }
 
+// The layout as it stood before the Salty Kraken moved off the three by three it was placed on
+// before it was a galleon (lib/layout.mjs `liftedPub`, Plans/piratenkroeg.md): the one scan that
+// moves a standing building on purpose, like the resort's, keeps the file it moved it from.
+// `before` is the pub's plot as JSON before the scan, or 'null'. Only when a pub stood and now
+// stands somewhere else, or on another lot - never for a pub placed for the first time.
+export function backUpBeforePub(file, before, layout, now = new Date()) {
+  const after = JSON.stringify((layout.plots && layout.plots['civic:piratetavern']) ?? null);
+  if (before === 'null' || after === 'null' || before === after) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    const d = new Date(now), p = (n) => String(n).padStart(2, '0');
+    const name = `layout.before-pub-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+    const to = path.join(path.dirname(file), name);
+    if (!fs.existsSync(to)) fs.copyFileSync(file, to);
+  } catch (err) {
+    console.warn(`[scan] could not keep the layout before the pirate tavern moved: ${err.message}`);
+  }
+}
+
 async function runScan(o) {
   const t0 = Date.now();
   ensureData();
@@ -187,6 +206,7 @@ async function runScan(o) {
   let size = layout.size;
   const worksBefore = { works: JSON.stringify(layout.works ?? null), hash: layout.terrainHash };
   const hadResort = !!layout.resort;
+  const pubBefore = JSON.stringify((layout.plots && layout.plots['civic:piratetavern']) ?? null);
   // `layout.ladder` is the other: the most settlers the village has ever had at once, which
   // the model counts its milestones in (Plans/DONE/tenten-vertrekken.md). Read on every survey
   // rather than captured once, so a plan's re-survey sees the one written back below.
@@ -293,6 +313,7 @@ async function runScan(o) {
   if (o.persistLayout) {
     backUpBeforeWorks(files.layout, worksBefore, layout);
     backUpBeforeResort(files.layout, hadResort, layout);
+    backUpBeforePub(files.layout, pubBefore, layout);
     saveLayout(files.layout, layout);
   }
 
