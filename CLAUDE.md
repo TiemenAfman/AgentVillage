@@ -1524,8 +1524,15 @@ close Settings.
 which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet) - a stair is drawn as treads
 and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
-floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
-`levels` (`tests/walk-surfaces.test.mjs`).
+floor that hangs over you or it (`tests/walk-surfaces.test.mjs`). The island hands surfaces over too, for
+the planks a cell cannot say (main.js `handOutDecks`, every region's, moved to its origin): a pier's ramp and
+the wings of its head (`pierSurfaces` beside `buildPierGeometry`, sharing `pierFrame`) and the quay's finger
+jetties and its coping (`kadeSurfaces` beside `buildQuayKade`) - drawn, and until then stood beside in the
+water or in the stone. The wall itself is a wall to a body more than `STEP_UP` below its top (`blocked` asks
+`kadeAt`): `groundAt` reads the top absolutely and put a swimmer at the face on the quay in one frame. Those
+carry `lid`, which `ceilingAt` reads (a room's floors do not); a boat's ground (`boatGround`) leaves every
+surface out. The sea keeps to cell `levels`. A new plank drawn over water gets its floor from the same
+module that draws it, and `tests/walk-planks.test.mjs` compares the triangles with what the feet stand on.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries

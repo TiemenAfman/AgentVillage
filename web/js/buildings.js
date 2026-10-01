@@ -2699,9 +2699,10 @@ const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside 
 // wide. Mooring posts stand outside the walkway, in pairs down the run and at the four
 // corners of the head. They carry nothing; they are what a dock is recognised by from the
 // air, where the deck is one line on the water and the posts are the row of marks along it.
-export function buildPierGeometry(cells, terrain, from) {
-  if (!cells || !cells.length) return null;
-  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+// Which way a pier runs, which way is across it, and whether it ends in the wide head: the three
+// decisions buildPierGeometry lays the dock set out by, kept in one place because pierSurfaces
+// has to make them the same way - the planks you see and the planks you stand on.
+function pierFrame(cells, terrain, from) {
   const n = cells.length;
   // Which way the run goes, as a unit step over the cell grid. A pier is a straight line
   // out from one shore cell along one of the four axes, so the first two cells say it -
@@ -2715,10 +2716,20 @@ export function buildPierGeometry(cells, terrain, from) {
     const [dx, dz] = [x - from[0], z - from[1]];
     step = Math.abs(dx) > Math.abs(dz) ? [Math.sign(dx) || 1, 0] : [0, Math.sign(dz) || 1];
   }
+  const across = [step[1], -step[0]];
+  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
+    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
+  return { step, across, head: wide(cells[n - 1]) };
+}
+
+export function buildPierGeometry(cells, terrain, from) {
+  if (!cells || !cells.length) return null;
+  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+  const n = cells.length;
+  const { step, across, head } = pierFrame(cells, terrain, from);
   // The set is modelled running along +z, like the fence and the bridge, so one rotation
   // turns the whole pier to face whichever way the sea is.
   const ry = Math.atan2(step[0], step[1]);
-  const across = [step[1], -step[0]];
   const lift = QUAY_DECK - DOCK_DECK;
 
   const parts = [];
@@ -2739,9 +2750,6 @@ export function buildPierGeometry(cells, terrain, from) {
   // and the beach it leaves from is the cell behind the first of them.
   put('prop_dock_ramp', [cells[0][0] - step[0], cells[0][1] - step[1]]);
 
-  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
-    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
-  const head = wide(cells[n - 1]);
   for (let i = 0; i < n; i++) {
     const last = i === n - 1;
     // Alternating bays, because four copies of one bay along a run is a corrugation. Off
@@ -2757,6 +2765,58 @@ export function buildPierGeometry(cells, terrain, from) {
     } else if (last || i % 2 === 0) posts(cells[i], last ? 0.3 : 0);
   }
   return parts.length ? merge(parts) : null;
+}
+
+// The parts of a pier that walk mode's cells cannot say (web/js/walk.js `surfaces`), as rectangles
+// in the terrain's own frame: the ramp on the shore cell, which climbs from the sand to the deck -
+// the cell under it is the beach, so the feet stood in the ramp and the step off the pier onto it
+// was the whole 0.4 - and the wide head, whose wings reach 0.3 into the water cells either side,
+// where the feet went through the planks into the sea. The decking itself is a whole cell of
+// `levels` already (main.js handOutDecks), and stays so: that is also what a swimmer under it
+// bumps their head on. Measured off the dock set, so a rebake moves the feet with the planks.
+let dockTread = null;
+function dockTreads() {
+  if (dockTread) return dockTread;
+  const lift = QUAY_DECK - DOCK_DECK;
+  const extent = (asset) => {
+    let x = 0, foot = -Infinity, top = -Infinity;
+    for (const name of models.assetParts(asset)) {
+      const p = models.part(name);
+      for (let i = 0; i < p.positions.length; i += 3) {
+        const vx = p.positions[i] + p.at[0], vy = p.positions[i + 1] + p.at[1] + lift, vz = p.positions[i + 2] + p.at[2];
+        x = Math.max(x, Math.abs(vx));
+        // The ramp's two ends, landward (-z) and at the pier (+z): the highest board in the
+        // outer tenth of each, which the walk then joins with a straight slope.
+        if (vz < -0.4) foot = Math.max(foot, vy);
+        if (vz > 0.4) top = Math.max(top, vy);
+      }
+    }
+    return { half: x, foot, top };
+  };
+  dockTread = { ramp: extent('prop_dock_ramp'), head: extent('prop_dock_head') };
+  return dockTread;
+}
+
+export function pierSurfaces(cells, terrain, from) {
+  if (!cells || !cells.length || !models.hasAsset('prop_dock_ramp')) return [];
+  const { step, across, head } = pierFrame(cells, terrain, from);
+  const { ramp, head: wings } = dockTreads();
+  const n = cells.length;
+  // A rectangle round a cell's middle, `along` half its length down the run and `side` half its
+  // width across it, turned onto the grid (a pier only ever runs along an axis).
+  const rect = (cell, side, y) => {
+    const [x, z] = terrain.cellWorld(cell[0], cell[1]);
+    const hx = step[0] ? 0.5 : side, hz = step[0] ? side : 0.5;
+    return { x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz, ...y };
+  };
+  const out = [];
+  // The ramp rises towards the sea, which is `step`: from x0/z0 when the run goes the + way.
+  const up = step[0] + step[1] > 0;
+  out.push(rect([cells[0][0] - step[0], cells[0][1] - step[1]], ramp.half, {
+    y0: up ? ramp.foot : ramp.top, y1: up ? ramp.top : ramp.foot, axis: step[0] ? 'x' : 'z',
+  }));
+  if (head) out.push(rect(cells[n - 1], wings.half, { y: QUAY_DECK }));
+  return out;
 }
 
 // What a pier was before there was a model of one, kept for a checkout where the set has
