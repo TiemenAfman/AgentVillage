@@ -244,8 +244,10 @@ test('a swimmer under a finger meets it as a lid, and does not climb out onto it
   const z = fg.along - kt.half + 0.5;
   const x = fg.cells[1][0] - kt.half + 0.5;
   const walk = walkOn({
+    // a cell past the finger's tip: two back is under its last plank, and walk mode puts a body
+    // that starts there on the topmost floor it is under (enter, judged from groundAt)
     height: kadeGround, levelKey: () => null, regionAt: () => kadeRegion, surfaces: kadePlanks.map((s) => ({ ...s, lid: true })),
-    at: [x - 2, z], facing: [x + 10, z],
+    at: [x - 3, z], facing: [x + 10, z],
   });
   for (let i = 0; i < 30; i++) walk.update(FRAME);
   assert.equal(walk.state.swimming, true, 'not in the water beside the finger');
