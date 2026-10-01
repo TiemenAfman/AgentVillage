@@ -1535,6 +1535,11 @@ Salty Kraken's stair, `surfacesOf` in main.js); the sea keeps to cell `levels` (
 **A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
 `STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
 stairs, slopes and kerbs stay a walk.
+A jump rises 0.38 and in the air `blocked` asks the rising feet, so a blocker whose top is under that is
+cleared and the body comes down on the floor *inside* it: in a room nothing standing on a floor ends
+below floor + `BODY` (`upTo` in pirate-tavern.js). A gap in a wall blocker is open to the roof, so an
+opening under a storey (the Kraken's cellar arch) needs the wall over it as a blocker of its own.
+`tests/room-walls-walk.test.mjs` walks every room's walls with the real walk mode.
 
 **A bridge is walked as its drawn planks, not per cell** (`walk.setDecks`, `tests/bridge-walk.test.mjs`):
 a cell's one height (the middle of its slope) made an arch a staircase whose treads stood up to 0.2 over or
