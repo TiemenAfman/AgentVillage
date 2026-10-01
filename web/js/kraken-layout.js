@@ -123,7 +123,10 @@ export const JETTY = { x0: 6.0, x1: 7.6, z0: 4.2, z1: 4.6, y: G };
 export const CELLAR_BARS = { z: -8.1, x0: -7.0, x1: -5.5 };
 
 // The hearth in the west rock and the fire in it; the basket that holds the fire is KIT.firebasket.
-export const HEARTH = { x: -8.75, z: 4.4 };                  // in the west rock, on the ground
+// `face` and `half` are where its jambs stand as shell.py hearth() lays them: their fronts out to x +
+// 0.35 (and up to 0.025 of jitter), 0.42 of opening and 0.34 of jamb each side of z (and the odd
+// courses' 0.015) - the blocker in pirate-tavern.js, which was a third short at each end.
+export const HEARTH = { x: -8.75, z: 4.4, face: 0.375, half: 0.775 };   // in the west rock, on the ground
 // The fire in it (hearth-fire.js) over the fire basket (KIT.firebasket, scripts/krakenkit/firebasket.py):
 // `y` is the top of the basket's ash, where the embers lie, and the flame starts `lift` over that,
 // among the logs. 0.5 across so it stays inside the opening (0.42 either side) and 0.78 high: its tips
@@ -136,7 +139,10 @@ export const KIT = {
   stern: { x: 0, z: -6.85, y: B },                            // the back bar against the rock
   counter: { x: 0, z: -5.9, y: B },
   stools: { x0: -1.45, step: 0.725, n: 5, z: -5.45, y: B },
-  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P },   // its yard along z, up into the ridge
+  // Its yard along z, up into the ridge. `nestR` is the crow's nest's round rail (mast.py NEST_R), `foot`
+  // the half extents of what stands round its foot on the pit: the staved plinth across, and along the
+  // yard the feet of the two ladders up to the nest (mast.py ladders(), 0.46 out, 0.06 each side).
+  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P, nestR: 0.65, foot: { hx: 0.3, hz: 0.5 } },
   gunports: [{ x: -4.2 }, { x: -2.4 }, { x: 2.4 }],           // in the south wall, sill at F + 0.62
   jukebox: { x: -1.5, z: HALL.z1 - 0.13, y: G, ry: Math.PI },
   // The broken bow jutting out of the north gable over the bar (scripts/krakenkit/bow.py: 1.4 deep,

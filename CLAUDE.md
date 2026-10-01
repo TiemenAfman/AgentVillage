@@ -1526,6 +1526,11 @@ and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose s
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
 floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
 `levels` (`tests/walk-surfaces.test.mjs`).
+A jump rises 0.38 and in the air `blocked` asks the rising feet, so a blocker whose top is under that is
+cleared and the body comes down on the floor *inside* it: in a room nothing standing on a floor ends
+below floor + `BODY` (`upTo` in pirate-tavern.js). A gap in a wall blocker is open to the roof, so an
+opening under a storey (the Kraken's cellar arch) needs the wall over it as a blocker of its own.
+`tests/room-walls-walk.test.mjs` walks every room's walls with the real walk mode.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
