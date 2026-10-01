@@ -63,7 +63,8 @@ import { createNet } from './net.js';
 import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
-import { decodeOwnership } from './hamlets.js';
+import { decodeOwnership, edgeKey } from './hamlets.js';
+import { porchFloor } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -859,6 +860,9 @@ function parkOnSquare() {
 // stretch to the point itself unless that is inside something (a door's step is not).
 // False, and a word, when there is no way there - the sea, another island, a walled yard.
 const FENCE_STEPS = 12;
+// Where in a cell a route may pass when its middle is taken: the middle first, then a third of a
+// cell off it each way.
+const ROUTE_SPOTS = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3], [0.3, 0.3], [-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3]];
 const DECK_STEP = 0.44;          // just under walk.js's STEP_UP (0.45)
 // Every cell of road, as `gx + gz * size`, for a route to prefer: the layout's paths, the town's
 // paving, every hamlet's own and the bridges built by hand. Worked out again only when the
@@ -894,14 +898,24 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || (!t.isLand(to[0], to[1]) && !onDeck(to[0], to[1]))) return say();
   // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
   // on a grown island, and A* looks at a few hundred.
+  // A cell whose middle is taken - a trunk, a boulder, a gatepost (world.js solids) - is still a
+  // way through when a body fits somewhere else in it, and the route then goes by that spot (`spot`)
+  // rather than the middle.
   const memo = new Map();
+  const spot = new Map();
   const blocked = { has(k) {
     let v = memo.get(k);
     if (v === undefined) {
       if (deck && deck.has(k)) v = false;
       else {
         const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
-        v = w.blockedAt(cx, cz);
+        v = true;
+        for (const [ox, oz] of ROUTE_SPOTS) {
+          if (w.blockedAt(cx + ox, cz + oz)) continue;
+          v = false;
+          if (ox || oz) spot.set(k, [cx + ox, cz + oz]);
+          break;
+        }
       }
       memo.set(k, v);
     }
@@ -922,10 +936,16 @@ function walkBodyTo(x, z, { exact = true } = {}) {
   // at its ends and walked along, never boarded from the side.
   const surface = (k) => (deck && deck.has(k) ? deck.get(k)
     : t.worldHeight(...t.cellWorld(k % t.size, (k - (k % t.size)) / t.size)));
-  const step = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  const deckStep = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
+  // A hedge or a wall between two cells is no way through, only its gate is (hamlets.js
+  // buildBorders `closed`). A rail is: the body jumps it (walk.js, a parked body on a route).
+  const closed = state.world && state.world.closedEdges ? state.world.closedEdges() : null;
+  const step = closed && closed.size
+    ? (a, b) => !closed.has(edgeKey(a, b)) && (!deckStep || deckStep(a, b))
+    : deckStep;
   const path = findPath(t, from, to, blocked, { open: deck, prefer: roads, crossing, step });
   if (!path) return say();
-  const pts = path.slice(1);
+  const pts = path.slice(1).map(([px, pz]) => spot.get(Math.floor(px + half) + Math.floor(pz + half) * t.size) || [px, pz]);
   if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
   if (!pts.length) pts.push(path[0]);
   return w.goTo(pts);
@@ -953,6 +973,15 @@ function walkToBuilding(id) {
   } else walkBodyTo(p.x, p.z, { exact: false });
 }
 
+// The step a building stands on, as a floor for the feet (solids.js porchFloor): 0.18 over the plot's
+// middle, which without it the walker stood sunk into.
+function porchOf(rec) {
+  const porch = rec.built && rec.built.porch;
+  if (!porch) return [];
+  const p = rec.group.position;
+  return porchFloor(porch, { x: p.x, z: p.z, y: p.y, yaw: rec.group.rotation.y }).map((f) => ({ ...f, id: rec.id }));
+}
+
 function walkableBlockers() {
   // Whoever is handed the walls is handed the floors that go with them (surfacesOf): the two
   // come from the same records and change together.
@@ -960,7 +989,7 @@ function walkableBlockers() {
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
-    out.push(...blockersOf(rec));
+    out.push(...blockersOf(rec), ...porchOf(rec));
   }
   // The flower bed in the middle of the square has a stone kerb, so you walk round it the
   // way you will walk round the fountain that replaces it. It is not a building and is not
@@ -973,6 +1002,11 @@ function walkableBlockers() {
   for (const g of state.guests) out.push(...g.blockers());
   // A palm on an islet: its trunk, not the crown (web/js/islets.js).
   if (state.islets) out.push(...state.islets.blockers());
+  // And what a neighbour put down by hand, in the world where their island lies.
+  for (const g of state.guests) if (g.props) out.push(...g.props.blockers(g.region.origin));
+  // Our wood, our stones and the boundaries round every hamlet, yard and field (world.js solids,
+  // Plans/hitboxes-en-looppaden.md). Home hangs in the scene on its own coordinates, so no origin.
+  if (state.world && state.world.solids) out.push(...state.world.solids());
   return out;
 }
 

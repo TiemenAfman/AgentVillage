@@ -1195,6 +1195,7 @@ export function createLandscape({
   }
 
   const orchard = orchardTrees(fieldPlan, terrain);
+  let solidsNow = null;              // walk mode's copy of the wood, the stones and the boundaries: solids()
   const ORCHARD_CAP = 1500;
   const pineMesh = new THREE.InstancedMesh(pine.geo, pine.mats, Math.max(1, pines.length));
   const oakMesh = new THREE.InstancedMesh(oak.geo, oak.mats, Math.max(1, oaks.length));
@@ -1229,8 +1230,11 @@ export function createLandscape({
   }
 
   // Planted rather than scattered: a grid, one size, barely any rotation.
+  let orchardNow = [];
   function placeOrchard(list, seasonName) {
     orchardMesh.count = Math.min(ORCHARD_CAP, list.length);
+    orchardNow = list.slice(0, orchardMesh.count);
+    solidsNow = null;
     const autumn = seasonName === 'autumn';
     for (let i = 0; i < orchardMesh.count; i++) {
       const [x, z, sc] = list[i];
@@ -1537,6 +1541,7 @@ export function createLandscape({
 
   // ---- boundaries and fields -----------------------------------------------
   let borderMesh = null, fieldMesh = null;
+  let borderSolids = [], borderClosed = new Set();
   let dressed = village;               // the village the boundaries were last drawn for
   let bridgeRoads = new Set();         // cells of hand-built bridges and their banks, as `gx + gz * size`
   const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
@@ -1554,7 +1559,11 @@ export function createLandscape({
     // (a prop, so not in the village's paths) is a road for that: without it the fence ran
     // straight across the bridge's foot.
     const gates = bridgeRoads.size ? new Set([...roads, ...bridgeRoads]) : roads;
-    const bg = buildBorders(v, terrain, own.owner, gates, fieldPlan);
+    const walls = {};
+    const bg = buildBorders(v, terrain, own.owner, gates, fieldPlan, walls);
+    borderSolids = walls.solids || [];
+    borderClosed = walls.closed || new Set();
+    solidsNow = null;
     if (bg) {
       // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
       // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
@@ -1619,6 +1628,7 @@ export function createLandscape({
       for (const it of list) {
         if (it.felled) continue;
         it.felled = true;
+        solidsNow = null;
         out.push([it.x, it.z]);
         if (animate) falling.push({ it, t: 0 });
         else {
@@ -1673,6 +1683,7 @@ export function createLandscape({
   // air when the water returns.
   function reshape(next) {
     terrain = next;
+    solidsNow = null;                 // the stones' tops stand on the ground
     const pa = geo.attributes.position;
     for (let k = 0; k < N * N; k++) pa.array[k * 3 + 1] = terrain.H[k];
     pa.needsUpdate = true;
@@ -1744,8 +1755,36 @@ export function createLandscape({
     buildHamletDressing(dressed, currentSeason);
   }
 
+  // What walk mode meets of all this (Plans/hitboxes-en-looppaden.md), in the island's own frame:
+  // a trunk where a tree stands (measured off the bake: an oak's foot is 0.08 across its middle and
+  // its crown starts at 0.38, a pine's lowest cone reaches out 0.4 from 0.28 up, both under a
+  // settler's head), a stone where a boulder lies with its top to stand on, and the boundaries as
+  // hamlets.js buildBorders hands them. Bushes and grass are walked through, as they always were.
+  // Worked out when asked and kept until a tree falls, the orchard is replanted or the boundaries
+  // are drawn again; the order of `rng` is not touched - this only reads what was placed.
+  function solids() {
+    if (solidsNow) return solidsNow;
+    const out = [];
+    for (const it of trees) {
+      if (it.felled) continue;
+      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s });
+    }
+    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc });
+    // flora_rock_a: 0.27 out at its foot and 0.35 high, stood in the ground by 0.04 and stretched
+    // upright by the fourth number on a volcano's crags.
+    for (const [x, z, sc, up] of rocks) {
+      const g = terrain.worldHeight(x, z) - 0.04;
+      out.push({ x, z, r: 0.27 * sc, y0: g - 0.2, y1: g + 0.35 * sc * (up || 1), top: true });
+    }
+    for (const b of borderSolids) out.push(b);
+    solidsNow = out;
+    return out;
+  }
+
   return {
-    group, ground, update, reshape, fellTrees, dispose, workSites,
+    group, ground, update, reshape, fellTrees, dispose, workSites, solids,
+    // The cell pairs a boundary closes to a route that cannot jump it (hamlets.js edgeKey).
+    closedEdges: () => borderClosed,
     triangles: p / 3 + (volcanoDressing ? volcanoDressing.triangles : 0),
     // The flora stream, handed out rather than kept, and this is load-bearing. The clouds
     // and the fireflies in createWorld have always drawn from it *after* the forest had
@@ -2959,7 +2998,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     setSeaHome: (origin) => { seaHome[0] = origin ? origin[0] : 0; seaHome[1] = origin ? origin[1] : 0; },
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
-    fellTrees: land.fellTrees, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
+    fellTrees: land.fellTrees, solids: land.solids, closedEdges: land.closedEdges, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages, setBridgeRoads: land.setBridgeRoads,
     ownership: land.ownership, season: land.season,
     followShadow, setShadowDistance, setFar, setCloudReach, recentre, reshapeWater, setWaterFocus, state, reshape,

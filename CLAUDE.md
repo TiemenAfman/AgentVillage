@@ -1520,6 +1520,21 @@ pad's name (`padName`), the labels follow its family (`padLabel`: ✕ ◯ □ �
 capture holds the pad away from the rest of the page (`suspendPad`) so that pressing B does not also
 close Settings.
 
+**Outside, what you bump into is a shape, looked up through an index** ([Plans/hitboxes-en-looppaden.md](Plans/hitboxes-en-looppaden.md)).
+`web/js/solids.js` (pure) is the one reading: a blocker is a circle (`r`), a rectangle, or a rectangle turned by
+`yaw` (the group's rotation.y - never the box round it); `createSolidIndex` files them in 2 x 2 buckets and
+walk.js asks only those (Hoogezand: ~32k blockers, 2.5 us a `blocked()`), so adding solids costs nothing per
+frame. `top: true` with `y0`/`y1` makes `y1` a floor as well (a crate, a boulder), walked onto up to
+`STEP_ONTO` (0.2) and jumped onto above; `hop: true` is a wall on the ground and open in the air (a rail: by
+height alone a walker never clears one), walked out of when landed astride, and jumped by a parked body on a
+route. The sources: `blockersOf` (buildings), `propSolids` (props.js - `propFootprint` is only the ghost's
+"does it fit"), `createLandscape().solids()` (trunks, orchard, boulders with a top, and `buildBorders(…, out)`'s
+boundaries: one thin rectangle a straight run, a hop below `HOP_H` 0.4, gateposts as circles) and the guests'
+own, and `walkBodyTo` keeps `closedEdges()` (hamlets.js `edgeKey`) shut and routes round a trunk in a cell's
+middle (`ROUTE_SPOTS`). A building's porch is `floor: true` in the same list (`porchFloor`: only a top, never a
+wall; both courses, each grown by a body's radius because the upper one shows only 0.12 past the wall), and
+`built.porch` now comes back scaled for every building, houses included. The settlers and the sea read none of it.
+
 **A room can have storeys** ([Plans/verdiepingen-binnen.md](Plans/verdiepingen-binnen.md)): `def.surfaces`
 (interior.js -> `walk.setSurfaces`) are floors `{x0,x1,z0,z1,y}` and slopes `{...,y0,y1,axis}` as rectangles,
 which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet). A slope with `steps: n` is

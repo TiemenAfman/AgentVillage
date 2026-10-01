@@ -492,6 +492,65 @@ export function propFootprint(p) {
   return out;
 }
 
+// What walk mode bumps into and stands on, per shape (Plans/hitboxes-en-looppaden.md): the real
+// shape in the prop's own frame at scale 1, measured off propGeometry (everything below a settler's
+// head), rather than propFootprint's square of `r` - which made a bench a 0.9 square round a 1.3 by
+// 0.42 seat, a well the box round a round stone, and a tree a 0.84 square round a 0.26 trunk.
+// `h` is how high it stands; `top` makes that height a floor as well, which a jump (0.38) reaches
+// on a crate, a barrel or a woodpile and not on a bench or a rock - they are only floors to somebody
+// already up there. Bushes, bridges and docks are left out: a bush is walked through like the
+// forest's, a bridge is a deck (deckCellsOf), and the docks belong to the quays' own walking.
+const PROP_SOLIDS = {
+  tree: () => [{ x: 0, z: 0, r: 0.15 }],
+  // The lowest cone hangs down to 0.35, under a settler's head, all the way out to 0.46.
+  pine: () => [{ x: 0, z: 0, r: 0.3 }],
+  // Three stones, each its own height: the two small ones are a jump up, and from them the big one.
+  rock: () => [
+    { x: 0, z: 0, r: 0.34, h: 0.54, top: true },
+    { x: 0.26, z: 0.1, r: 0.2, h: 0.31, top: true },
+    { x: -0.18, z: -0.14, r: 0.15, h: 0.28, top: true },
+  ],
+  cairn: () => [{ x: 0, z: 0, r: 0.26 }, { x: 0.3, z: 0, r: 0.04 }],
+  bench: () => [{ x: 0, z: 0, hx: 0.65, hz: 0.22, h: 0.41, top: true }],
+  barrel: () => [{ x: 0, z: 0, r: 0.12, h: 0.3, top: true }],
+  crate: () => [{ x: 0, z: 0, hx: 0.14, hz: 0.14, h: 0.23, top: true }],
+  woodpile: () => [{ x: 0, z: 0, hx: 0.22, hz: 0.14, h: 0.33, top: true }],
+  cart: () => [{ x: 0, z: 0.11, hx: 0.16, hz: 0.32, h: 0.27, top: true }],
+  tent: () => [{ x: 0, z: 0, hx: 0.39, hz: 0.5 }],
+  // Its line hangs at 0.45, under a settler's head, so the whole run between the posts blocks.
+  washline: () => [{ x: 0, z: 0, hx: 0.11, hz: 0.42 }],
+  lamp: () => [{ x: 0, z: 0, r: 0.15 }],
+  signpost: () => [{ x: 0, z: 0, r: 0.07 }],
+  well: () => [{ x: 0, z: 0, r: 0.62 }],
+  statue: () => [{ x: 0, z: 0, hx: 0.45, hz: 0.45 }],
+  campfire: () => [{ x: 0, z: 0, r: 0.44 }],
+  flag: () => [{ x: 0, z: 0, r: 0.2 }],
+  fence: (p) => [{ x: 0, z: 0, hx: 0.05, hz: Math.max(1, p.length || 4) / 2 + 0.05 }],
+  // The board runs along the prop's x and hangs from 0.55, over a settler's head: only its two posts
+  // are in the way. (propFootprint's line of squares runs along z, across the board.)
+  panel: (p) => {
+    const post = Math.max(0.1, panelFace(p).w / 2 - 0.12);
+    return [{ x: -post, z: 0, hx: 0.06, hz: 0.06 }, { x: post, z: 0, hx: 0.06, hz: 0.06 }];
+  },
+};
+
+// The solids of one prop, in the world: turned by its rot (the mesh's rotation.y, so `yaw`), scaled,
+// and with a height over `base` - where the prop stands, propLift - when it has one.
+export function propSolids(p, base = 0) {
+  const make = PROP_SOLIDS[p.kind] || (SHAPES[p.kind] ? null : PROP_SOLIDS.cairn);
+  if (!make) return [];
+  const k = p.scale || 1, yaw = p.rot || 0;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  return make(p).map((f) => {
+    const out = { x: p.x + (f.x * c + f.z * s) * k, z: p.z + (-f.x * s + f.z * c) * k };
+    if (f.r) out.r = f.r * k;
+    else { out.hx = f.hx * k; out.hz = f.hz * k; if (yaw) out.yaw = yaw; }
+    if (f.h != null) { out.y0 = base - 0.1; out.y1 = base + f.h * k; }
+    if (f.top) out.top = true;
+    return out;
+  });
+}
+
 // How far from its middle the thing reaches - for "am I standing in it" and for deciding
 // what a demolish cursor is pointing at. The floor keeps a lamp post from being a target
 // you have to hit dead centre.
@@ -689,15 +748,13 @@ export function createProps({ scene, terrain, material }) {
     }
   }
 
-  // What the walker cannot step into, in the shape walk mode reads: axis aligned
-  // rectangles, like the solids of a building. A round shape becomes a square of its own
-  // radius, which at the size of a tree is a difference nobody walks into. A fence is a
-  // line rather than a blob, so it gets one small square per post instead of a single
-  // one swallowing the field.
-  function blockers() {
+  // What the walker cannot step into, and can climb onto: propSolids, standing where the mesh
+  // stands. `origin` moves them into the world for a guest island, whose props hang in an offset
+  // group (guest-island.js) while walk mode reads world coordinates.
+  function blockers([ox, oz] = [0, 0]) {
     const out = [];
     for (const rec of records.values()) {
-      for (const b of propFootprint(rec.spec)) out.push({ ...b, id: rec.spec.id });
+      for (const b of propSolids(rec.spec, rec.mesh.position.y)) out.push({ ...b, x: b.x + ox, z: b.z + oz, id: rec.spec.id });
     }
     return out;
   }

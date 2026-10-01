@@ -11,6 +11,7 @@ import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
+import { insideSolid, surfaceHeight, topOf, createSolidIndex } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
@@ -871,8 +872,15 @@ export function createWalkMode({
   // (quay-basin.js kadeSurfaces) - which it drew and walk mode stood in the water beside. Those
   // carry `lid`: a floor over the water is also what a swimmer under it hits their head on, as
   // a cell of `levels` is (ceilingAt). A room's floors do not, which is how rooms always were.
+  // Outside, the tops of the solids that have one join them (`top`: a crate, a boulder - web/js/solids.js),
+  // and the whole lot is looked up through an index rather than scanned (Plans/hitboxes-en-looppaden.md).
   let surfaces = [];
+  let tops = [];
+  let surfaceIndex = createSolidIndex();
+  const indexSurfaces = () => { surfaceIndex = createSolidIndex(surfaces.concat(tops)); };
   function surfaceY(s, x, z) {
+    // a solid's top (solids.js topOf: round, or turned by `yaw`) has no corners of its own
+    if (s.x0 == null) return surfaceHeight(s, x, z);
     if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return null;
     if (s.y != null) return s.y;
     const t = s.axis === 'x' ? (x - s.x0) / (s.x1 - s.x0) : (z - s.z0) / (s.z1 - s.z0);
@@ -1015,10 +1023,12 @@ export function createWalkMode({
     const wall = kadeAt(x, z);
     let best = wall != null ? wall : heightUnder(x, z);
     const reach = from + STEP_UP;
-    if (withSurfaces) for (const s of surfaces) {
+    surfaceIndex.some(x, z, 0, (s) => {
+      if (!withSurfaces && s.lid) return false;
       const y = surfaceY(s, x, z);
       if (y != null && y <= reach && y > best) best = y;
-    }
+      return false;
+    });
     for (const d of decks) {
       const y = deckY(d, x, z);
       if (y != null && y <= reach && y > best) best = y;
@@ -1089,21 +1099,22 @@ export function createWalkMode({
   // peer only blocks a step that brings you closer. Placing somebody (`placing`: stepping
   // onto the square, ashore) is still strict - the whole point there is to find a free spot.
   // One solid, grown by a body's radius: a circle for what is round (`r`, see ROUND in
-  // buildings.js), the rectangle for everything else.
-  function inside(b, x, z, pad) {
-    // A blocker with a height (`y0`..`y1`, a room's upper floor: Plans/verdiepingen-binnen.md) is a
-    // wall only to a body whose feet-to-head span meets it - the table below does not close the
-    // gallery over it. `blocked` asks that (`atHeight`, which knows the feet); without the two
-    // it is a wall at every height, as every blocker always was.
-    if (b.r) {
-      const dx = x - b.x, dz = z - b.z, reach = b.r + pad;
-      return dx * dx + dz * dz < reach * reach;
-    }
-    return Math.abs(x - b.x) < b.hx + pad && Math.abs(z - b.z) < b.hz + pad;
-  }
+  // buildings.js), a rectangle - turned by its `yaw` if it has one - for everything else
+  // (web/js/solids.js insideSolid).
+  // A blocker with a height (`y0`..`y1`, a room's upper floor: Plans/verdiepingen-binnen.md) is a
+  // wall only to a body whose feet-to-head span meets it - the table below does not close the
+  // gallery over it. `blocked` asks that (`atHeight`, which knows the feet); without the two
+  // it is a wall at every height, as every blocker always was.
+  const inside = insideSolid;
 
   const BODY_H = 0.45;
-  const atHeight = (b, feet) => b.y0 == null || (feet < b.y1 && feet + BODY_H > b.y0);
+  // How high a solid's `top` may be over your feet and still be walked onto: a porch's step (0.18) or
+  // a flat stone, not a crate or a bench - those take a jump (JUMP_V reaches 0.38). Not STEP_UP, which
+  // is how far a *floor* is followed up (a bridge's deck over its bank) and would climb you onto every
+  // bench you walked past.
+  const STEP_ONTO = 0.2;
+  const atHeight = (b, feet) => b.y0 == null || (feet < b.y1 && feet + BODY_H > b.y0
+    && !(b.top && b.y1 - feet <= STEP_ONTO));
 
   // The blockers that are a ship's side (a Batavia at anchor: buildings.js shipSolids) are
   // kept apart as well, for the boats. Feet and swimmers meet every blocker as a wall at any
@@ -1111,15 +1122,27 @@ export function createWalkMode({
   // roads is not in the ground - so the ground a boat is handed is the terrain and the levels
   // with her sides stood up out of the water on top (boat.js hullOver).
   let hulls = [];
+  let blockerIndex = createSolidIndex();
+  // A `floor` in the list (a building's porch: solids.js porchFloor) is only its top: stood on, never
+  // bumped into.
   function takeBlockers(list) {
     state.blockers = list || [];
     hulls = state.blockers.filter((b) => b.hull != null);
+    blockerIndex = createSolidIndex(state.blockers.filter((b) => !b.floor));
+    tops = state.blockers.filter((b) => (b.top || b.floor) && b.y1 != null).map(topOf);
+    indexSurfaces();
   }
   // Without the island's surfaces: a hull has always met a pier as its cells, and the head's wings
   // reach out towards the berths either side of it - a boat lying there must not find itself aground.
   const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity, false));
 
-  function blocked(x, z, from = state.pos.y, placing = false) {
+  // A blocker with `hop` is a low boundary - a rail, a paling fence (hamlets.js borderSolids) - that a
+  // jump takes you over: in the air it is open, on the ground a wall. By height alone it could not be
+  // done: at a walk a jump carries you 0.3 and stays over a rail's top for a fifth of that, and a
+  // body and a rail together are 0.42 across. `hopping` asks as if in the air, which is how a parked
+  // body on a route finds out that a jump would get it on (update below). And one you came down in
+  // the middle of is one you walk out of, as out of a person: a jump that falls short lands astride it.
+  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
@@ -1131,7 +1154,10 @@ export function createWalkMode({
     // and from the quay itself it is a step, as before.
     const wall = kadeAt(x, z);
     if (wall != null && wall - from > STEP_UP) return true;
-    for (const b of state.blockers) if (inside(b, x, z, BODY_R) && atHeight(b, from)) return true;
+    const open = hopping && !placing;
+    const astride = (b) => !placing && inside(b, state.pos.x, state.pos.z, BODY_R);
+    if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
+      && !(b.hop && (open || astride(b))))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
     for (const b of state.peerBlockers) {
@@ -1652,9 +1678,12 @@ export function createWalkMode({
   // keys, the lock, the camera, the bike, a lounge) goes, but the figure stays drawn and
   // update() keeps stepping it - asleep, or walking a route given from above. `at` puts it
   // somewhere first: the islander's start (main.js parkOnSquare) has never walked yet.
-  function park({ at = null, facing = null } = {}) {
+  function park({ at = null, facing = null, blockers = null } = {}) {
     exit();
     state.dancing = false;
+    // main.js hands the island's solids with every park. They were dropped here, so a body parked
+    // at boot walked its routes - and its route search, blockedAt - through every house on the island.
+    if (blockers) takeBlockers(blockers);
     if (at) {
       let [x, z] = at;
       for (let i = 0; i < 40 && blocked(x, z, undefined, true); i++) { x += 0.4; z += 0.25; }
@@ -1995,6 +2024,10 @@ export function createWalkMode({
       else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
       state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
       frameDistance = Math.hypot(state.pos.x-beforeX, state.pos.z-beforeZ);
+      // A parked body walking its route into a rail jumps it, as you would: held up (sliding along
+      // it is not getting on), and the step open to somebody in the air.
+      if (state.route && state.grounded && frameDistance < speed * 0.5 && blocked(nx, nz)
+        && !blocked(nx, nz, undefined, false, true)) jump();
       if (!state.swimming) { state.moving = frameDistance > 1e-6; state.running = run && state.moving; }
       state.bob += frameDistance * Math.PI * 2 / (run ? .40 : .29);
     } else {
@@ -2333,15 +2366,14 @@ export function createWalkMode({
   // What stands above the terrain, per cell, lowest first. main.js merges the layout's
   // bridges with the ones somebody built before handing it over.
   function setLevels(map) { levels = map || new Map(); }
-  function setSurfaces(list) { surfaces = list || []; }
+  function setSurfaces(list) { surfaces = list || []; indexSurfaces(); }
   function setDecks(list) { takeDecks(list); }
 
   // Is there room here for something wider than a person? Walk mode already knows what
   // cannot be walked through, so "can a vegetable bed go where I am standing" is that
   // same question asked with a bed's radius instead of a settler's.
   function roomFor(x, z, r) {
-    for (const b of state.blockers) if (inside(b, x, z, r)) return false;
-    return true;
+    return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
   return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,

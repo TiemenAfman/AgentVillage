@@ -2539,7 +2539,8 @@ function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREA
   const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
   // What it comes to, for whatever has to stand on it and walk off it: the upper course's
   // outline and its height (web/js/goldrun.js walks the goldsmith off his).
-  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE };
+  // `tread` and `low`: how much further the lower course reaches, and its top (walk mode stands on both).
+  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE, tread, low: PORCH_RISE * 0.45 };
   if (earthen) {
     // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
     // plateau to the actual tent, while keeping the top exactly under the groundsheet.
@@ -2685,7 +2686,9 @@ export function buildBuilding(spec, ctx = {}) {
     ...(floats ? { floats } : {}),
     // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
     ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),
-    ...(deck && s === 1 ? { porch: deck } : {}),
+    // Scaled with the rest: every house is 0.96 to 1.04 of itself, and a porch handed back only at
+    // s === 1 was a porch no house had, so walk mode could not stand anybody on one (main.js porchOf).
+    ...(deck ? { porch: s === 1 ? deck : Object.fromEntries(Object.entries(deck).map(([k, v]) => [k, v * s])) } : {}),
     ...(ctx.keepParts ? { parts, scale: s } : {}),
   };
 }

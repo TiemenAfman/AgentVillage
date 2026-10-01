@@ -35,6 +35,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [hitboxes-en-looppaden.md](hitboxes-en-looppaden.md) — buiten wordt walk mode preciezer: gedraaide en
+  ronde vormen, dingen met een bovenkant om op te stappen of te springen (kei, krat, ton), een zoekrooster,
+  en als bron de props, het bos en de keien, en de grenzen van wijkjes (rails spring je over, heggen en muren
+  alleen door de poort). En je staat op de stoep van een gebouw. Gebouwd op 1 oktober 2026. Muren van gebouwen,
+  trappen en steigers zijn van andere sessies.
 
 - 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
   wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als

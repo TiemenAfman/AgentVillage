@@ -54,7 +54,8 @@ test('a guest island with no town and no landing raises its guardhouse without c
   const pos = g.records[0].group.position;
   const h = region.terrain.half;
   assert.ok(Math.abs(pos.x - (gx + 1.5 - h)) < 0.8 && Math.abs(pos.z - (gz + 1.5 - h)) < 0.8);
-  const solid = g.blockers();
+  // Its boulders are solid too (world.js solids, under the one id `land`); the buildings' are the guardhouse's.
+  const solid = g.blockers().filter((b) => b.id !== `guest:${region.id}:land`);
   assert.ok(solid.length > 0);
   assert.ok(solid.every((b) => b.id === `guest:${region.id}:civic:guardhouse`));
   assert.ok(Math.abs(solid[0].x - (-144 + pos.x)) < 2, 'the blocker was not moved to the berth');
