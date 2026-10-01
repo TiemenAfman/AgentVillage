@@ -72,6 +72,31 @@ const MARK_AT = { seated: 0.8, captain: 0.95 };
 // towards its vault - the soft light in the niche the keeper asked for, not a lit panel - and a
 // window's night, or the sea through the arch, at a steady 0.45.
 const NICHE = /niche glow/, PANE = / pane /;
+// How many treads the bake gives a stair: `n = max(3, round(rise / .1))` in
+// scripts/krakenroom/shell.py stair(), every tread's top on the slope at its own middle - so walk
+// mode stands you on those (a surface's `steps`) instead of on the slope between them, which put the
+// feet half a riser into the front of each tread. tests/stair-walk.test.mjs holds the two sums together.
+export const treadsOf = (s) => Math.max(3, Math.round(Math.abs(s.y1 - s.y0) / 0.1));
+// What walk mode walls a way up with (walk.js stairWall), as the bake builds it: a stair is solid to
+// the floor under it - a block of timber under every tread - except the one over the hold
+// (`solid = s['id'] != 'bar-captain'` in shell.py stair()), and railed on its open sides
+// (shell.py open_sides(): not against the hall's wall, nor beside a floor as high as its top, which
+// rails the stairwell itself); a gangplank and a ship's ladder carry a handrail down both sides.
+// Without them you walked off the side of every flight to the floor, and in under its treads.
+export function stairWalls(s) {
+  const [c0, c1] = s.axis === 'z' ? ['x0', 'x1'] : ['z0', 'z1'];
+  if (s.kind !== 'stair') return { rails: [c0, c1] };
+  const hi = Math.max(s.y0, s.y1);
+  const open = (side) => {
+    const c = s[side];
+    if (s.axis === 'z' && (Math.abs(c - HALL.x0) < 0.06 || Math.abs(c - HALL.x1) < 0.06)) return false;
+    if (s.axis === 'x' && (Math.abs(c - HALL.z0) < 0.06 || Math.abs(c - HALL.z1) < 0.06)) return false;
+    const mx = (s.x0 + s.x1) / 2;
+    return !(s.axis === 'x' && K.FLOORS.some((f) => f.y >= hi - 0.01 && f.x0 <= mx && mx <= f.x1
+      && (Math.abs(f.z1 - c) < 0.02 || Math.abs(f.z0 - c) < 0.02)));
+  };
+  return { solid: s.id !== 'bar-captain', rails: [c0, c1].filter(open) };
+}
 function place(out, asset, { x = 0, y = 0, z = 0, ry = 0 } = {}, keep = () => true) {
   const at = { x, y, z, ry };
   out.push(...meshAsset(asset, 0xffffff, { ...at, skip: (n) => !keep(n) || NICHE.test(n) || PANE.test(n) }));
@@ -261,7 +286,10 @@ export function buildPirateTavern({ FLOOR, rect }) {
     // The hearth burns the ray-marched fire (hearth-fire.js), not the tavern's two cones.
     flame: { at: [K.HEARTH_FIRE.x, K.HEARTH_FIRE.y, K.HEARTH_FIRE.z], lift: K.HEARTH_FIRE.lift, w: K.HEARTH_FIRE.w, h: K.HEARTH_FIRE.h, bed: [...K.HEARTH_FIRE.bed] },
     // The storeys and their stairs, as walk mode's surfaces (Plans/verdiepingen-binnen.md).
-    surfaces: [...K.FLOORS, ...K.STAIRS],
+    // A stair (not a gangplank or a ladder, whose planks and rungs lie on the slope) is stood on
+    // tread by tread, as the bake draws it (treadsOf), and every way up is walled where it is drawn
+    // so (stairWalls).
+    surfaces: [...K.FLOORS, ...K.STAIRS.map((s) => ({ ...s, ...(s.kind === 'stair' ? { steps: treadsOf(s) } : {}), ...stairWalls(s) }))],
     ceiling: K.CEILING,
     // The camera's rooms. The cellar carries its own low ceiling: from in there the lid comes off
     // as soon as the camera has to go above 1.2, not the hall's.

@@ -311,6 +311,7 @@ test('out of the water the mouse still looks far up: the sky belongs to a walker
 test('walk.js lifts the aim only upwards, and never in first person', () => {
   const src = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
   assert.match(src, /const lift = !fp \? Math\.max\(0, camY - cy\) : 0;/);
-  assert.match(src, /camera\.lookAt\(state\.pos\.x, state\.pos\.y \+ aim \+ lift, state\.pos\.z\)/);
+  // (camStep: the eased share of a stair tread the feet just took, tests/stair-walk.test.mjs)
+  assert.match(src, /camera\.lookAt\(state\.pos\.x, state\.pos\.y \+ camStep \+ aim \+ lift, state\.pos\.z\)/);
   assert.match(src, /const SWIM_PITCH_MIN = -1\.1;/);
 });

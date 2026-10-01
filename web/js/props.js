@@ -553,6 +553,51 @@ export function deckCellsOf(specs, terrain) {
   return out;
 }
 
+// The same bridges as walk mode stands on them (walk.js `setDecks`): the deck's own shape, along
+// its own turned axis, instead of a height per cell. Per cell the arch bridge was a staircase of
+// steps up to 0.41 high, the middle of each cell's slope: half a cell either way the drawn planks
+// stood 0.2 over the feet or under them, so a walker climbed through the boards and came down
+// floating over them, and every step down past walk.js STEP_DOWN was a fall. And the deck was
+// every cell it touched, wider than the planks, out past the rails. `deckCellsOf` stays what the
+// settlers stand on and what the router reads; this is for the feet alone.
+//   o, d    where the run starts and its direction (unit), in the world
+//   w       half the deck's width; `rail` the rails' height over it, along both edges
+//   stops   [t, y] along the run: the deck is straight between two
+//   open    [t0, t1], the arch's opening: under it the soffit, `soffit` under the deck, is a
+//           ceiling; outside it the abutments' stone is solid up to the soffit
+export function deckShapesOf(specs, terrain) {
+  const out = [];
+  for (const p of specs) {
+    const arch = p.kind === 'archbridge';
+    if (p.kind !== 'bridge' && !arch) continue;
+    const scale = p.scale || 1;
+    const len = (arch ? archLen(p) : Math.max(2, p.length || 6)) * scale;
+    const half = len / 2;
+    const s = Math.sin(p.rot || 0), c = Math.cos(p.rot || 0);
+    const o = [p.x - s * half, p.z - c * half];
+    if (!arch) {
+      // The planks lie on the deck board, 0.045 over the height the prop is lifted to.
+      const y = bridgeDeck(p, terrain) + 0.045 * scale;
+      out.push({ o, d: [s, c], w: 0.72 * scale, rail: 0.5 * scale, stops: [[0, y], [len, y]] });
+      continue;
+    }
+    const y0 = archDeck(p, terrain);
+    // The stops archbridge() draws the deck with, so the feet are on the drawn planks exactly.
+    const zs = [];
+    const n = Math.ceil(archLen(p) / 0.25);
+    for (let i = 0; i <= n; i++) zs.push(-archLen(p) / 2 + (archLen(p) * i) / n);
+    const spring = archSpring(p);
+    zs.push(-spring, spring);
+    zs.sort((a, b) => a - b);
+    const stops = zs.map((z) => [(z + archLen(p) / 2) * scale, y0 + archDeckY(p, z) * scale]);
+    out.push({
+      o, d: [s, c], w: ARCH_HALF_W * scale, rail: ARCH_RAIL * scale, stops,
+      open: [(archLen(p) / 2 - spring) * scale, (archLen(p) / 2 + spring) * scale], soffit: ARCH_DEPTH * scale,
+    });
+  }
+  return out;
+}
+
 // The road a built bridge is, for whoever asks where roads enter a hamlet (hamlet-sign-placement.js):
 // the cells along its axis, and three beyond each end on the bank. The bank cells are what lets a
 // crossing be found - a hand-built bridge lands on grass, with no paving for the road network to
@@ -660,6 +705,9 @@ export function createProps({ scene, terrain, material }) {
   function deckCells(terrain) {
     return deckCellsOf([...records.values()].map((rec) => rec.spec), terrain);
   }
+  function deckShapes(terrain) {
+    return deckShapesOf([...records.values()].map((rec) => rec.spec), terrain);
+  }
 
   function nearest(x, z, within = 4) {
     let best = null, bestD = within;
@@ -681,5 +729,5 @@ export function createProps({ scene, terrain, material }) {
     return bridgeRoadCellsOf([...records.values()].map((rec) => rec.spec), terrain);
   }
 
-  return { group, apply, update, blockers, deckCells, roadCells, nearest, count: () => records.size, dispose };
+  return { group, apply, update, blockers, deckCells, deckShapes, roadCells, nearest, count: () => records.size, dispose };
 }
