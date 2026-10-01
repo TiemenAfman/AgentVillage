@@ -1521,11 +1521,26 @@ close Settings.
 
 **A room can have storeys** ([Plans/verdiepingen-binnen.md](Plans/verdiepingen-binnen.md)): `def.surfaces`
 (interior.js -> `walk.setSurfaces`) are floors `{x0,x1,z0,z1,y}` and slopes `{...,y0,y1,axis}` as rectangles,
-which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet) - a stair is drawn as treads
-and walked as a slope. A blocker with `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
+which `groundAt` takes like `levels` (the highest within `STEP_UP` of the feet). A slope with `steps: n` is
+stood on tread by tread (each tread's top on the slope at its middle, the Kraken bake's `stair()`, `treadsOf`
+in pirate-tavern.js) - as a plain ramp the feet were half a riser into every tread; the camera takes the
+risers up eased (`camStep`, walk.js afterMove). A slope's `solid` (built up to its treads) makes it a wall to
+feet more than a step under it, and `rails: ['x0'|'z1'...]` hold whoever is on it and keep the floor beside
+it off it (`stairWall`, `stairWalls` in pirate-tavern.js, shell.py's `open_sides`) - only against a step
+*into* either, never out, so nobody inside one is trapped (`tests/stair-walk.test.mjs`). A blocker with
+`y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
 floor that hangs over you or it. Only rooms hand surfaces over; the island and the sea keep to cell
 `levels` (`tests/walk-surfaces.test.mjs`).
+
+**A bridge is walked as its drawn planks, not per cell** (`walk.setDecks`, `tests/bridge-walk.test.mjs`):
+a cell's one height (the middle of its slope) made an arch a staircase whose treads stood up to 0.2 over or
+under the boards, a cell wide instead of the deck's width. `bridgeDeckOf` (buildings.js, the layout's and
+every guest's crossings, off the same `bridgeStops`) and `deckShapesOf` (props.js, bridge and arch bridge,
+at any rot) give `{ o, d, w, stops, rail, open?, soffit? }`; handOutDecks hands them over and leaves their
+cells out of walk mode's `levels`. The settlers, the router and the sea keep the per-cell heights
+(`deckCellsOf`, `bridgeDeckHeights`, the bundle's `decks`). Rails and an arch's abutments (outside `open`,
+up to the soffit) are walls the same way stairs are.
 
 **Leaving walk mode leaves the body standing** ([Plans/DONE/karakter-blijft-staan.md](Plans/DONE/karakter-blijft-staan.md)):
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries

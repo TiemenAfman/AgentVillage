@@ -37,7 +37,7 @@ import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
   buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
-  buildBridgeGeometry, bridgeDeckHeights, createFlagMesh, buildDeckGeometry, resortParts,
+  buildBridgeGeometry, bridgeDeckHeights, bridgeDeckOf, createFlagMesh, buildDeckGeometry, resortParts,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
@@ -5263,6 +5263,10 @@ function buildScene(village) {
 const bridgeGroup = new THREE.Group();
 const bridgeMeshes = new Map();
 let decks = new Map();
+// The same crossings as the planks are drawn, for walk mode's feet (buildings.js bridgeDeckOf):
+// `decks` gives a height per cell, which is right for the settlers and a staircase to a walker.
+let bridgeShapes = [];
+let bridgeCells = new Set();
 
 function syncBridges(village) {
   if (!bridgeGroup.parent) scene.add(bridgeGroup);
@@ -5281,11 +5285,14 @@ function syncBridges(village) {
     mesh.geometry.dispose();
     bridgeMeshes.delete(key);
   }
+  bridgeShapes = [];
   for (const [i, b] of list.entries()) {
     const key = `${b.id}#${i}`;
     for (const [gx, gz, y] of bridgeDeckHeights(b.cells, terrain, b.axis)) {
       decks.set(gx + gz * terrain.size, y);
     }
+    const shape = bridgeDeckOf(b.cells, terrain, b.axis);
+    if (shape) bridgeShapes.push(shape);
     if (bridgeMeshes.has(key)) continue;
     const [x, z] = terrain.cellWorld(b.cells[0][0], b.cells[0][1]);
     const g = buildBridgeGeometry(b.cells, terrain, [x, z], b.axis);
@@ -5298,6 +5305,11 @@ function syncBridges(village) {
     bridgeMeshes.set(key, m);
   }
   for (const [cell, y] of quayDeckHeights(village, terrain.size)) decks.set(cell, y);
+  // What walk mode stands on as the drawn planks instead: the cells the crossings carried out to,
+  // less the quay's boardwalk, which wins a cell the two share (as it does in `decks`).
+  bridgeCells = new Set();
+  for (const s of bridgeShapes) for (const [gx, gz] of s.cells) bridgeCells.add(gx + gz * terrain.size);
+  for (const [cell] of quayDeckHeights(village, terrain.size)) bridgeCells.delete(cell);
   handOutDecks();
 }
 
@@ -5386,8 +5398,25 @@ function handOutDecks() {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
+  // The bridges as their planks are drawn (walk.js setDecks), ours, the ones built by hand and a
+  // neighbour's; what they cover is left out of the per-cell levels below, or a cell's one height -
+  // the middle of its slope - would still win half of it, over the boards or under them.
+  const shapes = [...bridgeShapes];
+  const handBuilt = state.props && state.terrain ? state.props.deckCells(state.terrain) : new Map();
+  if (state.props && state.terrain) shapes.push(...state.props.deckShapes(state.terrain));
+  const guestCells = new Set();
+  for (const r of state.sea ? state.sea.regions() : []) {
+    if (r === state.region || !r.village || !r.terrain) continue;
+    for (const b of r.village.bridges || []) {
+      const s = bridgeDeckOf(b.cells, r.terrain, b.axis);
+      if (!s) continue;
+      shapes.push({ ...s, o: r.toWorld(s.o[0], s.o[1]) });
+      for (const [gx, gz] of s.cells) guestCells.add(r.levelBase + gx + gz * r.size);
+    }
+  }
+  if (state.walk) state.walk.setDecks(shapes);
   const stacked = new Map();
-  for (const [cell, y] of flat) stacked.set(base + cell, [y]);
+  for (const [cell, y] of flat) if (!bridgeCells.has(cell) && !handBuilt.has(cell)) stacked.set(base + cell, [y]);
   // The quay's planks are a floor over water, exactly as a bridge deck is - without this
   // you wade alongside your own dock instead of walking out along it, which is both wrong
   // and the difference between a dock and a decoration. Keyed per region, so a guest
@@ -5405,7 +5434,8 @@ function handOutDecks() {
   for (const r of state.sea ? state.sea.regions() : []) {
     if (r === state.region || !r.village || !r.village.decks) continue;
     for (const [cell, y] of Object.entries(r.village.decks)) {
-      if (!stacked.has(r.levelBase + Number(cell))) stacked.set(r.levelBase + Number(cell), [y]);
+      const key = r.levelBase + Number(cell);
+      if (!stacked.has(key) && !guestCells.has(key)) stacked.set(key, [y]);
     }
   }
   if (state.walk) state.walk.setLevels(stacked);

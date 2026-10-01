@@ -2936,6 +2936,31 @@ export function bridgeDeckHeights(cells, terrain, axis) {
   return run.map((c, i) => [c[0], c[1], deckY(i + 1)]);
 }
 
+// The same deck as walk mode stands on it: exactly the planks buildBridgeGeometry lays, as a
+// line of stops along the run (walk.js `setDecks`), rather than one height per cell. Per cell,
+// the arch was a staircase: every cell at the height of its middle, so half a cell either way
+// the drawn planks were up to 0.13 above the feet or below them - you walked in the deck going
+// up and over it coming down - and the deck was the whole cell wide, a hand past the rails.
+// In the terrain's own frame; `cells` is what bridgeStops carried the run out to, for the
+// caller to take out of the per-cell levels.
+export function bridgeDeckOf(cells, terrain, axis) {
+  if (!cells || !cells.length) return null;
+  const { cells: run, world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  const o = world[0], end = world[world.length - 1];
+  const dir = Math.sign(end[k] - o[k]) || 1;
+  const stops = [];
+  for (let i = 0; i < world.length; i++) {
+    stops.push(world[i]);
+    if (i < world.length - 1) stops.push([(world[i][0] + world[i + 1][0]) / 2, (world[i][1] + world[i + 1][1]) / 2]);
+  }
+  return {
+    o: [o[0], o[1]], d: k === 0 ? [dir, 0] : [0, dir], w: BRIDGE_DECK_W,
+    stops: stops.map((p) => [Math.abs(p[k] - o[k]), deckYAt(p)]),
+    rail: BRIDGE_RAIL, cells: run,
+  };
+}
+const BRIDGE_DECK_W = 0.44;          // half the deck's width, buildBridgeGeometry's W
+
 // A plank bridge: a decked arch, a post-and-rail down each side, a kerb board along each
 // edge of the planking, and a trestle in the water under every cell of the crossing. The
 // rail is posts and a beam rather than a solid parapet - a wall the right height for a
@@ -2954,7 +2979,7 @@ export function buildBridgeGeometry(cells, terrain, from, axis) {
   stops.push(world[world.length - 1]);
   const ys = stops.map(deckYAt);
   const at = stops.map(([x, z]) => [x - from[0], z - from[1]]);
-  const W = 0.44;                                    // half the deck width
+  const W = BRIDGE_DECK_W;                           // half the deck width
   const parts = [];
   const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
   // The boards are laid across the run, so the grain lies across it too - which is the
