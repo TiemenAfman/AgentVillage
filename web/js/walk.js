@@ -866,7 +866,11 @@ export function createWalkMode({
   // `{ x0, x1, z0, z1, y }` is a floor; `{ ..., y0, y1, axis: 'x' | 'z' }` a slope rising from y0
   // at the x0 (or z0) end to y1 at the other, which is how a stair is walked - drawn as treads,
   // stood on as a ramp, so every step up is a frame's worth and a stair down is simply followed.
-  // Only a room hands any over; the island and the sea keep to `levels`.
+  // A room hands over its storeys; the island hands over the planks that do not fill a cell - a
+  // pier's ramp and the wings of its head (buildings.js pierSurfaces), the quay's finger jetties
+  // (quay-basin.js kadeSurfaces) - which it drew and walk mode stood in the water beside. Those
+  // carry `lid`: a floor over the water is also what a swimmer under it hits their head on, as
+  // a cell of `levels` is (ceilingAt). A room's floors do not, which is how rooms always were.
   let surfaces = [];
   function surfaceY(s, x, z) {
     if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return null;
@@ -998,16 +1002,20 @@ export function createWalkMode({
   // The highest surface that is not over your head. `from` is where your feet are now;
   // leaving it out asks for the topmost one, which is what something looking down from
   // outside the world wants.
-  function groundAt(x, z, from = Infinity) {
-    // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
-    // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
-    // same answer the sea gives its settlers. So a swimmer meets a wall and climbs out by a stair.
+  // The harbour's stone quay: the top of its wall over the foot cell (which the ground itself
+  // draws as a slope from the bed) and the treads of its stairs - shared/quay-basin.mjs, the
+  // same answer the sea gives its settlers - or null off it. So a swimmer meets a wall (blocked,
+  // below) and climbs out by a stair.
+  function kadeAt(x, z) {
     const region = ground?.regionAt?.(x, z);
     const kade = region && quayKade(region.village, region.terrain);
-    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    return kade ? kade.height(...region.toLocal(x, z)) : null;
+  }
+  function groundAt(x, z, from = Infinity, withSurfaces = true) {
+    const wall = kadeAt(x, z);
     let best = wall != null ? wall : heightUnder(x, z);
     const reach = from + STEP_UP;
-    for (const s of surfaces) {
+    if (withSurfaces) for (const s of surfaces) {
       const y = surfaceY(s, x, z);
       if (y != null && y <= reach && y > best) best = y;
     }
@@ -1030,9 +1038,7 @@ export function createWalkMode({
   // quay's wall and its stairs stand on that floor, as groundAt reads them.
   const bedOf = ground && ground.bedAt ? (x, z) => ground.bedAt(x, z) : heightUnder;
   function bedUnder(x, z) {
-    const region = ground?.regionAt?.(x, z);
-    const kade = region && quayKade(region.village, region.terrain);
-    const wall = kade ? kade.height(...region.toLocal(x, z)) : null;
+    const wall = kadeAt(x, z);
     return wall != null ? wall : bedOf(x, z);
   }
 
@@ -1048,6 +1054,12 @@ export function createWalkMode({
       if (y == null || y <= reach) continue;
       const lid = y - (d.open ? d.soffit : DECK_THICK);
       if (lid < best) best = lid;
+    }
+    // And an island plank over your head (a pier head, a finger jetty): the ones that carry `lid`.
+    for (const s of surfaces) {
+      if (!s.lid) continue;
+      const y = surfaceY(s, x, z);
+      if (y != null && y > reach && y < best) best = y;
     }
     const above = levelsIn(x, z);
     if (!above) return best;
@@ -1103,13 +1115,22 @@ export function createWalkMode({
     state.blockers = list || [];
     hulls = state.blockers.filter((b) => b.hull != null);
   }
-  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity));
+  // Without the island's surfaces: a hull has always met a pier as its cells, and the head's wings
+  // reach out towards the berths either side of it - a boat lying there must not find itself aground.
+  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity, false));
 
   function blocked(x, z, from = state.pos.y, placing = false) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
     if (placing && groundAt(x, z, from) < 0.06 && !shoreWithinReach(x, z, from)) return true;
+    // The quay's wall is a wall to whoever is further below its top than a step: a swimmer beside
+    // the face, a diver at its foot. groundAt reads the top absolutely, so without this a swimmer
+    // pushing at the face was put on the quay in one frame, half a metre up, and a diver found the
+    // quay's top as the bed under them. From the stairs (in front of the face, never a foot cell)
+    // and from the quay itself it is a step, as before.
+    const wall = kadeAt(x, z);
+    if (wall != null && wall - from > STEP_UP) return true;
     for (const b of state.blockers) if (inside(b, x, z, BODY_R) && atHeight(b, from)) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;

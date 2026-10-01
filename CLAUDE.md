@@ -1531,8 +1531,16 @@ it off it (`stairWall`, `stairWalls` in pirate-tavern.js, shell.py's `open_sides
 *into* either, never out, so nobody inside one is trapped (`tests/stair-walk.test.mjs`). A blocker with
 `y0`/`y1` is a wall only to a body whose span meets it (`atHeight`),
 an interactable with `floor` is out of reach from another storey, and `clampCam` keeps the camera under a
-floor that hangs over you or it. Rooms hand surfaces over, and on the island a building may too (the
-Salty Kraken's stair, `surfacesOf` in main.js); the sea keeps to cell `levels` (`tests/walk-surfaces.test.mjs`).
+floor that hangs over you or it (`tests/walk-surfaces.test.mjs`). The island hands surfaces over too, for
+the planks a cell cannot say (main.js `handOutDecks`, every region's, moved to its origin): a pier's ramp and
+the wings of its head (`pierSurfaces` beside `buildPierGeometry`, sharing `pierFrame`) and the quay's finger
+jetties and its coping (`kadeSurfaces` beside `buildQuayKade`) - drawn, and until then stood beside in the
+water or in the stone. The wall itself is a wall to a body more than `STEP_UP` below its top (`blocked` asks
+`kadeAt`): `groundAt` reads the top absolutely and put a swimmer at the face on the quay in one frame. Those
+carry `lid`, which `ceilingAt` reads (a room's floors do not); a boat's ground (`boatGround`) leaves every
+surface out. A building may hand floors over too (the Salty Kraken's stair, `surfacesOf`), and main.js
+`handSurfaces` joins the two lists, since `setSurfaces` replaces the whole set. The sea keeps to cell `levels`. A new plank drawn over water gets its floor from the same
+module that draws it, and `tests/walk-planks.test.mjs` compares the triangles with what the feet stand on.
 **A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
 `STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
 stairs, slopes and kerbs stay a walk.

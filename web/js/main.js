@@ -8,7 +8,8 @@ import { createRenderStats, statsLine } from './render-stats.js';
 import { createQualityGovernor, MIN_PIXEL_RATIO } from './quality.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
-import { quayDeckHeights } from 'shared/quay-basin.mjs';
+import { quayDeckHeights, quayKade } from 'shared/quay-basin.mjs';
+import { kadeSurfaces } from './quay-basin.js';
 import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
 import { createYouMarker } from './you-marker.js';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
@@ -37,7 +38,7 @@ import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
-  buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry,
+  buildCampfireGeometry, buildFlameGeometry, buildBladesGeometry, buildPierGeometry, pierSurfaces,
   buildBridgeGeometry, bridgeDeckHeights, bridgeDeckOf, createFlagMesh, buildDeckGeometry, resortParts,
   QUAY_DECK, HARBOUR_DECK, PALETTE, TIER_INDEX, setFadeEye,
 } from './buildings.js';
@@ -826,6 +827,15 @@ function walkSurfaces() {
   return out;
 }
 
+// The island's planks that a cell cannot say (handOutDecks: docks' ramps and heads, the quays'
+// fingers and coping), kept apart from the buildings' floors above because the two change at
+// different moments - and walk.setSurfaces replaces the whole list, so whichever was handed over
+// last used to wipe the other. Both go through handSurfaces.
+let plankSurfaces = [];
+function handSurfaces() {
+  if (state.walk) state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
+}
+
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
 // Where the islander starts you: in front of the board on the square, as enterWalk's own
 // fallback does, facing it.
@@ -946,7 +956,7 @@ function walkToBuilding(id) {
 function walkableBlockers() {
   // Whoever is handed the walls is handed the floors that go with them (surfacesOf): the two
   // come from the same records and change together.
-  if (state.walk) state.walk.setSurfaces(walkSurfaces());
+  handSurfaces();
   const out = [];
   for (const rec of state.byId.values()) {
     if (!rec.group.visible) continue;
@@ -5484,7 +5494,23 @@ function handOutDecks() {
     }
   }
   if (state.walk) state.walk.setLevels(stacked);
-  if (state.walk) state.walk.setSurfaces(walkSurfaces());
+  // And what a cell cannot say, as rectangles (walk.js `surfaces`): every dock's ramp and the wings
+  // of its head, and every quay's finger jetties - drawn, and until this stood beside in the water
+  // (Hoogezand: the four heads' wings, the four ramps, all five fingers). Every region's, in the
+  // frame walk mode reads, which is the region's own terrain moved to its origin.
+  {
+    const planks = [];
+    const put = (r, list) => {
+      const [ox, oz] = r.origin;
+      for (const p of list) planks.push({ ...p, x0: p.x0 + ox, x1: p.x1 + ox, z0: p.z0 + oz, z1: p.z1 + oz, lid: true });
+    };
+    for (const d of state.docks) put(d.region, pierSurfaces(d.cells, d.region.terrain, d.from));
+    for (const r of state.sea ? state.sea.regions() : []) {
+      if (r.village) put(r, kadeSurfaces(quayKade(r.village, r.terrain), r.terrain));
+    }
+    plankSurfaces = planks;
+  }
+  handSurfaces();
   // The settlers' own copy. `flat` is already this island's decks on the plain cell key -
   // the same keying createStandHeight wants - and it is built above for walk mode anyway.
   homeStand = state.terrain && state.region && state.region.village
