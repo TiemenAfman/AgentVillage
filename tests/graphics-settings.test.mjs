@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import {
   GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_TIERS, GRAPHICS_KEY, clampGraphic, loadGraphics, saveGraphic,
   forgetGraphics, graphicsTier, hazeOpening, HAZE_OPEN_AT, OBJECT_RATIO, objectDistanceOf,
+  GRAPHICS_CHOICES, hdWanted,
 } from '../web/js/graphics-settings.js';
 
 const memory = (init = {}) => {
@@ -21,8 +22,12 @@ const memory = (init = {}) => {
 test('three kinds of machine, each with four defaults inside their sliders', () => {
   assert.deepEqual(Object.keys(GRAPHICS_TIERS).sort(), ['full', 'modest', 'phone']);
   for (const [tier, d] of Object.entries(GRAPHICS_TIERS)) {
-    assert.deepEqual(Object.keys(d).sort(), Object.keys(GRAPHICS_LIMITS).sort(), tier);
+    assert.deepEqual(Object.keys(d).sort(), [...Object.keys(GRAPHICS_LIMITS), ...Object.keys(GRAPHICS_CHOICES)].sort(), tier);
+    // The word settings start on one of their words (detail: 'auto' everywhere), the rest inside
+    // their sliders.
+    for (const [k, words] of Object.entries(GRAPHICS_CHOICES)) assert.ok(words.includes(d[k]), `${tier}.${k}`);
     for (const [k, v] of Object.entries(d)) {
+      if (GRAPHICS_CHOICES[k]) continue;
       const { min, max } = GRAPHICS_LIMITS[k];
       assert.ok(v >= min && v <= max, `${tier}.${k} starts at ${v}, outside ${min}..${max}`);
     }
@@ -88,6 +93,33 @@ test('clampGraphic refuses what is not one of the four or not a number', () => {
   assert.equal(clampGraphic('viewDistance', true), null);
 });
 
+// Model detail (Plans/piratenkroeg.md, "The HD pack"): a word, remembered like a slider - only when chosen.
+test('model detail is one of three words, kept only when chosen, and forgotten with the rest', () => {
+  assert.deepEqual(GRAPHICS_CHOICES.detail, ['sd', 'auto', 'hd']);
+  assert.equal(clampGraphic('detail', 'hd'), 'hd');
+  assert.equal(clampGraphic('detail', 'HD'), null);
+  assert.equal(clampGraphic('detail', 1), null);
+  const s = memory();
+  assert.equal(loadGraphics(GRAPHICS_TIERS.modest, s).detail, 'auto');
+  saveGraphic('detail', 'sd', s);
+  saveGraphic('detail', 'ultra', s);
+  assert.deepEqual(JSON.parse(s.m.get(GRAPHICS_KEY)), { detail: 'sd' });
+  assert.equal(loadGraphics(GRAPHICS_TIERS.full, s).detail, 'sd');
+  assert.equal(loadGraphics(GRAPHICS_TIERS.full, memory({ [GRAPHICS_KEY]: '{"detail":"ultra"}' })).detail, 'auto');
+  forgetGraphics(s);
+  assert.equal(loadGraphics(GRAPHICS_TIERS.full, s).detail, 'auto');
+});
+
+test('Auto is HD on a full machine only; forced is forced', () => {
+  assert.equal(hdWanted('auto', 'full'), true);
+  assert.equal(hdWanted('auto', 'full', { deviceMemory: 8 }), true);
+  assert.equal(hdWanted('auto', 'full', { deviceMemory: 4 }), false, 'a browser that says it is short of memory');
+  assert.equal(hdWanted('auto', 'modest'), false);
+  assert.equal(hdWanted('auto', 'phone'), false);
+  assert.equal(hdWanted('hd', 'modest', { deviceMemory: 2 }), true);
+  assert.equal(hdWanted('sd', 'full'), false);
+});
+
 test('the sliders are wired to the panel that has them', () => {
   const main = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   const ui = fs.readFileSync(new URL('../web/js/ui.js', import.meta.url), 'utf8');
@@ -108,6 +140,9 @@ test('the sliders are wired to the panel that has them', () => {
   assert.doesNotMatch(call('createNet'), /\bonGraphicsSetting\b/, 'onGraphicsSetting is handed to createNet again');
   // And the sliders are drawn from the same limits the frame clamps to.
   assert.match(ui, /GRAPHICS_LIMITS\[key\]/);
+  // Model detail's chips are buttons, not sliders, and go the same one way in.
+  assert.match(ui, /handlers\.onGraphicsSetting\('detail', b\.dataset\.detail\)/);
+  assert.match(main, /if \(!key \|\| key === 'detail'\) applyDetail\(\)/);
 });
 
 test('the full defaults are the old look, and every tier cuts its houses inside the fog', async () => {

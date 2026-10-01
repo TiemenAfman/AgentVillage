@@ -969,6 +969,21 @@ A DAZ `.dsf` is plain JSON (`geometry_library[0]`: `vertices`, `polylist` of
 `[group, material, v...]`; UVs in `UV Sets/.../default.dsf` with per-corner
 `polygon_vertex_indices`; diffuse maps in the `.duf`'s `materials[].diffuse.channel.image_file`),
 so it converts to a GLB with a small script and no Blender importer.
+The third is **the HD pack** (`web/js/hd-pieces.js`, Plans/piratenkroeg.md "The HD pack"): textured
+Pixal3D GLBs in `HOME/hd/` (an `hd-manifest.json`, `/hd/` gitignored; the pack gets a git of its own so this
+repo and its installers stay small) that stand in for a room's baked kit pieces. Keeper-only routes beside
+the local models (`/api/hd`, `/api/hd/<name>.glb`, not on `PUBLIC_API`); the manifest is asked for after the
+boot, a model only when a room wants it. A piece the pack lists **leaves the room's merge**
+(`pirate-tavern.js` `kit()` -> `def.pieces`, drawn by `createHdPieces` in interior.js) so SD and HD are
+siblings and Settings -> Graphics' fifth setting, `detail` (`'sd' | 'auto' | 'hd'`, `hdWanted` in
+graphics-settings.js, through `onGraphicsSetting` like the sliders), switches a built room live
+(`inside.setDetail`). The contract is `shared/hdfit.mjs`: the GLB's box (read off its JSON chunk, node
+transforms included) after the manifest's `at` (whole quarter turns only - shared/ has no sin/cos) within
+`HD_FIT` of the bake's, or the page keeps the bake and says so once; `tests/hd-pack.test.mjs` checks whatever
+pack is on this machine and skips without one. Glow is a material the manifest names `flame` (halos from
+it, never a light); `gilt`/`metal` get one shared warm room to reflect. No size budgets: the keeper tweaks.
+`/demo` shows the pack in its rooms (`?sd` for the bake). Under Node, GLTFLoader needs a `ProgressEvent`
+stub.
 
 **A room's own sets load at its door, never at boot** (the second exception): `models.js` `LAZY` holds the
 Salty Kraken's hall (`piratetavern_room`, 34 MB) and its ship's parts (`krakenkit`), imported on demand by

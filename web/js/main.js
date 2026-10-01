@@ -46,7 +46,8 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, GRAPHICS_TIERS } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS } from './graphics-settings.js';
+import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createNameplate } from './nameplate.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
@@ -2338,6 +2339,7 @@ function enterInterior(room, at) {
         dance: danceNow,
         onTalk: (it) => openCrewTalk(it),
         onOrder: (r) => questEvents.drank(r),
+        hd: hdOn(),
       });
     } catch (e) {
       console.error('that room could not be built', e);
@@ -3192,7 +3194,25 @@ function onGraphicsSetting(key, value) {
 function applyGraphics(key = null) {
   if (!key || key === 'viewDistance') applyViewDistance();
   if (!key || key === 'shadowDistance') { if (state.world) state.world.setShadowDistance(state.graphics.shadowDistance); }
-  if (key !== 'shadowDistance') applyObjectDistances();
+  if (key !== 'shadowDistance' && key !== 'detail') applyObjectDistances();
+  if (!key || key === 'detail') applyDetail();
+}
+// Bakes or the HD pack's models (Plans/piratenkroeg.md, "The HD pack"): every room already built switches in place
+// (interior.js setDetail), one built later is built that way. Forced HD with no pack is the bake,
+// said once.
+function hdOn() {
+  const tier = graphicsTier({ modest, phone: !!STANDALONE });
+  return hdInstalled() && hdWanted(state.graphics.detail, tier, { deviceMemory: navigator.deviceMemory ?? null });
+}
+function applyDetail() {
+  for (const r of rooms.values()) if (r.setDetail) r.setDetail(hdOn());
+  if (state.graphics.detail === 'hd') hdMissingSaid();
+}
+let hdMissingTold = false;
+function hdMissingSaid() {
+  if (hdMissingTold || hdInstalled() || STANDALONE || !state.ui) return;
+  hdMissingTold = true;
+  state.ui.toast('The HD pack is not installed, so rooms keep their own models.');
 }
 // Settings → Graphics → "This machine's defaults": every choice forgotten, back to the tier.
 function onGraphicsReset() {
@@ -7312,6 +7332,9 @@ async function boot() {
     onGraphicsSetting,
     onGraphicsReset,
     graphics: () => state.graphics,
+    // The HD pack under Settings -> Graphics: false on the phone (no islander, no rooms, no choice
+    // to offer), else what HOME/hd holds (null for nothing).
+    hdStatus: () => (STANDALONE ? false : hdStatus()),
     onSpeechTap: () => endParley(),
     onSay: () => state.islandchat && state.islandchat.toggle(),
     phonePrefs: () => phonePrefs(),
@@ -7993,6 +8016,9 @@ async function boot() {
   allowImp();
   // So may this machine's own models (HOME/models/), which only the keeper has.
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
+  // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list here; a model is fetched
+  // when a room that has its piece wants it. A room built before the list lands is all bake.
+  if (!STANDALONE) loadHdManifest().then(() => { if (state.graphics.detail === 'hd') hdMissingSaid(); });
   // No islander to hear from and none to install from: /events and sw.js are both its own.
   if (STANDALONE) return;
   connect();

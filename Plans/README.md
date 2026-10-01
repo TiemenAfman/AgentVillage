@@ -75,7 +75,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   een jukebox met shanties (en eigen muziek per kamer in `~/.promptholm/audio`) en een eigen bake met uithangbord.
   Open: het interieur (een grotkroeg uit scheepsdelen, `scripts/krakenkit/`, in aanbouw op
   `claude/salty-kraken-interieur`) en de plek op de piratenoever, die de quay-sessie
-  (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt.
+  (`quay-en-rivier.md`, op `fix/quay-en-rivier`) bij het mergen instelt. Hoofdstuk *The HD pack*: getextureerde
+  Pixal3D-kitstukken uit `~/.promptholm/hd/` naast de bake, met Forced SD / Auto / Forced HD onder Settings →
+  Graphics (spelkant gebouwd op `claude/hd-pakket`), een eigen git voor het pakket (nog niet opgezet) en een
+  skill voor de hele keten (gepland).
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de
   Salty Kraken): vloeren en hellingen als rechthoeken (`surfaces`), blockers met een hoogte, en een camera die
   onder een vloer blijft.

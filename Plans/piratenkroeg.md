@@ -349,6 +349,197 @@ occlusion uit Cycles). De Blender-previews tonen de plankstructuur van het eilan
 het spel. Is het daar te kaal, dan is de volgende stap texturen (een GLB zoals de kapitein, met een eigen
 materiaal onder de zeven lampen) - meer werk en een risico op stijlbreuk met de rest van het eiland.
 
+## The HD pack: textured kit pieces beside the bake (1 October 2026)
+
+**🚧 The game's side is built on `claude/hd-pakket` (from `main` 3c95ae5), not committed; the pack's own
+repository is not set up yet, and the skill that makes a piece end to end is planned here, not built.**
+Written in English at the keeper's asking; it was a plan of its own (`hd-pakket.md`) until he folded it into
+this one.
+
+### Why
+
+The game keeps its hand-made low-poly bakes (`scripts/krakenkit/*.py` -> `web/js/krakenkit-mesh.js`: small,
+in git, vertex colours, the sheets, baked AO). For the bigger pieces Pixal3D (through Modly,
+`D:\git\Martijn\BlenderAI`, skill `/blenderai`) makes textured models that hold what a bake cannot - the
+barrel of candles was the case: 48k triangles and one 2048 texture kept the staves, eye sockets and runs of
+wax that neither a hand-built piece nor the same mesh in corner colours could. Such models are big (the
+barrel: 9.7 MB) and not the house style, so they go **in a git of their own** - the main repository stays
+fast and the installers stay small, the Windows zip and the APK alike - and reach a player as an optional
+pack in `HOME/hd/`. Without it, on the phone, for a visitor, and whenever one piece goes wrong, every room
+is exactly the bake.
+
+### Decisions
+
+**The keeper's answers (1 October).** The 4090 PC *is* the development PC, this laptop: the whole chain runs
+here. The pack lives in a git of its own, which is **not set up yet** - and whether it keeps its GLBs in
+Git LFS or as release assets of that repository is still open (variants below). **No budgets**: an HD piece
+has no triangle, material or texture limit; the keeper tweaks each one himself, and the test only reports
+what a piece costs. The SD base of the barrel (which of the two hand-built versions) is still to choose.
+
+**1. Forced SD - Auto - Forced HD** (built). A fifth graphics setting, `detail`, in
+`web/js/graphics-settings.js` (`GRAPHICS_CHOICES`, `clampGraphic` answers the word or null), remembered per
+browser in `promptholm.graphics.v3` only when chosen, written only through `onGraphicsSetting`, every tier
+starting on `'auto'`. `hdWanted(detail, tier, { deviceMemory })`: `'sd'` never, `'hd'` always (on `modest`
+too), `'auto'` on a `full` machine that does not say it has under 8 GB (`navigator.deviceMemory`; WebGL has
+no honest VRAM figure, and the renderer string is already the tier). Settings -> Graphics shows three chips
+under the sliders and which pack is installed; not in the app. Forced HD with no pack is the bake, said once
+per page.
+
+**A switch is live.** A room is built once and kept, and its still parts are one merged mesh. So a kit
+piece the pack lists **leaves the merge** (`pirate-tavern.js` `kit()` -> `def.pieces`) and is drawn as its
+own mesh with its own halos; its HD model, once landed, is a sibling (`createHdPieces` in
+`web/js/hd-pieces.js`, used by `interior.js`). Switching is visibility on the two and their halos
+(`inside.setDetail`, from `applyGraphics('detail')` for every built room). A piece on the lid hangs in a
+group that is shown and hidden with the lid. With no pack the room is exactly what it was. The manifest
+(`GET /api/hd`) is asked for once after the boot, beside the imp; a room built before it arrives is all bake
+until the next page load.
+
+**2. The contract with the bake** (built). An HD model replaces one baked asset at every place it stands
+(seven stools are seven copies of one geometry). It must stand in the bake's frame: foot on y = 0, front to
++z, the same outline within `HD_FIT` - 3 cm or a tenth of the extent per face (`shared/hdfit.mjs`), because
+the KIT spot, the blockers and the camera's boom are all fitted to the bake. It brings no light (the seven
+lamps are the room's); its glow is a material named in the manifest (`flame`), from which its halos are
+made, and the bake's halos for that piece are hidden while it shows. The page checks every model it loads
+and keeps the bake for one that does not fit, said once; `tests/hd-pack.test.mjs` makes the same check on
+whatever pack is on this machine (and skips without one), off the GLB's JSON chunk alone.
+
+The manifest, `HOME/hd/hd-manifest.json`:
+
+```json
+{ "v": 1, "pack": "hd-1",
+  "pieces": [{ "asset": "civic_kraken_candlebarrel", "file": "candlebarrel.glb",
+               "at": { "x": 0, "y": 0, "z": 0, "turn": 0, "s": 1 },
+               "materials": { "skulls": "gilt", "flame": "flame" },
+               "roughness": 0.38, "tone": 16777215 }] }
+```
+
+`at` takes the GLB's frame to the bake's in whole quarter turns (shared/ has no sin or cos; a prepared model
+needs no more). A bad piece is dropped and named, the rest stands; an unknown field is ignored.
+
+**3. Materials** (built). The building material is a `MeshStandardMaterial` too, so a GLB's own material is
+lit by the same seven lamps under the same fog; no shadows (rooms have none). Roles: `gilt` (gold metal),
+`metal`, both with one small warm room to reflect, made once for every piece (the room's scene has no
+environment, and metal with nothing to mirror reads black); `flame` (emissive, a halo per flame); and a
+per-piece `tone` multiply for a texture lighter or darker than the bakes beside it, set by eye. No budgets
+(above); the test prints triangles, materials and texture sizes per piece. KTX2 textures would quarter the
+memory but need a vendored transcoder: later, if a room ever gets heavy.
+
+**4. Where the pack lives** (open). A git of its own, beside AgentVillage, **not a submodule** (every new
+worktree would start with it empty, and the game only needs the pack, not its sources); `/hd/` is in
+AgentVillage's `.gitignore`. When it is set up:
+
+| | A. that repo, GLBs in Git LFS | B. that repo holds manifest, scripts and sources; GLBs and zip as its release assets |
+|---|---|---|
+| quota | free ~1 GB storage and ~1 GB bandwidth a month; every version kept | none; 2 GB a file, downloads unmetered |
+| a new GLB version | storage grows by its size | a new `hd-<n>` release; old ones can go |
+| needs | `git lfs` here | `gh` here |
+| history of a GLB | in git | only what the releases keep |
+
+In both, a player downloads a **release asset** (`promptholm-hd-pack.zip` + `.sha256`), never an LFS object.
+Publishing is a command on this PC (`gh release create hd-<n>`), not a GitHub runner; whether the game's
+`release.yml` then fetches the newest pack and hangs it beside each game release, or the command attaches it
+itself, is decided with A/B. Then come the islander's **Install / Update / Remove** buttons (keeper-only,
+download beside its own release, check the `.sha256`, unpack into `HOME/hd.new/` and rename it over `hd/`,
+with a small unzip of our own in `lib/`). Until then the chain below writes straight into `HOME/hd/` - the
+keeper's own pack, nothing copied by hand - and nothing is published. The pack is versioned on its own: an
+old pack on a new release takes HD for every piece whose bake still fits, the bake for the rest.
+
+**5. Licences.** Perchance's terms (18 July 2026) say in their FAQ that generated images may be used freely,
+commercially too, without attribution, and that Perchance claims no copyright; the FAQ overrides the
+boilerplate's "personal, non-commercial use" (said of generators, and the image answer is as explicit). Which
+image model it runs, and under what licence, it does not say. Pixal3D's code is MIT; **before the first
+public pack**, check the licence of its weights (often not the code's). Only Perchance images go in - never a
+model made from the photos of others' work in `refs/krakenkit/`. A `LICENSES.md` goes in the zip.
+
+**6. A patch.** Everything is `web/js/`, two keeper-only GET routes and `HOME/hd/`: nothing in
+`layout.json`, `config.json`, a bundle or the wire, no `SEA_V`, no layout gate. An older page ignores the
+fifth setting; an older islander has no `/api/hd`, which the page reads as no pack. No sea redeploy.
+
+**7. The first piece: the barrel of candles.** Both versions are uncommitted in other worktrees, only read
+from here:
+- SD, the hand-built kit piece `civic_kraken_candlebarrel`: in `epic-hellman-880db8` (12:51, ~14k
+  triangles) and a later version in `heuristic-tu-9a07ec` (14:43, ~17k, thicker runs, two candles on the
+  boards, already baked into that worktree's `krakenkit-mesh.js`); `geom.py`'s `ao=False` and the
+  `preview-krakenkit.py` line are the same in both. **To choose.**
+- HD, Pixal3D's mesh: `web/models/kaarsen-pixal3d-50k.glb` + `web/js/candlebarrel.js` +
+  `scripts/prepare-candlebarrel.py` in `heuristic-tu-9a07ec`. Read with `glbInfo`: 0.57 x 0.37 x 0.57,
+  48,113 triangles, 3 materials, one 2048 texture.
+
+In order: (1) the SD piece lands - the chosen `candlebarrel.py`, the `geom.py`/preview change, the rebake,
+`KIT.candlebarrel` (with the larger reach, 0.29), its blocker and a `kit('civic_kraken_candlebarrel', …)`
+line, so the barrel stands in every Kraken; whoever holds those worktrees commits it. (2) The HD route (this
+branch). (3) The barrel into the pack: `candlebarrel.glb` and a manifest line (`skulls: gilt`,
+`flame: flame` - `candlebarrel.js`'s material logic is now `hd-pieces.js`'s roles), in `HOME/hd/` and later
+the pack's repository. The GLB in `web/models/`, `candlebarrel.js` and the lines that load it are never
+committed to AgentVillage.
+
+**8. Decimating** only when the keeper wants a piece lighter: BlenderAI's `mscripts/quadric_decimate.py` as a
+step of that piece's prepare, its target in the script, the texture baked back. The raw output stays where
+Pixal3D wrote it.
+
+### The skill: a kit piece from a picture, end to end (planned, not built)
+
+The chain as one skill, fully automatic unless the keeper asks for it in phases - in his words: first see
+the RAW, then the 50k (or what he said), and only then the baking. Run whole, it goes on from phase to
+phase; asked for in phases, it stops after each and shows what it made.
+
+**Where it lives: a personal skill**, `~/.claude/skills/kitstuk/`, beside `/blenderai` and `/perchance`,
+which it calls. It is bound to this machine - the 4090, BlenderAI's folder, the Perchance round through the
+keeper's own browser - and a project skill would sit in Tiemen's list doing nothing he can run. What it
+calls in AgentVillage stays ordinary, readable scripts: a generic `scripts/prepare-hd.py` (the prepare,
+below), `scripts/krakenkit/*.py` for an SD bake, `tests/hd-pack.test.mjs` for the fit. When the pack's
+repository exists, the packing and publishing move there. A new skill means the cheat sheet
+(`~/.claude/Claude-Code-spiekbriefje.html`) and the skill list in the global CLAUDE.md are updated with it.
+
+**Phases:**
+
+0. **The reference image.** Not automatic: Perchance sits behind Cloudflare Turnstile and the keeper clicks.
+   The skill starts from an image it is given (a path in `refs/krakenkit/objecten/`), or calls `/perchance`
+   and waits for the keeper's download.
+1. **RAW**: generate only (`blendai generate --model pixal3d/generate`, the first half of `blendai pixal3d`)
+   and render the raw mesh from four sides. Stop here when phased.
+2. **N k**: `blendai pixal3d <image> --generated <raw> --target-tris N`, 50k unless the keeper says
+   otherwise, the texture baked back. Four renders again. Stop when phased.
+3. **Bake** - three ways out; the skill picks by what exists:
+   - **(a) HD** (the default): the GLB into the kit's frame by `scripts/prepare-hd.py` (prepare-candlebarrel.py
+     made generic: front, foot, height, the split by place into named materials), into `HOME/hd/` with its
+     manifest line. An HD piece always stands in for a bake, so:
+   - **(b) SD-auto**, automatically *as well* when the asset has no bake yet: the Pixal3D mesh down to a kit
+     piece with its texture as corner colours (`candlebarrel_ai.py` made generic; its source then goes into
+     `assets/`, never `refs/`, or it bakes on this laptop only).
+   - **(c) SD by hand**, only when asked: Claude builds the piece in `scripts/krakenkit/` with the Pixal3D mesh
+     as the mould. Costs tokens and rounds; not automatic.
+
+**The right colours.** In (a) and (b) they are Pixal3D's texture. In (c) they are read off the texture per
+part - the mean colour of each region (as `blendai colorize` does), never by eye.
+
+**What is still by hand, and how far the skill can take it:**
+- *The front* (Pixal3D's azimuth differs per image: the barrel 145 degrees, grot3 55). Automatic: render the
+  mesh at twelve azimuths and pick the one most like the reference (silhouette overlap, then colour); in
+  phases the pick is shown for the keeper to confirm.
+- *The split by place* (skulls, flames). Flames can be found by themselves - small, bright, warm, upright
+  clusters in the texture. What else is a material of its own (gold skulls) stays a question: the keeper
+  names it, or points at it on a front render, which gives the pick coordinates `prepare-hd.py` takes.
+- *The height*: the bake's when there is one (the fit check demands it anyway); otherwise one number from the
+  keeper.
+
+**A space check before building.** On the barrel, collisions and floating cost most rounds - candles through
+the skulls, wax hanging over the rim in the air. So before a bake: in the piece's own frame, every part
+touches another or the floor and none passes through another (this matters most for (c), built from
+primitives); and in the room, the piece's box at its KIT spot stands on a floor and overlaps no blocker,
+wall or other kit piece.
+
+**The last step: see it in `/demo`, at E by the Salty Kraken** - inside the room, not loose on the field,
+because a kit piece is judged under the room's seven lamps and beside its neighbours, and the field has
+neither (`/demo` now takes the HD pack too; `?sd` shows the bake). Plus the standing checks: bake twice for
+the same bytes, `tests/models.test.mjs`, and the fit of HD against SD (`tests/hd-pack.test.mjs`).
+
+### What is not in it
+
+No HD outside: every building on an island is one instance in one `BatchedMesh` with one material, and a
+textured building is a draw call of its own again. No HD of a room's shell (its floors are walked, its boxes
+are the camera's): kit pieces only.
+
 ## Het exterieur: een galjoen dat op een rots is gelopen (30 september 2026)
 
 **Status: gebouwd op `claude/salty-kraken-exterieur` (vanaf `claude/salty-kraken`), niet gemerged; wacht op het
