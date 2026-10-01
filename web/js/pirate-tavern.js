@@ -31,7 +31,7 @@
 // on it. **Seats are never blockers**: sitting puts you at a seat's centre.
 //
 // What moves is `createCrewShow` below: the crew at their tables, drawn with the island's own
-// instanced settlers sitting (settler-figures.js `'sit'`), nodding to the shanty, turning to look
+// instanced settlers sitting (settler-figures.js `'sit'`), breathing, turning to look
 // at you, and the quest mark over whoever the story is waiting on - plus Captain Spack Jarrow,
 // the one of them who is a model of his own (captain.js).
 import * as THREE from 'three';
@@ -367,13 +367,13 @@ export function createCrewShow({ scene, material, camera = null, layout }) {
     const id = `piratetavern:${m.who}`;
     const f = {
       id, pos: [m.x, m.z], y: m.y, yaw: m.yaw, faceAngle: m.yaw, visible: true,
-      anim: m.stand ? 'still' : 'sit', mode: 'idle', speed: 0, beat: 0,
+      anim: m.stand ? 'still' : 'sit', mode: 'idle', speed: 0, beat: null,
       ...(m.seat ? { seat: m.seat } : {}),
     };
     const look = { ...settlerLook(id, 'unknown'), outfit: 'trousers', presentation: 'man', ...m.look };
     if (!view.enrol(f, look, 'adult')) continue;
     figs.push(f);
-    members.push({ m, f, lag: (members.length * 0.037) % 0.12 });
+    members.push({ m, f });
   }
 
   // The quest mark over whoever the story is waiting on (shared/quests.mjs businessWith).
@@ -406,7 +406,9 @@ export function createCrewShow({ scene, material, camera = null, layout }) {
     seconds += dt;
     for (const c of members) {
       const { m, f } = c;
-      f.beat = m.stand ? null : beats + c.lag;
+      // No nodding to the shanty: a nod on every count, with its sharp onset (sitPose), read as
+      // headbanging - "heel spastisch", said the keeper. They sit, breathe and look round instead.
+      f.beat = null;
       // Turn to look at whoever comes near and stands roughly in front, and back to the table.
       let want = m.yaw;
       if (player) {
