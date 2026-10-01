@@ -21,6 +21,7 @@ import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
+import { createHdPieces } from './hd-pieces.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -488,7 +489,7 @@ function snackGeometry() {
 // `onTalk(it)` is somebody in the room being spoken to (the Salty Kraken's crew, `kind: 'crew'`),
 // and `onOrder(room, what)` a drink ordered at a seat - which is the Kraken's first quest step,
 // and which walk mode's own onDrink cannot see, since that needs a glass already in the hand.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null }) {
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -512,6 +513,13 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // the camera stops a hand under it and stares down at your hat.
   const roofMesh = def.roof && def.roof.length ? new THREE.Mesh(mergeGeom(def.roof), material) : null;
   if (roofMesh) scene.add(roofMesh);
+
+  // The kit pieces the HD pack has a model of (hd-pieces.js): each its own mesh beside its model,
+  // so Settings -> Graphics can switch between the two in a room that is already built. Those that
+  // hang from the lid go with the lid.
+  const roofPieces = new THREE.Group();
+  scene.add(roofPieces);
+  const pieces = def.pieces?.length ? createHdPieces({ scene, roof: roofPieces, pieces: def.pieces, material, hd }) : null;
 
   // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
   // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
@@ -803,6 +811,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     roofWanted = true;
     const w = walk.update(dt);
     if (roofMesh) roofMesh.visible = roofWanted;
+    roofPieces.visible = roofWanted;
     if (roofHalos) roofHalos.object.visible = roofWanted;
     if (shafts) shafts.object.visible = roofWanted;
 
@@ -819,6 +828,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     if (flame) flame.update(t);
     if (halos) halos.update(t);
     if (roofHalos) roofHalos.update(t);
+    if (pieces) pieces.update(t);
     // The barman shifts his weight, and walks the length of the bar to whoever ordered.
     for (const f of figures) {
       if (f.tends) f.mesh.position[f.along] += (barmanX - f.mesh.position[f.along]) * Math.min(1, dt * 3.4);
@@ -855,6 +865,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     pint.dispose();
     snack.dispose();
     for (const f of figures) f.mesh.geometry.dispose();
+    if (pieces) pieces.dispose();
   }
 
   return {
@@ -868,6 +879,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // The room has its own walk mode, so it needs its own way in for the controller.
     pad: (a, dt) => walk.pad(a, dt),
     isInside: () => !left,
+    // Bakes or the HD pack's models (Settings -> Graphics, main.js applyGraphics).
+    setDetail: (on) => { if (pieces) pieces.setDetail(on); },
   };
 }
 

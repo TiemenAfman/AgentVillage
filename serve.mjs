@@ -1331,6 +1331,18 @@ if (req.url === '/api/command' && req.method === 'POST') {
   const localModel = /^\/api\/local-model\/([a-z0-9_-]+\.glb)$/i.exec(p);
   if (localModel) return sendFile(req, res, path.join(HOME, 'models', localModel[1]), { cache: 'no-cache' });
 
+  // ---- the HD pack (Plans/piratenkroeg.md, "The HD pack") ----------------------------
+  // HOME/hd/ holds textured models that stand in for a room's kit pieces (web/js/hd-pieces.js):
+  // an hd-manifest.json and its GLBs, never in the repo, a release folder or the app. The page
+  // checks every field itself (shared/hdfit.mjs), so this only hands the files over. Keeper-only
+  // like the local models; the file name is a bare word so no path can climb out of the folder.
+  if (p === '/api/hd') {
+    const manifest = readJson(path.join(HOME, 'hd', 'hd-manifest.json'), null);
+    return json(res, 200, manifest || { installed: false });
+  }
+  const hdModel = /^\/api\/hd\/([a-z0-9_-]+\.glb)$/i.exec(p);
+  if (hdModel) return sendFile(req, res, path.join(HOME, 'hd', hdModel[1]), { cache: 'no-cache' });
+
   // ---- what has been built by hand ---------------------------------------------
   // Everything here is a shape, a place and a size. Nothing names a file or a folder,
   // so the worst a runaway agent can do is clutter the island, and `clear` sweeps it.

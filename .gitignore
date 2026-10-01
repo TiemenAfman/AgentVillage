@@ -11,6 +11,9 @@ assets/**/renders/
 # the keeper's own music for the rooms (lib/music.mjs): HOME/audio, which in a linked worktree is
 # the checkout itself - somebody's mp3s are theirs, never the repository's
 /audio/
+# the HD pack (Plans/hd-pakket.md): HOME/hd, textured models that live in a repository of their own so
+# this one and its installers stay small; in a linked worktree HOME is the checkout itself
+/hd/
 
 # per-machine settings; config.example.json is the template
 config.json

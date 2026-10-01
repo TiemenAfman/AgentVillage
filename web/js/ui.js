@@ -5,7 +5,7 @@ import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey, suspendPad } from './input.js';
 import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, padOf, keyLabel, bindKey, bindPad, resetKeys, resetPad } from './keybinds.js';
 import { padName, padLabel } from './gamepad.js';
-import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS } from './graphics-settings.js';
+import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
@@ -815,8 +815,20 @@ export function createUI(handlers) {
     return '<div><h3 class="sec">Graphics</h3>'
       + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
       + GRAPHICS_ROWS.map(row).join('')
+      + detailRow()
       + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-graphics-reset="1">This machine's defaults</button></div>`
       + `</div>`;
+  }
+  // Forced SD - Auto - Forced HD (graphics-settings.js GRAPHICS_CHOICES, Plans/piratenkroeg.md, "The HD pack"), with
+  // what the HD pack in HOME/hd holds. Not on the phone, which has neither rooms nor a pack.
+  const DETAIL_LABELS = { sd: 'Forced SD', auto: 'Auto', hd: 'Forced HD' };
+  function detailRow() {
+    const pack = handlers.hdStatus ? handlers.hdStatus() : false;
+    if (pack === false) return '';
+    const has = pack ? `HD pack ${pack.pack || ''} installed: ${pack.pieces} model${pack.pieces === 1 ? '' : 's'}.` : 'No HD pack installed.';
+    return `<div class="setting-row"><label>Model detail</label><div class="chips wrap">${GRAPHICS_CHOICES.detail
+      .map((k) => `<button class="chip${state.graphics.detail === k ? ' on' : ''}" data-detail="${k}">${DETAIL_LABELS[k]}</button>`).join('')}</div>`
+      + `<p class="muted" style="margin:4px 0 0">${has} Auto shows HD on a full-strength machine.</p></div>`;
   }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
@@ -895,6 +907,12 @@ export function createUI(handlers) {
     }));
     // Every slider back to what this kind of machine starts at (graphics-settings.js), and the
     // panel drawn again from the numbers main.js now holds.
+    // Model detail is a word, not a slider, and goes the same one way into main.js.
+    el('settings-body').querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => {
+      state.graphics.detail = b.dataset.detail;
+      if (handlers.onGraphicsSetting) handlers.onGraphicsSetting('detail', b.dataset.detail);
+      renderSettings();
+    }));
     el('settings-body').querySelectorAll('[data-graphics-reset]').forEach((b) => b.addEventListener('click', () => {
       if (handlers.onGraphicsReset) handlers.onGraphicsReset();
       if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());

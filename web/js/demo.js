@@ -20,6 +20,8 @@ import { CROPS, CROP_KINDS, STAGES } from 'shared/crops.mjs';
 import { KINDS } from 'shared/shapes.mjs';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
+import { loadHdManifest, hdInstalled } from './hd-pieces.js';
+import { loadGraphics } from './graphics-settings.js';
 import { attachClock, updateClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachGoldPile } from './goldpit.js';
@@ -1255,6 +1257,9 @@ function stepInside(door) {
     room = createInterior({
       room: door.room, camera, material, dom: renderer.domElement,
       onLeave: () => stepOutside(door),
+      // The HD pack's models where it has them (hd-pieces.js), so a new piece can be looked at
+      // here: on unless this browser forced SD in the island's settings, or `?sd` asks for the bake.
+      hd: hdInstalled() && !new URLSearchParams(location.search).has('sd') && loadGraphics().detail !== 'sd',
     });
     rooms.set(door.room, room);
   }
@@ -1338,3 +1343,5 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// What the HD pack holds, once the sheet is up; a room built before it lands is all bake.
+loadHdManifest();

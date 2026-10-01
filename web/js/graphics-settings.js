@@ -8,6 +8,8 @@
 // to the islander's config.json, which is the keeper's and shared by every page.
 //
 // What each one *does* is Plans/DONE/graphics-afstanden.md; this file only knows they are four.
+// A fifth setting, `detail` (Forced SD - Auto - Forced HD, Plans/piratenkroeg.md, "The HD pack"), is a word, kept
+// and remembered the same way.
 
 // What each kind of machine starts at. The sliders are for turning it further down, or up;
 // these are what a page gets before anybody has touched them, and a machine keeps following
@@ -23,10 +25,14 @@
 // houses of a neighbour, their mills and their people are past the fog and out of the
 // render list rather than drawn and hidden, and they come out of the mist as you sail in.
 // A phone gets less again, because a phone draws a whole screen of it at a phone's GPU.
+//
+// `detail` is the fifth setting and not a distance: which models a room draws, the hand-made
+// bakes or the HD pack's textured ones (Plans/piratenkroeg.md, "The HD pack"). Every tier starts on 'auto', which
+// hdWanted below turns into HD on a `full` machine only.
 export const GRAPHICS_TIERS = Object.freeze({
-  full: Object.freeze({ viewDistance: 1250, npcDistance: 1000, shadowDistance: 380 }),
-  modest: Object.freeze({ viewDistance: 800, npcDistance: 300, shadowDistance: 160 }),
-  phone: Object.freeze({ viewDistance: 600, npcDistance: 200, shadowDistance: 110 }),
+  full: Object.freeze({ viewDistance: 1250, npcDistance: 1000, shadowDistance: 380, detail: 'auto' }),
+  modest: Object.freeze({ viewDistance: 800, npcDistance: 300, shadowDistance: 160, detail: 'auto' }),
+  phone: Object.freeze({ viewDistance: 600, npcDistance: 200, shadowDistance: 110, detail: 'auto' }),
 });
 
 // Object Distance is not a slider: it is View Distance times what this kind of machine can
@@ -65,6 +71,23 @@ export const GRAPHICS_LIMITS = Object.freeze({
 // moved and the fog, which main.js works out from the size of the island, did not, so a bigger
 // View Distance changed nothing anybody could see. Continuous, so a nudge past the default is a
 // nudge in the fog and not a jump.
+// The settings that are a word rather than a number, and the words each takes: Forced SD - Auto -
+// Forced HD, in the order Settings -> Graphics lists them.
+export const GRAPHICS_CHOICES = Object.freeze({
+  detail: Object.freeze(['sd', 'auto', 'hd']),
+});
+
+// Whether this page draws the HD pack's models where it has them. 'sd' never, 'hd' always (on a
+// `modest` machine too: whoever forces it has asked), 'auto' on a `full` machine that does not
+// say it has under 8 GB. WebGL has no honest figure for video memory; the renderer string is
+// already the tier (main.js MODEST_GPU), and `navigator.deviceMemory` (Chrome only, capped at 8)
+// is the one more thing a page can ask. Whether there is a pack at all is the caller's question.
+export function hdWanted(detail, tier = 'full', { deviceMemory = null } = {}) {
+  if (detail === 'sd') return false;
+  if (detail === 'hd') return true;
+  return tier === 'full' && !(deviceMemory && deviceMemory < 8);
+}
+
 export const HAZE_OPEN_AT = 6000;
 export function hazeOpening(viewDistance) {
   const from = GRAPHICS_TIERS.full.viewDistance, to = HAZE_OPEN_AT;
@@ -77,10 +100,12 @@ export function hazeOpening(viewDistance) {
 // would have kept a desktop's defaults after it got its own. `.v3` starts from nothing, once.
 export const GRAPHICS_KEY = 'promptholm.graphics.v3';
 
-// A value for `key`, clamped to its slider, or null for a key that is not one of the four
-// or a value that is not a number. null rather than the default, so the caller can tell
-// "leave it" from "put it back".
+// A value for `key`, clamped to its slider, or null for a key that is not one of the five or
+// a value that is not a number (for a word setting: not one of its words). null rather than the
+// default, so the caller can tell "leave it" from "put it back".
 export function clampGraphic(key, value) {
+  const words = GRAPHICS_CHOICES[key];
+  if (words) return words.includes(value) ? value : null;
   const lim = GRAPHICS_LIMITS[key];
   const n = Number(value);
   if (!lim || typeof value === 'boolean' || value === null || value === '' || !Number.isFinite(n)) return null;
@@ -93,7 +118,7 @@ function browserStorage() {
   try { return globalThis.localStorage || null; } catch { return null; }
 }
 
-// The four for this page: the tier's defaults, with whatever this browser was told on top,
+// The settings for this page: the tier's defaults, with whatever this browser was told on top,
 // each field on its own - a stored object with one bad field keeps the other three.
 // `storage` defaults to localStorage and is a parameter so a test can hand in a map; storage
 // that is missing or throws leaves the defaults.

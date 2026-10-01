@@ -39,6 +39,7 @@ import { meshAsset } from './buildings.js';
 import { createFigures, settlerLook } from './settler-figures.js';
 import { createQuestMark, MARK_LIFT } from './quest-mark.js';
 import { captainModel } from './captain.js';
+import { hdPieceOf } from './hd-pieces.js';
 import { SHANTY_SONG } from './sound.js';
 import { CREW } from 'shared/quests.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
@@ -127,8 +128,15 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const ROOF = /^Kraken roof /;
   place(parts, 'piratetavern_room', {}, (n) => !ROOF.test(n));
   place(roof, 'piratetavern_room', {}, (n) => ROOF.test(n));
-  // The ship's parts.
-  const kit = (asset, at, out = parts) => place(out, asset, at);
+  // The ship's parts. One the HD pack has a model of (hd-pieces.js) stays out of the room's merge and
+  // goes to `pieces`, drawn as its own mesh beside the model so Settings can switch between the two.
+  const pieces = [];
+  const kit = (asset, at, out = parts) => {
+    if (!hdPieceOf(asset)) return place(out, asset, at);
+    const geoms = [];
+    place(geoms, asset, at);
+    pieces.push({ asset, at: { x: at.x || 0, y: at.y || 0, z: at.z || 0, ry: at.ry || 0 }, roof: out === roof, geoms });
+  };
   kit('civic_kraken_stern', K.KIT.stern);
   const KIT = K.KIT;
   kit('civic_kraken_counter', KIT.counter);
@@ -312,7 +320,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
 
   return {
     name: 'the Salty Kraken',
-    parts, roof, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
+    parts, roof, pieces, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
     // The glow round every flame and lit window, read off the parts themselves, and the moonlight
     // through the skylights (room-glow.js; the light plan is kraken-layout.js LIGHTS).
     halos: halosOf(parts), roofHalos: halosOf(roof),
