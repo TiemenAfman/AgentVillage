@@ -271,7 +271,16 @@ function weighHouses(village, owner, size) {
   return out;
 }
 
-export function buildBorders(village, terrain, owner, roadCells, fields = null) {
+// What walk mode meets of a boundary (Plans/hitboxes-en-looppaden.md), for buildBorders' `out`:
+// `solids` one thin rectangle per straight run and a circle per gatepost, in the island's own
+// frame; `closed` the pairs of cells a run stands between (`edgeKey`) that are not a `hop`, for a
+// route that cannot jump them. Below HOP_H a boundary is a hop (walk.js `blocked`: a wall on the
+// ground, open in the air) - a rail, "thin enough to step over", and the lower palings; a jump
+// reaches 0.38. A hedge and a wall are not, and are gone through at a gate or not at all.
+const HOP_H = 0.4;
+export const edgeKey = (a, b) => (a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a);
+
+export function buildBorders(village, terrain, owner, roadCells, fields = null, out = null) {
   const size = terrain.size;
   const isRoad = (gx, gz) => roadCells.has(gx + gz * size);
   const ownerAt = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : owner[gx + gz * size]);
@@ -391,6 +400,23 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
 
   const parts = [];
   const atLevel = (level) => level == null ? terrain : { ...terrain, worldHeight: () => level };
+  const half = terrain.half;
+  if (out) { out.solids = []; out.closed = new Set(); }
+  // A run along one cell edge line from `a` to `b` (cells), as walk mode's rectangle, and the cell
+  // pairs it closes. `axis` 'x' is a line of constant x (fixed - half) running along z.
+  const solidRun = (axis, fixed, a, b, v) => {
+    const f = fixed - half, mid = (a + b) / 2 - half, t = Math.max(0.05, v.t / 2);
+    const hop = v.h < HOP_H;
+    out.solids.push(axis === 'x'
+      ? { x: f, z: mid, hx: t, hz: (b - a) / 2, ...(hop ? { hop: true } : {}) }
+      : { x: mid, z: f, hx: (b - a) / 2, hz: t, ...(hop ? { hop: true } : {}) });
+    if (hop) return;
+    for (let along = a; along < b; along++) {
+      const one = axis === 'x' ? (fixed - 1) + along * size : along + (fixed - 1) * size;
+      const two = axis === 'x' ? fixed + along * size : along + fixed * size;
+      out.closed.add(edgeKey(one, two));
+    }
+  };
   for (const run of runs.values()) {
     run.at.sort((a, b) => a - b);
     let start = null, prev = null;
@@ -398,6 +424,7 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
       if (start === null) return;
       const g = modelled(atLevel(run.level), run.axis, run.fixed, start, prev + 1, run.v, run.hue);
       if (g) parts.push(g);
+      if (out) solidRun(run.axis, run.fixed, start, prev + 1, run.v);
     };
     for (const a of run.at) {
       if (prev !== null && a !== prev + 1) { flush(); start = a; }
@@ -411,6 +438,11 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null) 
     for (const end of [e.along, e.along + 1]) {
       const g = gatepost(atLevel(level), e.axis, e.fixed, end, v);
       if (g) parts.push(g);
+      // post()'s foot, a hair wider than the modelled posts and piers of the other three rungs.
+      if (out) {
+        const x = e.axis === 'x' ? e.fixed - half : end - half, z = e.axis === 'x' ? end - half : e.fixed - half;
+        out.solids.push({ x, z, r: Math.max(0.17, v.t * 1.05) * 0.52 });
+      }
     }
   }
   if (!parts.length) return null;

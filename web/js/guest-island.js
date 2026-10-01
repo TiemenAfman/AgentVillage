@@ -31,6 +31,7 @@ import { SOFT_BUILDING_FIELDS } from './islandsig.js';
 import { disposeExtras } from './record-extras.js';
 import { floatingPose } from './batavia.js';
 import { createRecordBatch, VERTICES_PER_BUILDING } from './record-batch.js';
+import { porchFloor } from './solids.js';
 
 // A harbour house stands on stilts, and this pins its deck just above the waterline - but
 // only where there is actually water to stand in. The same number and the same reasoning as
@@ -281,6 +282,14 @@ export function createGuestIsland({
         });
       }
     }
+    // Their porches, as floors (solids.js porchFloor).
+    for (const rec of records) {
+      if (!rec.built.porch) continue;
+      const p = rec.group.position;
+      for (const f of porchFloor(rec.built.porch, { x: ox + p.x, z: oz + p.z, y: p.y, yaw: rec.group.rotation.y })) out.push({ ...f, id: `guest:${region.id}:${rec.id}` });
+    }
+    // Their wood, their stones and their boundaries (world.js solids), moved the same way.
+    for (const b of land.solids()) out.push({ ...b, x: b.x + ox, z: b.z + oz, id: `guest:${region.id}:land` });
     return out;
   }
 
