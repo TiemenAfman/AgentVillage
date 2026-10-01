@@ -41,6 +41,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   alleen door de poort). En je staat op de stoep van een gebouw. Gebouwd op 1 oktober 2026. Muren van gebouwen,
   trappen en steigers zijn van andere sessies.
 
+- 🚧 [muren-met-hitboxes.md](muren-met-hitboxes.md) — gebouwen zo solide als ze eruitzien: muren per vlak
+  gemeten in plaats van één blok per part (de poort van het grote kasteel in te lopen, de goudkuil open),
+  gedraaide gebouwen als gedraaide rechthoek, en nooit vast in een gebouw. Gebouwd, nog niet gecommit.
 - 🚧 [toetsen-en-bindings.md](toetsen-en-bindings.md) — Ctrl bindbaar en alle ctrl+letters uit op de
   wandelmodus (ctrl+A in elke modus), op en neer duiken met de muis, en Settings → Controls als
   tabel met primaire toets, secundaire toets en controllerknop per actie (grijs zonder controller,
