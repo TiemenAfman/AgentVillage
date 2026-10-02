@@ -985,7 +985,14 @@ graphics-settings.js, through `onGraphicsSetting` like the sliders), switches a 
 transforms included) after the manifest's `at` (whole quarter turns only - shared/ has no sin/cos) within
 `HD_FIT` of the bake's, or the page keeps the bake and says so once; `tests/hd-pack.test.mjs` checks whatever
 pack is on this machine and skips without one. Glow is a material the manifest names `flame` (halos from
-it, never a light); `gilt`/`metal` get one shared warm room to reflect. No size budgets: the keeper tweaks.
+it, never a light); `gilt`/`metal` get one shared warm room to reflect, and so does any material with a metalness map (metal with nothing
+to mirror reads black) - but an envMap also lights the whole piece evenly, which the bakes beside it never get, so
+those take only `ENV_FILL` of its diffuse light (a shader patch on `iblIrradiance`). A piece standing on a floor
+(`floorAt` from interior.js) gets a soft contact patch under it: rooms have no shadow pass. No size budgets: the
+keeper tweaks - his choice is 50k, textures at 2048, with colour, normal map, Pixal3D's metallic/roughness and
+ambient occlusion baked back (BlenderAI `bake_texture.py --normal --gloss --ao 0.08` in kit units; colour through
+EMIT, since DIFFUSE/COLOR is the base colour times 1 - metallic and baked every metal part dark; the AO worked out on
+the raw mesh, whose normals hold - a decimated thin wall's point inwards and greyed the chest's front).
 A piece is made with the personal skill `/kitstuk` (`~/.claude/skills/kitstuk/`: Pixal3D RAW -> N k ->
 kit frame -> HD and/or SD-auto, fit and room checks). Pixal3D keeps its input image's viewpoint, so the
 front differs per image: find it with `kitstuk front` (every 15 degrees at eye level), not off BlenderAI's
