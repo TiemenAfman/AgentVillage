@@ -8732,6 +8732,34 @@ function craftCues() {
   }
   return out;
 }
+// The rounds sound.js listens to (Plans/meer-geluiden.md, phase 8), as cues their modules keep for
+// themselves: the timber wagon's stage and its horse (timberrun.js where, on the sea's clock), the
+// gold run's cart while it is under way and the pit's bar count (goldrun.js focus/bars), and every
+// fisherman's `bites` with where he stands and where his float lands (three units out, +z of him).
+const _fish = new THREE.Vector3();
+function roundCues() {
+  const out = { wagon: null, gold: null, bars: null, pit: null, fishers: [] };
+  try {
+    const w = state.timberRun && state.timberRun.where ? state.timberRun.where(timeNow()) : null;
+    if (w && w.horse) out.wagon = { stage: w.stage, at: [w.horse[0], groundAt(w.horse[0], w.horse[1]), w.horse[1]] };
+  } catch { /* the wagon is cosmetic: no sound sooner than a broken frame */ }
+  if (state.goldRun) {
+    const at = state.goldRun.focus();
+    if (at) out.gold = { at: [at[0], groundAt(at[0], at[1]), at[1]], moving: state.goldRun.busy() };
+    out.bars = state.goldRun.bars();
+    const pit = state.byId.get('civic:goldpit');
+    if (pit && pit.group.visible) out.pit = pit.group.position.toArray();
+  }
+  for (const rec of state.byId.values()) {
+    const f = rec.fisher;
+    if (!f || !f.figure || !f.figure.visible) continue;
+    f.figure.getWorldPosition(_fish);
+    const at = [_fish.x, _fish.y, _fish.z];
+    f.figure.localToWorld(_fish.set(0, 0, 3));
+    out.fishers.push({ id: rec.id, at, float: [_fish.x, 0, _fish.z], bites: f.bites || 0 });
+  }
+  return out;
+}
 // Our rivers as points in the scene, once per terrain (terrain.rivers are courses of grid cells),
 // and the nearest of a list to the ears within a reach - which is all the river's sound needs.
 const RIVER_EAR = 34;
@@ -8912,6 +8940,8 @@ function soundSnapshot() {
     river: nearestOn(riverPoints(), RIVER_EAR),
     ...volcanoNear(),
     bubbled: state.seaLife && state.seaLife.emitted ? state.seaLife.emitted() : null,
+    // The rounds' cues (roundCues): the timber wagon on the sea's clock, the gold run, the fisherman.
+    rounds: roundCues(),
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

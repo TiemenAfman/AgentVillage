@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still thirty-four placed voices', () => {
+test('three hundred settlers hammering at once are still thirty-eight placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,7 +245,7 @@ test('three hundred settlers hammering at once are still thirty-four placed voic
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 34, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals + a river and the lava');
+  assert.equal(s0.cap, 38, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals + a river and the lava + 3 for the rounds and their wheels');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
   assert.equal(s0.bedSources, 13, 'and the sea, the wind, the two rooms, the glass and the bell in a room, the four of the hour and the sky, the rumble, the sea from below and its bubbles');
 
@@ -1139,6 +1139,60 @@ test('under the sea the beds from above go down and the sea\'s own comes up, wit
   sound.setUnderwater(0);
   run(sound, 12);
   assert.ok(sound.stats().hours.under < 0.005, 'back up: gone');
+});
+
+// --- the rounds (phase 8) --------------------------------------------------
+
+test('the timber wagon: hooves and wheels on the road, timber thrown down at either end', () => {
+  store = {};
+  const wagon = { stage: 'out', at: [6, 0, 0] };
+  const look = inland({ rounds: { wagon } });
+  const sound = heardSound(look);
+  run(sound, 5);
+  const hooves = shots(0.16);
+  assert.ok(hooves >= 7 && hooves <= 14, `a walking horse, twice a second (${hooves} in five)`);
+  assert.equal(sound.stats().families.round.playing >= 1, true, 'and the wheels');
+  wagon.stage = 'unload';
+  const h = shots(0.16);
+  run(sound, 8);
+  assert.equal(shots(0.16), h, 'standing still: no hooves');
+  assert.ok(shots(0.6) >= 2, 'the timber going down');
+  wagon.at = [200, 0, 0];
+  wagon.stage = 'back';
+  const far = shots(0.16);
+  run(sound, 3);
+  assert.equal(shots(0.16), far, 'out of earshot: nothing');
+});
+
+test('the fisherman: a swish on the strike and the float a moment after', () => {
+  store = {};
+  const fisher = { id: 'civic:fishery', at: [3, 0, 0], float: [3, 0, 3], bites: 4 };
+  const look = inland({ rounds: { fishers: [fisher] } });
+  const sound = heardSound(look);
+  run(sound, 1);
+  const swish = () => shots(0.3), plop = () => shots(0.32);
+  assert.equal(swish() + plop(), 0, 'the bites before we came are not heard');
+  fisher.bites = 5;
+  run(sound, 0.3);
+  assert.equal(swish(), 1, 'the strike');
+  assert.equal(plop(), 0, 'and the float not yet');
+  run(sound, 1.5);
+  assert.equal(plop(), 1, 'there it lands');
+});
+
+test('bars landing on the pit tink, one for each', () => {
+  store = {};
+  const r = { bars: 20, pit: [5, 0, 0] };
+  const look = inland({ rounds: r });
+  const sound = heardSound(look);
+  run(sound, 1);
+  const tinks = () => shots(0.4);
+  const n = tinks();
+  r.bars = 21;
+  run(sound, 0.5);
+  assert.equal(tinks(), n + 1);
+  run(sound, 2);
+  assert.equal(tinks(), n + 1);
 });
 
 // --- 3. the noises themselves ---------------------------------------------

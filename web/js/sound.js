@@ -113,6 +113,13 @@ const RUMBLE_LOUD = 0.22;
 const UNDER_LOUD = 0.16;
 // What is left of the beds from above the water at the bottom of a dive.
 const OVER_DEEP = 0.25;
+// The rounds (phase 8): three one-shots and the wheels' loop, heard within ROUND_RANGE.
+const ROUNDERS = 3;
+const ROUND_RANGE = 45;
+// A walking horse sets a hoof down about twice a second (timberrun.js's HORSE_SPEED is a walk).
+const HOOF_EVERY = 0.48;
+// The float lands this long after the strike (fisher.js casts again 0.9 s after it).
+const PLOP_AFTER = 1.15;
 // Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
 // hello more than twice at once.
 const GREETERS = 2;
@@ -895,6 +902,55 @@ const bubbleShot = (c) => shot(c, 0.35, 'bubble', (n, sr) => {
   return out;
 }, 0.05);
 
+// --- the rounds -------------------------------------------------------------
+//
+// Plans/meer-geluiden.md, phase 8: the timber wagon (hooves, wheels, the timber thrown down), the
+// gold run (the cart and the barrow on the road, bars on the pit) and the fisherman (the swish of
+// the cast and the plop of the float). The wagon runs on the sea's clock already (timberrun.js
+// tripAt), so two players side by side hear it in the same place.
+const ROUND_SHOTS = {
+  // A hoof on a road: a hollow knock and the thump under it.
+  hoof: (c) => shot(c, 0.16, 'hoof', (n, sr, rng) => add(ring(n, sr, [[620, 0.8, 0.02], [940, 0.4, 0.012], [140, 0.6, 0.03]]), burst(n, sr, rng, 1500, 2, 0.006, 0.8)), 0.08),
+  // Timber thrown down: three knocks of wood on wood, falling in pitch.
+  plank: (c) => shot(c, 0.6, 'plank', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    [[0, 260], [0.14, 220], [0.31, 190]].forEach(([at, f0]) => {
+      const i0 = Math.floor(at * sr), k = ring(n - i0, sr, [[f0, 1, 0.05], [f0 * 1.7, 0.5, 0.03]]);
+      const b = burst(n - i0, sr, rng, 900, 2, 0.01, 0.6);
+      for (let i = 0; i < k.length; i++) out[i0 + i] += k[i] + b[i];
+    });
+    return out;
+  }, 0.09),
+  // The rod's line through the air.
+  swish: (c) => shot(c, 0.3, 'swish', (n, sr, rng) => {
+    const src = noise(n, rng);
+    const r = lowpass(src, sr, (i) => 600 + 2400 * Math.sin(Math.PI * i / n));
+    for (let i = 0; i < n; i++) r[i] = (src[i] - r[i] * 0.3) * Math.pow(Math.sin(Math.PI * i / n), 2) * 0.4;
+    return highpass(r, sr, 500);
+  }, 0.04),
+  // The float landing: a drop of pitch and a splash.
+  plop: (c) => shot(c, 0.32, 'plop', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    let ph = 0;
+    for (let i = 0; i < n; i++) { const t = i / sr; ph += (900 * Math.exp(-t / 0.03) + 280) / sr; out[i] = Math.sin(2 * Math.PI * ph) * Math.exp(-t / 0.05); }
+    return add(out, lowpass(burst(n, sr, rng, 1800, 1, 0.04, 0.4), sr, 4000));
+  }, 0.06),
+};
+// Wheels on a road, a loop: a rumble with the knock of each turn of the rim.
+function cartBuffer(ctx, secs = 2) {
+  const sr = BED_SR, len = Math.floor(sr * secs), fade = Math.floor(sr * 0.2), n = len + fade;
+  const rng = makeRng('round:cart');
+  const out = lowpass(lowpass(noise(n, rng), sr, 320), sr, 320);
+  for (let i = 0; i < n; i++) out[i] *= 6;
+  for (let k = 0; k < 8; k++) {
+    const i0 = Math.floor(k * len / 8 + rng.next() * sr * 0.03);
+    for (let i = 0; i < Math.floor(sr * 0.04) && i0 + i < n; i++) out[i0 + i] += Math.sin(2 * Math.PI * 180 * i / sr) * Math.exp(-i / sr / 0.012) * 0.6;
+  }
+  const chs = [seam(out, len, fade)];
+  level(chs, 0.08);
+  return intoBuffer(ctx, chs, sr);
+}
+
 // --- a clink ---------------------------------------------------------------
 //
 // Two glasses meeting: two high rings a fourth and a bit apart, gone in a sixth of a second - the
@@ -1659,6 +1715,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       bubbles: mkBed(null, 'underwater'),
       rare: mkVoice(null, { ref: 14, rolloff: 1.0, volume: 0.6, part: 'birds' }),
       horn: mkVoice(null, { ref: 30, rolloff: 0.6, volume: 0.8, part: 'weather' }),
+      // The rounds: the wagon's and the gold cart's wheels as one loop at whichever is nearer, and
+      // three one-shots for hooves, timber, bars, the cast and the float.
+      cart: { ...mkLoop({ ref: 5, rolloff: 1.6, volume: 0, part: 'rounds' }), want: 0 },
+      rounders: Array.from({ length: ROUNDERS }, () => mkVoice(null, { ref: 5, rolloff: 1.7, volume: 0.6, part: 'rounds' })),
       // The animals' voices.
       animals: Array.from({ length: ANIMALS }, () => mkVoice(null, { ref: 4, rolloff: 1.7, volume: 0.6, part: 'birds' })),
       // Who says hello: two voices with a place, given each greeting's phrase as it is said.
@@ -1701,6 +1761,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     lava: (c) => waterSong(c, 'lava'),
     under: (c) => waterSong(c, 'under', 6),
     bubble: (c) => once(bubbleShot, c),
+    ...Object.fromEntries(Object.entries(ROUND_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+    cart: (c) => once(cartBuffer, c),
     ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
   // A buffer that is quick to make, made in one step all the same, so every family goes through
@@ -2257,6 +2319,66 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     bubbledSeen = n;
   }
 
+  // The rounds (look.rounds, from main.js roundCues): the wagon's stage and its horse, the gold run's
+  // cart and the pit's bar count, and each fisherman's `bites` - every one a cue the drawing
+  // module already keeps for itself. Hooves and wheels while the horse walks, timber thrown down
+  // while it loads and unloads, a tink for every bar that lands on the pit, and for a bite the
+  // swish of the strike and, a moment after, the float.
+  const roundsSeen = { bars: null, bites: new Map(), plops: [] };
+  let hoofAt = 0, plankAt = 0;
+  function roundShot(name, at, volume, rate = 0.9 + Math.random() * 0.2) {
+    const buf = need(name);
+    if (!buf || !at || flat(at) > ROUND_RANGE) return;
+    const v = built.rounders.find((s) => !s.audio.isPlaying) || built.rounders[0];
+    if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
+    v.audio.setVolume(volume * edge(flat(at), ROUND_RANGE));
+    fire(v, at[0], at[1] + 0.3, at[2], rate);
+  }
+  function steerRounds(look) {
+    const r = look.rounds || {};
+    const ok = !look.indoors && live('rounds');
+    const wagon = ok && r.wagon && r.wagon.at && flat(r.wagon.at) < ROUND_RANGE ? r.wagon : null;
+    const gold = ok && r.gold && r.gold.at && flat(r.gold.at) < ROUND_RANGE ? r.gold : null;
+    if (wagon) { need('hoof'); need('plank'); }
+    // The wheels: whichever is rolling nearer.
+    const rolling = [wagon && (wagon.stage === 'out' || wagon.stage === 'back') ? wagon.at : null, gold && gold.moving ? gold.at : null]
+      .filter(Boolean).sort((a, b) => flat(a) - flat(b))[0] || null;
+    const c = built.cart;
+    c.want = rolling ? 0.4 * edge(flat(rolling), ROUND_RANGE) : 0;
+    c.walking = !!(wagon && (wagon.stage === 'out' || wagon.stage === 'back'));
+    c.wagon = wagon;
+    if (rolling) c.holder.position.set(rolling[0], rolling[1] + 0.3, rolling[2]);
+    loopTo(c, c.want > 0 || c.audio.isPlaying ? need('cart') : null, c.want);
+    if (rolling) c.holder.updateMatrixWorld(true);
+    // Bars landing on the pit: the count going up while a run delivers.
+    if (Number.isFinite(r.bars)) {
+      if (ok && r.pit && flat(r.pit) < ROUND_RANGE) need('load');
+      if (roundsSeen.bars != null && r.bars > roundsSeen.bars && ok && r.pit) roundShot('load', r.pit, 0.45, 1.1);
+      roundsSeen.bars = r.bars;
+    }
+    for (const fish of ok ? r.fishers || [] : []) {
+      const was = roundsSeen.bites.get(fish.id);
+      roundsSeen.bites.set(fish.id, fish.bites);
+      need('swish'); need('plop');
+      if (was == null || !(fish.bites > was)) continue;
+      roundShot('swish', fish.at, 0.5);
+      roundsSeen.plops.push({ t: clock + PLOP_AFTER, at: fish.float || fish.at });
+    }
+  }
+  function rounds() {
+    const c = built.cart;
+    if (c.walking && c.wagon && clock >= hoofAt) {
+      hoofAt = clock + HOOF_EVERY * (0.94 + Math.random() * 0.12);
+      roundShot('hoof', c.wagon.at, 0.45, 0.85 + Math.random() * 0.3);
+    }
+    const w = c.wagon;
+    if (w && (w.stage === 'load' || w.stage === 'unload') && clock >= plankAt) {
+      plankAt = clock + 2.2 + Math.random() * 1.6;
+      roundShot('plank', w.at, 0.55);
+    }
+    while (roundsSeen.plops.length && clock >= roundsSeen.plops[0].t) roundShot('plop', roundsSeen.plops.shift().at, 0.45);
+  }
+
   // The animals. Story animals (look.animals: { id, species, act, at }) by their act word, diffed like
   // a cue - a word that changed to one with a sound is heard once, and the first sighting only
   // remembers; the ambient flocks and the stable (look.herds: { id, kind, at }) each on a clock of
@@ -2465,6 +2587,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     steerWorkers(look);
     steerAnimals(look);
     steerWater(look);
+    steerRounds(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -2563,6 +2686,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     strike();
     work();
     glideHours(dt);
+    rounds();
     makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
@@ -2668,7 +2792,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2,
+    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2, round: ROUNDERS + 1,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -2678,7 +2802,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
       craft: [...built.crafts, built.saw], worker: built.workers, rare: [built.rare, built.horn],
-      animal: built.animals, water: [built.river, built.lava],
+      animal: built.animals, water: [built.river, built.lava], round: [...built.rounders, built.cart],
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();

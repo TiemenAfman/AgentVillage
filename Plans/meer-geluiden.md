@@ -376,9 +376,12 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    zee telde en de zee overal een bodem van 0,05 had. Nu telt een natte sonde alleen als er ook
    water ligt op 5 eenheden aan drie van de vier kanten (`seaAt`) - diepte kan het niet zeggen, want
    rivierbed en havengeul zijn allebei -0,55 - op twee ringen (12 en 26), en de bodem is 0,006.
-8. **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
+8. ✅ **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
    visser (werp en plons). Laatst, omdat ze zeldzaam zijn en het meeste uitzoekwerk vragen om in de
-   pas te lopen met het beeld.
+   pas te lopen met het beeld. *Gebouwd*: de wagen leest `timberRun.where(now)` (stage en paard, op
+   de klok van de zee), de goudrun `focus()`/`busy()`/`bars()`, de visser zijn bestaande teller
+   `bites`; één wielen-loop voor wie het dichtst rolt. Nog niet: het smelten bij de goudsmid (geen
+   cue voor het moment zelf zonder in goldrun.js' stappen te kijken).
 9. **Optioneel: eigen samples van de keeper** (`HOME/audio/sfx/`), alleen als blijkt dat een
    berekende koe of geit echt niet te doen is.
 
