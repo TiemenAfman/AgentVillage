@@ -84,6 +84,16 @@ input, textarea, select, [contenteditable="true"] { user-select: text; -webkit-u
   text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 #clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 #clock-chip.lens { color: var(--accent-2); border-color: rgba(127,199,217,.45); }
+/* The sea's clock is nobody's to change but the host's (Plans/zeetijd-van-de-host.md): for
+   everybody else the chip is a read-out, not a button. */
+#clock-chip:not(.host) { cursor: default; }
+.sea-clock { display: grid; gap: 4px; min-width: 180px; }
+.sea-clock p { margin: 0 0 4px; font: 600 10px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); }
+.sea-clock-btn { padding: 6px 10px; border: 0; background: rgba(255,255,255,.04); color: var(--ink); text-align: left;
+  font: 12px var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; }
+.sea-clock-btn:hover, .sea-clock-btn:focus-visible { background: rgba(232,193,124,.14); outline: 1px solid var(--accent); }
+.sea-clock-btn.real { margin-top: 4px; }
+.sea-clock-btn:disabled { opacity: .45; cursor: default; outline: none; background: rgba(255,255,255,.02); }
 #nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
 #nav-collapse-btn.collapsed { transform: rotate(180deg); }
 
@@ -1062,6 +1072,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .sysmenu-body section > h3.sec:first-child { margin-top: 0; }
 .sysmenu-body #settings-body section > h3.sec:first-child { margin-top: 15px; }
 .sysmenu[data-tab="screen"] .sysmenu-body section[data-tab="screen"]:not([hidden]),
+.sysmenu[data-tab="audio"] .sysmenu-body section[data-tab="audio"]:not([hidden]),
 .sysmenu[data-tab="controls"] .sysmenu-body section[data-tab="controls"]:not([hidden]),
 .sysmenu[data-tab="island"] .sysmenu-body section[data-tab="island"]:not([hidden]),
 .sysmenu[data-tab="help"] .sysmenu-body section[data-tab="help"]:not([hidden]) { display: block; }
@@ -1391,6 +1402,18 @@ body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx
   pointer-events: none; z-index: 5; white-space: nowrap;
 }
 #director-caption[hidden] { display: none; }
+
+/* The noclip camera's readout (web/js/noclip.js, Plans/noclip-camera.md): where it is, for a ?cam= link.
+   `noclip-clean` (__noclip.hud(false)) takes everything but the picture away for a screenshot. */
+#noclip-readout {
+  position: fixed; left: 12px; bottom: 12px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(16, 28, 32, 0.72); color: #f1e6c8;
+  font: 12px/1.3 ui-monospace, monospace;
+  pointer-events: none; z-index: 50; white-space: nowrap;
+}
+#noclip-readout[hidden] { display: none; }
+body.noclip-clean > :not(#stage):not(#panels):not(#underwater):not(script) { visibility: hidden !important; }
 
 /* --- the quest log (web/js/quest-panel.js) and the pirate (web/js/pirate.js) -------------- */
 .ql-h { font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); margin: 16px 0 6px; }

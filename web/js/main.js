@@ -53,13 +53,16 @@ import { createNameplate } from './nameplate.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
+import { openSeaClock } from './sea-clock.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
 import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
-import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
+import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
+import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
+import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, SPOTS_KEY } from './noclip.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -129,7 +132,8 @@ import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
-import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
+import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
+import { lavaLines } from './lava.js';
 import { installPageKeys } from './page-keys.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
@@ -838,11 +842,17 @@ function handSurfaces() {
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
 // Where the islander starts you: in front of the board on the square, as enterWalk's own
 // fallback does, facing it.
+// Or, when the page was last closed inside a room, outside its door: that is where walking down
+// takes you back in from (enterWalk, recalledRoom).
 function parkOnSquare() {
   const board = state.byId.get('civic:board');
   const town = state.village.island.town;
   let at = [0, 0], facing = null;
-  if (board) {
+  const back = recalledRoom();
+  if (back) {
+    at = back.step.at;
+    facing = back.step.facing;
+  } else if (board) {
     at = [board.group.position.x, board.group.position.z + 2.2];
     facing = [board.group.position.x, board.group.position.z];
   } else if (town && state.terrain) {
@@ -1277,6 +1287,62 @@ function recalledSpot() {
     facing: [x + Math.sin(spot.yaw) * 10, z + Math.cos(spot.yaw) * 10],
     pitch: Number.isFinite(spot.pitch) ? spot.pitch : undefined,
   };
+}
+
+// And the room you were in, so a reload or a restarted window inside the Salty Kraken puts you
+// back on its floor where you stood rather than in the sky over the square (web/js/room-spot.js).
+// A sibling of the spot above, per browser and per island; written while you are inside, and
+// forgotten whenever the room is left - through its door, up to the sky, out at closing time - so
+// that what is left of it means only "the page was closed in here". Never a visitor's (a guest
+// page is another keeper's island, and its rooms are not this browser's to remember) and never
+// the phone's, which has no rooms.
+const ROOM_SPOT_EVERY = 1000;
+let roomSpotAt = 0, roomSpotSaid = null;
+function roomSpotKey() {
+  return state.terrain && !state.guest && !STANDALONE ? `promptholm.walk.room.${state.terrain.seed}` : null;
+}
+function rememberRoom({ now = false } = {}) {
+  const key = roomSpotKey();
+  if (!key || !state.inside || !cameFrom) return;
+  // A room the noclip camera only looks round (noclipRoom) is no place the body stood.
+  if (state.inside === noclipPeek) return;
+  const t = performance.now();
+  if (!now && t - roomSpotAt < ROOM_SPOT_EVERY) return;
+  roomSpotAt = t;
+  const w = state.inside.walk.state;
+  const said = JSON.stringify(packRoomSpot({ room: state.inside.room, door: cameFrom, pos: w.pos, yaw: w.yaw, pitch: w.camPitch }));
+  if (said === roomSpotSaid) return;
+  roomSpotSaid = said;
+  try { localStorage.setItem(key, said); } catch { /* a convenience, not a record */ }
+}
+function forgetRoom() {
+  roomSpotSaid = null;
+  const key = roomSpotKey();
+  if (!key) return;
+  try { localStorage.removeItem(key); } catch { /* nothing to forget */ }
+}
+// The room to go back into, with the door it is entered by: only while that door still stands
+// where you came in (doorOf), the castle only while the rave is on, and only while the body has
+// not been sent somewhere else from the sky meanwhile. Anything else forgets the record.
+function recalledRoom() {
+  const key = roomSpotKey();
+  if (!key || params.has('square')) return null;
+  let spot = null;
+  try { spot = readRoomSpot(JSON.parse(localStorage.getItem(key))); } catch { spot = null; }
+  if (!spot) return null;
+  const door = doorOf(spot, interactables());
+  const walkedOff = state.walk.parked() &&
+    Math.hypot(state.walk.state.pos.x - spot.door.at[0], state.walk.state.pos.z - spot.door.at[1]) > DOOR_SLACK + 1;
+  if (!door || walkedOff || (spot.room === 'rave' && !raveOn())) { forgetRoom(); return null; }
+  // Where to stand outside it: the step you came in from, at its own height (the Kraken's stoop is
+  // up its rock, over the beach), while it will still take you; else the door's own spot, which E
+  // answers at. walk.enter steps a body sideways off a blocked spot, and out here that walked it
+  // down the stair before it was taken in.
+  const y = spot.door.y != null ? spot.door.y : door.floor;
+  const step = state.walk.standFloor(spot.door.at[0], spot.door.at[1], y ?? Infinity) != null
+    ? { at: spot.door.at, y }
+    : { at: [door.x, door.z], y: door.floor };
+  return { spot, door, step: { ...step, facing: spot.door.facing } };
 }
 
 function reportWhere({ final = false } = {}) {
@@ -2092,6 +2158,22 @@ function onRefusedBySea(m) {
 // open sea (seaQuietNotice). A phone has no hello, only the sea it was packed with.
 function learnSea(hello) {
   state.seaWords = { url: hello.sea || null, mode: hello.seaMode || null, open: !!hello.seaOpen };
+  // Whether this keeper raised the sea and so may set its clock (serve.mjs `hostsSea`). Asked
+  // again on every followSea, so leaving for somebody else's sea takes it away. Never on a
+  // phone, which has no islander and no sea of its own.
+  state.seaHost = !STANDALONE && !!hello.seaHost;
+}
+
+// The host's pick from the clock chip, to the islander that runs the sea. Nothing changes
+// here until the sea says so: the broadcast `{t:'clock'}` reaches this page like every other.
+async function setSeaTime(want) {
+  try {
+    const r = await mine('/api/sea-time', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(want) });
+    const body = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((body && body.error) || `the island answered ${r.status}`);
+  } catch (e) {
+    state.ui.toast(`The sea's clock stays as it was: ${escapeHtml(e.message || String(e))}`);
+  }
 }
 function onSeaStatus(status) {
   if (status === 'on') { state.ui.setSeaQuiet(null); return; }
@@ -2399,23 +2481,15 @@ function danceNow() {
 
 // Three o'clock: whoever is inside is put back out on the step, once.
 function keepRaveHours() {
-  if (!state.inside || state.inside.room !== 'rave' || raveOn()) return;
+  if (!state.inside || state.inside.room !== 'rave' || raveOn() || state.inside.peeking()) return;
   state.inside.leave();
   state.ui.toast(RAVE_OUT);
 }
 
-function enterInterior(room, at) {
-  if (state.inside || state.mode !== 'walk') return;
-  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
-  // they are in. Usually they are, having been started as you walked up to the door.
-  if (!roomReady(room)) {
-    state.ui.toast('The door sticks a moment...');
-    prepareRoom(room).then(() => enterInterior(room, at), (e) => {
-      console.error('that room could not be loaded', e);
-      state.ui.toast('That door does not open yet.');
-    });
-    return;
-  }
+// A room, built the first time it is asked for and kept: enterInterior's, and the noclip camera's
+// to look round without a door (noclipRoom). Its sets must be loaded (roomReady); null if it
+// could not be built.
+function roomFor(room) {
   let inside = rooms.get(room);
   if (!inside) {
     try {
@@ -2437,19 +2511,42 @@ function enterInterior(room, at) {
       });
     } catch (e) {
       console.error('that room could not be built', e);
-      state.ui.toast('That door does not open yet.');
-      return;
+      return null;
     }
     rooms.set(room, inside);
+  }
+  return inside;
+}
+
+// `spot` is where you stood in it when the page was last closed in there (recalledRoom).
+function enterInterior(room, at, spot = null) {
+  if (state.inside || state.mode !== 'walk') return;
+  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
+  // they are in. Usually they are, having been started as you walked up to the door.
+  if (!roomReady(room)) {
+    state.ui.toast('The door sticks a moment...');
+    prepareRoom(room).then(() => enterInterior(room, at, spot), (e) => {
+      console.error('that room could not be loaded', e);
+      state.ui.toast('That door does not open yet.');
+      if (spot) forgetRoom();
+    });
+    return;
+  }
+  const inside = roomFor(room);
+  if (!inside) {
+    state.ui.toast('That door does not open yet.');
+    if (spot) forgetRoom();
+    return;
   }
   // Where to put you back down, and what to face when you get there: the door you just
   // walked through.
   const w = state.walk.state;
-  cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
+  cameFrom = { at: [w.pos.x, w.pos.z], y: w.pos.y, facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
   const rave = room === 'rave';
-  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
+  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes(), spot });
+  rememberRoom({ now: true });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
@@ -2465,6 +2562,7 @@ function enterInterior(room, at) {
 function leaveInterior() {
   if (!state.inside) return;
   state.inside = null;
+  forgetRoom();
   state.ui.setIndoors(false);
   state.ui.setWalkPrompt(null);
   if (state.net) state.net.setRoom(null, state.walk);
@@ -2688,6 +2786,7 @@ function worldMapData() {
 }
 
 function enterWalk(spot = null) {
+  if (state.mode === 'noclip') exitNoclip();
   if (state.mode === 'walk') return;
   if (state.mode === 'plan') exitPlan();
   const board = state.byId.get('civic:board');
@@ -2703,6 +2802,13 @@ function enterWalk(spot = null) {
   if (reboard) {
     spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
   }
+  // No place in mind and the page last closed inside a room: down at its door and in through it,
+  // back where you stood (recalledRoom). Not with a place of its own asked for in the address.
+  const back = !spot && !reboard && !params.has('edge') && !params.has('dive') ? recalledRoom() : null;
+  // Any other way down means the room was not where the page was closed after all, or no longer
+  // is: on the island now, so the record goes (`?square` included).
+  if (back) spot = back.step;
+  else forgetRoom();
   // No place in mind and a body left standing (exitWalk parks it): down into it, wherever it
   // walked to meanwhile (Plans/DONE/karakter-blijft-staan.md).
   if (!spot && !reboard && state.walk.parked()) {
@@ -2754,6 +2860,7 @@ function enterWalk(spot = null) {
     at,
     facing,
     pitch: spot && spot.pitch,
+    y: spot && spot.y != null ? spot.y : Infinity,
     blockers: walkableBlockers(),
     interactables: interactables(),
     ...walkCallbacks(),
@@ -2762,6 +2869,7 @@ function enterWalk(spot = null) {
   // is still there and still yours (see exitWalk).
   if (reboard) takeBoat(reboard);
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
+  if (back) enterInterior(back.spot.room, back.door, back.spot);
 }
 
 function foundSettler() {
@@ -3002,6 +3110,7 @@ function enterPlan() {
   if (STANDALONE) return;
   if (state.mode === 'plan' || !state.plan) return;
   if (keeperOnly('plan the island')) return;
+  if (state.mode === 'noclip') exitNoclip();
   // Not stashed as the ordinary haze, and not restored over the planner's: whatever the sea
   // has put in the fog and hidden (the clouds) is put back first.
   if (state.underwater) state.underwater.reset();
@@ -3044,6 +3153,242 @@ function leftPlan() {
   // Distance were switched off to match. Both come back here, in the order the fog settled in.
   applyObjectDistances();
 }
+
+// ---------------------------------------------------------------- the noclip camera
+// The fourth mode (Plans/noclip-camera.md, web/js/noclip.js): a free camera for looking at the
+// graphics without driving a body there. Unlike the planner it flies the ordinary `camera`,
+// because everything that keys on the camera - the cut, the haze, the lens under water, the
+// sky's recentre, the sound's listener, the render - reads that one directly, and seeing what it
+// would see is the point. Leaving is made free the other way: enterNoclip keeps everything it
+// touches and exitNoclip puts all of it back, and the mode it came from with it. The body stays
+// standing: from the sky it was parked already, on foot its walk mode is paused (not parked, so
+// it comes back exactly as it was - at a tiller, in a room, looking the same way). Nothing of the
+// camera goes on the wire.
+let noclipFrom = null;          // what enterNoclip found, for exitNoclip
+let noclipPeek = null;          // the room looked round without a door (interior.js peek), or null
+let noclipIslandPose = null;    // where on the island the camera was when it went into that room
+const noclipReadout = document.createElement('div');
+noclipReadout.id = 'noclip-readout';
+noclipReadout.hidden = true;
+document.body.appendChild(noclipReadout);
+const noclip = createNoclip({ camera, dom: renderer.domElement, onExit: () => exitNoclip(), onChange: () => noclipShow() });
+// Settings -> Debug, or `?noclip` / `?cam=` / `?room=` for this page.
+function noclipAllowed() {
+  if (STANDALONE) return false;
+  if (params.has('noclip') || params.has('cam') || params.has('room')) return true;
+  return !!(state.ui && state.ui.noclipEnabled && state.ui.noclipEnabled());
+}
+const noclipRoomName = () => (state.inside ? state.inside.room : null);
+// Closer in than the island's 0.5, to look at a thing from a hand away; a room closer still.
+const noclipNear = () => { camera.near = state.inside ? 0.05 : 0.2; camera.updateProjectionMatrix(); };
+function enterNoclip(pose = null, { gesture = false } = {}) {
+  if (state.mode === 'noclip') { if (pose) noclip.set(pose); return true; }
+  if (!noclipAllowed() || !state.terrain) return false;
+  if (state.mode === 'plan') exitPlan();
+  if (state.mode !== 'orbit' && state.mode !== 'walk') return false;
+  endParley({ camera: false });
+  faceToFace.cancel();
+  if (state.chat && state.chat.isOpen()) state.chat.close();
+  if (state.ghost) state.ghost.drop();
+  state.ui.closeDossier();
+  skyMap = false;
+  state.director.poke();
+  directorCaption.hidden = true;
+  const owner = state.mode === 'walk' ? (state.inside || state.walk) : null;
+  const feet = owner ? (state.inside ? state.inside.walk : state.walk) : null;
+  noclipFrom = {
+    mode: state.mode, inside: state.inside,
+    pos: camera.position.clone(), quat: camera.quaternion.clone(), up: camera.up.clone(), near: camera.near,
+    target: controls.target.clone(),
+    // walk.js reads the mouse under a pointer lock even while paused, so the look is kept too.
+    look: feet ? { yaw: feet.state.camYaw, pitch: feet.state.camPitch, paused: !!feet.state.paused } : null,
+  };
+  if (owner) owner.setPaused(true);
+  state.intro = null;
+  state.tween = null;
+  controls.enabled = false;
+  state.mode = 'noclip';
+  camera.updateMatrixWorld();
+  noclip.setWhere(state.inside ? 'room' : 'island');
+  noclip.enter(mergePose(poseOf(camera), pose || {}), { wantLock: gesture });
+  noclipNear();
+  noclipShow();
+  return true;
+}
+function exitNoclip() {
+  if (state.mode !== 'noclip' || !noclipFrom) return;
+  const was = noclipFrom;
+  noclipFrom = null;
+  noclip.exit();
+  if (noclipPeek) unpeekRoom();
+  noclipIslandPose = null;
+  camera.position.copy(was.pos);
+  camera.quaternion.copy(was.quat);
+  camera.up.copy(was.up);
+  camera.near = was.near;
+  camera.updateProjectionMatrix();
+  state.mode = was.mode;
+  if (was.mode === 'walk') {
+    const feet = state.inside ? state.inside.walk : state.walk;
+    feet.state.camYaw = was.look.yaw;
+    feet.state.camPitch = was.look.pitch;
+    if (!was.look.paused) (state.inside || state.walk).setPaused(false);
+  } else {
+    controls.target.copy(was.target);
+    controls.enabled = true;
+    controls.update();
+  }
+  noclipShow();
+  applyFogRange();
+}
+// A room without its door: built and shown, its walk mode never entered, no net.setRoom and no
+// peers put in it - nobody sees you there, and you see nobody (Plans/noclip-camera.md).
+async function noclipRoom(room, pose = null) {
+  if (!ROOM_KINDS.includes(room)) {
+    console.warn(`[noclip] there is no room "${room}"; there are ${ROOM_KINDS.join(', ')}`);
+    return false;
+  }
+  if (!enterNoclip()) return false;
+  if (noclipFrom.inside) {
+    if (noclipFrom.inside.room !== room) { console.warn('[noclip] you are standing in a room: leave it by its door first'); return false; }
+    if (pose) noclip.set(pose);
+    await noclipRender();
+    return true;
+  }
+  if (!roomReady(room)) await prepareRoom(room);
+  if (state.mode !== 'noclip') return false;     // left while its sets came in
+  const inside = roomFor(room);
+  if (!inside) return false;
+  if (noclipPeek !== inside) {
+    if (noclipPeek) unpeekRoom();
+    else noclipIslandPose = noclip.pose();
+    const rave = room === 'rave';
+    inside.peek({ guests: rave ? raveGuests() : null, stable: rave && stableComes() });
+    state.inside = inside;
+    noclipPeek = inside;
+    state.ui.setIndoors(true);
+    refreshMusic();
+    noclip.setWhere('room');
+    noclip.set(mergePose(inside.view, pose || {}));
+  } else if (pose) noclip.set(pose);
+  noclipNear();
+  await noclipRender();
+  return true;
+}
+function unpeekRoom() {
+  const r = noclipPeek;
+  noclipPeek = null;
+  r.unpeek();
+  if (state.inside === r) state.inside = null;
+  state.ui.setIndoors(false);
+  refreshMusic();
+  noclip.setWhere('island');
+}
+async function noclipIsland(pose = null) {
+  if (!enterNoclip()) return false;
+  if (noclipFrom.inside) { console.warn('[noclip] you are standing in a room: leave it by its door first'); return false; }
+  if (noclipPeek) {
+    unpeekRoom();
+    if (noclipIslandPose) noclip.set(noclipIslandPose);
+    noclipIslandPose = null;
+  }
+  if (pose) noclip.set(pose);
+  noclipNear();
+  await noclipRender();
+  return true;
+}
+function noclipFrame(dt) {
+  noclip.update(dt);
+  noclipShow();
+}
+function noclipShow() {
+  const on = state.mode === 'noclip';
+  const clean = document.body.classList.contains('noclip-clean');
+  noclipReadout.hidden = !on || clean;
+  if (!on) return;
+  const text = `noclip · ${noclipRoomName() || 'island'} · ${formatCam(noclip.pose())} · ${+noclip.speed().toFixed(2)} u/s · \` to leave`;
+  if (noclipReadout.textContent !== text) noclipReadout.textContent = text;
+}
+// The browser pane runs no frames between screenshots, so whatever moves the camera from the
+// console draws one itself. Once is not enough, measured in that pane: a screenshot shows what the
+// canvas held at the end of the task *before* the last one, so a frame drawn in the call that moved
+// the camera came out one view late. So a frame now and another in the next task, and the promise
+// settles after that one - `await __noclip.go(...)`, then the screenshot is of the new view.
+function noclipFrameNow() {
+  try { frame(performance.now()); } catch (e) { console.error('[noclip] the frame failed', e); }
+}
+function noclipRender() {
+  noclipFrameNow();
+  return new Promise((done) => setTimeout(() => { noclipFrameNow(); noclipSync(); done(); }, 0));
+}
+// And wait for the GPU to have drawn it: one pixel read back is a sync point, so the call does not
+// return while the frame is still queued behind it.
+const noclipPixel = new Uint8Array(4);
+function noclipSync() {
+  try { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, noclipPixel); } catch { /* only a wait */ }
+}
+function noclipFromUrl() {
+  const pose = parseCam(params.get('cam'));
+  if (params.has('cam') && !pose) console.warn('[noclip] ?cam wants x,y,z[,yaw[,pitch]]');
+  const room = params.get('room');
+  if (room) noclipRoom(room, pose).catch((e) => console.error('[noclip] that room could not be shown', e));
+  else if (enterNoclip(pose)) noclipRender();
+}
+// What every console call that moves the camera answers: once its frames are drawn, where it is.
+const noclipDrawn = async () => { await noclipRender(); return noclipApi.get(); };
+// Bookmarks, per browser: { name: { cam, room } }.
+function noclipSpots() {
+  try { return JSON.parse(localStorage.getItem(SPOTS_KEY) || '{}') || {}; } catch { return {}; }
+}
+function keepNoclipSpots(spots) {
+  try { localStorage.setItem(SPOTS_KEY, JSON.stringify(spots)); } catch { /* not kept: private window */ }
+}
+const noclipApi = {
+  go(p = {}) { return enterNoclip(p) ? noclipDrawn() : Promise.resolve(null); },
+  get: () => (state.mode === 'noclip' ? { ...noclip.pose(), room: noclipRoomName(), speed: noclip.speed() } : null),
+  lookAt(x, y, z) {
+    const to = typeof x === 'object' && x ? x : { x, y, z };
+    if (!enterNoclip()) return Promise.resolve(null);
+    const p = noclip.pose();
+    noclip.set(lookFrom(p, to, p));
+    return noclipDrawn();
+  },
+  room: (name, pose = null) => noclipRoom(name, pose),
+  island: (pose = null) => noclipIsland(pose),
+  exit: () => exitNoclip(),
+  speed: (v) => noclip.speed(v),
+  link: () => (state.mode === 'noclip' ? camLink(location.href, noclip.pose(), noclipRoomName()) : null),
+  save(name = null) {
+    if (state.mode !== 'noclip') return null;
+    const spots = noclipSpots();
+    const key = name || `spot ${Object.keys(spots).length + 1}`;
+    spots[key] = { cam: formatCam(noclip.pose()), room: noclipRoomName() };
+    keepNoclipSpots(spots);
+    return key;
+  },
+  async recall(name) {
+    const s = noclipSpots()[name];
+    const pose = s && parseCam(s.cam);
+    if (!pose) { console.warn(`[noclip] no spot "${name}"`); return false; }
+    return s.room ? noclipRoom(s.room, pose) : noclipIsland(pose);
+  },
+  spots: () => noclipSpots(),
+  forget(name) { const spots = noclipSpots(); delete spots[name]; keepNoclipSpots(spots); },
+  // Everything but the picture away, for a clean screenshot.
+  hud(on = true) { document.body.classList.toggle('noclip-clean', !on); noclipShow(); return noclipRender(); },
+  render: () => noclipRender(),
+};
+// ` (Backquote by its code, so a dead key on an international layout still counts) in and out.
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Backquote' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (state.mode !== 'noclip' && !noclipAllowed()) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (state.mode === 'noclip') exitNoclip();
+  else enterNoclip(null, { gesture: true });
+}, true);
 
 function askToSendAway(id) {
   if (keeperOnly('send a settler off the island')) return;
@@ -3149,6 +3494,7 @@ function exitWalk({ force = false } = {}) {
   if (state.inside) {
     const room = state.inside;
     state.inside = null;
+    forgetRoom();
     room.leave();
     state.ui.setIndoors(false);
   }
@@ -3234,8 +3580,11 @@ function cullCeiling() {
 // Object Distance as this frame uses it: the setting, floored from above by the orbit target's
 // distance (fade.js objectReachOf), so pulling back never takes away the town being looked at.
 // A parked walk is still orbit; only walking is on foot.
+// The noclip camera has no target: it floors on its own height over the sea instead, so flying up
+// to look at the whole island keeps the town, and low over the ground it is the setting.
 function objectReach() {
-  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target) : null;
+  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target)
+    : state.mode === 'noclip' ? Math.max(0, camera.position.y) : null;
   return objectReachOf(state.graphics.objectDistance, orbit);
 }
 // And the furthest fogCeiling can go before the next slider, for what may not be decided per
@@ -3798,10 +4147,12 @@ addEventListener('keydown', (e) => {
 // Walk is Enter and not W: a W that is still held when the feet take over would walk on at once
 // (and W A S D E are the feet's, see Plans/DONE/esc-menu-en-knoppenbalk.md). T (say) is
 // islandchat.js's own, from either mode; the chip's badge is its `data-key` in index.html.
-// H is the clock's hour preview (a lens on this screen, the sea's clock is not touched).
+// The clock chip has no key: it is the sea's clock, not a lens on this screen, and only the
+// sea's host may set it, from the chip itself (Plans/zeetijd-van-de-host.md;
+// tests/sea-clock-chip.test.mjs fails on a key here).
 const ORBIT_KEYS = {
   i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
-  b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn', h: 'clock-chip',
+  b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn',
 };
 // On foot the quest log is a toast (side panels are closed while walking), on its own key
 // (keybinds.js `quests`, default K) - checked here and not in walk.js, which has no use for it.
@@ -4055,6 +4406,8 @@ function focusPoint() {
     detailFocus = [p.x, p.z];
   } else if (state.mode === 'orbit') {
     detailFocus = [controls.target.x, controls.target.z];
+  } else if (state.mode === 'noclip' && !state.inside) {
+    detailFocus = [camera.position.x, camera.position.z];
   }
   return detailFocus;
 }
@@ -4587,6 +4940,9 @@ function onFleetNews(world, one, clock) {
   if (clock && Number.isFinite(clock.now)) {
     state.seaSkewMs = clock.now - Date.now();
     if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
+    // How far the host has set the sea's clock off the real time, for the chip's words only:
+    // `now` above already carries it. A sea from before this says nothing, which is zero.
+    state.seaShiftMs = Number.isFinite(clock.shift) ? clock.shift : 0;
   }
   // In at last - so the next refusal is news again rather than a repeat.
   if (world) { lastRefusal = null; state.fleet = world.islands || []; rehomeFrom(state.fleet); syncFleet(state.fleet); return; }
@@ -6612,7 +6968,7 @@ const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerScreen = { x: 0, y: 0 }, downAt = null, moved = 0;
 renderer.domElement.addEventListener('pointermove', (e) => {
-  if (state.mode === 'plan') return;       // the planner has the pointer (web/js/plan-mode.js)
+  if (state.mode === 'plan' || state.mode === 'noclip') return;   // the planner has the pointer (web/js/plan-mode.js), or noclip.js
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   pointerScreen = { x: e.clientX, y: e.clientY };
   if (downAt) moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
@@ -6623,7 +6979,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (state.mode === 'plan') { downAt = null; return; }
+  if (state.mode === 'plan' || state.mode === 'noclip') { downAt = null; return; }
   // Aimed from the event rather than from the last move: a tap on a touch screen never
   // sends one, and a click that lands a finger's width off a button is worse than none.
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -6849,7 +7205,10 @@ const underwaterSeen = {
 function seaFloorFrame(dt, nowMs) {
   if (!state.seabed || !state.seaLife) return;
   const ws = state.walk && state.mode === 'walk' && !state.inside ? state.walk.state : null;
-  const active = !!ws && ws.active && (ws.dive || !!(state.underwater && state.underwater.active));
+  // The noclip camera is its own focus: the bed and its life come on with the lens under water.
+  const eyeOnly = state.mode === 'noclip' && !state.inside;
+  const active = (!!ws && ws.active && (ws.dive || !!(state.underwater && state.underwater.active)))
+    || (eyeOnly && !!(state.underwater && state.underwater.active));
   const pos = ws ? ws.pos : camera.position;
   state.seabed.update({ x: pos.x, z: pos.z, active });
   if (!active && !state.seaLife.group.visible) return;
@@ -6876,6 +7235,9 @@ function frame(nowMs) {
   // ---- controller ---------------------------------------------------------
   // Who gets it is decided in input.js; here it is one line.
   if (state.input) state.input.frame(dt);
+  // The noclip camera flies first, so everything below that keys on the camera - a room's lid,
+  // the haze, the cut, the lens under water - reads where it is this frame.
+  if (state.mode === 'noclip') noclipFrame(dt);
 
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
@@ -6913,10 +7275,13 @@ function frame(nowMs) {
       clock: state.sound && state.inside.music ? state.sound.clockOf(state.inside.music) : null,
       // Who the story waits on, for the mark over one of the Kraken's crew.
       business: state.quests ? state.quests.businessWith() : null,
+      // In noclip the camera is not the room's walk mode's (Plans/noclip-camera.md).
+      eye: state.mode === 'noclip' ? camera.position : null,
     });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
+    rememberRoom();
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
@@ -7130,7 +7495,8 @@ function frame(nowMs) {
   // looks at from above (world.js nearWaterPlan). Without it the swell stopped sixteen units
   // off every coast, and past the old outline a boat floated over the lower ocean disc.
   if (state.world) {
-    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos : controls.target;
+    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos
+      : state.mode === 'noclip' ? camera.position : controls.target;
     state.world.setWaterFocus(w.x, w.z);
   }
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
@@ -7162,6 +7528,13 @@ function frame(nowMs) {
     // wherever the orbit camera had put it, which on a walk to the coast meant walking
     // out of the shadow map.
     state.world.followShadow(camera.position.x, camera.position.z, 1);
+  } else if (state.mode === 'noclip' && state.world && !state.inside) {
+    // Round a point a little ahead of the eye, as wide as the camera hangs high: low down that is
+    // the walker's tight frustum, from up high the orbit's whole island.
+    const e = camera.matrixWorld.elements;
+    const h = Math.max(1, camera.position.y);
+    const ahead = Math.min(40, h);
+    state.world.followShadow(camera.position.x - e[8] * ahead, camera.position.z - e[10] * ahead, h);
   }
   // The chart from the sky. On foot the walk's own branch shows and feeds it (showMinimap);
   // everywhere else it is this flag's, and never over the planner or the intro.
@@ -7175,10 +7548,15 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
-  // says so - nobody should screenshot "the world at noon" while it is evening out there.
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
-    state.hourOverride != null || state.chronicle.t != null);
+  // A lens (`?hour`, the chronicle) changes this screen only, so the chip says so - nobody
+  // should screenshot "the world at noon" while it is evening out there. The chip itself is
+  // no lens: it is the sea's clock, and only the sea's host may set it, for everybody
+  // (Plans/zeetijd-van-de-host.md).
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season, {
+    lens: state.hourOverride != null || state.chronicle.t != null,
+    host: !!state.seaHost,
+    shifted: !!state.seaShiftMs,
+  });
   drawAgentBars(eye);
   questFrame(nowMs);
   if (state.hunt) state.hunt.frame(dt, nowMs / 1000);
@@ -7472,6 +7850,49 @@ async function boot() {
         state.ui.setSeas(await mine('/api/seas').then((r) => r.json()));
       } catch { state.ui.setSeas({ mode: 'single', seas: [] }); }
       try { state.ui.setIslandSize(await mine('/api/island-size').then((r) => r.json())); } catch { /* an older islander: no section */ }
+      try {
+        const r = await mine('/api/home');
+        if (r.ok) state.ui.setHome(await r.json());
+      } catch { /* an older islander: no section */ }
+    },
+    // Moving the island (Plans/eiland-op-eigen-schijf.md): the islander copies, checks, points
+    // ~/.promptholm/home.txt at the new folder and starts again there, so the page reloads once
+    // it answers again.
+    onHomeMove: async (to) => {
+      if (!window.confirm(`Move the island to ${to}?
+
+Everything is copied and checked first; the island then starts again there. The old folder stays as it is.`)) return;
+      state.ui.toast(`Moving the island to <b>${escapeHtml(to)}</b>…`);
+      try {
+        const r = await mine('/api/home', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { state.ui.toast(`The island stayed where it was: ${escapeHtml(body.error || r.statusText)}`); return; }
+        state.ui.toast(`The island is now in <b>${escapeHtml(body.to)}</b> (${body.files} files). It is starting again there…`);
+        const until = Date.now() + 60000;
+        const back = async () => {
+          try { if ((await mine('/api/home')).ok) { location.reload(); return; } } catch { /* not up yet */ }
+          if (Date.now() < until) setTimeout(back, 1500);
+          else state.ui.toast('The island has not come back up. Start Promptholm again.');
+        };
+        setTimeout(back, 4000);
+      } catch { state.ui.toast('The island did not answer.'); }
+    },
+    onHdDir: async (dir) => {
+      try {
+        const r = await mine('/api/hd-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { state.ui.toast(`The HD pack folder stayed as it was: ${escapeHtml(body.error || r.statusText)}`); return; }
+        state.ui.toast(`The HD pack is read from <b>${escapeHtml(body.dir)}</b>${body.installed ? '' : ' (no pack there yet)'}. Reload to use it.`);
+        try { state.ui.setHome(await mine('/api/home').then((x) => x.json())); } catch { /* the toast said it */ }
+      } catch { state.ui.toast('The island did not answer.'); }
     },
     // Only asks, like the signs: the island writes the setting down and says what it now is.
     onIslandSize: async (n) => {
@@ -7524,10 +7945,12 @@ async function boot() {
     },
     onLive: () => setLiveMode(),
     onSpeed: (s) => { state.chronicle.speed = s; },
-    onToggleTime: () => {
-      const hours = [null, 7, 12, 18.5, 22];
-      const i = hours.indexOf(state.hourOverride);
-      state.hourOverride = hours[(i + 1) % hours.length];
+    // The sea's clock. Only its host gets anything from a click: the hours to set the whole
+    // sea to (web/js/sea-clock.js). Everybody else - a visitor, a phone, a keeper on somebody
+    // else's sea - gets nothing, on purpose: the time is the sea's, never one screen's.
+    onClockChip: (chip) => {
+      if (!state.seaHost) return;
+      openSeaClock({ anchor: chip, shifted: !!state.seaShiftMs, pick: setSeaTime });
     },
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
@@ -7540,12 +7963,20 @@ async function boot() {
     onBuild: () => openBuild(),
     // Switched off with something in hand or the catalogue open: both go, or the ghost
     // would stay on the cursor with no chip left to put it back with.
+    // Settings -> Debug -> Noclip camera: the console handle comes and goes with it.
+    onNoclip: (on) => {
+      if (on) window.__noclip = noclipApi;
+      else if (!params.has('noclip') && !params.has('cam')) { exitNoclip(); delete window.__noclip; }
+    },
     onBuildMode: (on) => {
       if (on) return;
       if (state.buildMenu && state.buildMenu.isOpen()) state.buildMenu.close();
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    // Settings -> Audio: sound.js keeps the mix (sound-mix.js) and plays it at once.
+    onSoundMix: (key, value) => { if (state.sound) state.sound.setMix(key, value); },
+    onSoundMixReset: () => { if (state.sound) state.sound.resetMix(); },
     // Which code this is, for the foot of the menu: the islander's release (or checkout) from
     // /api/hello; on a phone, what the pack baked in, if anything.
     buildLabel: () => {
@@ -7769,14 +8200,15 @@ async function boot() {
     handle: (a) => { if (a.hit('leave') || a.hit('back') || a.hit('exit')) endParley(); },
   });
   state.input.mode('inside', {
-    active: () => !!state.inside,
+    active: () => !!state.inside && state.mode !== 'noclip',
     handle: (a, dt) => state.inside.pad(a, dt),
   });
   state.input.mode('walk', {
     active: () => state.mode === 'walk' && !state.inside,
     handle: (a, dt) => state.walk.pad(a, dt),
   });
-  state.input.mode('orbit', { active: () => true, handle: orbitPad });
+  // Noclip has no pad: neither the room's walk nor the sky may take it meanwhile.
+  state.input.mode('orbit', { active: () => state.mode !== 'noclip', handle: orbitPad });
 
   // Who are we here, and is there a machine under us at all? Those used to be one
   // question, because the island served the page and losing it meant the page was dead.
@@ -8121,9 +8553,12 @@ async function boot() {
   // net's own start says it is walking.
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
-  else if (params.has('nointro')) startIntro();
+  else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
   else openMainMenu();
   state.ui.boot(true);
+  // The noclip camera's console handle, and a spot given in the URL (Plans/noclip-camera.md).
+  if (noclipAllowed()) window.__noclip = noclipApi;
+  if (!STANDALONE && (params.has('cam') || params.has('room'))) noclipFromUrl();
   requestAnimationFrame(tick);
   // In the app: the page bundle this was served from has booted, so it is kept (bundle.rs
   // `bundle_ok`; two starts without this and the app goes back to the page before it).
@@ -8284,14 +8719,279 @@ function debounce(fn, msv) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), msv); };
 }
 
+// The doors sound.js hangs the taverns' murmur at (Plans/meer-geluiden.md, "De kroegen buiten"):
+// the village tavern's front, half a lot forward of its middle along its own facing, and the Salty
+// Kraken's baked `anchor.door` at the foot of its stair (PUB_GATE), through the record's own group
+// so a turned or lifted pub is heard from where it stands. Only ours, and only standing ones.
+const _door = new THREE.Vector3();
+function pubDoors() {
+  const out = [];
+  for (const [id, kind] of [['civic:tavern', 'village'], ['civic:piratetavern', 'kraken']]) {
+    const rec = state.byId.get(id);
+    if (!rec || !rec.group.visible) continue;
+    const anchor = rec.built && rec.built.anchors && rec.built.anchors.door;
+    if (anchor) _door.set(anchor[0], anchor[1], anchor[2]);
+    else _door.set(0, 0, 1.4);
+    rec.group.updateMatrixWorld();
+    rec.group.localToWorld(_door);
+    out.push({ kind, at: [_door.x, _door.y, _door.z] });
+  }
+  return out;
+}
+// Where you stand and which way you face, for a greeting: on foot, outside, on our own island, not
+// at a tiller or on a deck. walk.js faces along (sin yaw, cos yaw).
+function walkerForGreeting() {
+  if (state.mode !== 'walk' || state.inside || state.guest || !state.walk) return null;
+  const w = state.walk.state;
+  if (!w || !w.pos || w.vehicle || w.deck) return null;
+  return { x: w.pos.x, z: w.pos.z, fx: Math.sin(w.yaw || 0), fz: Math.cos(w.yaw || 0) };
+}
+// The workshops sound.js listens to (Plans/meer-geluiden.md, phase 4), as cues and nothing else:
+// the smith's and the butcher's `hits` (a blow that landed), the baker's `phase`, the sawmill's
+// `cutting` - each read off the module that draws it, which knows nothing of sound - and where in
+// the world the work happens, through the workshop's own root. Only ours, and only within reach.
+const CRAFT_CUE_R = 90;
+function craftCues() {
+  const out = [];
+  const near = (rec) => rec.group.visible && rec.group.position.distanceToSquared(camera.position) < CRAFT_CUE_R * CRAFT_CUE_R;
+  const at = (root, local) => {
+    _door.set(local[0], local[1], local[2]);
+    root.updateMatrixWorld();
+    root.localToWorld(_door);
+    return [_door.x, _door.y, _door.z];
+  };
+  for (const rec of state.byId.values()) {
+    if (rec.smithy && near(rec)) {
+      const s = rec.smithy;
+      out.push({ kind: 'smith', id: rec.id, at: at(s.root, s.G.anvil), hits: s.hits || 0 });
+    }
+    if (rec.butcher && near(rec)) {
+      const s = rec.butcher;
+      out.push({ kind: 'butcher', id: rec.id, at: at(s.root, [s.G.work[0], 0.8, s.G.work[2]]), hits: s.hits || 0 });
+    }
+    if (rec.baker && near(rec)) {
+      const b = rec.baker;
+      out.push({ kind: 'baker', id: rec.id, at: at(b.root, [b.work[0], 0.8, b.work[2]]), phase: b.mode === 'work' ? b.phase : 'away' });
+    }
+    if (rec.sawmill && near(rec)) {
+      const m = rec.sawmill;
+      out.push({ kind: 'saw', id: rec.id, at: at(m.root, m.G.blade), cutting: !!m.cutting });
+    }
+  }
+  return out;
+}
+// The rounds sound.js listens to (Plans/meer-geluiden.md, phase 8), as cues their modules keep for
+// themselves: the timber wagon's stage and its horse (timberrun.js where, on the sea's clock), the
+// gold run's cart while it is under way and the pit's bar count (goldrun.js focus/bars), and every
+// fisherman's `bites` with where he stands and where his float lands (three units out, +z of him).
+const _fish = new THREE.Vector3();
+function roundCues() {
+  const out = { wagon: null, gold: null, bars: null, pit: null, fishers: [] };
+  try {
+    const w = state.timberRun && state.timberRun.where ? state.timberRun.where(timeNow()) : null;
+    if (w && w.horse) out.wagon = { stage: w.stage, at: [w.horse[0], groundAt(w.horse[0], w.horse[1]), w.horse[1]] };
+  } catch { /* the wagon is cosmetic: no sound sooner than a broken frame */ }
+  if (state.goldRun) {
+    const at = state.goldRun.focus();
+    if (at) out.gold = { at: [at[0], groundAt(at[0], at[1]), at[1]], moving: state.goldRun.busy() };
+    out.bars = state.goldRun.bars();
+    const pit = state.byId.get('civic:goldpit');
+    if (pit && pit.group.visible) out.pit = pit.group.position.toArray();
+  }
+  for (const rec of state.byId.values()) {
+    const f = rec.fisher;
+    if (!f || !f.figure || !f.figure.visible) continue;
+    f.figure.getWorldPosition(_fish);
+    const at = [_fish.x, _fish.y, _fish.z];
+    f.figure.localToWorld(_fish.set(0, 0, 3));
+    out.fishers.push({ id: rec.id, at, float: [_fish.x, 0, _fish.z], bites: f.bites || 0 });
+  }
+  return out;
+}
+// Our rivers as points in the scene, once per terrain (terrain.rivers are courses of grid cells),
+// and the nearest of a list to the ears within a reach - which is all the river's sound needs.
+const RIVER_EAR = 34;
+let riverOf = null, riverPts = [];
+function riverPoints() {
+  const t = state.terrain;
+  if (!t) return [];
+  if (t !== riverOf) {
+    riverOf = t;
+    riverPts = [];
+    for (const course of t.rivers || []) for (const [gx, gz] of course) {
+      const [x, z] = t.cellWorld(gx, gz);
+      riverPts.push([x, 0, z]);
+    }
+  }
+  return riverPts;
+}
+function nearestOn(points, reach) {
+  let best = null, bestD = reach * reach;
+  const cx = camera.position.x, cz = camera.position.z;
+  for (const p of points) {
+    const d = (p[0] - cx) ** 2 + (p[2] - cz) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+// The volcano, when one of the islands we have drawn is it: its middle (the crater) and its lava
+// as points in the scene, worked out once per region from lava.js's own lines.
+const lavaOf = new Map();
+function volcanoNear() {
+  for (const g of state.guests) {
+    const r = g.region;
+    const t = r && r.terrain;
+    if (!t || !t.lavaFlows || !t.lavaFlows.length || !r.origin) continue;
+    const [ox, oz] = r.origin;
+    if (Math.hypot(ox - camera.position.x, oz - camera.position.z) > 360) continue;
+    let pts = lavaOf.get(r.id);
+    if (!pts || pts.terrain !== t) {
+      pts = [];
+      for (const { points } of lavaLines(t)) for (const [x, z] of points) pts.push([x + ox, 1, z + oz]);
+      pts.terrain = t;
+      lavaOf.set(r.id, pts);
+    }
+    return { crater: [ox, 30, oz], lava: nearestOn(pts, 44) };
+  }
+  return { crater: null, lava: null };
+}
+// The story animals sound.js listens to: our own, as animal-view.js draws them (act word, place).
+function storyAnimals() {
+  if (!state.homeHerd || !state.homeHerd.animals) return [];
+  const out = [];
+  for (const a of state.homeHerd.animals()) {
+    if (!a || !a.visible || !a.pos) continue;
+    out.push({ id: a.id, species: a.species, act: a.act, at: [a.pos[0], a.y || 0, a.pos[1]] });
+  }
+  return out;
+}
+// The ambient animals near the ears (herds.js, home hangs at the scene's origin so its positions
+// are the scene's), the stable's three, and nothing past HERD_EAR.
+const HERD_EAR = 50;
+const _herdAt = new THREE.Vector3();
+function herdsNear() {
+  const out = [];
+  const cx = camera.position.x, cz = camera.position.z;
+  if (state.ambient && state.ambient.animals) {
+    for (const a of state.ambient.animals()) {
+      if (!a.drawn || Math.hypot(a.x - cx, a.z - cz) > HERD_EAR) continue;
+      out.push({ id: a.id, kind: a.kind, at: [a.x, a.y, a.z] });
+    }
+  }
+  const stable = state.byId.get('civic:stable');
+  if (stable && stable.stable && stable.group.visible && stable.stable.root.visible) {
+    stable.stable.animals.forEach((a, i) => {
+      a.object.getWorldPosition(_herdAt);
+      if (Math.hypot(_herdAt.x - cx, _herdAt.z - cz) > HERD_EAR) return;
+      out.push({ id: `stable:${i}`, kind: a.kind || (i === 0 ? 'horse' : 'chicken'), at: [_herdAt.x, _herdAt.y, _herdAt.z] });
+    });
+  }
+  return out;
+}
+// How much forest is round a point, 0..1, for the wind in the leaves and the birds: the trunks of
+// world.js solids() (circles with no top: a boulder has one) counted once per landscape into cells
+// of WOOD_CELL, and read as the 3 x 3 cells round the point. Built again only when solids() hands
+// back a new list (a tree felled, a reseed), never per pick.
+const WOOD_CELL = 8;
+let woodGrid = null, woodFrom = null;
+function woodsAt(x, z) {
+  const solids = state.world && state.world.solids ? state.world.solids() : null;
+  if (!solids) return 0;
+  if (solids !== woodFrom) {
+    woodFrom = solids;
+    woodGrid = new Map();
+    for (const s of solids) {
+      if (!(s.r > 0) || s.top) continue;
+      const k = `${Math.floor(s.x / WOOD_CELL)},${Math.floor(s.z / WOOD_CELL)}`;
+      woodGrid.set(k, (woodGrid.get(k) || 0) + 1);
+    }
+  }
+  const cx = Math.floor(x / WOOD_CELL), cz = Math.floor(z / WOOD_CELL);
+  let n = 0;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) n += woodGrid.get(`${cx + dx},${cz + dz}`) || 0;
+  return Math.min(1, n / 36);
+}
+// How many of our buildings stand within ten units: the roofs the rain is heard on.
+function roofsNear(x, z) {
+  let n = 0;
+  for (const rec of state.byId.values()) {
+    if (!rec.group.visible) continue;
+    const dx = rec.group.position.x - x, dz = rec.group.position.z - z;
+    if (dx * dx + dz * dz < 100 && ++n >= 12) break;
+  }
+  return n;
+}
+function lighthouseAt() {
+  const rec = state.byId.get('civic:lighthouse');
+  if (!rec || !rec.group.visible) return null;
+  const p = rec.group.position;
+  return [p.x, p.y, p.z];
+}
+// Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
+// about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
+// rings from its own tower. The bake has no anchor for it.
+function chapelBell() {
+  const rec = state.byId.get('civic:chapel');
+  if (!rec || !rec.group.visible) return null;
+  _door.set(0, 1.45, 0.53);
+  rec.group.updateMatrixWorld();
+  rec.group.localToWorld(_door);
+  return { at: [_door.x, _door.y, _door.z] };
+}
+// The middle of the square, where the borrel's murmur is: the town's centre cell on our ground.
+function squareCentre() {
+  const town = state.village && state.village.island && state.village.island.town;
+  if (!town || !town.centre || !state.terrain) return null;
+  const [x, z] = state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return [x, groundAt(x, z), z];
+}
+
 // Everything web/js/sound.js is ever told about the island, taken six times a second. One
 // function rather than a dozen setters, because what sound wants is a picture of the place
 // and this is the only file that has one - and because it keeps the whole of sound's reach
 // into main.js on one screen, where it can be read.
 function soundSnapshot() {
+  const cal = worldNow();
+  const hour = currentHour();
+  const gathering = gatheringAt(cal.weekday, hour);
   return {
     night: state.world ? state.world.state.night : 0,
     indoors: !!state.inside,
+    // Which room, when indoors: a tavern you are standing in is heard whole (sound.js steerPubs).
+    room: state.inside ? state.inside.room : null,
+    hour,
+    // The doors the taverns are heard through, and the square the borrel is on while there is one
+    // (gatheringAt, the sea's clock and the sea's list, like the tables the frame carries out).
+    pubs: pubDoors(),
+    // The church bell in the chapel's tower, and the sea's clock it strikes by - null under a lens
+    // (?hour, the chronicle), whose hour is not the one every other page is on.
+    bell: chapelBell(),
+    clock: state.chronicle.t != null || state.hourOverride != null ? null : cal.hour,
+    // Who may say hello (web/js/greetings.js): our own settlers, and where you stand and face when
+    // you are on foot on our island - a hull's deck and a guest island's street are not ours.
+    ours: state.settlers ? state.settlers.figures() : null,
+    walker: walkerForGreeting(),
+    // The workshops' cues (craftCues): what sound diffs to hear a blow land or the oven open.
+    crafts: craftCues(),
+    // The sky's word (rain on the roofs, a fog that dulls everything), how much wood is round the
+    // ears, how many roofs the rain is drumming on, and the lighthouse a foghorn sounds from.
+    sky: skyWord(),
+    woods: woodsAt(camera.position.x, camera.position.z),
+    roofs: roofsNear(camera.position.x, camera.position.z),
+    lighthouse: lighthouseAt(),
+    // Our story animals as drawn (their act words are the cue), and the ambient flocks and the
+    // stable's horse and hens near the ears, each with where it is in the scene.
+    animals: storyAnimals(),
+    herds: herdsNear(),
+    // Water and fire: the nearest point of one of our rivers, the volcano's middle and the nearest
+    // point of its lava when it is within reach, and the bubbles the divers have breathed out.
+    river: nearestOn(riverPoints(), RIVER_EAR),
+    ...volcanoNear(),
+    bubbled: state.seaLife && state.seaLife.emitted ? state.seaLife.emitted() : null,
+    // The rounds' cues (roundCues): the timber wagon on the sea's clock, the gold run, the fisherman.
+    rounds: roundCues(),
+    gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
+    square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands
     // answers "sea" instead of the height of the nearer coast - the OPEN_SEA rule in
     // shared/regions.mjs, which is exactly the question the bed is asking.

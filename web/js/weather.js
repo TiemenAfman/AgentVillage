@@ -92,6 +92,10 @@ export function forceSky(name) {
   forced = true;
 }
 
+// The word the sky is on, for web/js/sound.js (through main.js's soundSnapshot): rain on the roofs,
+// a fog that dulls everything. The word and not the eased look - sound glides on its own clock.
+export function skyWord() { return wanted.sky; }
+
 // Where the haze has got to, for main.js's applyFogRange. One when there is no weather and
 // one when the sky is clear, so the call site is the same either way.
 export function haze() { return live ? live.thick() : 1; }

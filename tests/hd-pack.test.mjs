@@ -233,13 +233,22 @@ test('the loader is a dynamic import and the addresses go through the islander',
 // ---- the pack on this machine ------------------------------------------------------------------
 // Where a pack would be, worked out without importing lib/paths.mjs - importing it outside a
 // worktree moves an island (CLAUDE.md, the desktop window): PROMPTHOLM_HD_DIR, else HOME's rule -
-// PROMPTHOLM_HOME, a linked worktree's own checkout, else ~/.promptholm.
+// PROMPTHOLM_HOME, a linked worktree's own checkout, the folder ~/.promptholm/home.txt names,
+// else ~/.promptholm - and in that home the config's `hd.dir` when it is set (hdDirOf).
 function packDir() {
   if (process.env.PROMPTHOLM_HD_DIR) return process.env.PROMPTHOLM_HD_DIR;
-  if (process.env.PROMPTHOLM_HOME) return path.join(process.env.PROMPTHOLM_HOME, 'hd');
   const git = path.join(ROOT, '.git');
-  if (fs.existsSync(git) && fs.statSync(git).isFile()) return path.join(ROOT, 'hd');
-  return path.join(os.homedir(), '.promptholm', 'hd');
+  const shared = path.join(os.homedir(), '.promptholm');
+  let pointed = null;
+  try {
+    const line = fs.readFileSync(path.join(shared, 'home.txt'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/)[0].trim();
+    if (path.isAbsolute(line)) pointed = line;
+  } catch { /* no pointer */ }
+  const home = process.env.PROMPTHOLM_HOME
+    || (fs.existsSync(git) && fs.statSync(git).isFile() ? ROOT : pointed || shared);
+  let dir = null;
+  try { dir = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).hd.dir; } catch { /* the default */ }
+  return typeof dir === 'string' && path.isAbsolute(dir) ? dir : path.join(home, 'hd');
 }
 
 test('every piece in the pack on this machine fits the bake that will ship', async (t) => {

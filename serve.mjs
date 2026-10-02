@@ -6,7 +6,8 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { ROOT, HOME, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson } from './lib/paths.mjs';
+import { ROOT, HOME, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson, HOME_MISSING, missingHome, SHARED_HOME, POINTER_FILE, APPDATA, hdDirOf, setHdDir } from './lib/paths.mjs';
+import { moveHome } from './lib/home-move.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
 import { scan, deleteRoads, filesFor } from './scan.mjs';
 import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sprint.mjs';
@@ -57,6 +58,15 @@ let updating = false;
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
 const argOf = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
+
+// ~/.promptholm/home.txt names a folder with no island in it (lib/paths.mjs HOME_MISSING): a
+// drive that is not there. Say so and stop, before anything below could found an empty
+// island in its place. The tray asks the same question before it starts us, in a message box.
+if (HOME_MISSING) {
+  process.stderr.write(`[promptholm] ${missingHome()}
+`);
+  process.exit(3);
+}
 
 // Before anything reads it: an island that has been updated a few times has a config.json
 // older than the settings the code now has, and loadConfig hides that by filling the gaps
@@ -183,17 +193,19 @@ function shutdown(why, code = 0) {
 // island stopped, so without its word in our environment we start our own successor - detached,
 // after three seconds, once this one has let go of the port (serve.mjs exits quietly on
 // EADDRINUSE) - and that tray adopts it as an island started elsewhere.
-function restartForUpdate() {
-  if (process.env[TRAY_RESTARTS]) { shutdown('update', RESTART_CODE); return; }
+// The same after a move to another folder (Settings, lib/home-move.mjs): this process computed every
+// path from the old HOME at import, so only a new one lives on the new folder.
+function restartForUpdate(why = 'update') {
+  if (process.env[TRAY_RESTARTS]) { shutdown(why, RESTART_CODE); return; }
   const args = process.argv.slice(1).filter((a) => a !== '--supervised');
   const later = `setTimeout(() => require('child_process').spawn(${JSON.stringify(process.execPath)}, ${JSON.stringify(args)}, `
     + `{ cwd: ${JSON.stringify(ROOT)}, detached: true, stdio: 'ignore', windowsHide: true }).unref(), 3000);`;
   try {
     spawn(process.execPath, ['-e', later], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref();
   } catch (e) {
-    log(`update: could not start the island again by itself (${e.message}) - start Promptholm again`);
+    log(`${why}: could not start the island again by itself (${e.message}) - start Promptholm again`);
   }
-  shutdown('update');
+  shutdown(why);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -424,8 +436,12 @@ function exclusive(fn) {
   chain = run.catch(() => {});
   return run;
 }
+// Set once the island has moved to another folder (/api/home): from then on this process is only
+// waiting to be started again on the new one, and a scan now would write into the old copy.
+let movedAway = false;
 async function rescan(reason, opts = {}) {
   const job = async () => {
+    if (movedAway) return null;
     let r = null;
     try { r = await scan({ all: ALL, quiet: true, ...opts }); } catch (e) {
       process.stderr.write(`[promptholm] rescan failed (${reason}): ${e && e.message}\n`);
@@ -571,6 +587,11 @@ async function handle(req, res) {
       // the 'sea' event tells every page the mode anyway.
       seaMode: seaModeOf(),
       seaOpen: seaModeOf() === 'join' && isOpenSea(SEA().url),
+      // Whether this page's keeper may set the world's clock: only on a sea this islander
+      // raised itself (single or host), and only for the keeper - everybody else, a visitor
+      // on a hosted sea included, sees the sea's time and cannot touch it
+      // (Plans/zeetijd-van-de-host.md, POST /api/sea-time).
+      seaHost: who.role === 'islander' && hostsSea(),
       token: who.role === 'islander' ? ISLAND_TOKEN : null,
       // The key to the sea, for the keeper's own page only.
       //
@@ -673,6 +694,51 @@ async function handle(req, res) {
       rescan('island size').catch(() => {});
     }
     return json(res, 200, { size, max: islandCap(config), choices: MAX_GRID_CHOICES, grown: !!(village && village.grow) });
+  }
+
+  // Where the island lives and where its HD pack is, for Settings (Plans/eiland-op-eigen-schijf.md).
+  // Keeper-only like every route here that is not on PUBLIC_API. A move copies the whole island
+  // to a folder the keeper names, checks the copy, points ~/.promptholm/home.txt at it and starts
+  // the island again there (lib/home-move.mjs); it runs in the scan queue, so no scan writes
+  // while it copies, and anything else that does is caught by the check and calls it off.
+  if (p === '/api/home') {
+    const why = process.env.PROMPTHOLM_HOME ? 'This island’s folder is set by PROMPTHOLM_HOME.'
+      : WORKTREE ? 'A worktree keeps its island in itself.' : null;
+    const hdDir = hdDirOf(config);
+    const answer = () => ({
+      home: HOME, shared: SHARED_HOME, pointer: fs.existsSync(POINTER_FILE) ? POINTER_FILE : null,
+      movable: !why, why,
+      hd: { dir: hdDir, chosen: !!(config.hd && config.hd.dir), default: path.join(HOME, 'hd'),
+        installed: fs.existsSync(path.join(hdDir, 'hd-manifest.json')) },
+    });
+    if (req.method === 'POST') {
+      if (why) return json(res, 409, { error: why });
+      let body;
+      try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+      let moved;
+      try {
+        moved = await exclusive(async () => movedAway ? Promise.reject(new Error('the island has just moved')) : moveHome({
+          from: HOME, to: (body || {}).to, shared: SHARED_HOME,
+          appdata: [APPDATA, process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')],
+        }));
+      } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+      movedAway = true;
+      log(`the island moved from ${moved.from} to ${moved.to} (${moved.files} files); starting again there`);
+      json(res, 200, { ok: true, ...moved });
+      setTimeout(() => restartForUpdate('moved'), 500);
+      return;
+    }
+    return json(res, 200, answer());
+  }
+  if (p === '/api/hd-dir' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    let dir;
+    try { dir = setHdDir((body || {}).dir); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    config.hd = { ...(config.hd || {}), dir };     // the running server, not only the file
+    const at = hdDirOf(config);
+    log(`the HD pack is read from ${at}`);
+    return json(res, 200, { ok: true, dir: at, chosen: !!dir, installed: fs.existsSync(path.join(at, 'hd-manifest.json')) });
   }
 
   // Saves a picture the page took of itself, for the readme. Names are strict and the
@@ -1176,6 +1242,18 @@ if (req.url === '/api/command' && req.method === 'POST') {
     return json(res, 200, { ok: true, sea: { mode: sea.mode, url: sea.url } });
   }
 
+  // The host setting the world's clock: `{ hour }` (0..24) or `{ real: true }`. Keeper-only by
+  // not being on PUBLIC_API, and refused unless the sea is our own: a keeper who joined
+  // somebody else's sea is a guest there, and the open sea has no host at all. Straight onto
+  // the sea object - it runs in this process - so the sea grows no door for it; the sea then
+  // tells every joined page, ours included (Plans/zeetijd-van-de-host.md).
+  if (p === '/api/sea-time' && req.method === 'POST') {
+    if (!hostsSea()) return json(res, 403, { error: 'only whoever hosts the sea sets its clock' });
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    try { return json(res, 200, { ok: true, clock: ownSea.setTime(body || {}) }); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+  }
+
   // Hands a card to a settler and starts the agent that works it.
   if (p === '/api/assign' && req.method === 'POST') {
     let body;
@@ -1390,12 +1468,14 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // an hd-manifest.json and its GLBs, never in the repo, a release folder or the app. The page
   // checks every field itself (shared/hdfit.mjs), so this only hands the files over. Keeper-only
   // like the local models; the file name is a bare word so no path can climb out of the folder.
+  // The folder is `hd.dir` when the keeper set one (Settings, Plans/eiland-op-eigen-schijf.md),
+  // else HOME/hd: hdDirOf is the one reading.
   if (p === '/api/hd') {
-    const manifest = readJson(path.join(HOME, 'hd', 'hd-manifest.json'), null);
+    const manifest = readJson(path.join(hdDirOf(config), 'hd-manifest.json'), null);
     return json(res, 200, manifest || { installed: false });
   }
   const hdModel = /^\/api\/hd\/([a-z0-9_-]+\.glb)$/i.exec(p);
-  if (hdModel) return sendFile(req, res, path.join(HOME, 'hd', hdModel[1]), { cache: 'no-cache' });
+  if (hdModel) return sendFile(req, res, path.join(hdDirOf(config), hdModel[1]), { cache: 'no-cache' });
 
   // ---- what has been built by hand ---------------------------------------------
   // Everything here is a shape, a place and a size. Nothing names a file or a folder,
@@ -1841,6 +1921,9 @@ function islandBundle() {
 
 // Which world this island is in: a sea of its own (single, host) or somebody else's (join).
 function seaModeOf() { return SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single'; }
+// Whether the sea this island is in is the one it raised itself - the only sea whose clock
+// its keeper may set.
+function hostsSea() { return seaModeOf() !== 'join' && !!ownSea; }
 
 // Where this page should look for the world.
 //

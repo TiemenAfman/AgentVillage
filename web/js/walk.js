@@ -1631,7 +1631,10 @@ export function createWalkMode({
     place(camBack);
   }
 
-  function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
+  // `y` is the height the feet were at, for a room with storeys (main.js's room recall, web/js/
+  // room-spot.js): the floor is found from there, as walking finds it, rather than the highest one
+  // over (x, z) - which put a body remembered under a gallery on top of it.
+  function enter({ at, y = Infinity, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive,
     onBoarded, onLeftDeck }) {
     takeBlockers(blockers);
@@ -1656,8 +1659,8 @@ export function createWalkMode({
     // step back until we are standing somewhere legal - judged from the height we would stand at
     // there, not from wherever the body last was: from the floor under it, a stair built solid is a
     // wall, and a spawn on its treads was walked off to the side of it.
-    for (let i = 0; i < 40 && blocked(x, z, groundAt(x, z), true); i++) { x += 0.4; z += 0.25; }
-    state.pos.set(x, groundAt(x, z), z);
+    for (let i = 0; i < 40 && blocked(x, z, groundAt(x, z, y), true); i++) { x += 0.4; z += 0.25; }
+    state.pos.set(x, groundAt(x, z, y), z);
     state.floor = state.pos.y;
     state.vy = 0;
     state.grounded = true;
@@ -1741,6 +1744,11 @@ export function createWalkMode({
   // Where an A* over cells may not go, for main.js to hand findPath: the same test the feet
   // make, asked at a cell's middle.
   const blockedAt = (x, z) => blocked(x, z, undefined, true);
+  // The floor a body standing at `from` finds at (x, z), or null when it could not be put there.
+  const standFloor = (x, z, from = Infinity) => {
+    const y = groundAt(x, z, from);
+    return blocked(x, z, y, true) ? null : y;
+  };
 
   function setBlockers(list) { takeBlockers(list); }
   function setPeerBlockers(list) { state.peerBlockers = list; }
@@ -2595,7 +2603,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

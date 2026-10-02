@@ -255,6 +255,7 @@ pirate-tavern.js op `KIT` in de layout zet; stukken met een wisselende maat zijn
 | Tonkruk, kanonpoort, boegbeeld, schedellampen, jukebox | `_stool`, `_gunport`, `_figurehead`, `_skulllamp`, `_skullsconce`, `_jukebox` | gebouwd |
 | Kaarsensloep (kroonluchter) | `civic_kraken_sloop` | 12260; hangt twee keer boven de kuil |
 | Kaarsenton (`kaarsen-druipers`) | SD `civic_kraken_candlebarrel`, HD `HOME/hd/candlebarrel.glb` | SD met de hand, 17182, via `kit()` in de kuil tegen de barwand (`KIT.candlebarrel`); de plas loopt uit tot de omtrek van de HD (pascontrole `shared/hdfit.mjs`). HD: Pixal3D 48k met eigen textuur, gemaakt met `/kitstuk` (voorkant 90°, schedels goud, acht vlammen) |
+| Zeeboog-grot (`grot3`) | — | afgevallen: de Pixal3D-grot in de zeeboog was een boog in de boog, donker en rafelig, en een keienring met de hand voegde niets toe; de tunnel van de bake (shell.py `sea_arch`) blijft |
 | Gebroken boeg | `civic_kraken_bow` | 14124; op 0,8 uit de noordgevel, boegbeeld op de steven, schedellamp aan zijn voet |
 | Stuurwiel-kroon | `civic_kraken_wheel` | 14402; plat boven de kuil |
 | Roer als uithangbord | `civic_kraken_rudder` | 5602; boven de voorkant van de bar |

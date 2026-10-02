@@ -167,6 +167,21 @@ fn main() {
         shell_open("https://nodejs.org/");
         return;
     }
+    if let Some(gone) = island::missing_home(&root) {
+        // The island was moved to a folder (~/.promptholm/home.txt) that is not there now: a
+        // drive unplugged. Starting node would found an empty island in its place, and the log
+        // it would say so in lives in that same missing folder - so it is said here, once.
+        alert(
+            "Promptholm cannot find its island",
+            &format!(
+                "The island lives in {}, and that folder is not there.\n\n\
+                 Is that drive connected? Start Promptholm again once it is.\n\n\
+                 To start a new island instead, delete the file home.txt in your .promptholm folder.",
+                gone.display()
+            ),
+        );
+        return;
+    }
     first_run(&root);
 
     let mut keeper = Keeper { root, port, child: None };

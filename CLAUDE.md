@@ -972,8 +972,10 @@ A DAZ `.dsf` is plain JSON (`geometry_library[0]`: `vertices`, `polylist` of
 `polygon_vertex_indices`; diffuse maps in the `.duf`'s `materials[].diffuse.channel.image_file`),
 so it converts to a GLB with a small script and no Blender importer.
 The third is **the HD pack** (`web/js/hd-pieces.js`, Plans/piratenkroeg.md "The HD pack"): textured
-Pixal3D GLBs in `HOME/hd/` (an `hd-manifest.json`, `/hd/` gitignored; the pack gets a git of its own so this
-repo and its installers stay small) that stand in for a room's baked kit pieces. Keeper-only routes beside
+Pixal3D GLBs in `HOME/hd/`, or the folder `config.hd.dir` names (Settings → *HD pack folder*, `/api/hd-dir`;
+`hdDirOf` in lib/paths.mjs is the one reading, `tests/hd-pack.test.mjs` and `/kitstuk` repeat it without the
+import) - an `hd-manifest.json`, `/hd/` gitignored; the pack gets a git of its own so this repo and its
+releases stay small - that stand in for a room's baked kit pieces. Keeper-only routes beside
 the local models (`/api/hd`, `/api/hd/<name>.glb`, not on `PUBLIC_API`); the manifest is asked for after the
 boot, a model only when a room wants it. A piece the pack lists **leaves the room's merge**
 (`pirate-tavern.js` `kit()` -> `def.pieces`, drawn by `createHdPieces` in interior.js) so SD and HD are
@@ -983,7 +985,14 @@ graphics-settings.js, through `onGraphicsSetting` like the sliders), switches a 
 transforms included) after the manifest's `at` (whole quarter turns only - shared/ has no sin/cos) within
 `HD_FIT` of the bake's, or the page keeps the bake and says so once; `tests/hd-pack.test.mjs` checks whatever
 pack is on this machine and skips without one. Glow is a material the manifest names `flame` (halos from
-it, never a light); `gilt`/`metal` get one shared warm room to reflect. No size budgets: the keeper tweaks.
+it, never a light); `gilt`/`metal` get one shared warm room to reflect, and so does any material with a metalness map (metal with nothing
+to mirror reads black) - but an envMap also lights the whole piece evenly, which the bakes beside it never get, so
+those take only `ENV_FILL` of its diffuse light (a shader patch on `iblIrradiance`). A piece standing on a floor
+(`floorAt` from interior.js) gets a soft contact patch under it: rooms have no shadow pass. No size budgets: the
+keeper tweaks - his choice is 50k, textures at 2048, with colour, normal map, Pixal3D's metallic/roughness and
+ambient occlusion baked back (BlenderAI `bake_texture.py --normal --gloss --ao 0.08` in kit units; colour through
+EMIT, since DIFFUSE/COLOR is the base colour times 1 - metallic and baked every metal part dark; the AO worked out on
+the raw mesh, whose normals hold - a decimated thin wall's point inwards and greyed the chest's front).
 A piece is made with the personal skill `/kitstuk` (`~/.claude/skills/kitstuk/`: Pixal3D RAW -> N k ->
 kit frame -> HD and/or SD-auto, fit and room checks). Pixal3D keeps its input image's viewpoint, so the
 front differs per image: find it with `kitstuk front` (every 15 degrees at eye level), not off BlenderAI's
@@ -1472,9 +1481,25 @@ argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer 
 camera, so every screen has the same cloud and the same shadow; the island's own rng is still
 spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
 `WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
-must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
-chronicle) marks the clock chip `· local`.
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the
+chronicle) marks the clock chip `· preview`.
 [Plans/DONE/klok-en-hemel-van-de-zee.md](Plans/DONE/klok-en-hemel-van-de-zee.md) has the rest.
+**The clock chip is no lens - only the sea's host sets the sea's time, for everybody**
+([Plans/zeetijd-van-de-host.md](Plans/zeetijd-van-de-host.md); the keeper asked for this more than
+once, and a per-screen hour preview kept coming back). For everybody else a click does nothing
+and there is no key (`tests/sea-clock-chip.test.mjs` reads `ORBIT_KEYS` and the handler). The host
+is the keeper whose islander raised the sea this page is on (`hostsSea()` in serve.mjs: mode
+single or host and `ownSea`; `/api/hello`'s `seaHost`, keeper only, never the phone): the chip
+opens `web/js/sea-clock.js`'s popover -> `POST /api/sea-time` (keeper-only, 403 when we do not
+host) -> `ownSea.setTime({ hour } | { real: true })`. **A method on the sea object, not a route**:
+the sea runs in the islander's own process, so it grows no door for anybody to try, and the open
+sea in its container has no host at all (`SEA_ADMIN_KEY` does not set it either). The clock keeps
+a `shift` (`lib/seaclock.mjs`: `at()` = real now + shift, nearest such hour within half a day,
+capped at a week, in memory only - a sea restart, and so an islander restart or a change of sea
+mode, is real time again); the welcome and `{t:'clock', now, tz, shift}` carry the shifted `now`,
+which pages from before this already set their skew from, so it is a patch, no `SEA_V`. The
+sea's beat reads `worldTime(clock.at(), …)`, so the settlers' night and gatherings follow; the
+weather keeps turning on the real clock.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
@@ -1653,6 +1678,17 @@ bridge's axis is a road), and a hamlet's boundary fence costs twelve steps excep
 (`crossing`); guards and settlers pass none of it; `enterWalk` starts
 where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
 `afoot`. At a tiller or on a deck exitWalk still flies up the old way.
+
+**A page closed inside a room opens outside its door and walks back in** (`web/js/room-spot.js`,
+`recalledRoom` in main.js). While you are inside, `promptholm.walk.room.<seed>` keeps the room, the step
+outside (`cameFrom`, *with its height*: the Kraken's stoop is up its rock, and a step found from the top
+was blocked and walked down the stair) and the feet in the room's frame, `y` included - `walk.enter({ y })`
+finds the floor from there, or a body remembered under a gallery stood on it. It is forgotten on every way
+out (`leaveInterior`, exitWalk's inside branch, closing time) and by any way down that does not go back in,
+`?square` included, so the record means only "closed in here". Boot parks the body at that door; the walk
+button takes it in, onto the spot if `placeInRoom` finds a floor within `FLOOR_SLACK` there (or a nudge
+beside it), else the room's spawn. Only while the door stands within `DOOR_SLACK` of where you came in
+(a lifted pub forgets it); never a guest page or the phone.
 
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
@@ -2068,7 +2104,9 @@ is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onT
 (`sitPose` in settler-figures.js, off `f.seat = { h, rest }`): drawing only, not in the wire's `ANIMS`, and
 `tests/sit-pose.test.mjs` holds feet out of the floor. Captain Spack Jarrow is a fetched GLB
 (`web/models/spack-jarrow.glb`, unaltered, `web/js/captain.js`) under the imp's rules: loaded on the first
-`enter()`, once, a failure said once, nothing waiting - a crew figure stands in until he lands. The room's
+`enter()`, once, a failure said once, nothing waiting - a crew figure stands in until he lands. Pixal3D is for loose objects: its model of a grotto
+(grot3) placed in the sea arch was an arch inside the arch, dark under the hall's lamps and frayed
+where it was cut, and the keeper kept the bake's own tunnel. The room's
 dressing is primitives for now and is to be redesigned as a bake (Plans/piratenkroeg.md, "Ontwerpvraag voor
 Fable"): only `parts`/`roof` go, the seats, blockers, lights, talkers and show stay data.
 **The story goes on with the crew** (`shared/quests.mjs`): `CREW` (ids, names, idle lines), three chapters
@@ -2084,6 +2122,30 @@ every count it read as headbanging; 44.1 kHz, 13.5 MB, made only near the pub) -
 **the keeper's own tracks**: `HOME/audio/{kroeg,rave,pirates}` (`lib/music.mjs`, `/api/music`, not on
 `PUBLIC_API`), played whole one after the other through a media element main.js hands in (`makeElement`), so
 sound.js itself still fetches nothing. `audio/` is gitignored for a worktree, whose HOME is the checkout.
+
+**Every voice in sound.js sits on a part, every part on a bus** ([Plans/meer-geluiden.md](Plans/meer-geluiden.md)).
+`web/js/sound-mix.js` is the one table (`MIX_LEVELS`: master + the buses ambience/music/speech; `MIX_PARTS`:
+`[id, label, bus]`, sea, birds, work, bell, tavern, borrel, greetings, songs, tracks...), read by ui.js to
+draw Settings -> **Audio** (its own tab, `data-tab="audio"`; the Sound chip moved there and is still the one
+on/off switch, `promptholm.sound`) and by sound.js to build one GainNode per bus on `listener.getInput()`
+and one per part on its bus. A new voice goes through `route(audio, part)` straight after `new
+THREE.Audio`/`PositionalAudio`: three r170 connects `audio.gain` to the listener in the constructor and
+never touches that output again, so the one move holds. Master is `listener.setMasterVolume` (times the
+switch-on fade). Kept per browser in `promptholm.sound.mix`, only what differs from the defaults, written
+only by `sound.setMix` (main.js `onSoundMix` from ui.js); a part that is off is also not *fired*
+(`live(part)`), so muting is free. A family of buffers beyond the first six (surf, wind, murmur, hammer,
+gull, clink) is a generator in `LAZY`, started by `need(name)` the first time something within reach wants
+it and stepped a frame at a time by `makeMore` - `stats().buffers` and `making` say which exist.
+What sound hears comes only through `soundSnapshot()` in main.js; a drawing module never calls sound, it
+exposes a cheap read-only **cue** (a counter, a clock, a state word) that the snapshot collects and sound
+diffs against what it saw last pick; the first sighting of a cue only remembers (a smithy that has
+struck 312 times is not 312 blows). The taverns are heard at their *doors* (`pubDoors`: the village
+tavern's front, the Kraken's baked `anchor.door`), through a lowpass that opens towards the door. The
+church bell strikes on the sea's clock (`clock` = `worldNow().hour`, null under a lens) and only on a
+turn of the minute this page saw itself, less than `BELL_SKIP_MIN` forward. Greetings are decided by
+`web/js/greetings.js` (pure; a settler's pitch from `<id>:voice`, never `<id>:walk`). What counts as
+sea for the bed is *wide* water (`seaAt`: water 5 units off on three sides) - depth cannot tell a
+river bed from the dredged harbour, both are -0.55.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
@@ -2271,7 +2333,24 @@ drunk), `?edge` (walk mode starts at the world's east edge, to try the jump roun
 (walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and
 `__camera` on `window`, which is how a test browser reads the walker and the camera - hold a key with
 `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }))`, since a tapped key is up before a
-frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you). (`?sail` is gone with the
+frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you),
+`?noclip` (allows the **noclip camera** for this page, otherwise Settings -> Island -> Debug, per browser
+`promptholm.debug.noclip`), `?cam=x,y,z[,yaw[,pitch]]` and `?room=<kind>` (start in noclip there, no menu, no
+intro - a screenshot spot as a link). The noclip camera ([Plans/noclip-camera.md](Plans/noclip-camera.md),
+`web/js/noclip.js`) is a fourth `state.mode`, `'noclip'`, flying the ordinary `camera` (everything that keys on
+the camera reads that one, unlike the planner's own); `` ` `` toggles it, W A S D fly along the view, Space/E
+up, Shift/Q down, the wheel or +/- the speed, Escape frees the mouse and then leaves. Leaving puts back the
+camera, the orbit target or the walk's paused look, and the mode - on foot the walk is *paused*, not parked, so
+it comes back exactly. Pose = scene coordinates of what is drawn (the island, or a room), yaw as walk.js
+(looking along (sin, cos)), pitch up. From the console, `window.__noclip`: `await go({ x, y, z, yaw, pitch })`
+(any subset), `get()`, `await lookAt(x, y, z)`, `await room('piratetavern')` (loads the lazy sets and shows it
+through `interior.peek()` - no walk mode, no `net.setRoom`, no peers), `await island()`, `exit()`, `speed(n)`,
+`link()`, `save(name)` / `recall(name)` / `spots()` / `forget(name)` (`promptholm.noclip.spots`), `await
+hud(false)` (only the picture). **Await them before a screenshot**: in the desktop app's hidden pane a frame
+drawn in the call that moved the camera came out one screenshot late, so each call draws a frame, another in
+the next task, and reads a pixel back before it settles. Nothing of the camera goes on the wire; Object Distance
+floors on the camera's height there, `pickDetailed`, the water and the seabed follow the camera, and the
+director, labels and clicks are off. (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 
@@ -2314,8 +2393,18 @@ its list). `app/release.json` is its marker. **The island's own files live in on
 for a release and a checkout alike** ([Plans/DONE/een-thuis-voor-het-eiland.md](Plans/DONE/een-thuis-voor-het-eiland.md)):
 `HOME` in `lib/paths.mjs` (config.json, data/, .env) is `PROMPTHOLM_HOME`, else the checkout
 itself for a *linked worktree* (a `.git` file - a sandbox, or a preview server in one works on
-the real island and publishes under its sea token), else `~/.promptholm` - so a new release
-runs on the island the debug build left. Decided from the files alone because the session
+the real island and publishes under its sea token), else the folder `~/.promptholm/home.txt` names,
+else `~/.promptholm` - so a new release runs on the island the debug build left.
+**The keeper may move the island to a drive of their own** ([Plans/eiland-op-eigen-schijf.md](Plans/eiland-op-eigen-schijf.md)):
+Settings → Island → *Island folder* → `POST /api/home { to }` → `lib/home-move.mjs` (checks the target -
+empty, not in a git checkout, not in AppData, not in the stub; copies everything but logs/locks/tmp, a
+junction made again as a junction; compares every file; only then writes `home.txt` by rename) in the scan
+queue (`movedAway` stops later scans), then `restartForUpdate('moved')` - the self-update's restart, since the
+old process computed every path from the old HOME. No installer, on purpose: unzip anywhere, no admin rights.
+A `home.txt` naming a folder with no `config.json` (a drive unplugged) is **`HOME_MISSING`**: nothing may
+found an island there - `ensureData`/`loadConfig` throw `missingHome()`, serve.mjs exits 3, the session hook
+exits 0 doing nothing, the tray (`island::missing_home`) says so in a message box before starting node.
+Decided from the files alone because the session
 hook runs with none of our environment; `home()` in `src/island.rs` is the same rule and
 must stay it, or the tray's log and the server's are two files. Not AppData, measured: the
 Claude desktop app is an MSIX package, and every AppData write by it *and by anything it

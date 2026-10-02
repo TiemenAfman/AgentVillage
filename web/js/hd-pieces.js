@@ -89,6 +89,11 @@ function warmRoom() {
   return roomEnv;
 }
 
+// A piece with a metalness map: how strongly it mirrors the warm room, and how much of the room's
+// even light it takes on top of the lamps (see prepareHd).
+const ENV_GLOSS = 2.0;
+const ENV_FILL = 0.45;
+
 const GOLD = [1.0, 0.76, 0.36];
 const FLAME = 0xffd23a, FLAME_GLOW = 0xffb040;
 // room-glow.js halosOf's size for a flame; fainter than its 0.5, because a model's flames tend to
@@ -134,12 +139,58 @@ export function prepareHd(root, piece) {
         m.roughness = piece.roughness ?? 0.38;
         m.envMap = warmRoom();
         m.envMapIntensity = 1.4;
+      } else if (m.metalnessMap) {
+        // Pixal3D's own metal, baked along since the 50k pieces (BlenderAI bake_texture.py --gloss):
+        // coins, goblets and rivets the map says are metal. Without the room to mirror they read
+        // black like any metal here, which is worse than the dull wood they were without the map.
+        m.envMap = warmRoom();
+        m.envMapIntensity = ENV_GLOSS;
+        // But an envMap lights the whole piece as well, evenly from every side - wood and cloth too,
+        // which the baked pieces beside it never get: at full strength the chest glowed against the
+        // room and the seven lamps' light and shade were gone; without it the room's lamps barely
+        // reach it and the red lining went grey. Measured in /demo, 2 Oct 2026.
+        m.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_maps>',
+            `#include <lights_fragment_maps>\n\tiblIrradiance *= ${ENV_FILL.toFixed(2)};`);
+        };
+        m.customProgramCacheKey = () => `hd-fill-${ENV_FILL}`;
       }
       // A texture that comes out lighter or darker than the bakes beside it, set by eye in the hall.
       if (tone && m.color && !toned.has(m)) { m.color.multiply(tone); toned.add(m); }
     }
   });
-  return { holder, flames };
+  return { holder, flames, foot: box };
+}
+
+// A soft dark patch under a piece that stands on a floor. Rooms have no shadow pass, and a baked
+// kit piece sits on the floor through its own baked occlusion; an HD piece had neither and looked
+// stood a hair above the boards. One quad a piece, no light, no shadow map.
+let blobTex = null;
+function blobTexture() {
+  if (blobTex) return blobTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(0,0,0,1)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.75)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  blobTex = new THREE.CanvasTexture(c);
+  return blobTex;
+}
+const BLOB = { grow: 1.25, opacity: 0.55, lift: 0.004 };
+function contactBlob(foot) {
+  const w = (foot.max.x - foot.min.x) * BLOB.grow, d = (foot.max.z - foot.min.z) * BLOB.grow;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({
+    map: blobTexture(), color: 0x000000, transparent: true, opacity: BLOB.opacity, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set((foot.min.x + foot.max.x) / 2, foot.min.y + BLOB.lift, (foot.min.z + foot.max.z) / 2);
+  mesh.name = 'hd:blob';
+  return mesh;
 }
 
 // The asset's model: { holder, flames } once it has landed, null while it loads or after it failed.
@@ -168,7 +219,9 @@ function hdModel(piece, onReady) {
 // one per placement (seven stools are seven). `scene` takes the floor's pieces, `roof` (an Object3D
 // shown and hidden with the room's lid) the ones that hang from it. Both versions of a piece stand
 // as siblings; `setDetail(hd)` decides which is seen.
-export function createHdPieces({ scene, roof = scene, pieces, material, hd = false }) {
+// `floorAt(x, z, y)` is the highest floor at or just under y there (interior.js), so a piece
+// standing on one gets a contact patch and one hung on a wall does not.
+export function createHdPieces({ scene, roof = scene, pieces, material, hd = false, floorAt = null }) {
   const placed = pieces.map((p) => {
     const parent = p.roof ? roof : scene;
     const sd = new THREE.Group();
@@ -190,6 +243,10 @@ export function createHdPieces({ scene, roof = scene, pieces, material, hd = fal
     h.position.set(pl.at.x || 0, pl.at.y || 0, pl.at.z || 0);
     h.rotation.y = pl.at.ry || 0;
     h.scale.setScalar(pl.at.s || 1);         // a prop the dressing stood bigger or smaller (kraken-dressing.js)
+    const x = pl.at.x || 0, y = pl.at.y || 0, z = pl.at.z || 0;
+    if (!pl.roof && floorAt && t.foot && Math.abs(floorAt(x, z, y) - (y + t.foot.min.y * (pl.at.s || 1))) < 0.03) {
+      h.add(contactBlob(t.foot));
+    }
     h.updateMatrix();
     pl.hd = h;
     pl.parent.add(h);

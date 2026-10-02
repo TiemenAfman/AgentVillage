@@ -142,7 +142,7 @@
     <button class="chip" id="nav-collapse-btn" title="Hide the buttons (their keys keep working)" aria-label="Hide the buttons" aria-controls="nav-chips" aria-expanded="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg></button>
     </div>
     <div class="chips" id="sys-chips">
-    <button class="chip" id="clock-chip" title="Time of day on the island" aria-label="Time of day" data-key="H" aria-keyshortcuts="H">—</button>
+    <button class="chip" id="clock-chip" title="The sea's clock" aria-label="Time of day">—</button>
     <button class="chip" id="sysmenu-btn" title="Menu (Esc)" aria-label="Menu" aria-haspopup="dialog" aria-keyshortcuts="Escape"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     </div>
   </div>
@@ -157,7 +157,7 @@
 </div>
 
 <!-- The menu behind Esc and the ☰ (web/js/sysmenu.js), and it is the settings: one window,
-     four tabs (Plans/DONE/esc-menu-en-knoppenbalk.md, "Tweede ronde"). The chips in it that stood in
+     five tabs (Plans/DONE/esc-menu-en-knoppenbalk.md, "Tweede ronde"; Audio from Plans/meer-geluiden.md). The chips in it that stood in
      the bar before are moved rather than copied, so ui.js still finds them by id. What ui.js
      draws itself (#settings-body) comes in sections carrying their own data-tab; the stylesheet
      shows only the open tab's. -->
@@ -167,6 +167,7 @@
       <h2 id="sysmenu-title">Promptholm</h2>
       <div class="sysmenu-tabs" role="tablist">
         <button class="sysmenu-tab" role="tab" data-tabbtn="screen">This screen</button>
+        <button class="sysmenu-tab" role="tab" data-tabbtn="audio">Audio</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="controls">Controls</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="island" id="tab-island" hidden>Island</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="help">Help</button>
@@ -175,10 +176,12 @@
       <p class="muted sysmenu-build" id="sysmenu-build"></p>
     </nav>
     <div class="sysmenu-body">
-      <section data-tab="screen">
+      <section data-tab="audio">
         <h3 class="sec">Sound</h3>
         <div class="chips wrap"><button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button></div>
         <p class="muted">The sea where there is sea, the wind where there is not, and the village round you. This browser remembers it.</p>
+      </section>
+      <section data-tab="screen">
         <h3 class="sec">Show on the island</h3>
         <div class="chips wrap" role="group" aria-label="Show on the island">
           <button class="chip on" data-filter="code" aria-pressed="true" title="Claude Code sessions: show or hide their houses">Code</button>
@@ -197,7 +200,7 @@
         <div class="chips wrap"><button class="chip" id="legend-btn" title="What everything on the island means (L)">Open the legend</button></div>
         <p class="muted">The legend stands beside the island rather than over it, so you can look from one to the other.</p>
         <h3 class="sec">Keys</h3>
-        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>H</kbd> preview the hour · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>K</kbd> quests · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
+        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>K</kbd> quests · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
         <p class="muted sysmenu-keys">On foot: the first <kbd>Esc</kbd> frees the mouse, the second takes you up into the sky. The rest is under Controls.</p>
       </section>
     </div>

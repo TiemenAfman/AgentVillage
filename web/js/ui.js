@@ -8,6 +8,8 @@ import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
+import { NOCLIP_KEY } from './noclip.js';
+import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -115,7 +117,10 @@ export function createUI(handlers) {
   // to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
-  el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+  // The sea's clock. No lens any more - nobody previews another hour on their own screen
+  // (Plans/zeetijd-van-de-host.md); main.js opens the host's popover and does nothing for
+  // anybody else.
+  el('clock-chip').addEventListener('click', () => handlers.onClockChip && handlers.onClockChip(el('clock-chip')));
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
@@ -304,16 +309,23 @@ export function createUI(handlers) {
     el('live-text').textContent = mode === 'off' ? 'Offline' : mode === 'replay' ? 'Replay' : 'Live';
   }
 
-  function setClock(hour, seasonName, lens = false) {
+  // `lens`: a developer's `?hour` or the chronicle is showing another moment on this screen.
+  // `host`: this keeper raised the sea and may set its clock. `shifted`: the host has.
+  function setClock(hour, seasonName, { lens = false, host = false, shifted = false } = {}) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
     const chip = el('clock-chip');
     // Called every frame: once() keeps an unchanged chip from being rewritten (and its hover with it).
-    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · preview' : ''}`;
+    const tag = lens ? ' · preview' : shifted ? ' · set by host' : '';
+    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${tag}`;
     once('clock-chip', `${h >= 6 && h < 20 ? CLOCK_SUN : CLOCK_MOON}<span>${text}</span>`);
     chip.classList.toggle('lens', lens);
-    chip.title = lens
-      ? 'A preview of the hour on this screen only - the sea keeps its own clock. Click (or H) for the next hour, and back to live after 22:00.'
-      : 'Time of day on the island. Click (or H) to preview 07:00, 12:00, 18:30 or 22:00 on this screen only.';
+    chip.classList.toggle('host', host);
+    const title = lens
+      ? 'Another moment on this screen only (?hour or the chronicle) - the sea keeps its own clock.'
+      : host
+        ? `The sea's clock, which everybody on your sea follows.${shifted ? ' You have set it off the real time.' : ''} Click to set it.`
+        : `The sea's clock - the same hour for everybody on this sea.${shifted ? ' Its host has set it.' : ''}`;
+    if (chip.title !== title) chip.title = title;
   }
 
   // --- now building --------------------------------------------------------
@@ -533,6 +545,12 @@ export function createUI(handlers) {
   function applyBuild() { el('build-btn').hidden = !buildOn; }
   applyBuild();
 
+  // The noclip camera (web/js/noclip.js, Plans/noclip-camera.md): ` flies a free camera through
+  // everything, and `window.__noclip` drives it from the console. Off unless switched on here or
+  // the URL says `?noclip`; per browser like Build mode, for the same reason.
+  let noclipOn = false;
+  try { noclipOn = localStorage.getItem(NOCLIP_KEY) === '1'; } catch { /* private window: off */ }
+
   // The YOU arrow over the body left standing when you go up into the sky (you-marker.js).
   // On unless switched off, per browser like Build mode, and for the same reason: it changes
   // what this page draws, not the island. Only the arrow - the dots and the ring of a route
@@ -678,6 +696,28 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin:0 0 9px">The island grows by itself when its village needs room: a ring of new coast, with the quay and the harbours moving out to it. It never shrinks. This is how far it may go.</p>`
       + `<div class="chips wrap">${choices.map((n) => `<button class="chip${n === max ? ' on' : ''}" data-islandsize="${n}"${n < size ? ' disabled title="Smaller than the island already is"' : `title="${n} × ${n} cells, ${km(n)} across"`}>${n}</button>`).join('')}</div>`
       + `<p class="muted" style="margin-top:9px">Now ${size} × ${size} cells (${km(size)} across), may grow to ${max} × ${max}. Bigger islands cost more to draw, for you and for everybody sailing past.</p>`;
+  }
+
+  // Where the island and its HD pack live (Plans/eiland-op-eigen-schijf.md): asked of the islander
+  // when Settings opens. A move copies everything, checks the copy and starts the island again
+  // there; the pack's folder is a setting of its own, read on the next load.
+  let homeInfo = null;
+  function setHome(data) { homeInfo = data; renderSettings(); }
+
+  function homeSection() {
+    if (!homeInfo) return '';
+    const h = homeInfo, hd = h.hd || {};
+    const move = h.movable
+      ? `<div style="display:flex;gap:6px;margin-top:8px"><input id="home-to" class="field" placeholder="D:\\Promptholm" style="flex:1"><button class="chip" id="home-move">Move…</button></div>`
+      : `<p class="muted" style="margin-top:6px">${esc(h.why || '')}</p>`;
+    return '<h3 class="sec">Island folder</h3>'
+      + '<p class="muted" style="margin:0 0 9px">Where this island keeps its town, its settings and everything you added. Move it to another drive here: it is copied, checked, and the island starts again there. The old folder is left as it was.</p>'
+      + `<p class="muted" style="margin:0;font-size:12px;word-break:break-all">Now in <b>${esc(h.home)}</b></p>`
+      + move
+      + '<h3 class="sec">HD pack folder</h3>'
+      + `<p class="muted" style="margin:0 0 9px">${hd.installed ? 'A pack is installed here.' : 'No pack here yet: the rooms draw their hand-made models.'} Empty is the island folder’s own <i>hd</i>. Read again on the next load.</p>`
+      + `<p class="muted" style="margin:0;font-size:12px;word-break:break-all">Now <b>${esc(hd.dir || '')}</b></p>`
+      + `<div style="display:flex;gap:6px;margin-top:8px"><input id="hd-dir" class="field" placeholder="${esc(hd.default || '')}" value="${hd.chosen ? esc(hd.dir) : ''}" style="flex:1"><button class="chip" id="hd-dir-save">Use</button></div>`;
   }
 
   function seaSection() {
@@ -849,6 +889,23 @@ export function createUI(handlers) {
       .map((k) => `<button class="chip${state.graphics.detail === k ? ' on' : ''}" data-detail="${k}">${DETAIL_LABELS[k]}</button>`).join('')}</div>`
       + `<p class="muted" style="margin:4px 0 0">${has} Auto shows HD on a full-strength machine.</p></div>`;
   }
+  // Settings -> Audio (sound-mix.js, Plans/meer-geluiden.md): the four sliders and a switch per
+  // part, drawn from the one table and the mix as this browser keeps it. The Sound chip above them
+  // (index.html) is still the one on/off switch; these only say how loud. A move goes one way, to
+  // main.js and on to sound.setMix, which keeps it and plays it.
+  function audioSection() {
+    const m = loadMix();
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    const slider = ([key, label]) => `<div class="setting-row"><label>${label} <span class="muted" id="mix-${key}-value">${pct(m[key])}</span></label>`
+      + `<input type="range" min="0" max="1" step="${MIX_STEP}" value="${m[key]}" data-mix="${key}"></div>`;
+    return '<div><h3 class="sec">Volume</h3>'
+      + `<p class="muted" style="margin:0 0 12px">Ambience is the island itself - sea, wind, birds, the crafts, the bell; Music the rave, the shanties and your own tracks; Speech the greetings and the murmur of the taverns and the borrel.</p>`
+      + MIX_LEVELS.map(slider).join('')
+      + '<h3 class="sec">What you hear</h3>'
+      + `<div class="chips wrap">${MIX_PARTS.map(([key, label]) => `<button class="chip${m[key] ? ' on' : ''}" data-mixpart="${key}" aria-pressed="${!!m[key]}">${label}</button>`).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:9px"><button class="chip" data-mix-reset="1">Everything at full</button></div>`
+      + `<p class="muted" style="margin-top:9px">This browser remembers it. The sliders work with the sound off too; you hear them when it comes on.</p></div>`;
+  }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     // One section per tab of the menu (sysmenu.js); the Island one only for the keeper, whose
@@ -897,12 +954,30 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
-        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${noclipOn ? ' on' : ''}" data-noclip="1" aria-pressed="${noclipOn}">Noclip camera</button></div>`
+      + `<p class="muted" style="margin-top:9px">${noclipOn
+        ? 'On: <kbd>`</kbd> flies a free camera through walls, ground and water (<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, <kbd>Space</kbd>/<kbd>E</kbd> up, <kbd>Shift</kbd>/<kbd>Q</kbd> down, the wheel for speed); <code>__noclip</code> in the console.'
+        : 'Off. A free-flying camera for looking at the graphics, also on with <code>?noclip</code> in the address.'}</p>`;
     el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
+      + `<section data-tab="audio">${audioSection()}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
-      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
+      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+    el('settings-body').querySelectorAll('[data-mix]').forEach((r) => r.addEventListener('input', () => {
+      if (handlers.onSoundMix) handlers.onSoundMix(r.dataset.mix, Number(r.value));
+      const out = document.getElementById(`mix-${r.dataset.mix}-value`);
+      if (out) out.textContent = `${Math.round(Number(r.value) * 100)}%`;
+    }));
+    el('settings-body').querySelectorAll('[data-mixpart]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onSoundMix) handlers.onSoundMix(b.dataset.mixpart, !loadMix()[b.dataset.mixpart]);
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-mix-reset]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onSoundMixReset) handlers.onSoundMixReset();
+      renderSettings();
+    }));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
       buildOn = !buildOn;
       try { if (buildOn) localStorage.setItem(BUILD_KEY, '1'); else localStorage.removeItem(BUILD_KEY); } catch { /* kept for this page only */ }
@@ -910,6 +985,12 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
+    el('settings-body').querySelectorAll('[data-noclip]').forEach((b) => b.addEventListener('click', () => {
+      noclipOn = !noclipOn;
+      try { if (noclipOn) localStorage.setItem(NOCLIP_KEY, '1'); else localStorage.removeItem(NOCLIP_KEY); } catch { /* kept for this page only */ }
+      renderSettings();
+      if (handlers.onNoclip) handlers.onNoclip(noclipOn);
     }));
     el('settings-body').querySelectorAll('[data-chipnames]').forEach((b) => b.addEventListener('click', () => {
       namesOn = !namesOn;
@@ -986,6 +1067,13 @@ export function createUI(handlers) {
     if (reset) reset.addEventListener('click', () => { stopCapture(); bindNote = ''; resetKeys(); renderSettings(); });
     const resetP = el('settings-body').querySelector('[data-rebind-reset-pad]');
     if (resetP) resetP.addEventListener('click', () => { stopCapture(); bindNote = ''; resetPad(); renderSettings(); });
+    const homeMove = el('settings-body').querySelector('#home-move');
+    if (homeMove) homeMove.addEventListener('click', () => {
+      const to = el('settings-body').querySelector('#home-to').value.trim();
+      if (to && handlers.onHomeMove) handlers.onHomeMove(to);
+    });
+    const hdSave = el('settings-body').querySelector('#hd-dir-save');
+    if (hdSave) hdSave.addEventListener('click', () => handlers.onHdDir && handlers.onHdDir(el('settings-body').querySelector('#hd-dir').value.trim()));
     el('settings-body').querySelectorAll('[data-islandsize]')
       .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
@@ -1492,14 +1580,14 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, noclipEnabled: () => noclipOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
     // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.
     openSide, closeSide: close, syncPanels: syncSidebar,
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
-    setSeas, setIslandSize,
+    setSeas, setIslandSize, setHome,
     closeOverlays: () => SIDE.forEach(close),
     sysmenu: menu,
   };

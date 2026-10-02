@@ -38,9 +38,23 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [app-zonder-apk-bijwerken.md](app-zonder-apk-bijwerken.md) — de telefoon-app haalt een ondertekende
   pagina-bundel op (web/ + shared/) en draait die vanaf de volgende start, met terugval op de ingebakken
   kopie; een nieuwe APK alleen nog als de schil verandert.
+- 🚧 [meer-geluiden.md](meer-geluiden.md) — plan van 2 oktober 2026, nog niet gebouwd: meer geluid op het
+  eiland, allemaal berekend zoals nu (eigen samples van de keeper hooguit als laatste, optionele fase).
+  Geroezemoes en klinkende glazen door de kroegdeur en de borrel op het plein, de ambachten op een
+  alleen-lezen cue van wat getekend wordt (smid, zaag, bakker, werkers in de crowd), ochtendkoor,
+  krekels, regen op daken en bos, dieren, rivier en vulkaan, en een mixer in Settings. Vaste pools per
+  tier, niets op de draad.
+- 🚧 [zeetijd-van-de-host.md](zeetijd-van-de-host.md) — de klokchip is geen lens meer: iedereen ziet de
+  tijd van de zee, en alleen wie de zee host (single of host, eigen islander) zet die tijd voor iedereen,
+  via een popover op de chip. In het geheugen van de zee; een herstart is weer echte tijd. Een patch.
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
+- 🚧 [noclip-camera.md](noclip-camera.md) — een vrije debugcamera (`` ` ``, `?noclip`, `?cam=x,y,z,yaw,pitch&room=`)
+  die door alles heen vliegt, met `window.__noclip` (`go`, `lookAt`, `room`, `island`, bladwijzers) om
+  graphics snel te bekijken zonder het lijf te besturen; tekent meteen een frame voor een screenshot.
+- 🚧 [eiland-op-eigen-schijf.md](eiland-op-eigen-schijf.md) — het eiland en het HD-pakket op een schijf naar
+  keuze: een verwijzing `~/.promptholm/home.txt`, *Verplaatsen…* in Settings, en een eigen pad voor het pakket.
 - 🚧 [hitboxes-en-looppaden.md](hitboxes-en-looppaden.md) — buiten wordt walk mode preciezer: gedraaide en
   ronde vormen, dingen met een bovenkant om op te stappen of te springen (kei, krat, ton), een zoekrooster,
   en als bron de props, het bos en de keien, en de grenzen van wijkjes (rails spring je over, heggen en muren
