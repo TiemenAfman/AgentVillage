@@ -408,8 +408,8 @@ export function buildBorders(village, terrain, owner, roadCells, fields = null, 
     const f = fixed - half, mid = (a + b) / 2 - half, t = Math.max(0.05, v.t / 2);
     const hop = v.h < HOP_H;
     out.solids.push(axis === 'x'
-      ? { x: f, z: mid, hx: t, hz: (b - a) / 2, ...(hop ? { hop: true } : {}) }
-      : { x: mid, z: f, hx: (b - a) / 2, hz: t, ...(hop ? { hop: true } : {}) });
+      ? { x: f, z: mid, hx: t, hz: (b - a) / 2, ...(hop ? { hop: true, fence: true } : {}) }
+      : { x: mid, z: f, hx: (b - a) / 2, hz: t, ...(hop ? { hop: true, fence: true } : {}) });
     if (hop) return;
     for (let along = a; along < b; along++) {
       const one = axis === 'x' ? (fixed - 1) + along * size : along + (fixed - 1) * size;

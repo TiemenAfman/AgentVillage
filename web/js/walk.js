@@ -1159,6 +1159,12 @@ export function createWalkMode({
   // (`leaving`, Plans/muren-met-hitboxes.md): a scan, an Apply or a guest island putting a building
   // up round you, or a jump coming down on a crate's side, used to leave every step blocked and you
   // stood in it until you left walk mode.
+  // TEMPORARY: trees (world.js tags their trunks `tree`) and the low hamlet fences (hamlets.js
+  // tags them `fence`, below HOP_H) are walked and ridden through - on the phone, riding across
+  // the island ran into one every few metres. Rails and every other `hop` blocker stay walls.
+  // Set PASS_TREES_AND_FENCES false to have them back.
+  const PASS_TREES_AND_FENCES = true;
+  const passedThrough = (b) => PASS_TREES_AND_FENCES && (b.tree === true || b.fence === true);
   function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -1178,7 +1184,7 @@ export function createWalkMode({
       const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
       return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
+    if (blockerIndex.some(x, z, BODY_R, (b) => !passedThrough(b) && inside(b, x, z, BODY_R) && atHeight(b, from)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
