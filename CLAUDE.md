@@ -972,8 +972,10 @@ A DAZ `.dsf` is plain JSON (`geometry_library[0]`: `vertices`, `polylist` of
 `polygon_vertex_indices`; diffuse maps in the `.duf`'s `materials[].diffuse.channel.image_file`),
 so it converts to a GLB with a small script and no Blender importer.
 The third is **the HD pack** (`web/js/hd-pieces.js`, Plans/piratenkroeg.md "The HD pack"): textured
-Pixal3D GLBs in `HOME/hd/` (an `hd-manifest.json`, `/hd/` gitignored; the pack gets a git of its own so this
-repo and its installers stay small) that stand in for a room's baked kit pieces. Keeper-only routes beside
+Pixal3D GLBs in `HOME/hd/`, or the folder `config.hd.dir` names (Settings → *HD pack folder*, `/api/hd-dir`;
+`hdDirOf` in lib/paths.mjs is the one reading, `tests/hd-pack.test.mjs` and `/kitstuk` repeat it without the
+import) - an `hd-manifest.json`, `/hd/` gitignored; the pack gets a git of its own so this repo and its
+releases stay small - that stand in for a room's baked kit pieces. Keeper-only routes beside
 the local models (`/api/hd`, `/api/hd/<name>.glb`, not on `PUBLIC_API`); the manifest is asked for after the
 boot, a model only when a room wants it. A piece the pack lists **leaves the room's merge**
 (`pirate-tavern.js` `kit()` -> `def.pieces`, drawn by `createHdPieces` in interior.js) so SD and HD are
@@ -2068,7 +2070,9 @@ is in the building material's program key. `talkers` (`kind: 'crew'`) go to `onT
 (`sitPose` in settler-figures.js, off `f.seat = { h, rest }`): drawing only, not in the wire's `ANIMS`, and
 `tests/sit-pose.test.mjs` holds feet out of the floor. Captain Spack Jarrow is a fetched GLB
 (`web/models/spack-jarrow.glb`, unaltered, `web/js/captain.js`) under the imp's rules: loaded on the first
-`enter()`, once, a failure said once, nothing waiting - a crew figure stands in until he lands. The room's
+`enter()`, once, a failure said once, nothing waiting - a crew figure stands in until he lands. Pixal3D is for loose objects: its model of a grotto
+(grot3) placed in the sea arch was an arch inside the arch, dark under the hall's lamps and frayed
+where it was cut, and the keeper kept the bake's own tunnel. The room's
 dressing is primitives for now and is to be redesigned as a bake (Plans/piratenkroeg.md, "Ontwerpvraag voor
 Fable"): only `parts`/`roof` go, the seats, blockers, lights, talkers and show stay data.
 **The story goes on with the crew** (`shared/quests.mjs`): `CREW` (ids, names, idle lines), three chapters
@@ -2314,8 +2318,18 @@ its list). `app/release.json` is its marker. **The island's own files live in on
 for a release and a checkout alike** ([Plans/DONE/een-thuis-voor-het-eiland.md](Plans/DONE/een-thuis-voor-het-eiland.md)):
 `HOME` in `lib/paths.mjs` (config.json, data/, .env) is `PROMPTHOLM_HOME`, else the checkout
 itself for a *linked worktree* (a `.git` file - a sandbox, or a preview server in one works on
-the real island and publishes under its sea token), else `~/.promptholm` - so a new release
-runs on the island the debug build left. Decided from the files alone because the session
+the real island and publishes under its sea token), else the folder `~/.promptholm/home.txt` names,
+else `~/.promptholm` - so a new release runs on the island the debug build left.
+**The keeper may move the island to a drive of their own** ([Plans/eiland-op-eigen-schijf.md](Plans/eiland-op-eigen-schijf.md)):
+Settings → Island → *Island folder* → `POST /api/home { to }` → `lib/home-move.mjs` (checks the target -
+empty, not in a git checkout, not in AppData, not in the stub; copies everything but logs/locks/tmp, a
+junction made again as a junction; compares every file; only then writes `home.txt` by rename) in the scan
+queue (`movedAway` stops later scans), then `restartForUpdate('moved')` - the self-update's restart, since the
+old process computed every path from the old HOME. No installer, on purpose: unzip anywhere, no admin rights.
+A `home.txt` naming a folder with no `config.json` (a drive unplugged) is **`HOME_MISSING`**: nothing may
+found an island there - `ensureData`/`loadConfig` throw `missingHome()`, serve.mjs exits 3, the session hook
+exits 0 doing nothing, the tray (`island::missing_home`) says so in a message box before starting node.
+Decided from the files alone because the session
 hook runs with none of our environment; `home()` in `src/island.rs` is the same rule and
 must stay it, or the tray's log and the server's are two files. Not AppData, measured: the
 Claude desktop app is an MSIX package, and every AppData write by it *and by anything it

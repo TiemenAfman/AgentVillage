@@ -38,6 +38,8 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
+- 🚧 [eiland-op-eigen-schijf.md](eiland-op-eigen-schijf.md) — het eiland en het HD-pakket op een schijf naar
+  keuze: een verwijzing `~/.promptholm/home.txt`, *Verplaatsen…* in Settings, en een eigen pad voor het pakket.
 - 🚧 [hitboxes-en-looppaden.md](hitboxes-en-looppaden.md) — buiten wordt walk mode preciezer: gedraaide en
   ronde vormen, dingen met een bovenkant om op te stappen of te springen (kei, krat, ton), een zoekrooster,
   en als bron de props, het bos en de keien, en de grenzen van wijkjes (rails spring je over, heggen en muren

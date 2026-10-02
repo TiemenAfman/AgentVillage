@@ -7459,6 +7459,49 @@ async function boot() {
         state.ui.setSeas(await mine('/api/seas').then((r) => r.json()));
       } catch { state.ui.setSeas({ mode: 'single', seas: [] }); }
       try { state.ui.setIslandSize(await mine('/api/island-size').then((r) => r.json())); } catch { /* an older islander: no section */ }
+      try {
+        const r = await mine('/api/home');
+        if (r.ok) state.ui.setHome(await r.json());
+      } catch { /* an older islander: no section */ }
+    },
+    // Moving the island (Plans/eiland-op-eigen-schijf.md): the islander copies, checks, points
+    // ~/.promptholm/home.txt at the new folder and starts again there, so the page reloads once
+    // it answers again.
+    onHomeMove: async (to) => {
+      if (!window.confirm(`Move the island to ${to}?
+
+Everything is copied and checked first; the island then starts again there. The old folder stays as it is.`)) return;
+      state.ui.toast(`Moving the island to <b>${escapeHtml(to)}</b>…`);
+      try {
+        const r = await mine('/api/home', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { state.ui.toast(`The island stayed where it was: ${escapeHtml(body.error || r.statusText)}`); return; }
+        state.ui.toast(`The island is now in <b>${escapeHtml(body.to)}</b> (${body.files} files). It is starting again there…`);
+        const until = Date.now() + 60000;
+        const back = async () => {
+          try { if ((await mine('/api/home')).ok) { location.reload(); return; } } catch { /* not up yet */ }
+          if (Date.now() < until) setTimeout(back, 1500);
+          else state.ui.toast('The island has not come back up. Start Promptholm again.');
+        };
+        setTimeout(back, 4000);
+      } catch { state.ui.toast('The island did not answer.'); }
+    },
+    onHdDir: async (dir) => {
+      try {
+        const r = await mine('/api/hd-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dir }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { state.ui.toast(`The HD pack folder stayed as it was: ${escapeHtml(body.error || r.statusText)}`); return; }
+        state.ui.toast(`The HD pack is read from <b>${escapeHtml(body.dir)}</b>${body.installed ? '' : ' (no pack there yet)'}. Reload to use it.`);
+        try { state.ui.setHome(await mine('/api/home').then((x) => x.json())); } catch { /* the toast said it */ }
+      } catch { state.ui.toast('The island did not answer.'); }
     },
     // Only asks, like the signs: the island writes the setting down and says what it now is.
     onIslandSize: async (n) => {

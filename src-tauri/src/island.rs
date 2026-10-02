@@ -128,7 +128,8 @@ fn shared_home() -> Option<PathBuf> {
 /// Where the island in `root` keeps config.json and data/. The same rule as HOME in
 /// lib/paths.mjs, and it has to stay the same rule: the log the tray opens and the one the
 /// server writes are only one file while the two agree. PROMPTHOLM_HOME when it is set; a
-/// linked worktree (a .git *file*) in itself, as a sandbox; everybody else ~/.promptholm.
+/// linked worktree (a .git *file*) in itself, as a sandbox; the folder ~/.promptholm/home.txt
+/// names, when there is one; everybody else ~/.promptholm.
 /// The one place the two may differ is a move into ~/.promptholm that failed, after which
 /// node runs on the old home until the next start tries again - moving is node's job
 /// (settleHome), and the tray only ever looks.
@@ -139,7 +140,31 @@ pub fn home(root: &Path) -> PathBuf {
     if root.join(".git").is_file() {
         return root.to_path_buf();
     }
+    if let Some(p) = pointed_home() {
+        return p;
+    }
     shared_home().unwrap_or_else(|| root.to_path_buf())
+}
+
+/// The folder ~/.promptholm/home.txt names, when the keeper moved the island to a drive of
+/// their own (Settings, lib/home-move.mjs; Plans/eiland-op-eigen-schijf.md): its first line,
+/// when that is an absolute path. lib/paths.mjs pointedHome() is the same reading.
+fn pointed_home() -> Option<PathBuf> {
+    let text = fs::read_to_string(shared_home()?.join("home.txt")).ok()?;
+    let line = text.trim_start_matches('\u{feff}').lines().next()?.trim();
+    let p = PathBuf::from(line);
+    (!line.is_empty() && p.is_absolute()).then_some(p)
+}
+
+/// The pointer names a folder with no island in it - a drive that is not there. Then nothing
+/// may start, or node would found an empty island in its place (lib/paths.mjs HOME_MISSING).
+/// Returns the folder it looked for, for the message.
+pub fn missing_home(root: &Path) -> Option<PathBuf> {
+    if std::env::var_os("PROMPTHOLM_HOME").filter(|v| !v.is_empty()).is_some() || root.join(".git").is_file() {
+        return None;
+    }
+    let p = pointed_home()?;
+    (!p.join("config.json").is_file()).then_some(p)
 }
 
 fn memory_file() -> Option<PathBuf> {

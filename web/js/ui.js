@@ -680,6 +680,28 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">Now ${size} × ${size} cells (${km(size)} across), may grow to ${max} × ${max}. Bigger islands cost more to draw, for you and for everybody sailing past.</p>`;
   }
 
+  // Where the island and its HD pack live (Plans/eiland-op-eigen-schijf.md): asked of the islander
+  // when Settings opens. A move copies everything, checks the copy and starts the island again
+  // there; the pack's folder is a setting of its own, read on the next load.
+  let homeInfo = null;
+  function setHome(data) { homeInfo = data; renderSettings(); }
+
+  function homeSection() {
+    if (!homeInfo) return '';
+    const h = homeInfo, hd = h.hd || {};
+    const move = h.movable
+      ? `<div style="display:flex;gap:6px;margin-top:8px"><input id="home-to" class="field" placeholder="D:\\Promptholm" style="flex:1"><button class="chip" id="home-move">Move…</button></div>`
+      : `<p class="muted" style="margin-top:6px">${esc(h.why || '')}</p>`;
+    return '<h3 class="sec">Island folder</h3>'
+      + '<p class="muted" style="margin:0 0 9px">Where this island keeps its town, its settings and everything you added. Move it to another drive here: it is copied, checked, and the island starts again there. The old folder is left as it was.</p>'
+      + `<p class="muted" style="margin:0;font-size:12px;word-break:break-all">Now in <b>${esc(h.home)}</b></p>`
+      + move
+      + '<h3 class="sec">HD pack folder</h3>'
+      + `<p class="muted" style="margin:0 0 9px">${hd.installed ? 'A pack is installed here.' : 'No pack here yet: the rooms draw their hand-made models.'} Empty is the island folder’s own <i>hd</i>. Read again on the next load.</p>`
+      + `<p class="muted" style="margin:0;font-size:12px;word-break:break-all">Now <b>${esc(hd.dir || '')}</b></p>`
+      + `<div style="display:flex;gap:6px;margin-top:8px"><input id="hd-dir" class="field" placeholder="${esc(hd.default || '')}" value="${hd.chosen ? esc(hd.dir) : ''}" style="flex:1"><button class="chip" id="hd-dir-save">Use</button></div>`;
+  }
+
   function seaSection() {
     if (!seas) return '<h3 class="sec">The sea</h3><p class="muted">Asking around…</p>';
     const chosen = MODES.find(([k]) => k === seas.mode) || MODES[0];
@@ -900,7 +922,7 @@ export function createUI(handlers) {
         : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
     el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
-      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${seaSection()}${debug}</section>` : '');
+      + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
@@ -986,6 +1008,13 @@ export function createUI(handlers) {
     if (reset) reset.addEventListener('click', () => { stopCapture(); bindNote = ''; resetKeys(); renderSettings(); });
     const resetP = el('settings-body').querySelector('[data-rebind-reset-pad]');
     if (resetP) resetP.addEventListener('click', () => { stopCapture(); bindNote = ''; resetPad(); renderSettings(); });
+    const homeMove = el('settings-body').querySelector('#home-move');
+    if (homeMove) homeMove.addEventListener('click', () => {
+      const to = el('settings-body').querySelector('#home-to').value.trim();
+      if (to && handlers.onHomeMove) handlers.onHomeMove(to);
+    });
+    const hdSave = el('settings-body').querySelector('#hd-dir-save');
+    if (hdSave) hdSave.addEventListener('click', () => handlers.onHdDir && handlers.onHdDir(el('settings-body').querySelector('#hd-dir').value.trim()));
     el('settings-body').querySelectorAll('[data-islandsize]')
       .forEach((b) => b.addEventListener('click', () => handlers.onIslandSize && handlers.onIslandSize(Number(b.dataset.islandsize))));
     el('settings-body').querySelectorAll('[data-seamode]')
@@ -1490,7 +1519,7 @@ export function createUI(handlers) {
     // one, and re-run the right column's one-thing-at-a-time rule after drawing its card.
     openSide, closeSide: close, syncPanels: syncSidebar,
     // What B clears from up in the sky: none of these is modal, so nothing else changes.
-    setSeas, setIslandSize,
+    setSeas, setIslandSize, setHome,
     closeOverlays: () => SIDE.forEach(close),
     sysmenu: menu,
   };

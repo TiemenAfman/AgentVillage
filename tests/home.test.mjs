@@ -67,14 +67,16 @@ function envFor(m, extra = {}) {
 const probe = (root) => [
   '--input-type=module', '-e',
   `const m = await import(${JSON.stringify(pathToFileURL(path.join(root, 'lib', 'paths.mjs')).href)});`
-  + 'process.stdout.write(JSON.stringify({ HOME: m.HOME, WORKTREE: m.WORKTREE }));',
+  + 'let refused = null; if (m.HOME_MISSING) { try { m.loadConfig(); } catch (e) { refused = e.message; } }'
+  + 'process.stdout.write(JSON.stringify({ HOME: m.HOME, WORKTREE: m.WORKTREE, MISSING: m.HOME_MISSING, refused }));',
 ];
 
-function homeOf(m, root, extra) {
+function probeOf(m, root, extra) {
   const r = spawnSync(process.execPath, probe(root), { env: envFor(m, extra), encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout).HOME;
+  return JSON.parse(r.stdout);
 }
+const homeOf = (m, root, extra) => probeOf(m, root, extra).HOME;
 
 const read = (f) => fs.readFileSync(f, 'utf8');
 
@@ -166,4 +168,54 @@ test('a dozen processes starting at once move the island in once and agree where
   assert.equal(runs.filter((r) => /the island moved/.test(r.err)).length, 1);
   assert.deepEqual(JSON.parse(read(path.join(m.shared, 'data', 'layout.json'))), { island: 'Hoogezand' });
   assert.ok(!fs.existsSync(path.join(m.shared, 'moving.lock')));
+});
+
+// ---- moved to a drive of the keeper's own (Plans/eiland-op-eigen-schijf.md) ------------------
+
+function pointTo(m, where) {
+  fs.mkdirSync(m.shared, { recursive: true });
+  fs.writeFileSync(path.join(m.shared, 'home.txt'), `${where}
+`);
+}
+
+test('~/.promptholm/home.txt names where the island lives, and nothing is moved into the stub', () => {
+  const m = machine();
+  const real = checkout(m, 'real');
+  island(real, 'From the hook');
+  hookTo(m, real);
+  const moved = path.join(m.dir, 'D', 'Promptholm');
+  island(moved, 'Hoogezand');
+  pointTo(m, moved);
+  const r = probeOf(m, real);
+  assert.equal(r.HOME, moved);
+  assert.equal(r.MISSING, false);
+  assert.ok(!fs.existsSync(path.join(m.shared, 'config.json')), 'the stub holds the pointer, not an island');
+  assert.ok(!fs.existsSync(path.join(real, 'data', 'MOVED.txt')), "and the hook's island was not copied anywhere");
+});
+
+test('a pointer to a folder that is not there founds nothing and refuses to load', () => {
+  const m = machine();
+  const root = checkout(m, 'real');
+  const gone = path.join(m.dir, 'unplugged', 'Promptholm');
+  pointTo(m, gone);
+  const r = probeOf(m, root);
+  assert.equal(r.HOME, gone);
+  assert.equal(r.MISSING, true);
+  assert.match(r.refused, /is that drive there/);
+  assert.ok(!fs.existsSync(gone), 'not even the folder is made');
+  assert.ok(!fs.existsSync(path.join(m.shared, 'config.json')));
+});
+
+test('a pointer that is not a whole path is no pointer, and a worktree ignores it', () => {
+  const m = machine();
+  const own = checkout(m, 'own');
+  island(own, 'Mine');
+  pointTo(m, 'relative\\Promptholm');
+  assert.equal(homeOf(m, own), m.shared);
+  assert.deepEqual(JSON.parse(read(path.join(m.shared, 'config.json'))), { islandName: 'Mine' });
+
+  const b = machine();
+  pointTo(b, path.join(b.dir, 'D', 'Promptholm'));
+  const tree = checkout(b, 'tree', { worktree: true });
+  assert.equal(homeOf(b, tree), tree);
 });
