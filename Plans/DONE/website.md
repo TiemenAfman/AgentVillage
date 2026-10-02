@@ -55,7 +55,7 @@ Recept, voor als ze opnieuw moeten:
    achteraan plakt, zodat de camera per shot gezet kan worden, en `state.youMarker.update`
    gedempt. UI verbergen met `body > *:not(#stage):not(#panels) { visibility: hidden }`.
    Een frame duurt in software seconden: schermafdrukken met een timeout van minuten.
-4. Omzetten naar WebP op 1600 en 800 breed; `og.jpg` 1200 x 630.
+4. Omzetten naar WebP op 1600 en 800 breed; `og-image.jpg` (1200 x 630) staat in de wortel van `site/`, omdat de linkvoorvertoning op seaofagents.nl daar naar vraagt.
 
 ## Online zetten (nog te doen)
 
