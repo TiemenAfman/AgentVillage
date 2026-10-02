@@ -18,7 +18,7 @@ import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
 import { danceStep, wallBeat } from './dance.js';
 import { createZzz, bobZzz } from './zzz.js';
-import { divePitch, SWIM_PITCH } from './diving.js';
+import { divePitch, swimPose, stepLie } from './diving.js';
 
 const FADE_S = 0.4;
 const BODY_R = 0.35;
@@ -183,6 +183,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       bob: Math.random() * 6.28,
       dive: false,        // under the surface: drawn at the height they sent (see update)
       vy: 0,              // and their vertical speed, smoothed, for the pitch of the body
+      lie: 1,             // and how far into the stroke a swimmer lies (diving.js swimPose), as walk.js keeps it
       moving: false,
       carrying: false,    // what the rig has last been told (avatar.setCarry / avatar.dig)
       digging: false,
@@ -443,8 +444,13 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       if (riding) {
         ride(p, x, base, z, yaw, dt);
       } else if (swimming) {
-        p.mesh.position.set(x, base + Math.sin(p.bob) * 0.03, z);
-        p.mesh.rotation.set((diving ? divePitch(p.vy) : SWIM_PITCH) + Math.sin(p.bob) * 0.1, yaw, Math.sin(p.bob * 0.5) * 0.16);
+        // Upright when they are going nowhere, lying in the stroke when they swim - off the
+        // same `moving` walk.js eases its own body by, so both screens tread water alike.
+        p.lie = diving ? 1 : stepLie(p.lie, moving, dt);
+        const swim = swimPose(p.lie, p.bob);
+        p.mesh.position.set(x, base + swim.dy, z);
+        p.mesh.rotation.set(diving ? divePitch(p.vy) + Math.sin(p.bob) * 0.1 : swim.pitch, yaw,
+          diving ? Math.sin(p.bob * 0.5) * 0.16 : swim.roll);
       } else if (lying) {
         p.mesh.position.set(x, base, z);
         p.mesh.rotation.set(LIE_PITCH, yaw, 0);
@@ -471,7 +477,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       p.walkAt = { x: point.x, z: point.z }; p.walkFrame = frame;
       p.avatar.update({
         moving: moving && !lying && !sitting, running, grounded: !airborne, distance: p.aboard ? 0 : distance,
-        crouching, sitting, lying, swimming,
+        crouching, sitting, lying, swimming, treading: swimming && !p.dive ? 1 - p.lie : 0,
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
         riding: riding ? { crank: p.ride.crank, standing: false } : null,

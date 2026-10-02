@@ -2692,7 +2692,7 @@ dependencies = [
 
 [[package]]
 name = "promptholm"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "serde",
  "serde_json",

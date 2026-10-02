@@ -362,6 +362,10 @@ pub fn no_window(cmd: &mut Command) {
 /// `supervised` is the islander exe's way of starting it: stdin is a pipe the caller keeps,
 /// and serve.mjs shuts down cleanly when it closes. Anybody else passes false, because a
 /// go-between that exits a moment later would close that pipe and take the island with it.
+/// What serve.mjs exits with to be started again: after a self-update has put new code in
+/// place (lib/selfupdate.mjs RESTART_CODE - keep the two the same). 75 is EX_TEMPFAIL.
+pub const RESTART_CODE: i32 = 75;
+
 pub fn spawn_node(root: &Path, port: u16, supervised: bool) -> Result<Child, String> {
     let (log, log_err) = open_log(root)?;
 
@@ -374,7 +378,10 @@ pub fn spawn_node(root: &Path, port: u16, supervised: bool) -> Result<Child, Str
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
     if supervised {
-        cmd.arg("--supervised").stdin(Stdio::piped());
+        // And this keeper starts a fresh node when it exits with RESTART_CODE, which is how a
+        // self-update brings the island back on its new code (lib/selfupdate.mjs). Without
+        // this word in its environment, serve.mjs starts its own successor instead.
+        cmd.arg("--supervised").stdin(Stdio::piped()).env("PROMPTHOLM_TRAY_RESTARTS", "1");
     } else {
         cmd.stdin(Stdio::null());
     }

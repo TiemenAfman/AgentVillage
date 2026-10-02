@@ -142,7 +142,7 @@ import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { SETTLER_DRINK_S } from './settler-figures.js';
-import { updateNotice, refusalNotice, updateGate, SEA_PROTOCOL } from './update.js';
+import { updateNotice, refusalNotice, updateGate, islandNotice, SEA_PROTOCOL } from './update.js';
 import { seaQuietNotice } from './seaquiet.js';
 import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
@@ -2112,8 +2112,9 @@ function appGate() {
 // background for days, and GitHub allows sixty unauthenticated calls an hour.
 let releaseAsked = 0;
 function askLatestRelease() {
+  if (!STANDALONE) { askIslandRelease(); return; }
   const ipc = globalThis.__TAURI_INTERNALS__;
-  if (!STANDALONE || !ipc || typeof ipc.invoke !== 'function') return;
+  if (!ipc || typeof ipc.invoke !== 'function') return;
   if (Date.now() - releaseAsked < 3600e3) return;
   releaseAsked = Date.now();
   ipc.invoke('latest_release').then((latest) => {
@@ -2123,6 +2124,73 @@ function askLatestRelease() {
     if (gate && state.seaSpeaks == null) state.ui.setGate(gate);
   }).catch(() => {
     // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
+  });
+}
+
+// The desktop island's banner (web/js/update.js islandNotice): the sea's news first, else a
+// newer release, patches included. The islander asks GitHub (lib/latest-release.mjs, at most
+// once an hour, and answers from what it last heard); the page asks the islander, on boot, on
+// every welcome and every ten minutes after, so a release made while the window stays open is
+// still announced. The keeper's alone - a visitor is on somebody else's island.
+function islandBanner() {
+  if (STANDALONE) return;
+  if (updatingIsland) return;
+  state.ui.setUpdate((islandNotice({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease, canInstall: state.canInstall }) || {}).html || null);
+}
+
+// The banner's Install button (Plans/zelf-bijwerken.md): the islander fetches the release, checks
+// it, swaps it in and restarts on it (POST /api/update/install, lib/selfupdate.mjs). The page then
+// waits for an islander that names the new version and loads itself again on it - a reload, since
+// every module it runs has just been replaced. A failure is said in the banner, and the island
+// carries on as it was.
+let updatingIsland = false;
+async function installUpdate(button) {
+  if (updatingIsland) return;
+  updatingIsland = true;
+  button.disabled = true;
+  button.textContent = 'Updating…';
+  let body = null;
+  try {
+    const r = await mine('/api/update/install', { method: 'POST' });
+    body = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((body && body.error) || `the island answered ${r.status}`);
+  } catch (e) {
+    updatingIsland = false;
+    state.ui.setUpdate(`<b>The update did not go through.</b> ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+  state.ui.setUpdate(`<b>Promptholm v${escapeHtml(body.version)} is in place.</b> The island is starting again on it…`);
+  const until = Date.now() + 120e3;
+  const wait = async () => {
+    try {
+      const hello = await mine('/api/hello').then((r) => r.json());
+      if (hello.build && hello.build.version === body.version) { location.reload(); return; }
+    } catch { /* still restarting */ }
+    if (Date.now() < until) setTimeout(wait, 2000);
+    else state.ui.setUpdate('<b>The island has not come back yet.</b> Start Promptholm again from the Start menu or the tray.');
+  };
+  setTimeout(wait, 3000);
+}
+document.addEventListener('click', (e) => {
+  const button = e.target && e.target.closest && e.target.closest('[data-update-install]');
+  if (button) installUpdate(button);
+});
+let islandReleaseAsked = 0, islandReleaseRetries = 0;
+function askIslandRelease() {
+  if (state.guest !== false || Date.now() - islandReleaseAsked < 590e3) return;
+  islandReleaseAsked = Date.now();
+  mine('/api/latest-release').then((r) => (r.ok ? r.json() : null)).then((body) => {
+    // The islander's first answer is null while its own question is still on its way: ask
+    // again shortly, a few times, and after that leave it to the ten-minute round.
+    if (!body || !body.latest) {
+      if (islandReleaseRetries++ < 4) { islandReleaseAsked = 0; setTimeout(askIslandRelease, 15e3); }
+      return;
+    }
+    state.latestRelease = body.latest;
+    state.canInstall = !!body.canInstall;
+    islandBanner();
+  }).catch(() => {
+    // An islander out of reach has more to say than this, and says it elsewhere.
   });
 }
 
@@ -7739,6 +7807,9 @@ async function boot() {
     state.signs = hello.signs !== false;
     state.signMode = hello.display ? hello.display.nameplates : null;
     state.ui.setKeeper(!state.guest);
+    // A newer release, for the keeper's banner: now, and every ten minutes while the window
+    // stays open (askIslandRelease keeps to that itself).
+    if (!state.guest) { askIslandRelease(); setInterval(askIslandRelease, 600e3); }
     state.ui.setSigns(state.signMode);
     setVisiting(state.guest);
     if (state.guest) {
@@ -7932,7 +8003,8 @@ async function boot() {
       // In the app a newer release is the gate with a Later; on a desktop island, the banner.
       const gate = STANDALONE ? appGate() : null;
       if (gate) state.ui.setGate(gate);
-      else state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: !!STANDALONE }) || {}).html || null);
+      else if (STANDALONE) state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: true }) || {}).html || null);
+      else islandBanner();
     },
     peers: state.peers,
     walk: state.walk,

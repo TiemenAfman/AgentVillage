@@ -14,7 +14,7 @@ import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
-import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
+import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
@@ -299,6 +299,7 @@ export function createWalkMode({
     // goes to the sea is the same either way - this is only where our own camera stands.
     firstPerson: false,
     bob: 0,
+    lie: 1,             // how far into the stroke a swimmer lies, 1 prone, 0 treading water upright (diving.js swimPose)
     vy: 0,           // vertical speed; zero whenever the feet are down
     grounded: true,
     // The surface you are standing on, held for the whole of a jump. Which floor you
@@ -2221,14 +2222,18 @@ export function createWalkMode({
       // what reads as swimming.
       // A turbo stroke is a quicker one, by the same ratio as the speed it buys.
       state.bob += dt * (state.moving ? 6.5 * (state.turbo ? SWIM_TURBO / SWIM_SPEED : 1) : 1.4);
-      avatar.position.set(state.pos.x, state.pos.y + Math.sin(state.bob) * 0.03, state.pos.z);
       // Positive pitch, so the head goes forward: rotating about local x maps +y (up,
       // towards the head) onto +z, which is the direction yaw points along. The other
       // sign swims feet first. A diver tips head-down on the way to the bottom and head-up on
       // the way to the top, off the vertical speed alone (diving.js divePitch) - which is
-      // also all a peer has to go on (peers.js), so both screens draw the same body.
-      const pitch = state.dive ? divePitch(state.vy) : 1.32;
-      avatar.rotation.set(pitch + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
+      // also all a peer has to go on (peers.js), so both screens draw the same body. At the
+      // surface a swimmer going nowhere treads water upright (swimPose); a diver stays in the
+      // stroke, so coming up from below rights the body from lying, as stopping does.
+      state.lie = state.dive ? 1 : stepLie(state.lie, state.moving, dt);
+      const swim = swimPose(state.lie, state.bob);
+      avatar.position.set(state.pos.x, state.pos.y + swim.dy, state.pos.z);
+      const pitch = state.dive ? divePitch(state.vy) + Math.sin(state.bob) * 0.1 : swim.pitch;
+      avatar.rotation.set(pitch, state.yaw, state.dive ? Math.sin(state.bob * 0.5) * 0.16 : swim.roll);
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(nod, state.yaw, roll);
@@ -2242,7 +2247,7 @@ export function createWalkMode({
     classicAvatar.update({
       moving: state.moving, running: state.running, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
-      swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
+      swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
       dancing: dancingNow(),
     }, dt);

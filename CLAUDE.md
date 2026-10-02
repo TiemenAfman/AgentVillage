@@ -1248,7 +1248,20 @@ banner with the release link, newer says the sea is behind - by `version`, never
 which differs between players on the same release all the time, and by the *line* only
 (`compareLines`, major.minor): a patch apart says nothing - except on the phone, whose
 `updateGate` compares whole versions, because a phone cannot pull and that card (with a
-Later) is the only way a patch ever reaches it. **A patch release never breaks
+Later) is the only way a patch ever reaches it. The keeper's desktop page hears of a release
+from GitHub too, patches included and called optional (`islandNotice` in web/js/update.js, the
+sea's news first): the islander asks (`lib/latest-release.mjs`, at most hourly, answering from
+what it last heard) and hands it over `/api/latest-release` (not on `PUBLIC_API`), since the
+page reaches nothing it has not named. **An unpacked Windows release installs it itself**
+([Plans/zelf-bijwerken.md](Plans/zelf-bijwerken.md)): the banner's Install button posts
+`/api/update/install` (keeper-only), and `lib/selfupdate.mjs` fetches the zip by its own tag, checks the
+`.sha256`, unpacks it with Windows' `tar.exe` into `.update-<v>\new` beside the release, checks its
+`release.json` says that version, and swaps every piece in (old pieces to `.update-<v>\old`; a running
+exe is renamed, never overwritten; a failure halfway moves everything back). serve.mjs then exits with
+`RESTART_CODE` 75, on which the tray starts a fresh node (`island::RESTART_CODE`, held equal by
+`tests/selfupdate.test.mjs`); a tray from before that sets no `PROMPTHOLM_TRAY_RESTARTS`, and serve.mjs
+starts its own detached successor instead. The new exes run from the next start; `.update-*` is cleared
+at start. A checkout or a worktree never installs (no `release.json`). **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
 `TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
@@ -1755,7 +1768,11 @@ units down. The phone shows B in the water through `walk.inWater()` (`touchpad.j
 through the `y` that was always sent (`peers.js`: a swimmer sent below `SURFACE_Y - DIVE_BELOW`
 is drawn there, clamped to the surface above and the bed below, tipped by `divePitch` off the
 vertical speed of their last two samples): no pose bit, no new message, and a page from before
-diving sends -0.07 and is drawn afloat.
+diving sends -0.07 and is drawn afloat. At the surface a swimmer going nowhere **treads water
+upright** (`swimPose`/`stepLie` in diving.js: `lie` eased off `moving`, the body sunk `TREAD_SINK`
+to the neck, the rig's arms out sculling through `treading`), drawn alike by walk.js and peers.js;
+drawing only - `pos.y`, the air and the wire are untouched, so a page from before it draws the
+same swimmer face down.
 
 **The sea has a floor, and it is a layer beside the terrain, never in it**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). Writing a bed into any terrain `H` -
