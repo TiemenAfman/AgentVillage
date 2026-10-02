@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- The update button (src-android/src/lib.rs, install_update) hands the new APK to the
-         package installer. Without this the phone refuses to even ask; with it, it asks
-         once per install and the user allows this app in settings the first time. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- No REQUEST_INSTALL_PACKAGES, on purpose. 0.7.1 to 0.8.1 fetched the new APK themselves
+         and handed it to the installer, and an unknown app that downloads and installs APKs is
+         what Play Protect calls a dropper: it blocked the app outright as harmful ("Schadelijke
+         app geblokkeerd"). The update button hands the APK's link to the browser instead, and
+         the phone installs it from there (web/js/ui.js, web/js/update.js). -->
 
     <!-- From Android 11 an app sees no other app it has not asked about, and a plugin that
          resolves an intent before starting it gets null back and does nothing. The update

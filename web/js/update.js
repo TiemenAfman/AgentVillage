@@ -15,9 +15,10 @@ export const SEA_PROTOCOL = 3;
 // the latest release (.github/workflows/release.yml).
 export const RELEASES = 'https://github.com/TiemenAfman/AgentVillage/releases/latest';
 // The APK itself, by the one URL GitHub keeps stable across releases: `latest/download/<asset>`
-// always answers with the newest release's file. In the app a tap on it is a navigation,
-// which src-android/src/lib.rs hands to the phone's browser, which downloads it and offers
-// to install - the closest thing to "update from inside the app" that needs no native code.
+// always answers with the newest release's file. In the app a tap on it hands it to the
+// phone's browser (web/js/ui.js), which downloads it; the phone installs it from there. The
+// app does not fetch and install it itself any more: 0.7.1 to 0.8.1 did, and Play Protect
+// blocked the app as harmful for asking to install other apps (REQUEST_INSTALL_PACKAGES).
 export const APK_URL = `${RELEASES}/download/promptholm-android.apk`;
 
 // -1 when a is older than b, 1 when newer, 0 when the same, null when either is unknown.
@@ -117,8 +118,9 @@ export function updateGate({ speaks = null, mine = null, sea = null, latest = nu
   const common = {
     download: APK_URL,
     notes: RELEASES,
-    steps: 'Tap the button; the app fetches it and the phone asks to install it. The first time, '
-      + 'Android sends you to settings to allow this app to install others. '
+    steps: 'Tap the button: your browser downloads the new version. When it is done, tap '
+      + '"Open" in the browser (or open promptholm-android.apk from Downloads) and choose Install. '
+      + 'The first time, Android asks you to allow your browser to install apps. '
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
       + 'once and tap the button again. After that, updates install over the top.',
   };

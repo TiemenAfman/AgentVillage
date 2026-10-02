@@ -2414,18 +2414,17 @@ The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕
 and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
 serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
-**Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
-`tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
-the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
-as soon as there is a release, not only once the sea is updated; `install_update` fetches the
-APK into the app's cache and hands it to Android's installer through **our own Kotlin**,
-`InstallerPlugin.kt` beside `MainActivity.kt` in `gen/android/app/src/main/java/com/promptholm/sea/`
-(a `@TauriPlugin` class in the app module, registered from `lib.rs` by name with
-`register_android_plugin`; a content:// URI from the manifest's FileProvider, `cache-path` in
-`res/xml/file_paths.xml`, so the file has to be in the cache). Not the opener plugin's
-`open_path`: on Android that hands a bare path to `ACTION_VIEW`, nothing answers, and up to
-0.7.0 the button fetched the whole APK and then fell back to the browser, whose download sat at
-100% and never installed. Both are app commands, so they need no entry in
+**Asking goes through Rust; installing goes through the browser** (`src-android/src/lib.rs`): the
+page sits on `tauri.localhost`, which reaches no GitHub API. `latest_release` asks the API for the
+newest tag, so the app's update gate (`updateGate`'s `latest`) goes up as soon as there is a
+release, not only once the sea is updated. The card's download button hands the stable
+`latest/download/promptholm-android.apk` link to the phone's browser (`plugin:opener|open_url`,
+web/js/ui.js; the release page if that fails), and the phone installs it from the browser's
+download - the card's `steps` and a toast say how. **The app does not install APKs itself, and must
+not again**: 0.7.1 to 0.8.1 fetched the APK in Rust and handed it to the installer through an
+`InstallerPlugin.kt` with `REQUEST_INSTALL_PACKAGES`, and Play Protect blocked the whole app as
+harmful ("Schadelijke app geblokkeerd"): an unknown app that downloads and installs APKs is a
+dropper to it. `latest_release` is an app command, so it needs no entry in
 `capabilities/default.json` (only plugin calls from the page do).
 
 ## Layout of the source

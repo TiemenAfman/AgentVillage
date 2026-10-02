@@ -1208,25 +1208,23 @@ export function createUI(handlers) {
   // it on purpose and src-tauri/src/lib.rs hands links to the system browser instead.
   const ipc = globalThis.__TAURI_INTERNALS__;
   if (ipc && typeof ipc.invoke === 'function') {
-    // The download button never leaves the app: Rust fetches the APK and hands it to the
-    // phone's installer (src-android/src/lib.rs, install_update), so a tap is a download and
-    // an "install this app?" rather than a browser, a downloads folder and a notification.
-    // Its href stays what it was, because that is still the way out when this fails.
+    // The download button hands the APK's link to the phone's browser, which downloads it, and
+    // the phone installs it from there. Up to 0.8.1 Rust fetched it and handed it to the
+    // installer itself (install_update, REQUEST_INSTALL_PACKAGES), and Play Protect blocked the
+    // whole app as harmful for it: an unknown app that downloads and installs APKs is a dropper.
+    // What the browser does next is said on the card (updateGate's `steps`) and again here,
+    // since the card is behind the browser by then. If the browser cannot be reached, the
+    // release page is the next way out, and failing that the link is said to copy.
     const button = el('update-gate-download');
     button.addEventListener('click', (e) => {
       e.preventDefault();
-      if (button.dataset.busy) return;
-      button.dataset.busy = '1';
-      const said = button.textContent;
-      button.textContent = 'Fetching the update…';
-      ipc.invoke('install_update')
-        .then(() => { button.textContent = 'Opening the installer…'; })
-        .catch((err) => {
-          button.textContent = said;
-          toast(`Could not fetch the update (${esc(err)}). Trying the browser instead.`);
-          ipc.invoke('plugin:opener|open_url', { url: button.href }).catch(() => {});
-        })
-        .finally(() => { delete button.dataset.busy; });
+      const open = (url) => ipc.invoke('plugin:opener|open_url', { url });
+      open(button.href)
+        .then(() => toast('Downloading in your browser. When it is done, tap <b>Open</b> '
+          + '(or open <b>promptholm-android.apk</b> from Downloads) and choose <b>Install</b>.'))
+        .catch(() => open(el('update-gate-notes').href)
+          .then(() => toast('Opened the release page: download <b>promptholm-android.apk</b> there and install it.'))
+          .catch(() => toast(`Could not open the browser. Copy <b>${esc(button.href)}</b> into it.`)));
     });
 
     // Everything else that points out of the app - "What is new", the banner's link. The
