@@ -1,11 +1,14 @@
 # 🚧 De telefoon-app werkt de pagina bij zonder nieuwe APK
 
-> Status: **stap 0 gebouwd, 2 oktober 2026, nog niet op een telefoon geprobeerd.** `src-android/src/bundle.rs`
-> zet een `Overlay` voor de ingebakken assets (`Context::set_assets`, Tauri 2.11.6): elk bestand eerst uit
-> `<app data>/bundles/<current>/`, anders uit de APK. Zonder `bundles/current` is het de ingebakken pagina.
+> Status: **stap 0 geslaagd op een telefoon, 2 oktober 2026.** `src-android/src/bundle.rs` zet een `Overlay`
+> voor de ingebakken assets (`Context::set_assets`, Tauri 2.11.6): elk bestand eerst uit
+> `<app data>/bundles/<current>/`, anders uit de APK; zonder `bundles/current` is het de ingebakken pagina.
 > De proef-APK (release-workflow met de hand, `bundle_proof`, feature `bundle-proof`, nooit gepubliceerd)
-> schrijft zelf een proefbundel met een rode balk die zegt of een module van schijf draait, of
-> `latest_release` antwoordt en of de opener werkt. Een gewone build ruimt een achtergebleven proef op. Aanleiding: Play Protect blokkeerde 0.8.1 als
+> schreef zelf een proefbundel, en de telefoon liet zien: de pagina kwam van schijf, een module van schijf
+> draaide, en `latest_release` antwoordde vanaf die pagina (0.8.1). Kandidaat 1 uit beslissing 7 werkt dus;
+> kandidaat 2 is niet nodig. Een gewone build ruimt een achtergebleven proef op. Volgende: stap 1 tot 5.
+>
+> Aanleiding: Play Protect blokkeerde 0.8.1 als
 > "Schadelijke app geblokkeerd" omdat de app zelf APK's downloadde en installeerde (`install_update`,
 > `REQUEST_INSTALL_PACKAGES`; eruit in 0.8.2, de knop geeft de APK nu aan de browser). De keeper
 > (Martijn): *"Er zijn genoeg games die data apart ingame downloaden, de apk blijft dan klein. Kunnen wij
