@@ -2286,7 +2286,24 @@ drunk), `?edge` (walk mode starts at the world's east edge, to try the jump roun
 (walk mode starts in open water off the east coast: C sinks, Space rises; it also puts `__state` and
 `__camera` on `window`, which is how a test browser reads the walker and the camera - hold a key with
 `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }))`, since a tapped key is up before a
-frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you). (`?sail` is gone with the
+frame has seen it, and mind the 30 s of air: staying under in a screenshot session drowns you),
+`?noclip` (allows the **noclip camera** for this page, otherwise Settings -> Island -> Debug, per browser
+`promptholm.debug.noclip`), `?cam=x,y,z[,yaw[,pitch]]` and `?room=<kind>` (start in noclip there, no menu, no
+intro - a screenshot spot as a link). The noclip camera ([Plans/noclip-camera.md](Plans/noclip-camera.md),
+`web/js/noclip.js`) is a fourth `state.mode`, `'noclip'`, flying the ordinary `camera` (everything that keys on
+the camera reads that one, unlike the planner's own); `` ` `` toggles it, W A S D fly along the view, Space/E
+up, Shift/Q down, the wheel or +/- the speed, Escape frees the mouse and then leaves. Leaving puts back the
+camera, the orbit target or the walk's paused look, and the mode - on foot the walk is *paused*, not parked, so
+it comes back exactly. Pose = scene coordinates of what is drawn (the island, or a room), yaw as walk.js
+(looking along (sin, cos)), pitch up. From the console, `window.__noclip`: `await go({ x, y, z, yaw, pitch })`
+(any subset), `get()`, `await lookAt(x, y, z)`, `await room('piratetavern')` (loads the lazy sets and shows it
+through `interior.peek()` - no walk mode, no `net.setRoom`, no peers), `await island()`, `exit()`, `speed(n)`,
+`link()`, `save(name)` / `recall(name)` / `spots()` / `forget(name)` (`promptholm.noclip.spots`), `await
+hud(false)` (only the picture). **Await them before a screenshot**: in the desktop app's hidden pane a frame
+drawn in the call that moved the camera came out one screenshot late, so each call draws a frame, another in
+the next task, and reads a pixel back before it settles. Nothing of the camera goes on the wire; Object Distance
+floors on the camera's height there, `pickDetailed`, the water and the seabed follow the camera, and the
+director, labels and clicks are off. (`?sail` is gone with the
 browser's own boating — outings are the sea's, and `eager` is a flag on `createBoating`
 there.)
 

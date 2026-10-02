@@ -599,8 +599,12 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   };
 
   let left = true;
+  // Looked round by the noclip camera (web/js/noclip.js, Plans/noclip-camera.md): the room drawn and
+  // its show running with nobody in it - its walk mode is never entered, so there is no door to walk
+  // out of and nothing to leave by; main.js takes it down with unpeek.
+  let peeking = false;
   function leave() {
-    if (left) return;
+    if (left || peeking) return;
     left = true;
     walk.exit();
     if (onLeave) onLeave();
@@ -812,16 +816,34 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     return !!back;
   }
 
+  function peek({ guests = null, stable = false } = {}) {
+    left = false;
+    peeking = true;
+    lidOff = false;
+    if (show) show.enter({ dancers: guests, stable });
+    for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
+    if (barman) barmanX = barman.home;
+  }
+  function unpeek() {
+    if (!peeking) return;
+    peeking = false;
+    left = true;
+  }
+
   let t = 0;
   let roofWanted = true;
   // `extra` is what the room is told from outside each frame: for the castle, where the
-  // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear.
+  // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear. `eye` is
+  // the noclip camera's position: then the camera is not walk mode's, the walk is not stepped
+  // (it is paused or was never entered) and the lid is judged on the eye in whichever area it is.
   let lastExtra = {};
   function update(dt, extra = {}) {
     if (left) return null;
     lastExtra = extra;
     roofWanted = true;
-    const w = walk.update(dt);
+    const eye = extra.eye || null;
+    const w = eye ? null : walk.update(dt);
+    if (eye) judgeLid(eye, AREAS.find((b) => inArea(b, eye.x, eye.z)) || areaAt(eye.x, eye.z));
     if (roofMesh) roofMesh.visible = roofWanted;
     roofPieces.visible = roofWanted;
     if (roofHalos) roofHalos.object.visible = roofWanted && (!halos || halos.object.visible);
@@ -829,7 +851,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
-    if (p.z > def.doorway.z && Math.abs(p.x) < def.doorway.hx) { leave(); return w; }
+    if (!eye && p.z > def.doorway.z && Math.abs(p.x) < def.doorway.hx) { leave(); return w; }
 
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
@@ -881,7 +903,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   return {
-    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
+    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose, peek, unpeek,
+    peeking: () => peeking,
+    // Where the noclip camera starts in here: a little inside the door, at a standing eye's
+    // height, looking in (the spawn faces -z, enter() above).
+    view: { x: def.spawn.x, y: FLOOR + 0.9, z: def.spawn.z + 0.6, yaw: Math.PI, pitch: -0.12 },
     // Which of sound.js's songs plays in here ('shanty'), or null: main.js asks sound.clockOf it.
     music: def.music || null,
     // Where the room's music is, in beats, for everybody dancing in here (main.js danceBeat);

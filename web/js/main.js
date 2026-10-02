@@ -59,8 +59,9 @@ import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
-import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
+import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
 import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
+import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, SPOTS_KEY } from './noclip.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -1301,6 +1302,8 @@ function roomSpotKey() {
 function rememberRoom({ now = false } = {}) {
   const key = roomSpotKey();
   if (!key || !state.inside || !cameFrom) return;
+  // A room the noclip camera only looks round (noclipRoom) is no place the body stood.
+  if (state.inside === noclipPeek) return;
   const t = performance.now();
   if (!now && t - roomSpotAt < ROOM_SPOT_EVERY) return;
   roomSpotAt = t;
@@ -2447,25 +2450,15 @@ function danceNow() {
 
 // Three o'clock: whoever is inside is put back out on the step, once.
 function keepRaveHours() {
-  if (!state.inside || state.inside.room !== 'rave' || raveOn()) return;
+  if (!state.inside || state.inside.room !== 'rave' || raveOn() || state.inside.peeking()) return;
   state.inside.leave();
   state.ui.toast(RAVE_OUT);
 }
 
-// `spot` is where you stood in it when the page was last closed in there (recalledRoom).
-function enterInterior(room, at, spot = null) {
-  if (state.inside || state.mode !== 'walk') return;
-  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
-  // they are in. Usually they are, having been started as you walked up to the door.
-  if (!roomReady(room)) {
-    state.ui.toast('The door sticks a moment...');
-    prepareRoom(room).then(() => enterInterior(room, at, spot), (e) => {
-      console.error('that room could not be loaded', e);
-      state.ui.toast('That door does not open yet.');
-      if (spot) forgetRoom();
-    });
-    return;
-  }
+// A room, built the first time it is asked for and kept: enterInterior's, and the noclip camera's
+// to look round without a door (noclipRoom). Its sets must be loaded (roomReady); null if it
+// could not be built.
+function roomFor(room) {
   let inside = rooms.get(room);
   if (!inside) {
     try {
@@ -2487,11 +2480,32 @@ function enterInterior(room, at, spot = null) {
       });
     } catch (e) {
       console.error('that room could not be built', e);
-      state.ui.toast('That door does not open yet.');
-      if (spot) forgetRoom();
-      return;
+      return null;
     }
     rooms.set(room, inside);
+  }
+  return inside;
+}
+
+// `spot` is where you stood in it when the page was last closed in there (recalledRoom).
+function enterInterior(room, at, spot = null) {
+  if (state.inside || state.mode !== 'walk') return;
+  // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
+  // they are in. Usually they are, having been started as you walked up to the door.
+  if (!roomReady(room)) {
+    state.ui.toast('The door sticks a moment...');
+    prepareRoom(room).then(() => enterInterior(room, at, spot), (e) => {
+      console.error('that room could not be loaded', e);
+      state.ui.toast('That door does not open yet.');
+      if (spot) forgetRoom();
+    });
+    return;
+  }
+  const inside = roomFor(room);
+  if (!inside) {
+    state.ui.toast('That door does not open yet.');
+    if (spot) forgetRoom();
+    return;
   }
   // Where to put you back down, and what to face when you get there: the door you just
   // walked through.
@@ -2741,6 +2755,7 @@ function worldMapData() {
 }
 
 function enterWalk(spot = null) {
+  if (state.mode === 'noclip') exitNoclip();
   if (state.mode === 'walk') return;
   if (state.mode === 'plan') exitPlan();
   const board = state.byId.get('civic:board');
@@ -3064,6 +3079,7 @@ function enterPlan() {
   if (STANDALONE) return;
   if (state.mode === 'plan' || !state.plan) return;
   if (keeperOnly('plan the island')) return;
+  if (state.mode === 'noclip') exitNoclip();
   // Not stashed as the ordinary haze, and not restored over the planner's: whatever the sea
   // has put in the fog and hidden (the clouds) is put back first.
   if (state.underwater) state.underwater.reset();
@@ -3106,6 +3122,242 @@ function leftPlan() {
   // Distance were switched off to match. Both come back here, in the order the fog settled in.
   applyObjectDistances();
 }
+
+// ---------------------------------------------------------------- the noclip camera
+// The fourth mode (Plans/noclip-camera.md, web/js/noclip.js): a free camera for looking at the
+// graphics without driving a body there. Unlike the planner it flies the ordinary `camera`,
+// because everything that keys on the camera - the cut, the haze, the lens under water, the
+// sky's recentre, the sound's listener, the render - reads that one directly, and seeing what it
+// would see is the point. Leaving is made free the other way: enterNoclip keeps everything it
+// touches and exitNoclip puts all of it back, and the mode it came from with it. The body stays
+// standing: from the sky it was parked already, on foot its walk mode is paused (not parked, so
+// it comes back exactly as it was - at a tiller, in a room, looking the same way). Nothing of the
+// camera goes on the wire.
+let noclipFrom = null;          // what enterNoclip found, for exitNoclip
+let noclipPeek = null;          // the room looked round without a door (interior.js peek), or null
+let noclipIslandPose = null;    // where on the island the camera was when it went into that room
+const noclipReadout = document.createElement('div');
+noclipReadout.id = 'noclip-readout';
+noclipReadout.hidden = true;
+document.body.appendChild(noclipReadout);
+const noclip = createNoclip({ camera, dom: renderer.domElement, onExit: () => exitNoclip(), onChange: () => noclipShow() });
+// Settings -> Debug, or `?noclip` / `?cam=` / `?room=` for this page.
+function noclipAllowed() {
+  if (STANDALONE) return false;
+  if (params.has('noclip') || params.has('cam') || params.has('room')) return true;
+  return !!(state.ui && state.ui.noclipEnabled && state.ui.noclipEnabled());
+}
+const noclipRoomName = () => (state.inside ? state.inside.room : null);
+// Closer in than the island's 0.5, to look at a thing from a hand away; a room closer still.
+const noclipNear = () => { camera.near = state.inside ? 0.05 : 0.2; camera.updateProjectionMatrix(); };
+function enterNoclip(pose = null, { gesture = false } = {}) {
+  if (state.mode === 'noclip') { if (pose) noclip.set(pose); return true; }
+  if (!noclipAllowed() || !state.terrain) return false;
+  if (state.mode === 'plan') exitPlan();
+  if (state.mode !== 'orbit' && state.mode !== 'walk') return false;
+  endParley({ camera: false });
+  faceToFace.cancel();
+  if (state.chat && state.chat.isOpen()) state.chat.close();
+  if (state.ghost) state.ghost.drop();
+  state.ui.closeDossier();
+  skyMap = false;
+  state.director.poke();
+  directorCaption.hidden = true;
+  const owner = state.mode === 'walk' ? (state.inside || state.walk) : null;
+  const feet = owner ? (state.inside ? state.inside.walk : state.walk) : null;
+  noclipFrom = {
+    mode: state.mode, inside: state.inside,
+    pos: camera.position.clone(), quat: camera.quaternion.clone(), up: camera.up.clone(), near: camera.near,
+    target: controls.target.clone(),
+    // walk.js reads the mouse under a pointer lock even while paused, so the look is kept too.
+    look: feet ? { yaw: feet.state.camYaw, pitch: feet.state.camPitch, paused: !!feet.state.paused } : null,
+  };
+  if (owner) owner.setPaused(true);
+  state.intro = null;
+  state.tween = null;
+  controls.enabled = false;
+  state.mode = 'noclip';
+  camera.updateMatrixWorld();
+  noclip.setWhere(state.inside ? 'room' : 'island');
+  noclip.enter(mergePose(poseOf(camera), pose || {}), { wantLock: gesture });
+  noclipNear();
+  noclipShow();
+  return true;
+}
+function exitNoclip() {
+  if (state.mode !== 'noclip' || !noclipFrom) return;
+  const was = noclipFrom;
+  noclipFrom = null;
+  noclip.exit();
+  if (noclipPeek) unpeekRoom();
+  noclipIslandPose = null;
+  camera.position.copy(was.pos);
+  camera.quaternion.copy(was.quat);
+  camera.up.copy(was.up);
+  camera.near = was.near;
+  camera.updateProjectionMatrix();
+  state.mode = was.mode;
+  if (was.mode === 'walk') {
+    const feet = state.inside ? state.inside.walk : state.walk;
+    feet.state.camYaw = was.look.yaw;
+    feet.state.camPitch = was.look.pitch;
+    if (!was.look.paused) (state.inside || state.walk).setPaused(false);
+  } else {
+    controls.target.copy(was.target);
+    controls.enabled = true;
+    controls.update();
+  }
+  noclipShow();
+  applyFogRange();
+}
+// A room without its door: built and shown, its walk mode never entered, no net.setRoom and no
+// peers put in it - nobody sees you there, and you see nobody (Plans/noclip-camera.md).
+async function noclipRoom(room, pose = null) {
+  if (!ROOM_KINDS.includes(room)) {
+    console.warn(`[noclip] there is no room "${room}"; there are ${ROOM_KINDS.join(', ')}`);
+    return false;
+  }
+  if (!enterNoclip()) return false;
+  if (noclipFrom.inside) {
+    if (noclipFrom.inside.room !== room) { console.warn('[noclip] you are standing in a room: leave it by its door first'); return false; }
+    if (pose) noclip.set(pose);
+    await noclipRender();
+    return true;
+  }
+  if (!roomReady(room)) await prepareRoom(room);
+  if (state.mode !== 'noclip') return false;     // left while its sets came in
+  const inside = roomFor(room);
+  if (!inside) return false;
+  if (noclipPeek !== inside) {
+    if (noclipPeek) unpeekRoom();
+    else noclipIslandPose = noclip.pose();
+    const rave = room === 'rave';
+    inside.peek({ guests: rave ? raveGuests() : null, stable: rave && stableComes() });
+    state.inside = inside;
+    noclipPeek = inside;
+    state.ui.setIndoors(true);
+    refreshMusic();
+    noclip.setWhere('room');
+    noclip.set(mergePose(inside.view, pose || {}));
+  } else if (pose) noclip.set(pose);
+  noclipNear();
+  await noclipRender();
+  return true;
+}
+function unpeekRoom() {
+  const r = noclipPeek;
+  noclipPeek = null;
+  r.unpeek();
+  if (state.inside === r) state.inside = null;
+  state.ui.setIndoors(false);
+  refreshMusic();
+  noclip.setWhere('island');
+}
+async function noclipIsland(pose = null) {
+  if (!enterNoclip()) return false;
+  if (noclipFrom.inside) { console.warn('[noclip] you are standing in a room: leave it by its door first'); return false; }
+  if (noclipPeek) {
+    unpeekRoom();
+    if (noclipIslandPose) noclip.set(noclipIslandPose);
+    noclipIslandPose = null;
+  }
+  if (pose) noclip.set(pose);
+  noclipNear();
+  await noclipRender();
+  return true;
+}
+function noclipFrame(dt) {
+  noclip.update(dt);
+  noclipShow();
+}
+function noclipShow() {
+  const on = state.mode === 'noclip';
+  const clean = document.body.classList.contains('noclip-clean');
+  noclipReadout.hidden = !on || clean;
+  if (!on) return;
+  const text = `noclip · ${noclipRoomName() || 'island'} · ${formatCam(noclip.pose())} · ${+noclip.speed().toFixed(2)} u/s · \` to leave`;
+  if (noclipReadout.textContent !== text) noclipReadout.textContent = text;
+}
+// The browser pane runs no frames between screenshots, so whatever moves the camera from the
+// console draws one itself. Once is not enough, measured in that pane: a screenshot shows what the
+// canvas held at the end of the task *before* the last one, so a frame drawn in the call that moved
+// the camera came out one view late. So a frame now and another in the next task, and the promise
+// settles after that one - `await __noclip.go(...)`, then the screenshot is of the new view.
+function noclipFrameNow() {
+  try { frame(performance.now()); } catch (e) { console.error('[noclip] the frame failed', e); }
+}
+function noclipRender() {
+  noclipFrameNow();
+  return new Promise((done) => setTimeout(() => { noclipFrameNow(); noclipSync(); done(); }, 0));
+}
+// And wait for the GPU to have drawn it: one pixel read back is a sync point, so the call does not
+// return while the frame is still queued behind it.
+const noclipPixel = new Uint8Array(4);
+function noclipSync() {
+  try { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, noclipPixel); } catch { /* only a wait */ }
+}
+function noclipFromUrl() {
+  const pose = parseCam(params.get('cam'));
+  if (params.has('cam') && !pose) console.warn('[noclip] ?cam wants x,y,z[,yaw[,pitch]]');
+  const room = params.get('room');
+  if (room) noclipRoom(room, pose).catch((e) => console.error('[noclip] that room could not be shown', e));
+  else if (enterNoclip(pose)) noclipRender();
+}
+// What every console call that moves the camera answers: once its frames are drawn, where it is.
+const noclipDrawn = async () => { await noclipRender(); return noclipApi.get(); };
+// Bookmarks, per browser: { name: { cam, room } }.
+function noclipSpots() {
+  try { return JSON.parse(localStorage.getItem(SPOTS_KEY) || '{}') || {}; } catch { return {}; }
+}
+function keepNoclipSpots(spots) {
+  try { localStorage.setItem(SPOTS_KEY, JSON.stringify(spots)); } catch { /* not kept: private window */ }
+}
+const noclipApi = {
+  go(p = {}) { return enterNoclip(p) ? noclipDrawn() : Promise.resolve(null); },
+  get: () => (state.mode === 'noclip' ? { ...noclip.pose(), room: noclipRoomName(), speed: noclip.speed() } : null),
+  lookAt(x, y, z) {
+    const to = typeof x === 'object' && x ? x : { x, y, z };
+    if (!enterNoclip()) return Promise.resolve(null);
+    const p = noclip.pose();
+    noclip.set(lookFrom(p, to, p));
+    return noclipDrawn();
+  },
+  room: (name, pose = null) => noclipRoom(name, pose),
+  island: (pose = null) => noclipIsland(pose),
+  exit: () => exitNoclip(),
+  speed: (v) => noclip.speed(v),
+  link: () => (state.mode === 'noclip' ? camLink(location.href, noclip.pose(), noclipRoomName()) : null),
+  save(name = null) {
+    if (state.mode !== 'noclip') return null;
+    const spots = noclipSpots();
+    const key = name || `spot ${Object.keys(spots).length + 1}`;
+    spots[key] = { cam: formatCam(noclip.pose()), room: noclipRoomName() };
+    keepNoclipSpots(spots);
+    return key;
+  },
+  async recall(name) {
+    const s = noclipSpots()[name];
+    const pose = s && parseCam(s.cam);
+    if (!pose) { console.warn(`[noclip] no spot "${name}"`); return false; }
+    return s.room ? noclipRoom(s.room, pose) : noclipIsland(pose);
+  },
+  spots: () => noclipSpots(),
+  forget(name) { const spots = noclipSpots(); delete spots[name]; keepNoclipSpots(spots); },
+  // Everything but the picture away, for a clean screenshot.
+  hud(on = true) { document.body.classList.toggle('noclip-clean', !on); noclipShow(); return noclipRender(); },
+  render: () => noclipRender(),
+};
+// ` (Backquote by its code, so a dead key on an international layout still counts) in and out.
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Backquote' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (state.mode !== 'noclip' && !noclipAllowed()) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (state.mode === 'noclip') exitNoclip();
+  else enterNoclip(null, { gesture: true });
+}, true);
 
 function askToSendAway(id) {
   if (keeperOnly('send a settler off the island')) return;
@@ -3297,8 +3549,11 @@ function cullCeiling() {
 // Object Distance as this frame uses it: the setting, floored from above by the orbit target's
 // distance (fade.js objectReachOf), so pulling back never takes away the town being looked at.
 // A parked walk is still orbit; only walking is on foot.
+// The noclip camera has no target: it floors on its own height over the sea instead, so flying up
+// to look at the whole island keeps the town, and low over the ground it is the setting.
 function objectReach() {
-  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target) : null;
+  const orbit = state.mode === 'orbit' ? camera.position.distanceTo(controls.target)
+    : state.mode === 'noclip' ? Math.max(0, camera.position.y) : null;
   return objectReachOf(state.graphics.objectDistance, orbit);
 }
 // And the furthest fogCeiling can go before the next slider, for what may not be decided per
@@ -4118,6 +4373,8 @@ function focusPoint() {
     detailFocus = [p.x, p.z];
   } else if (state.mode === 'orbit') {
     detailFocus = [controls.target.x, controls.target.z];
+  } else if (state.mode === 'noclip' && !state.inside) {
+    detailFocus = [camera.position.x, camera.position.z];
   }
   return detailFocus;
 }
@@ -6675,7 +6932,7 @@ const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let pointerScreen = { x: 0, y: 0 }, downAt = null, moved = 0;
 renderer.domElement.addEventListener('pointermove', (e) => {
-  if (state.mode === 'plan') return;       // the planner has the pointer (web/js/plan-mode.js)
+  if (state.mode === 'plan' || state.mode === 'noclip') return;   // the planner has the pointer (web/js/plan-mode.js), or noclip.js
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   pointerScreen = { x: e.clientX, y: e.clientY };
   if (downAt) moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
@@ -6686,7 +6943,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; moved = 0; });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (state.mode === 'plan') { downAt = null; return; }
+  if (state.mode === 'plan' || state.mode === 'noclip') { downAt = null; return; }
   // Aimed from the event rather than from the last move: a tap on a touch screen never
   // sends one, and a click that lands a finger's width off a button is worse than none.
   pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -6912,7 +7169,10 @@ const underwaterSeen = {
 function seaFloorFrame(dt, nowMs) {
   if (!state.seabed || !state.seaLife) return;
   const ws = state.walk && state.mode === 'walk' && !state.inside ? state.walk.state : null;
-  const active = !!ws && ws.active && (ws.dive || !!(state.underwater && state.underwater.active));
+  // The noclip camera is its own focus: the bed and its life come on with the lens under water.
+  const eyeOnly = state.mode === 'noclip' && !state.inside;
+  const active = (!!ws && ws.active && (ws.dive || !!(state.underwater && state.underwater.active)))
+    || (eyeOnly && !!(state.underwater && state.underwater.active));
   const pos = ws ? ws.pos : camera.position;
   state.seabed.update({ x: pos.x, z: pos.z, active });
   if (!active && !state.seaLife.group.visible) return;
@@ -6939,6 +7199,9 @@ function frame(nowMs) {
   // ---- controller ---------------------------------------------------------
   // Who gets it is decided in input.js; here it is one line.
   if (state.input) state.input.frame(dt);
+  // The noclip camera flies first, so everything below that keys on the camera - a room's lid,
+  // the haze, the cut, the lens under water - reads where it is this frame.
+  if (state.mode === 'noclip') noclipFrame(dt);
 
   // ---- the other people ---------------------------------------------------
   // Outside the walking branch on purpose: from up here you should be able to watch
@@ -6976,6 +7239,8 @@ function frame(nowMs) {
       clock: state.sound && state.inside.music ? state.sound.clockOf(state.inside.music) : null,
       // Who the story waits on, for the mark over one of the Kraken's crew.
       business: state.quests ? state.quests.businessWith() : null,
+      // In noclip the camera is not the room's walk mode's (Plans/noclip-camera.md).
+      eye: state.mode === 'noclip' ? camera.position : null,
     });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
@@ -7194,7 +7459,8 @@ function frame(nowMs) {
   // looks at from above (world.js nearWaterPlan). Without it the swell stopped sixteen units
   // off every coast, and past the old outline a boat floated over the lower ocean disc.
   if (state.world) {
-    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos : controls.target;
+    const w = state.mode === 'walk' && state.walk ? state.walk.state.pos
+      : state.mode === 'noclip' ? camera.position : controls.target;
     state.world.setWaterFocus(w.x, w.z);
   }
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
@@ -7226,6 +7492,13 @@ function frame(nowMs) {
     // wherever the orbit camera had put it, which on a walk to the coast meant walking
     // out of the shadow map.
     state.world.followShadow(camera.position.x, camera.position.z, 1);
+  } else if (state.mode === 'noclip' && state.world && !state.inside) {
+    // Round a point a little ahead of the eye, as wide as the camera hangs high: low down that is
+    // the walker's tight frustum, from up high the orbit's whole island.
+    const e = camera.matrixWorld.elements;
+    const h = Math.max(1, camera.position.y);
+    const ahead = Math.min(40, h);
+    state.world.followShadow(camera.position.x - e[8] * ahead, camera.position.z - e[10] * ahead, h);
   }
   // The chart from the sky. On foot the walk's own branch shows and feeds it (showMinimap);
   // everywhere else it is this flag's, and never over the planner or the intro.
@@ -7647,6 +7920,11 @@ Everything is copied and checked first; the island then starts again there. The 
     onBuild: () => openBuild(),
     // Switched off with something in hand or the catalogue open: both go, or the ghost
     // would stay on the cursor with no chip left to put it back with.
+    // Settings -> Debug -> Noclip camera: the console handle comes and goes with it.
+    onNoclip: (on) => {
+      if (on) window.__noclip = noclipApi;
+      else if (!params.has('noclip') && !params.has('cam')) { exitNoclip(); delete window.__noclip; }
+    },
     onBuildMode: (on) => {
       if (on) return;
       if (state.buildMenu && state.buildMenu.isOpen()) state.buildMenu.close();
@@ -7876,14 +8154,15 @@ Everything is copied and checked first; the island then starts again there. The 
     handle: (a) => { if (a.hit('leave') || a.hit('back') || a.hit('exit')) endParley(); },
   });
   state.input.mode('inside', {
-    active: () => !!state.inside,
+    active: () => !!state.inside && state.mode !== 'noclip',
     handle: (a, dt) => state.inside.pad(a, dt),
   });
   state.input.mode('walk', {
     active: () => state.mode === 'walk' && !state.inside,
     handle: (a, dt) => state.walk.pad(a, dt),
   });
-  state.input.mode('orbit', { active: () => true, handle: orbitPad });
+  // Noclip has no pad: neither the room's walk nor the sky may take it meanwhile.
+  state.input.mode('orbit', { active: () => state.mode !== 'noclip', handle: orbitPad });
 
   // Who are we here, and is there a machine under us at all? Those used to be one
   // question, because the island served the page and losing it meant the page was dead.
@@ -8228,9 +8507,12 @@ Everything is copied and checked first; the island then starts again there. The 
   // net's own start says it is walking.
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
-  else if (params.has('nointro')) startIntro();
+  else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
   else openMainMenu();
   state.ui.boot(true);
+  // The noclip camera's console handle, and a spot given in the URL (Plans/noclip-camera.md).
+  if (noclipAllowed()) window.__noclip = noclipApi;
+  if (!STANDALONE && (params.has('cam') || params.has('room'))) noclipFromUrl();
   requestAnimationFrame(tick);
   // The one model that is fetched rather than baked - the volcano's imp - may start loading
   // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.

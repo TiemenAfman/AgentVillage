@@ -8,6 +8,7 @@ import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
+import { NOCLIP_KEY } from './noclip.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -533,6 +534,12 @@ export function createUI(handlers) {
   function applyBuild() { el('build-btn').hidden = !buildOn; }
   applyBuild();
 
+  // The noclip camera (web/js/noclip.js, Plans/noclip-camera.md): ` flies a free camera through
+  // everything, and `window.__noclip` drives it from the console. Off unless switched on here or
+  // the URL says `?noclip`; per browser like Build mode, for the same reason.
+  let noclipOn = false;
+  try { noclipOn = localStorage.getItem(NOCLIP_KEY) === '1'; } catch { /* private window: off */ }
+
   // The YOU arrow over the body left standing when you go up into the sky (you-marker.js).
   // On unless switched off, per browser like Build mode, and for the same reason: it changes
   // what this page draws, not the island. Only the arrow - the dots and the ring of a route
@@ -919,7 +926,11 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
         ? 'Building by hand is on: the Build chip and <kbd>B</kbd> put shapes in your hand.'
-        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`;
+        : 'Off. The town is kept from the planner now (<b>Plan</b>); this brings back the old Build chip and <kbd>B</kbd>.'}</p>`
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${noclipOn ? ' on' : ''}" data-noclip="1" aria-pressed="${noclipOn}">Noclip camera</button></div>`
+      + `<p class="muted" style="margin-top:9px">${noclipOn
+        ? 'On: <kbd>`</kbd> flies a free camera through walls, ground and water (<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, <kbd>Space</kbd>/<kbd>E</kbd> up, <kbd>Shift</kbd>/<kbd>Q</kbd> down, the wheel for speed); <code>__noclip</code> in the console.'
+        : 'Off. A free-flying camera for looking at the graphics, also on with <code>?noclip</code> in the address.'}</p>`;
     el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
@@ -932,6 +943,12 @@ export function createUI(handlers) {
       renderWalkKeys();       // the B in the key row comes and goes with it
       renderSettings();
       if (handlers.onBuildMode) handlers.onBuildMode(buildOn);
+    }));
+    el('settings-body').querySelectorAll('[data-noclip]').forEach((b) => b.addEventListener('click', () => {
+      noclipOn = !noclipOn;
+      try { if (noclipOn) localStorage.setItem(NOCLIP_KEY, '1'); else localStorage.removeItem(NOCLIP_KEY); } catch { /* kept for this page only */ }
+      renderSettings();
+      if (handlers.onNoclip) handlers.onNoclip(noclipOn);
     }));
     el('settings-body').querySelectorAll('[data-chipnames]').forEach((b) => b.addEventListener('click', () => {
       namesOn = !namesOn;
@@ -1512,7 +1529,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, noclipEnabled: () => noclipOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
