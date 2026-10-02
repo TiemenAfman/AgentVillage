@@ -7,6 +7,8 @@
 // phone's browser instead of replacing the island in the only window there is, with no
 // back button to return by. The desktop window does the same (src-tauri/src/lib.rs).
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+mod bundle;
 use tauri_plugin_opener::OpenerExt;
 
 /// The newest release, asked of the API: which version it is. The APK itself is not fetched
@@ -41,6 +43,13 @@ async fn latest_release() -> Result<String, String> {
     Ok(tag.trim_start_matches('v').to_string())
 }
 
+/// The baked page behind a downloaded bundle, if there is one (src/bundle.rs).
+fn context() -> tauri::Context {
+    let mut ctx = tauri::generate_context!();
+    bundle::wrap(&mut ctx);
+    ctx
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -68,6 +77,6 @@ pub fn run() {
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(context())
         .expect("error while running the island");
 }
