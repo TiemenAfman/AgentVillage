@@ -60,6 +60,7 @@ import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom } from './interior.js';
+import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -838,11 +839,17 @@ function handSurfaces() {
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
 // Where the islander starts you: in front of the board on the square, as enterWalk's own
 // fallback does, facing it.
+// Or, when the page was last closed inside a room, outside its door: that is where walking down
+// takes you back in from (enterWalk, recalledRoom).
 function parkOnSquare() {
   const board = state.byId.get('civic:board');
   const town = state.village.island.town;
   let at = [0, 0], facing = null;
-  if (board) {
+  const back = recalledRoom();
+  if (back) {
+    at = back.step.at;
+    facing = back.step.facing;
+  } else if (board) {
     at = [board.group.position.x, board.group.position.z + 2.2];
     facing = [board.group.position.x, board.group.position.z];
   } else if (town && state.terrain) {
@@ -1277,6 +1284,60 @@ function recalledSpot() {
     facing: [x + Math.sin(spot.yaw) * 10, z + Math.cos(spot.yaw) * 10],
     pitch: Number.isFinite(spot.pitch) ? spot.pitch : undefined,
   };
+}
+
+// And the room you were in, so a reload or a restarted window inside the Salty Kraken puts you
+// back on its floor where you stood rather than in the sky over the square (web/js/room-spot.js).
+// A sibling of the spot above, per browser and per island; written while you are inside, and
+// forgotten whenever the room is left - through its door, up to the sky, out at closing time - so
+// that what is left of it means only "the page was closed in here". Never a visitor's (a guest
+// page is another keeper's island, and its rooms are not this browser's to remember) and never
+// the phone's, which has no rooms.
+const ROOM_SPOT_EVERY = 1000;
+let roomSpotAt = 0, roomSpotSaid = null;
+function roomSpotKey() {
+  return state.terrain && !state.guest && !STANDALONE ? `promptholm.walk.room.${state.terrain.seed}` : null;
+}
+function rememberRoom({ now = false } = {}) {
+  const key = roomSpotKey();
+  if (!key || !state.inside || !cameFrom) return;
+  const t = performance.now();
+  if (!now && t - roomSpotAt < ROOM_SPOT_EVERY) return;
+  roomSpotAt = t;
+  const w = state.inside.walk.state;
+  const said = JSON.stringify(packRoomSpot({ room: state.inside.room, door: cameFrom, pos: w.pos, yaw: w.yaw, pitch: w.camPitch }));
+  if (said === roomSpotSaid) return;
+  roomSpotSaid = said;
+  try { localStorage.setItem(key, said); } catch { /* a convenience, not a record */ }
+}
+function forgetRoom() {
+  roomSpotSaid = null;
+  const key = roomSpotKey();
+  if (!key) return;
+  try { localStorage.removeItem(key); } catch { /* nothing to forget */ }
+}
+// The room to go back into, with the door it is entered by: only while that door still stands
+// where you came in (doorOf), the castle only while the rave is on, and only while the body has
+// not been sent somewhere else from the sky meanwhile. Anything else forgets the record.
+function recalledRoom() {
+  const key = roomSpotKey();
+  if (!key || params.has('square')) return null;
+  let spot = null;
+  try { spot = readRoomSpot(JSON.parse(localStorage.getItem(key))); } catch { spot = null; }
+  if (!spot) return null;
+  const door = doorOf(spot, interactables());
+  const walkedOff = state.walk.parked() &&
+    Math.hypot(state.walk.state.pos.x - spot.door.at[0], state.walk.state.pos.z - spot.door.at[1]) > DOOR_SLACK + 1;
+  if (!door || walkedOff || (spot.room === 'rave' && !raveOn())) { forgetRoom(); return null; }
+  // Where to stand outside it: the step you came in from, at its own height (the Kraken's stoop is
+  // up its rock, over the beach), while it will still take you; else the door's own spot, which E
+  // answers at. walk.enter steps a body sideways off a blocked spot, and out here that walked it
+  // down the stair before it was taken in.
+  const y = spot.door.y != null ? spot.door.y : door.floor;
+  const step = state.walk.standFloor(spot.door.at[0], spot.door.at[1], y ?? Infinity) != null
+    ? { at: spot.door.at, y }
+    : { at: [door.x, door.z], y: door.floor };
+  return { spot, door, step: { ...step, facing: spot.door.facing } };
 }
 
 function reportWhere({ final = false } = {}) {
@@ -2391,15 +2452,17 @@ function keepRaveHours() {
   state.ui.toast(RAVE_OUT);
 }
 
-function enterInterior(room, at) {
+// `spot` is where you stood in it when the page was last closed in there (recalledRoom).
+function enterInterior(room, at, spot = null) {
   if (state.inside || state.mode !== 'walk') return;
   // A room drawn from sets loaded on demand (the Salty Kraken: interior.js prepareRoom) opens once
   // they are in. Usually they are, having been started as you walked up to the door.
   if (!roomReady(room)) {
     state.ui.toast('The door sticks a moment...');
-    prepareRoom(room).then(() => enterInterior(room, at), (e) => {
+    prepareRoom(room).then(() => enterInterior(room, at, spot), (e) => {
       console.error('that room could not be loaded', e);
       state.ui.toast('That door does not open yet.');
+      if (spot) forgetRoom();
     });
     return;
   }
@@ -2425,6 +2488,7 @@ function enterInterior(room, at) {
     } catch (e) {
       console.error('that room could not be built', e);
       state.ui.toast('That door does not open yet.');
+      if (spot) forgetRoom();
       return;
     }
     rooms.set(room, inside);
@@ -2432,11 +2496,12 @@ function enterInterior(room, at) {
   // Where to put you back down, and what to face when you get there: the door you just
   // walked through.
   const w = state.walk.state;
-  cameFrom = { at: [w.pos.x, w.pos.z], facing: at ? [at.x, at.z] : null };
+  cameFrom = { at: [w.pos.x, w.pos.z], y: w.pos.y, facing: at ? [at.x, at.z] : null };
   state.walk.exit();
   state.inside = inside;
   const rave = room === 'rave';
-  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes() });
+  inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes(), spot });
+  rememberRoom({ now: true });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
@@ -2452,6 +2517,7 @@ function enterInterior(room, at) {
 function leaveInterior() {
   if (!state.inside) return;
   state.inside = null;
+  forgetRoom();
   state.ui.setIndoors(false);
   state.ui.setWalkPrompt(null);
   if (state.net) state.net.setRoom(null, state.walk);
@@ -2690,6 +2756,13 @@ function enterWalk(spot = null) {
   if (reboard) {
     spot = { at: [reboard.x, reboard.z], facing: [reboard.x + Math.sin(reboard.yaw) * 10, reboard.z + Math.cos(reboard.yaw) * 10], pitch: 0.12 };
   }
+  // No place in mind and the page last closed inside a room: down at its door and in through it,
+  // back where you stood (recalledRoom). Not with a place of its own asked for in the address.
+  const back = !spot && !reboard && !params.has('edge') && !params.has('dive') ? recalledRoom() : null;
+  // Any other way down means the room was not where the page was closed after all, or no longer
+  // is: on the island now, so the record goes (`?square` included).
+  if (back) spot = back.step;
+  else forgetRoom();
   // No place in mind and a body left standing (exitWalk parks it): down into it, wherever it
   // walked to meanwhile (Plans/DONE/karakter-blijft-staan.md).
   if (!spot && !reboard && state.walk.parked()) {
@@ -2741,6 +2814,7 @@ function enterWalk(spot = null) {
     at,
     facing,
     pitch: spot && spot.pitch,
+    y: spot && spot.y != null ? spot.y : Infinity,
     blockers: walkableBlockers(),
     interactables: interactables(),
     ...walkCallbacks(),
@@ -2749,6 +2823,7 @@ function enterWalk(spot = null) {
   // is still there and still yours (see exitWalk).
   if (reboard) takeBoat(reboard);
   reportWhere({ final: true });   // "here" is worth knowing before you have taken a step
+  if (back) enterInterior(back.spot.room, back.door, back.spot);
 }
 
 function foundSettler() {
@@ -3136,6 +3211,7 @@ function exitWalk({ force = false } = {}) {
   if (state.inside) {
     const room = state.inside;
     state.inside = null;
+    forgetRoom();
     room.leave();
     state.ui.setIndoors(false);
   }
@@ -6904,6 +6980,7 @@ function frame(nowMs) {
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
+    rememberRoom();
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
     state.ui.setPouch(null);              // the purse is for the seed stall, not for the bar
