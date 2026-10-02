@@ -37,6 +37,7 @@ import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs'
 import { loadTreasure, updateTreasure, viewOf as treasureView, TREASURE_ACTIONS } from './lib/treasure.mjs';
 import { ensureMusic, listMusic, musicFile, MUSIC_TYPES, MUSIC } from './lib/music.mjs';
 import { createLatestRelease } from './lib/latest-release.mjs';
+import { install as installUpdate, installable, cleanup as clearUpdates, RESTART_CODE, TRAY_RESTARTS } from './lib/selfupdate.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
@@ -51,6 +52,7 @@ const BUILD = readBuildInfo(ROOT);
 // The newest release on GitHub, for the keeper's banner (lib/latest-release.mjs). Asked lazily,
 // the first time a page wants it, so an islander nobody looks at never calls out.
 const releases = createLatestRelease({ log: (line) => log(line) });
+let updating = false;
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -165,7 +167,7 @@ function survey() {
 // A bad request must never take the island down.
 process.on('uncaughtException', (e) => log(`uncaught: ${e && e.stack ? e.stack : e}`));
 process.on('unhandledRejection', (e) => log(`rejection: ${e && e.stack ? e.stack : e}`));
-function shutdown(why) {
+function shutdown(why, code = 0) {
   // The animals' journal first: its lock is what tells the next islander this one has gone.
   try { animalLife && animalLife.close(); } catch { /* a lock left behind is recovered on the next start */ }
   try { seaClient && seaClient.close(); } catch { /* the line home dies with us regardless */ }
@@ -173,7 +175,25 @@ function shutdown(why) {
   const stopped = stopAllAgents();
   const tail = stopped.length ? `, stopping ${stopped.length} agent(s): ${stopped.join(', ')}` : '';
   log(`stopping on ${why}${tail}`);
-  process.exit(0);
+  process.exit(code);
+}
+
+// After a self-update (lib/selfupdate.mjs, Plans/zelf-bijwerken.md): the island again, on the new
+// code. A tray that knows RESTART_CODE starts a fresh node on it; an older one would leave the
+// island stopped, so without its word in our environment we start our own successor - detached,
+// after three seconds, once this one has let go of the port (serve.mjs exits quietly on
+// EADDRINUSE) - and that tray adopts it as an island started elsewhere.
+function restartForUpdate() {
+  if (process.env[TRAY_RESTARTS]) { shutdown('update', RESTART_CODE); return; }
+  const args = process.argv.slice(1).filter((a) => a !== '--supervised');
+  const later = `setTimeout(() => require('child_process').spawn(${JSON.stringify(process.execPath)}, ${JSON.stringify(args)}, `
+    + `{ cwd: ${JSON.stringify(ROOT)}, detached: true, stdio: 'ignore', windowsHide: true }).unref(), 3000);`;
+  try {
+    spawn(process.execPath, ['-e', later], { cwd: ROOT, detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } catch (e) {
+    log(`update: could not start the island again by itself (${e.message}) - start Promptholm again`);
+  }
+  shutdown('update');
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -187,6 +207,8 @@ if (has('--supervised')) {
   process.stdin.on('error', () => shutdown('supervisor gone'));
   process.stdin.resume();
 }
+// What an earlier self-update kept aside (lib/selfupdate.mjs): gone now that the new code runs.
+clearUpdates(ROOT, log);
 
 // What is worth compressing: the text the island is made of. Everything not in here -
 // the sheets, the icons, the fonts, a .glb - is already compressed, and packing it again
@@ -579,7 +601,30 @@ async function handle(req, res) {
   // The newest Promptholm release, as the islander last heard it from GitHub (null until then,
   // or when GitHub is out of reach). Not a public path: the banner it feeds is the keeper's -
   // a visitor's page is on somebody else's island, which is not theirs to update.
-  if (p === '/api/latest-release') return json(res, 200, { latest: releases.latest() });
+  if (p === '/api/latest-release') {
+    const latest = releases.latest();
+    return json(res, 200, { latest, canInstall: installable({ root: ROOT, current: BUILD.version, latest }) });
+  }
+
+  // Install the newest release over this one and start again on it (lib/selfupdate.mjs,
+  // Plans/zelf-bijwerken.md). The keeper's, like every write: not on PUBLIC_API, and
+  // lib/access.mjs's loopback + Host + Origin keep any other site from firing it. Answered
+  // before the island goes, so the page can say what is happening.
+  if (p === '/api/update/install' && req.method === 'POST') {
+    if (updating) return json(res, 409, { error: 'an update is already on its way' });
+    updating = true;
+    try {
+      const latest = await releases.settled();
+      const version = await installUpdate({ root: ROOT, current: BUILD.version, latest, log });
+      json(res, 200, { ok: true, version });
+      setTimeout(restartForUpdate, 500);
+    } catch (e) {
+      updating = false;
+      log(`update: ${e.message}`);
+      return json(res, 500, { error: e.message });
+    }
+    return;
+  }
 
   // The keeper's own music for the rooms (lib/music.mjs): what is in HOME/audio, and a file of
   // it. Not public paths, so only this machine's page hears them - they are the keeper's files,

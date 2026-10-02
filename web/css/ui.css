@@ -1205,6 +1205,10 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   display: flex; gap: 12px; align-items: flex-start; }
 .skew.update a { color: #ffc98a; }
 .update-close { background: none; border: 0; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+/* The self-update (lib/selfupdate.mjs): one button on the same line as the words. */
+.update-install { margin-left: 6px; padding: 2px 10px; border-radius: 6px; border: 1px solid #ffc98a;
+  background: rgba(255, 201, 138, .15); color: #ffc98a; font: inherit; cursor: pointer; }
+.update-install:disabled { opacity: .6; cursor: default; }
 
 /* The app's update gate (web/js/update.js updateGate): the whole screen, over the touch
    buttons and every banner, because a refused app has nothing behind it to reach. Sized for

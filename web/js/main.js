@@ -2134,8 +2134,47 @@ function askLatestRelease() {
 // still announced. The keeper's alone - a visitor is on somebody else's island.
 function islandBanner() {
   if (STANDALONE) return;
-  state.ui.setUpdate((islandNotice({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease }) || {}).html || null);
+  if (updatingIsland) return;
+  state.ui.setUpdate((islandNotice({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease, canInstall: state.canInstall }) || {}).html || null);
 }
+
+// The banner's Install button (Plans/zelf-bijwerken.md): the islander fetches the release, checks
+// it, swaps it in and restarts on it (POST /api/update/install, lib/selfupdate.mjs). The page then
+// waits for an islander that names the new version and loads itself again on it - a reload, since
+// every module it runs has just been replaced. A failure is said in the banner, and the island
+// carries on as it was.
+let updatingIsland = false;
+async function installUpdate(button) {
+  if (updatingIsland) return;
+  updatingIsland = true;
+  button.disabled = true;
+  button.textContent = 'Updating…';
+  let body = null;
+  try {
+    const r = await mine('/api/update/install', { method: 'POST' });
+    body = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((body && body.error) || `the island answered ${r.status}`);
+  } catch (e) {
+    updatingIsland = false;
+    state.ui.setUpdate(`<b>The update did not go through.</b> ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+  state.ui.setUpdate(`<b>Promptholm v${escapeHtml(body.version)} is in place.</b> The island is starting again on it…`);
+  const until = Date.now() + 120e3;
+  const wait = async () => {
+    try {
+      const hello = await mine('/api/hello').then((r) => r.json());
+      if (hello.build && hello.build.version === body.version) { location.reload(); return; }
+    } catch { /* still restarting */ }
+    if (Date.now() < until) setTimeout(wait, 2000);
+    else state.ui.setUpdate('<b>The island has not come back yet.</b> Start Promptholm again from the Start menu or the tray.');
+  };
+  setTimeout(wait, 3000);
+}
+document.addEventListener('click', (e) => {
+  const button = e.target && e.target.closest && e.target.closest('[data-update-install]');
+  if (button) installUpdate(button);
+});
 let islandReleaseAsked = 0, islandReleaseRetries = 0;
 function askIslandRelease() {
   if (state.guest !== false || Date.now() - islandReleaseAsked < 590e3) return;
@@ -2148,6 +2187,7 @@ function askIslandRelease() {
       return;
     }
     state.latestRelease = body.latest;
+    state.canInstall = !!body.canInstall;
     islandBanner();
   }).catch(() => {
     // An islander out of reach has more to say than this, and says it elsewhere.

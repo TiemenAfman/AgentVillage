@@ -1252,7 +1252,16 @@ Later) is the only way a patch ever reaches it. The keeper's desktop page hears 
 from GitHub too, patches included and called optional (`islandNotice` in web/js/update.js, the
 sea's news first): the islander asks (`lib/latest-release.mjs`, at most hourly, answering from
 what it last heard) and hands it over `/api/latest-release` (not on `PUBLIC_API`), since the
-page reaches nothing it has not named. **A patch release never breaks
+page reaches nothing it has not named. **An unpacked Windows release installs it itself**
+([Plans/zelf-bijwerken.md](Plans/zelf-bijwerken.md)): the banner's Install button posts
+`/api/update/install` (keeper-only), and `lib/selfupdate.mjs` fetches the zip by its own tag, checks the
+`.sha256`, unpacks it with Windows' `tar.exe` into `.update-<v>\new` beside the release, checks its
+`release.json` says that version, and swaps every piece in (old pieces to `.update-<v>\old`; a running
+exe is renamed, never overwritten; a failure halfway moves everything back). serve.mjs then exits with
+`RESTART_CODE` 75, on which the tray starts a fresh node (`island::RESTART_CODE`, held equal by
+`tests/selfupdate.test.mjs`); a tray from before that sets no `PROMPTHOLM_TRAY_RESTARTS`, and serve.mjs
+starts its own detached successor instead. The new exes run from the next start; `.update-*` is cleared
+at start. A checkout or a worktree never installs (no `release.json`). **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
 `TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or

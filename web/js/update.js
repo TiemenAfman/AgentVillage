@@ -75,16 +75,24 @@ export function updateNotice({ mine, sea, phone = false }) {
 // included, and says it is optional: the desktop window used to hear about a release only
 // through the sea's welcome, by the line, so a patch was never announced at all and a minor
 // only once the sea had moved. A checkout is told to pull, a release where to download.
-export function islandNotice({ mine = null, sea = null, latest = null } = {}) {
+//
+// `canInstall` is the islander's word that it can put that release in place itself - an unpacked
+// release on Windows (lib/selfupdate.mjs, Plans/zelf-bijwerken.md): then the banner carries an
+// Install button (`data-update-install`, wired in main.js) instead of a download link, and the
+// same button serves a newer line on the sea, since that is the same zip.
+export function islandNotice({ mine = null, sea = null, latest = null, canInstall = false } = {}) {
+  const install = canInstall && compareVersions(mine && mine.version, latest) === -1
+    ? ` <button type="button" class="update-install" data-update-install>Install v${esc(latest)}</button>` : '';
   const seaSays = updateNotice({ mine, sea });
-  if (seaSays) return seaSays;
+  if (seaSays) return install && seaSays.kind === 'behind' ? { ...seaSays, html: seaSays.html + install } : seaSays;
   if (compareVersions(mine && mine.version, latest) !== -1) return null;
   const patch = compareLines(mine.version, latest) === 0;
   return {
     kind: 'release',
     html: `<b>Promptholm v${esc(latest)} is out${patch ? ' - an optional patch' : ''}.</b> This island runs `
       + `v${esc(mine.version)}${patch ? ' and keeps working with everybody as it is' : ''}. `
-      + `${link(`Get v${latest}`, false)}, or pull and restart if you run from a checkout.`,
+      + (install ? `${link('What is new', false)}.${install}`
+        : `${link(`Get v${latest}`, false)}, or pull and restart if you run from a checkout.`),
   };
 }
 

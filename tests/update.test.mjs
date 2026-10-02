@@ -126,3 +126,18 @@ test('the islander asks GitHub at most once an hour and answers from what it hea
   answer = { ok: true, json: async () => ({ tag_name: 'nightly' }) };
   assert.equal(await releases.settled(), '0.8.1');
 });
+
+test('a release that can put the update in place itself offers to, instead of a download', () => {
+  // lib/selfupdate.mjs: an unpacked release on Windows. The button is wired in main.js by its data attribute.
+  const mine = { version: '0.8.1' };
+  const own = islandNotice({ mine, latest: '0.8.2', canInstall: true });
+  assert.match(own.html, /data-update-install/);
+  assert.match(own.html, /Install v0\.8\.2/);
+  assert.doesNotMatch(own.html, /pull and restart/);
+  // A checkout (canInstall false) still gets the link and the hint to pull.
+  assert.doesNotMatch(islandNotice({ mine, latest: '0.8.2' }).html, /data-update-install/);
+  // A newer line on the sea is the same zip: its banner carries the button too.
+  assert.match(islandNotice({ mine, sea: { version: '0.9.0' }, latest: '0.9.0', canInstall: true }).html, /data-update-install/);
+  // Nothing to install, no button.
+  assert.equal(islandNotice({ mine, latest: '0.8.1', canInstall: true }), null);
+});

@@ -64,9 +64,20 @@ struct Keeper {
 impl Keeper {
     fn state(&mut self) -> State {
         if let Some(child) = self.child.as_mut() {
-            if !matches!(child.try_wait(), Ok(None)) {
+            match child.try_wait() {
+                Ok(None) => {}
+                // A self-update asking for a fresh node on its new code (lib/selfupdate.mjs):
+                // once the port is free again, the same start the menu's Restart makes.
+                Ok(Some(status)) if status.code() == Some(island::RESTART_CODE) => {
+                    self.child = None;
+                    let until = Instant::now() + Duration::from_secs(5);
+                    while Instant::now() < until && island::listening(self.port) {
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    self.start();
+                }
                 // It exited - crashed, or stopped from inside. What it said is in server.log.
-                self.child = None;
+                _ => self.child = None,
             }
         }
         match (island::listening(self.port), self.child.is_some()) {
@@ -173,9 +184,9 @@ fn main() {
     listen_for_knocks(knocks, event_loop.create_proxy());
 
     // Which code this island is, at the top of the menu and in the tooltip. Read again on
-    // every restart from the menu, since that is when a pulled checkout becomes what runs.
-    let mut label = island::build_label(&keeper.root);
-    let version = MenuItem::new(format!("Promptholm {label}"), false, None);
+    // every change of state below, since a restart from the menu is when a pulled checkout
+    // becomes what runs, and a self-update restarts the island without the menu.
+    let version = MenuItem::new(format!("Promptholm {}", island::build_label(&keeper.root)), false, None);
     let open = MenuItem::new("Open Promptholm", true, None);
     let browser = MenuItem::new("Open in browser", true, None);
     let toggle = MenuItem::new("Stop the island", true, None);
@@ -234,9 +245,7 @@ fn main() {
                 } else if id == restart.id() {
                     keeper.stop();
                     keeper.start();
-                    label = island::build_label(&keeper.root);
-                    version.set_text(format!("Promptholm {label}"));
-                    shown = None;   // and the tooltip with it
+                    shown = None;   // which reads the label again, and the tooltip with it
                 } else if id == log.id() {
                     shell_open(&island::home(&keeper.root).join("data").join("server.log").display().to_string());
                 } else if id == quit.id() {
@@ -254,6 +263,10 @@ fn main() {
         let now = keeper.state();
         if shown != Some(now) {
             shown = Some(now);
+            // Read again on every change: a self-update brings the island back on another
+            // release without anybody touching the menu (lib/selfupdate.mjs).
+            let label = island::build_label(&keeper.root);
+            version.set_text(format!("Promptholm {label}"));
             let (tip, verb) = match now {
                 State::Starting => (format!("Promptholm {label} - starting on port {}", keeper.port), "Stop the island"),
                 State::Running { ours: true } => (format!("Promptholm {label} - on port {}", keeper.port), "Stop the island"),
