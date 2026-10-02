@@ -16,7 +16,7 @@ import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segm
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
-import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
+import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
@@ -1159,6 +1159,12 @@ export function createWalkMode({
   // (`leaving`, Plans/muren-met-hitboxes.md): a scan, an Apply or a guest island putting a building
   // up round you, or a jump coming down on a crate's side, used to leave every step blocked and you
   // stood in it until you left walk mode.
+  // TEMPORARY: trees (world.js tags their trunks `tree`) and the low hamlet fences (hamlets.js
+  // tags them `fence`, below HOP_H) are walked and ridden through - on the phone, riding across
+  // the island ran into one every few metres. Rails and every other `hop` blocker stay walls.
+  // Set PASS_TREES_AND_FENCES false to have them back.
+  const PASS_TREES_AND_FENCES = true;
+  const passedThrough = (b) => PASS_TREES_AND_FENCES && (b.tree === true || b.fence === true);
   function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -1178,7 +1184,7 @@ export function createWalkMode({
       const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
       return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
+    if (blockerIndex.some(x, z, BODY_R, (b) => !passedThrough(b) && inside(b, x, z, BODY_R) && atHeight(b, from)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
@@ -1895,6 +1901,9 @@ export function createWalkMode({
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
     if (keys.has('a') || keys.has('arrowleft')) ix -= 1;
     if (keys.has('d') || keys.has('arrowright')) ix += 1;
+    // The keys' share of the bars apart, for the bike: a stick's steering is read differently
+    // there (stickTurn in bicycle.js), or a thumb a few degrees off straight weaves the bike.
+    const keyX = ix, stickX = stick.x, stickZ = stick.z;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
     if (state.parked) [ix, iz] = routeInput(dt);
@@ -1957,7 +1966,8 @@ export function createWalkMode({
       state.turbo = turbo;
       // In the air the ground is asked from the floor the hop left, as a jump's is, so a hop
       // cannot change which storey you are on; the lid is a deck overhead, less a rider's head.
-      stepBike(b, { pedal: iz, turn: ix, turbo, hop: hopWanted }, dt, {
+      const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
+      stepBike(b, { pedal: iz, turn, turbo, hop: hopWanted }, dt, {
         ground: (x, z) => groundAt(x, z, b.air ? b.floor : b.y),
         blocked: (x, z) => blocked(x, z, b.y),
         ceiling: (x, z) => ceilingAt(x, z, b.floor) - HEAD - RIDE_HEAD,

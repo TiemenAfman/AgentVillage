@@ -1767,9 +1767,9 @@ export function createLandscape({
     const out = [];
     for (const it of trees) {
       if (it.felled) continue;
-      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s });
+      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s, tree: true });
     }
-    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc });
+    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc, tree: true });
     // flora_rock_a: 0.27 out at its foot and 0.35 high, stood in the ground by 0.04 and stretched
     // upright by the fourth number on a volcano's crags.
     for (const [x, z, sc, up] of rocks) {

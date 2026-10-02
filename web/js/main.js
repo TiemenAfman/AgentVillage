@@ -2314,7 +2314,7 @@ function touchHud(near, walk) {
       : near.kind === 'board' || near.kind === 'issues' ? 'Read'
         : near.kind === 'bed' ? '' : 'Talk';
   state.touch.caption(word);
-  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater());
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater(), walk.riding && walk.riding());
 }
 
 // A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.

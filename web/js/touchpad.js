@@ -215,9 +215,13 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   // with them: there is no crouching at the tiller and no bicycle in a boat.
   const HAND = { attack: ICONS.sword, block: ICONS.shield, drink: ICONS.mug };
   // `swimming` keeps B: in the water it is "swim down" (walk.js reads it as C, and A as the way
-  // back up), so it stays although the hands and the bike are put away.
-  function setHands(what, swimming = false) {
-    for (const b of onFoot) b.hidden = !what && !(swimming && b.dataset.b === 'B');
+  // back up), so it stays although the hands and the bike are put away. `riding` keeps Y: it
+  // is the only way off the bicycle, and walk.js's onFoot is false on the saddle - hiding it
+  // with the hands left a rider who could never get down.
+  function setHands(what, swimming = false, riding = false) {
+    for (const b of onFoot) {
+      b.hidden = !what && !(swimming && b.dataset.b === 'B') && !(riding && b.dataset.b === 'Y');
+    }
     const dive = layer.querySelector('[data-b="B"]');
     if (dive) dive.setAttribute('aria-label', swimming && !what ? 'Dive' : 'Crouch');
     if (!what) return;
