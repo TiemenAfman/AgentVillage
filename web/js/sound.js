@@ -33,6 +33,7 @@ import * as THREE from 'three';
 import { nearestFirst } from 'shared/regions.mjs';
 import { makeRng, clamp } from 'shared/rng.mjs';
 import { MIX_BUSES, MIX_PARTS, busOf, clampMix, loadMix, saveMix } from './sound-mix.js';
+import { createGreeter, PHRASES } from './greetings.js';
 
 // Remembered per browser, like the avatar and the chat mode: which of them is a setting
 // of the *island* is decided by whether it lives in config.json, and how loud somebody
@@ -70,6 +71,9 @@ const KRAKEN_CREW = 0.35;
 // busy - the gap shrinks with the crowd.
 const CLINKS = 2;
 const BELLS = 2;
+// Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
+// hello more than twice at once.
+const GREETERS = 2;
 const CLINK_GAP = [3, 14];
 
 // The church bell (Plans/meer-geluiden.md, "De kerkklok"): heard over the whole island, and on the
@@ -409,6 +413,50 @@ function* bellSong(ctx) {
   for (let i = 0; i < tail; i++) out[n - tail + i] *= 1 - (i + 1) / tail;
   const chs = [out];
   level(chs, 0.12);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// --- a greeting ------------------------------------------------------------
+//
+// Hello in no language at all (Plans/meer-geluiden.md, "Begroeting op straat"): a few syllables of a
+// voice, each a pulse train at its pitch through the two formants of a vowel, with a tune that
+// rises and falls like "hal-lo". Animal Crossing rather than a robot: the pitch moves within every
+// syllable, the vowels change, and a breath of noise rides on top. Each settler plays it at their
+// own rate (greetings.js voiceOf), so the same three phrases are a village of voices.
+const VOWELS = { a: [780, 1200], o: [460, 820], e: [480, 1850], i: [300, 2250], u: [340, 720] };
+const GREETINGS = [
+  // [seconds, pitch at the start, pitch at the end, vowel] per syllable: "hal-lo", "mor-gen", "hoi-hoi"
+  [[0.11, 230, 275, 'a'], [0.17, 270, 205, 'o']],
+  [[0.12, 250, 260, 'o'], [0.14, 245, 210, 'e']],
+  [[0.09, 260, 290, 'o'], [0.06, 280, 300, 'i'], [0.15, 300, 220, 'o'], [0.06, 230, 240, 'i']],
+];
+function* greetSong(ctx, which) {
+  const sr = HIT_SR;
+  const sylls = GREETINGS[which % GREETINGS.length];
+  const gap = 0.035;
+  const n = Math.floor(sr * (sylls.reduce((a, s) => a + s[0] + gap, 0) + 0.05));
+  const raw = new Float32Array(n);
+  const rng = makeRng(`greet:${which}`);
+  const out = new Float32Array(n);
+  let i0 = Math.floor(sr * 0.01), ph = 0;
+  for (const [dur, p0, p1, v] of sylls) {
+    const L = Math.floor(dur * sr);
+    for (let i = 0; i < L; i++) {
+      const k = i / L;
+      ph += (p0 + (p1 - p0) * k) / sr;
+      // A glottal pulse: a saw's falling edge, softened - the buzz a formant has to shape.
+      const saw = 2 * (ph - Math.floor(ph)) - 1;
+      raw[i0 + i] = (saw * 0.8 + (rng.next() * 2 - 1) * 0.12) * Math.pow(Math.sin(Math.PI * k), 0.7);
+    }
+    const [f1, f2] = VOWELS[v];
+    const seg = raw.subarray(i0, i0 + L);
+    const a = resonate(seg, sr, f1, 5), b = resonate(seg, sr, f2, 7);
+    for (let i = 0; i < L; i++) out[i0 + i] = a[i] * 1.2 + b[i] * 0.8 + seg[i] * 0.08;
+    i0 += L + Math.floor(gap * sr);
+  }
+  yield;
+  const chs = [lowpass(out, sr, 4200)];
+  level(chs, 0.09);
   return intoBuffer(ctx, chs, sr);
 }
 
@@ -1157,6 +1205,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // The church bell: two in the tower, struck in turn, and one through the wall of a room.
       bells: Array.from({ length: BELLS }, () => mkVoice(null, { ref: 24, rolloff: 0.7, volume: 0.9, part: 'bell' })),
       bellRoom: mkBed(null, 'bell'),
+      // Who says hello: two voices with a place, given each greeting's phrase as it is said.
+      greeters: Array.from({ length: GREETERS }, () => ({ ...mkVoice(null, { ref: 3, rolloff: 1.6, volume: 0.7, part: 'greetings' }), id: null })),
       // The families made the first time they are wanted, a step a frame (need, makeMore).
       making: {},
       // The rave's music, made the first Saturday night it is within earshot, and the Salty
@@ -1180,6 +1230,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     kraken: (c) => murmurSong(c, 'kraken'),
     borrel: (c) => murmurSong(c, 'borrel'),
     bell: (c) => bellSong(c),
+    ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
   function need(name) {
     if (built.buffers[name]) return built.buffers[name];
@@ -1596,6 +1647,31 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     }
   }
 
+  // Hello (greetings.js): who to say it is the greeter's, how it sounds is ours. The phrases are
+  // three small buffers, asked for the first time our settlers are about outside, and nobody is
+  // asked to say anything until all of them exist - or the first hello would be spent (the greeter
+  // keeps its cooldown) on a voice with nothing to play.
+  const greeter = createGreeter();
+  function greet(look) {
+    const ours = look.ours;
+    if (!ours || look.indoors || !live('greetings')) return;
+    let ready = true;
+    for (let k = 0; k < PHRASES; k++) if (!need(`greet${k}`)) ready = false;
+    if (!ready) return;
+    const lines = greeter.pick({ now: clock, walker: look.walker || null, figures: ours.values(), ear: [camera.position.x, camera.position.z] });
+    for (const g of lines) {
+      const buf = built.buffers[`greet${g.phrase}`];
+      const v = built.greeters.find((s) => !s.audio.isPlaying) || built.greeters[0];
+      if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
+      v.id = g.id;
+      // Two of them passing in the street are further off and talking to each other, not to you.
+      v.audio.setVolume(g.to === 'you' ? 0.7 : 0.45);
+      fire(v, g.at[0], g.at[1], g.at[2], g.rate);
+      greeted++;
+    }
+  }
+  let greeted = 0;
+
   // A glass set down now and then wherever it is busy: at a tavern's door (through the same
   // wall as its murmur), in the room you are in, on the square at the borrel. Per frame rather
   // than per pick, on a timer per place whose gap shrinks as the place fills up.
@@ -1640,6 +1716,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     steerPubs(look);
     steerBorrel(look);
     steerBell(look);
+    greet(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -1828,7 +1905,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // lengths, and never again. And the beds: the voices with no place (the sea, the wind, the two
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
-    hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS,
+    hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -1836,6 +1913,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       hammer: built.hammers, gull: built.gulls,
       pub: Object.values(built.pubs).map((p) => p.out),
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
+      greet: built.greeters,
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();
@@ -1903,6 +1981,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       making: built ? Object.keys(built.making) : [],
       // The bell: strokes still to come this hour, and the minute of the sea's clock it last saw.
       bell: { queued: bell.queue.length, minute: bell.min },
+      // How many hellos this page has said.
+      greeted,
       // Where the bed has got to, rounded. The only way to see that the sea comes up as
       // you walk down to it and goes quiet again after dark, short of having ears.
       bed: {

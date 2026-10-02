@@ -8689,6 +8689,14 @@ function pubDoors() {
   }
   return out;
 }
+// Where you stand and which way you face, for a greeting: on foot, outside, on our own island, not
+// at a tiller or on a deck. walk.js faces along (sin yaw, cos yaw).
+function walkerForGreeting() {
+  if (state.mode !== 'walk' || state.inside || state.guest || !state.walk) return null;
+  const w = state.walk.state;
+  if (!w || !w.pos || w.vehicle || w.deck) return null;
+  return { x: w.pos.x, z: w.pos.z, fx: Math.sin(w.yaw || 0), fz: Math.cos(w.yaw || 0) };
+}
 // Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
 // about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
 // rings from its own tower. The bake has no anchor for it.
@@ -8729,6 +8737,10 @@ function soundSnapshot() {
     // (?hour, the chronicle), whose hour is not the one every other page is on.
     bell: chapelBell(),
     clock: state.chronicle.t != null || state.hourOverride != null ? null : cal.hour,
+    // Who may say hello (web/js/greetings.js): our own settlers, and where you stand and face when
+    // you are on foot on our island - a hull's deck and a guest island's street are not ours.
+    ours: state.settlers ? state.settlers.figures() : null,
+    walker: walkerForGreeting(),
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

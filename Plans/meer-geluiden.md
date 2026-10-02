@@ -349,7 +349,7 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    tweede bron voor de Kraken met een eigen stem, clinks, het geroezemoes binnen in de dorpskroeg, en
    een loop op het plein tijdens `gatheringAt`.
 2. ✅ **De kerkklok.** Klein: één buffer, twee bronnen om de beurt, de klok van de zee.
-3. **De begroeting op straat.**
+3. ✅ **De begroeting op straat.**
 4. **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
    werkers in de crowd (`chop`, `hoe`/`weed`, `barrow`/`carry`, `load`) als veralgemening van de
    hamer-pool. Hier komt de "cue"-afspraak voor het eerst in de code.

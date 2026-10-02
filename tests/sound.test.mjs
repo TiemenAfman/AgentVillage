@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still fifteen placed voices', () => {
+test('three hundred settlers hammering at once are still seventeen placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,7 +245,7 @@ test('three hundred settlers hammering at once are still fifteen placed voices',
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 15, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells');
+  assert.equal(s0.cap, 17, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
   assert.equal(s0.bedSources, 6, 'and the sea, the wind, the two rooms, and the glass and the bell in a room over them');
 
@@ -792,6 +792,47 @@ test('the bell is a bell: finite, inside the rails, and dying away into silence'
   assert.ok(peak <= 1 && peak > 0.05, `peak ${peak}`);
   assert.ok(head > tail * 20, 'it rings out');
   assert.equal(Math.abs(d[d.length - 1]), 0, 'and ends in its own silence');
+});
+
+// --- greetings in the street (phase 3) ------------------------------------
+
+test('a settler you walk up to says hello, once, in a voice of their own', () => {
+  store = {};
+  const look = village(3, { anim: 'still', tavern: false });
+  const [a, b, c] = look.crowds[0].values();
+  a.pos = [2, 0]; b.pos = [30, 30]; c.pos = [-30, -30];
+  look.ours = look.crowds[0];
+  look.walker = { x: 0, z: 0, fx: 1, fz: 0 };
+  const sound = heardSound(look);
+  run(sound, 1);
+  assert.equal(sound.stats().greeted, 1, 'the one ahead of you greets you');
+  run(sound, 20);
+  assert.equal(sound.stats().greeted, 1, 'and not again for a while');
+  // Turn your back on the next one: no hello.
+  b.pos = [-2, 0];
+  run(sound, 6);
+  assert.equal(sound.stats().greeted, 1, 'nobody greets the back of your head');
+  look.walker = { x: 0, z: 0, fx: -1, fz: 0 };
+  run(sound, 1);
+  assert.equal(sound.stats().greeted, 2, 'face them and they do');
+  assert.ok(sound.stats().families.greet.cap === 2);
+  // Indoors, nobody in the street is heard.
+  look.indoors = true;
+  c.pos = [-1.5, 0.4];
+  run(sound, 6);
+  assert.equal(sound.stats().greeted, 2);
+});
+
+test('Greetings off in Settings: nobody says anything', () => {
+  store = { 'promptholm.sound.mix': JSON.stringify({ greetings: false }) };
+  const look = village(1, { anim: 'still', tavern: false });
+  const [a] = look.crowds[0].values();
+  a.pos = [1.5, 0];
+  look.ours = look.crowds[0];
+  look.walker = { x: 0, z: 0, fx: 1, fz: 0 };
+  const sound = heardSound(look);
+  run(sound, 3);
+  assert.equal(sound.stats().greeted, 0);
 });
 
 // --- 3. the noises themselves ---------------------------------------------
