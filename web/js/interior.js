@@ -22,6 +22,7 @@ import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
 import { createHdPieces } from './hd-pieces.js';
+import { placeInRoom } from './room-spot.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -781,7 +782,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js), and
   // `stable` whether the island's horse and hens came along. What the show puts on the floor
   // tonight that you cannot walk through - the horse - is the show's to say, after its enter.
-  function enter({ avatar, guests = null, stable = false } = {}) {
+  // `spot` is where you stood when the page was last closed in here (main.js's room recall,
+  // web/js/room-spot.js): taken if the room still has a floor there that will take you, and
+  // otherwise the room's own way in. Says which it was.
+  function enter({ avatar, guests = null, stable = false, spot = null } = {}) {
     left = false;
     lidOff = false;
     if (avatar) walk.setAvatar(avatar);
@@ -789,9 +793,13 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
+    // The room's solids first, so the spot is judged against them.
+    walk.setBlockers(blockers);
+    const back = spot ? placeInRoom(spot, { areas: AREAS, doorway: def.doorway, standFloor: walk.standFloor }) : null;
     walk.enter({
-      at: [def.spawn.x, def.spawn.z],
-      facing: [def.spawn.x, def.spawn.z - 1],
+      at: back ? back.at : [def.spawn.x, def.spawn.z],
+      y: back ? back.y : Infinity,
+      facing: back ? [back.at[0] + Math.sin(back.yaw), back.at[1] + Math.cos(back.yaw)] : [def.spawn.x, def.spawn.z - 1],
       blockers,
       interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || []),
       onInteract,
@@ -799,7 +807,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       // owner says so (main.js); the way out is the door. /demo has no menu and still steps outside.
       onExit: onEscape || leave,
     });
-    walk.state.camPitch = 0.05;      // indoors you look across the room, not over the treetops
+    // Indoors you look across the room, not over the treetops.
+    walk.state.camPitch = back && back.pitch != null ? back.pitch : 0.05;
+    return !!back;
   }
 
   let t = 0;

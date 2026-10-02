@@ -1656,6 +1656,17 @@ bridge's axis is a road), and a hamlet's boundary fence costs twelve steps excep
 where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
 `afoot`. At a tiller or on a deck exitWalk still flies up the old way.
 
+**A page closed inside a room opens outside its door and walks back in** (`web/js/room-spot.js`,
+`recalledRoom` in main.js). While you are inside, `promptholm.walk.room.<seed>` keeps the room, the step
+outside (`cameFrom`, *with its height*: the Kraken's stoop is up its rock, and a step found from the top
+was blocked and walked down the stair) and the feet in the room's frame, `y` included - `walk.enter({ y })`
+finds the floor from there, or a body remembered under a gallery stood on it. It is forgotten on every way
+out (`leaveInterior`, exitWalk's inside branch, closing time) and by any way down that does not go back in,
+`?square` included, so the record means only "closed in here". Boot parks the body at that door; the walk
+button takes it in, onto the spot if `placeInRoom` finds a floor within `FLOOR_SLACK` there (or a nudge
+beside it), else the room's spawn. Only while the door stands within `DOOR_SLACK` of where you came in
+(a lifted pub forgets it); never a guest page or the phone.
+
 **On foot the mouse is a pointer lock by default.** `syncLock()` in `walk.js` takes it on
 `enter`, gives it back whenever something needs a cursor (`setPaused(true)` for any overlay,
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only
