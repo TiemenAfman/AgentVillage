@@ -9,6 +9,18 @@ geroezemoes van de kroegen dat je buiten gedempt hoort, en de ambachten aan het 
 eiland dat je met je ogen dicht herkent - waar je bent (bos, haven, plein, helling van de
 vulkaan), hoe laat het is en wat er gebeurt - zonder dat het ooit druk wordt.
 
+## Stand (2 oktober 2026)
+
+Fase 1 tot en met 8 zijn gebouwd (✅ bij de volgorde hieronder). Wat er nog open staat:
+
+- **De plafonds per tier** (`full` / `modest` / `phone` in de budgettabel) en `equalpower`-panning op
+  de lichtere machines: de pools hebben nu één lengte voor elke machine (`stats().cap` = 38
+  plekstemmen). Eerst meten op de telefoon voor er iets kleiner wordt.
+- **Fase 9**, de eigen samples van de keeper: hangt aan open vraag 1.
+- Kleine gaten: het knetteren van de oven en het smidsvuur, het smelten bij de goudsmid, de
+  borrel hangt in het midden van het plein (`town.centre`) en niet in het zwaartepunt van de
+  tafels, een ballon bij de begroeting (open vraag 10).
+
 ## Hoe het zit
 
 `web/js/sound.js` (1460 regels) is het hele geluid, en de kop ervan noemt drie regels die dit plan

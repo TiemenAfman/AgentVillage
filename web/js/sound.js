@@ -21,10 +21,19 @@
 // from the console.
 //
 // **A village of three hundred is not three hundred sources.** Every voice in here is
-// allocated once, at build time, and nothing ever allocates a second one. Four hammers,
-// two gulls, one tavern, two bed loops: nine sources, whatever the population. Which four
+// allocated once, at build time, and nothing ever allocates a second one: a pool per family
+// (four hammers, four workers, two gulls, two bells, four animals...) whose lengths are the
+// ceiling `stats().cap` adds up, whatever the population (Plans/meer-geluiden.md). Which four
 // hammers is decided by `nearestFirst` from shared/regions.mjs, with its load-bearing
-// tiebreak, rather than a sort of its own.
+// tiebreak, rather than a sort of its own. Only the first six buffers are made at the click;
+// every other family is made the first time something of it is within reach (`need`).
+//
+// And two rules for what reaches this module. It is told everything through one snapshot
+// (main.js soundSnapshot) and never called by a drawing module: what it must hear the moment it
+// is seen is a **cue** that module keeps anyway - a counter (the smith's `hits`, the fisherman's
+// `bites`, the bubbles' `emitted`), a word (the baker's `phase`, an animal's act, the wagon's
+// stage) or the sea's clock - and this module diffs it against what it saw last pick. And every
+// voice sits on a part and every part on a bus (sound-mix.js, Settings -> Audio).
 //
 // A fourth rule, softer, about taste: quiet and sparse beats busy. A gull cries once every
 // half minute or so and only in daylight over the quay; the tavern only hums when there is

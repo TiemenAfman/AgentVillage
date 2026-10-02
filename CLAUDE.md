@@ -2115,8 +2115,14 @@ gull, clink) is a generator in `LAZY`, started by `need(name)` the first time so
 it and stepped a frame at a time by `makeMore` - `stats().buffers` and `making` say which exist.
 What sound hears comes only through `soundSnapshot()` in main.js; a drawing module never calls sound, it
 exposes a cheap read-only **cue** (a counter, a clock, a state word) that the snapshot collects and sound
-diffs against what it saw last pick. The taverns are heard at their *doors* (`pubDoors`: the village
-tavern's front, the Kraken's baked `anchor.door`), through a lowpass that opens towards the door.
+diffs against what it saw last pick; the first sighting of a cue only remembers (a smithy that has
+struck 312 times is not 312 blows). The taverns are heard at their *doors* (`pubDoors`: the village
+tavern's front, the Kraken's baked `anchor.door`), through a lowpass that opens towards the door. The
+church bell strikes on the sea's clock (`clock` = `worldNow().hour`, null under a lens) and only on a
+turn of the minute this page saw itself, less than `BELL_SKIP_MIN` forward. Greetings are decided by
+`web/js/greetings.js` (pure; a settler's pitch from `<id>:voice`, never `<id>:walk`). What counts as
+sea for the bed is *wide* water (`seaAt`: water 5 units off on three sides) - depth cannot tell a
+river bed from the dredged harbour, both are -0.55.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
