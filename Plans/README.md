@@ -41,6 +41,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   alleen-lezen cue van wat getekend wordt (smid, zaag, bakker, werkers in de crowd), ochtendkoor,
   krekels, regen op daken en bos, dieren, rivier en vulkaan, en een mixer in Settings. Vaste pools per
   tier, niets op de draad.
+- 🚧 [zeetijd-van-de-host.md](zeetijd-van-de-host.md) — de klokchip is geen lens meer: iedereen ziet de
+  tijd van de zee, en alleen wie de zee host (single of host, eigen islander) zet die tijd voor iedereen,
+  via een popover op de chip. In het geheugen van de zee; een herstart is weer echte tijd. Een patch.
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
