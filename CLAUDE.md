@@ -1474,9 +1474,25 @@ argument, `{ t, moon }`, sea epoch ms - never the chronicle's): the cloud layer 
 camera, so every screen has the same cloud and the same shadow; the island's own rng is still
 spent as the nine old clouds spent it, or the fireflies move. `uTime` is sea seconds mod
 `WAVE_LOOP` (20π, whole periods of every `uTime * n` in the water shader - a new wave rate
-must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the chip, the
-chronicle) marks the clock chip `· local`.
+must keep that, `tests/sea-clouds.test.mjs` reads the shader). A lens (`?hour`, the
+chronicle) marks the clock chip `· preview`.
 [Plans/DONE/klok-en-hemel-van-de-zee.md](Plans/DONE/klok-en-hemel-van-de-zee.md) has the rest.
+**The clock chip is no lens - only the sea's host sets the sea's time, for everybody**
+([Plans/zeetijd-van-de-host.md](Plans/zeetijd-van-de-host.md); the keeper asked for this more than
+once, and a per-screen hour preview kept coming back). For everybody else a click does nothing
+and there is no key (`tests/sea-clock-chip.test.mjs` reads `ORBIT_KEYS` and the handler). The host
+is the keeper whose islander raised the sea this page is on (`hostsSea()` in serve.mjs: mode
+single or host and `ownSea`; `/api/hello`'s `seaHost`, keeper only, never the phone): the chip
+opens `web/js/sea-clock.js`'s popover -> `POST /api/sea-time` (keeper-only, 403 when we do not
+host) -> `ownSea.setTime({ hour } | { real: true })`. **A method on the sea object, not a route**:
+the sea runs in the islander's own process, so it grows no door for anybody to try, and the open
+sea in its container has no host at all (`SEA_ADMIN_KEY` does not set it either). The clock keeps
+a `shift` (`lib/seaclock.mjs`: `at()` = real now + shift, nearest such hour within half a day,
+capped at a week, in memory only - a sea restart, and so an islander restart or a change of sea
+mode, is real time again); the welcome and `{t:'clock', now, tz, shift}` carry the shifted `now`,
+which pages from before this already set their skew from, so it is a patch, no `SEA_V`. The
+sea's beat reads `worldTime(clock.at(), …)`, so the settlers' night and gatherings follow; the
+weather keeps turning on the real clock.
 
 **Somebody running different code is a banner, not a console warning.** Three machines make
 a world — this page, the islander that packed a bundle, whichever islander packed somebody
