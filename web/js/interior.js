@@ -519,7 +519,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // hang from the lid go with the lid.
   const roofPieces = new THREE.Group();
   scene.add(roofPieces);
-  const pieces = def.pieces?.length ? createHdPieces({ scene, roof: roofPieces, pieces: def.pieces, material, hd }) : null;
+  // The floors (the slab and every storey) tell an HD piece standing on one from one hung on a wall.
+  const floorAt = (x, z, y) => (def.surfaces || []).reduce((best, s) => (s.axis == null
+    && x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1 && s.y <= y + 0.03 && s.y > best ? s.y : best), FLOOR);
+  const pieces = def.pieces?.length ? createHdPieces({ scene, roof: roofPieces, pieces: def.pieces, material, hd, floorAt }) : null;
 
   // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
   // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
