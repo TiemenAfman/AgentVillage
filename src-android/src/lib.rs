@@ -54,7 +54,12 @@ fn context() -> tauri::Context {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![latest_release])
+        .invoke_handler(tauri::generate_handler![
+            latest_release,
+            bundle::bundle_check,
+            bundle::bundle_apply,
+            bundle::bundle_ok
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))

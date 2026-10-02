@@ -1,12 +1,20 @@
 # 🚧 De telefoon-app werkt de pagina bij zonder nieuwe APK
 
-> Status: **stap 0 geslaagd op een telefoon, 2 oktober 2026.** `src-android/src/bundle.rs` zet een `Overlay`
-> voor de ingebakken assets (`Context::set_assets`, Tauri 2.11.6): elk bestand eerst uit
-> `<app data>/bundles/<current>/`, anders uit de APK; zonder `bundles/current` is het de ingebakken pagina.
-> De proef-APK (release-workflow met de hand, `bundle_proof`, feature `bundle-proof`, nooit gepubliceerd)
-> schreef zelf een proefbundel, en de telefoon liet zien: de pagina kwam van schijf, een module van schijf
-> draaide, en `latest_release` antwoordde vanaf die pagina (0.8.1). Kandidaat 1 uit beslissing 7 werkt dus;
-> kandidaat 2 is niet nodig. Een gewone build ruimt een achtergebleven proef op. Volgende: stap 1 tot 5.
+> Status: **gebouwd, 2 oktober 2026; wacht op de sleutel en een release.** Stap 0 slaagde op een telefoon
+> (pagina en module van schijf, `latest_release` vanaf daar). Stap 1-5 staan: `src-android/src/bundle.rs`
+> (Overlay, check/download/controle/uitpakken, wisselen bij start of Restart, terugval na twee starts zonder
+> `bundle_ok`, nooit terug in versie, opruimen), `src-android/shell-version` (`SHELL_V`, één bestand dat Rust en
+> `scripts/sign-bundle.mjs` allebei lezen - de pagina hoeft hem niet te kennen: Rust zegt `shell`),
+> `src-android/bundle-key.pub` (nog leeg), de stap *Page bundle* in release.yml, de Restart-kaart
+> (`updateGate`'s `ready`/`busy`) en `bundle_ok` na de boot. Getest: 9 Rust-tests (één met een echte bundel van
+> sign-bundle.mjs), Node en Rust houden elkaar aan één handtekening. Nog te doen: de keeper draait
+> `node scripts/bundle-key.mjs`, commit de publieke helft, zet `BUNDLE_SIGNING_KEY`; dan is de eerste release
+> met een sleutel de laatste APK die voor een pagina-wijziging nodig is.
+>
+> Gekozen bij het bouwen: een bundel krijgt **twee** starts om `bundle_ok` te halen (niet 30 s: wie de app
+> binnen een paar seconden dichtdoet, zou een goede bundel anders afkeuren), en wat er al binnen is wordt bij
+> de **volgende start** of met **Restart now** op de kaart actief - nooit tijdens het spelen, en de boot
+> wacht nooit op het netwerk (de keeper koos dit boven bijwerken tijdens het opstarten).
 >
 > Aanleiding: Play Protect blokkeerde 0.8.1 als
 > "Schadelijke app geblokkeerd" omdat de app zelf APK's downloadde en installeerde (`install_update`,

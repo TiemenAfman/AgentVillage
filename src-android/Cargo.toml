@@ -23,11 +23,11 @@ tauri-plugin-opener = "2"
 # ask itself - it sits on tauri.localhost and GitHub's API is not reached from there by fetch.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde_json = "1"
-
-[features]
-# Step 0 of Plans/app-zonder-apk-bijwerken.md: the app writes a test bundle of its own on start
-# (src/bundle.rs `proof`). Only for a test build by hand; release.yml refuses to publish one.
-bundle-proof = []
+# The page bundle (src/bundle.rs): its signature, its hash and unpacking it. Pure Rust, nothing
+# to cross-compile; verify-only ed25519, deflate only.
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [profile.release]
 codegen-units = 1

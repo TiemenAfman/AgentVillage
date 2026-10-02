@@ -114,7 +114,25 @@ export function islandNotice({ mine = null, sea = null, latest = null, canInstal
 // version string. With it the card goes up as soon as there is a release, not only once the
 // sea has been updated to it: the sea is behind the releases whenever nobody has got round to
 // it yet, and that is no reason for the app to be.
-export function updateGate({ speaks = null, mine = null, sea = null, latest = null } = {}) {
+//
+// `ready` is a page bundle the app has already fetched (src-android/src/bundle.rs, `bundle_check`
+// in main.js) and `busy` says it is still fetching one (Plans/app-zonder-apk-bijwerken.md): a
+// ready bundle newer than this page is a Restart, not a download, and while one is on its way the
+// APK card waits - it would be telling somebody to install what is about to arrive by itself.
+export function updateGate({ speaks = null, mine = null, sea = null, latest = null, ready = null, busy = false } = {}) {
+  const refused = Number.isInteger(speaks) && speaks > SEA_PROTOCOL;
+  if (ready && compareVersions(mine && mine.version, ready) === -1) {
+    return {
+      restart: true,
+      blocking: refused,
+      download: '#',
+      notes: RELEASES,
+      steps: '',
+      title: `Promptholm v${ready} is ready`,
+      body: 'It came in by itself while you played. Restart to play on it; it takes a second.',
+    };
+  }
+  if (busy && !refused) return null;
   const common = {
     download: APK_URL,
     notes: RELEASES,
@@ -124,7 +142,7 @@ export function updateGate({ speaks = null, mine = null, sea = null, latest = nu
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
       + 'once and tap the button again. After that, updates install over the top.',
   };
-  if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
+  if (refused) {
     return {
       ...common,
       blocking: true,

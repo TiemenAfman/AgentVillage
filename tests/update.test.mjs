@@ -141,3 +141,23 @@ test('a release that can put the update in place itself offers to, instead of a 
   // Nothing to install, no button.
   assert.equal(islandNotice({ mine, latest: '0.8.1', canInstall: true }), null);
 });
+
+// Plans/app-zonder-apk-bijwerken.md: a page bundle the app fetched by itself is a Restart, and
+// while one is on its way the APK card waits rather than asking for an install it is bringing.
+test('a fetched page bundle makes the card a Restart, and one on its way holds the APK card back', () => {
+  const mine = { version: '0.8.2' };
+  const ready = updateGate({ mine, latest: '0.8.3', ready: '0.8.3' });
+  assert.equal(ready.restart, true);
+  assert.equal(ready.blocking, false);
+  assert.match(ready.title, /0\.8\.3 is ready/);
+  // Refused by the sea: still a Restart, but with no Later.
+  assert.equal(updateGate({ mine, speaks: SEA_PROTOCOL + 1, ready: '0.8.3' }).blocking, true);
+  // A bundle no newer than this page is nothing to restart for.
+  assert.equal(updateGate({ mine: { version: '0.8.3' }, ready: '0.8.3' }), null);
+  // On its way: no APK card...
+  assert.equal(updateGate({ mine, latest: '0.8.3', busy: true }), null);
+  // ...except when the sea will not have us at all.
+  assert.equal(updateGate({ mine, speaks: SEA_PROTOCOL + 1, busy: true }).blocking, true);
+  // And without either, the APK card as before.
+  assert.equal(updateGate({ mine, latest: '0.8.3' }).restart, undefined);
+});

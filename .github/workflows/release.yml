@@ -26,10 +26,6 @@ on:
         description: Tag this commit as v<version> and publish the release
         type: boolean
         default: false
-      bundle_proof:
-        description: Android only, step 0 of Plans/app-zonder-apk-bijwerken.md - an APK that serves a test bundle (artifact only, never published)
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -47,7 +43,6 @@ jobs:
 
       - id: tag
         run: |
-          [ "${{ inputs.bundle_proof }}" != "true" ] || { echo "a bundle-proof build is never published"; exit 1; }
           desktop=$(node -p "require('./src-tauri/tauri.conf.json').version")
           phone=$(node -p "require('./src-android/tauri.conf.json').version")
           [ "$desktop" = "$phone" ] || { echo "src-tauri says $desktop and src-android says $phone"; exit 1; }
@@ -187,7 +182,7 @@ jobs:
 
       - name: Build
         working-directory: src-android
-        run: npx tauri android build --apk --target aarch64 ${{ inputs.bundle_proof && '--features bundle-proof' || '' }}
+        run: npx tauri android build --apk --target aarch64
 
       - name: Sign
         env:
@@ -231,6 +226,23 @@ jobs:
           rm -f release.jks aligned.apk
           printf '%s  promptholm-android.apk\n' "$(sha256sum promptholm-android.apk | cut -d' ' -f1)" > promptholm-android.apk.sha256
 
+      # The page alone, for phones that already have the app (Plans/app-zonder-apk-bijwerken.md):
+      # src-android/dist/ as it went into this APK, zipped and signed. The app takes it only
+      # under the key it carries (src-android/bundle-key.pub) and only for a shell as new as
+      # src-android/shell-version, so a release whose page needs a newer shell is still the
+      # APK card. Without the secret there is no bundle and phones simply go on as before.
+      - name: Page bundle
+        env:
+          BUNDLE_SIGNING_KEY: ${{ secrets.BUNDLE_SIGNING_KEY }}
+        run: |
+          if [ -z "$BUNDLE_SIGNING_KEY" ]; then
+            echo "::warning::no BUNDLE_SIGNING_KEY secret - no page bundle, phones need the APK for this release"
+            exit 0
+          fi
+          (cd src-android/dist && zip -qrX ../../promptholm-web.zip .)
+          node scripts/sign-bundle.mjs promptholm-web.zip promptholm-web.json
+          { echo "### promptholm-web.zip"; echo '```'; cat promptholm-web.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: softprops/action-gh-release@v2
         if: env.RELEASE != ''
         with:
@@ -238,9 +250,14 @@ jobs:
           files: |
             promptholm-android.apk
             promptholm-android.apk.sha256
+            promptholm-web.zip
+            promptholm-web.json
 
       - uses: actions/upload-artifact@v4
         if: env.RELEASE == ''
         with:
           name: promptholm-android
-          path: promptholm-android.apk
+          path: |
+            promptholm-android.apk
+            promptholm-web.zip
+            promptholm-web.json

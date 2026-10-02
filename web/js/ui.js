@@ -1187,6 +1187,10 @@ export function createUI(handlers) {
     el('update-gate-body').textContent = gate.body;
     el('update-gate-steps').textContent = gate.steps;
     el('update-gate-download').href = gate.download;
+    // A bundle already fetched (update.js updateGate's `restart`) is a Restart, not a download.
+    el('update-gate-download').textContent = gate.restart ? 'Restart now' : 'Download the update';
+    el('update-gate-download').dataset.restart = gate.restart ? '1' : '';
+    el('update-gate-steps').hidden = !gate.steps;
     el('update-gate-notes').href = gate.notes;
     el('update-gate-later').hidden = !!gate.blocking;
     // The small banner says the same thing in fewer words; with the card up it is noise.
@@ -1218,6 +1222,13 @@ export function createUI(handlers) {
     const button = el('update-gate-download');
     button.addEventListener('click', (e) => {
       e.preventDefault();
+      // Restart: the shell swaps the fetched bundle in (bundle.rs `bundle_apply`) and the page
+      // loads itself again from it. A swap that finds nothing to do still reloads - harmless.
+      if (button.dataset.restart) {
+        button.textContent = 'Restarting…';
+        ipc.invoke('bundle_apply').catch(() => {}).then(() => location.reload());
+        return;
+      }
       const open = (url) => ipc.invoke('plugin:opener|open_url', { url });
       open(button.href)
         .then(() => toast('Downloading in your browser. When it is done, tap <b>Open</b> '

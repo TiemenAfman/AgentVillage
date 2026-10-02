@@ -2427,6 +2427,22 @@ harmful ("Schadelijke app geblokkeerd"): an unknown app that downloads and insta
 dropper to it. `latest_release` is an app command, so it needs no entry in
 `capabilities/default.json` (only plugin calls from the page do).
 
+**The page updates without an APK** ([Plans/app-zonder-apk-bijwerken.md](Plans/app-zonder-apk-bijwerken.md)):
+`src-android/src/bundle.rs` puts an `Overlay` in front of the baked assets (`Context::set_assets`), so every
+file is read from `<app data>/bundles/<current>/` first and from the APK otherwise - same origin, so the
+page keeps its IPC. `bundle_check` (asked before `latest_release`, at boot and at most hourly) fetches
+`promptholm-web.json` + `.zip` from the latest release, believes the json only under the ed25519 key in
+`src-android/bundle-key.pub` (empty = never), refuses a shell newer than `src-android/shell-version` (bump it
+when a page needs a command or right an older shell lacks), checks size and sha256, unpacks with no name
+leaving the folder and writes `next`. It becomes `current` at the next start or on the card's **Restart now**
+(`bundle_apply`; `updateGate`'s `ready`, and `busy` holds the APK card back meanwhile); the page calls
+`bundle_ok` after `state.ui.boot(true)`, and two starts without it put the bundle in `failed` and go back to
+`prev` or the APK's page. A bundle never runs when the APK is as new. The release workflow's *Page bundle*
+step zips `src-android/dist/` and signs it (`scripts/sign-bundle.mjs`, secret `BUNDLE_SIGNING_KEY`, refusing
+a key whose public half is not the committed one); `scripts/bundle-key.mjs` makes the pair. The signed bytes
+are written twice, `message` in bundle.rs and in sign-bundle.mjs, held to one signature by both languages'
+tests.
+
 ## Layout of the source
 
 | | |
