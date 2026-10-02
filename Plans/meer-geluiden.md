@@ -350,9 +350,13 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    een loop op het plein tijdens `gatheringAt`.
 2. ✅ **De kerkklok.** Klein: één buffer, twee bronnen om de beurt, de klok van de zee.
 3. ✅ **De begroeting op straat.**
-4. **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
+4. ✅ **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
    werkers in de crowd (`chop`, `hoe`/`weed`, `barrow`/`carry`, `load`) als veralgemening van de
-   hamer-pool. Hier komt de "cue"-afspraak voor het eerst in de code.
+   hamer-pool. Hier komt de "cue"-afspraak voor het eerst in de code. *Gebouwd*: de cue van de smid
+   en de slager is een nieuwe teller `hits` (bij de inslag, niet bij de zwaai - `blows` gaat bij
+   de zwaai op en terug naar nul); de bakker is zijn `phase`-woord (ovenklep bij `bake`, het brood
+   op de plank bij `rest`); de zaag is `mill.cutting`, dat er al was. main.js `craftCues()` leest ze
+   en rekent hun plek om. Nog niet: het knetteren van de oven en het smidsvuur.
 5. **Het uur en het weer.** Ochtendkoor, krekels, uil, regen (met daken), mist (misthoorn), bos
    (`woodsiness`). Allemaal bedden of zeldzame one-shots, dus goedkoop; het raster voor het bos is
    het enige nieuwe in main.js.

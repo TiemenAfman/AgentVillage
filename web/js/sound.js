@@ -71,6 +71,25 @@ const KRAKEN_CREW = 0.35;
 // busy - the gap shrinks with the crowd.
 const CLINKS = 2;
 const BELLS = 2;
+// The crafts (phase 4): four one-shots for the workshops (anvil, cleaver, oven), four for the crowd
+// at work beside the four hammers (axe, hoe, weeds, barrow, bars), and one loop for the sawmill's
+// blade. Past these a workshop is not heard at all.
+const CRAFTS = 4;
+const WORKERS = 4;
+const CRAFT_RANGE = 55;
+const WORK_RANGE = 45;
+const SAW_RANGE = 45;
+// What each word in the crowd sounds like, and how often it is heard while somebody keeps at it.
+// The crowd's own tempo is drawn in settler-figures.js off a private clock, so as with the hammer
+// it is the tempo that is matched, not the phase.
+const WORK_SOUNDS = {
+  chop: { buf: 'chop', every: 1.15, volume: 0.5 },
+  hoe: { buf: 'hoe', every: 1.35, volume: 0.4 },
+  weed: { buf: 'weed', every: 1.7, volume: 0.35 },
+  load: { buf: 'load', every: 0.9, volume: 0.4 },
+  barrow: { buf: 'squeak', every: 0.75, volume: 0.3 },
+  carry: { buf: 'squeak', every: 0.85, volume: 0.35 },
+};
 // Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
 // hello more than twice at once.
 const GREETERS = 2;
@@ -457,6 +476,108 @@ function* greetSong(ctx, which) {
   yield;
   const chs = [lowpass(out, sr, 4200)];
   level(chs, 0.09);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// --- the crafts -------------------------------------------------------------
+//
+// The workshops and the work (Plans/meer-geluiden.md, phase 4): the smith's anvil, the butcher's
+// cleaver, the baker's oven door and the loaf set down, and in the crowd an axe in wood, a hoe in
+// the soil, weeds pulled, a barrow's wheel and gold bars going into it. Each a one-shot of a few
+// tenths of a second, made the first time anything of the kind is within earshot. And the
+// sawmill's blade, the one loop: it always turns, and is harder and higher while a log is on it.
+function shot(ctx, secs, seed, fn, gain) {
+  const sr = HIT_SR;
+  const n = Math.floor(sr * secs);
+  const rng = makeRng(`craft:${seed}`);
+  const out = fn(n, sr, rng);
+  // A millisecond in and the last twentieth out, so no shot starts or stops on a step.
+  const tail = Math.floor(n / 20);
+  for (let i = 0; i < n; i++) {
+    out[i] *= Math.min(1, i / (sr * 0.001));
+    if (i > n - tail) out[i] *= (n - i) / tail;
+  }
+  const chs = [out];
+  level(chs, gain);
+  return intoBuffer(ctx, chs, sr);
+}
+const ring = (n, sr, parts) => {
+  const out = new Float32Array(n);
+  for (const [f, a, d] of parts) for (let i = 0; i < n; i++) out[i] += a * Math.exp(-i / sr / d) * Math.sin(2 * Math.PI * f * i / sr);
+  return out;
+};
+const burst = (n, sr, rng, f, q, d, a = 1) => {
+  const r = resonate(noise(n, rng), sr, f, q);
+  for (let i = 0; i < n; i++) r[i] *= a * Math.exp(-i / sr / d);
+  return r;
+};
+const add = (a, b) => { for (let i = 0; i < a.length; i++) a[i] += b[i]; return a; };
+const CRAFT_SHOTS = {
+  // Steel on steel: the anvil's inharmonic ring over the tick of the hammer face.
+  anvil: (c) => shot(c, 0.8, 'anvil', (n, sr, rng) => add(ring(n, sr, [[820, 1, 0.5], [2263, 0.6, 0.3], [4428, 0.35, 0.16], [7323, 0.2, 0.08]]),
+    burst(n, sr, rng, 4200, 1.5, 0.005, 2)), 0.1),
+  // A cleaver through meat into the block: a wet thwack and the wood under it.
+  cleaver: (c) => shot(c, 0.3, 'cleaver', (n, sr, rng) => add(burst(n, sr, rng, 360, 1.4, 0.04, 2), ring(n, sr, [[180, 0.7, 0.06], [310, 0.3, 0.035]])), 0.1),
+  // The oven's iron door: a low knock, the ring of the plate, and the creak of the hinge before it.
+  oven: (c) => shot(c, 0.6, 'oven', (n, sr, rng) => {
+    const out = add(ring(n, sr, [[92, 0.8, 0.1], [410, 0.35, 0.22], [633, 0.2, 0.15]]), burst(n, sr, rng, 900, 2, 0.05, 0.4));
+    let ph = 0;
+    for (let i = 0; i < Math.floor(sr * 0.14); i++) { ph += (150 - 40 * i / (sr * 0.14)) / sr; out[i] += 0.15 * (2 * (ph - Math.floor(ph)) - 1) * Math.sin(Math.PI * i / (sr * 0.14)); }
+    return out;
+  }, 0.08),
+  // A loaf set down on the board.
+  thud: (c) => shot(c, 0.25, 'thud', (n, sr, rng) => add(ring(n, sr, [[120, 1, 0.06]]), lowpass(burst(n, sr, rng, 500, 1, 0.03, 1), sr, 900)), 0.06),
+  // An axe into a log: the crack of the edge and the knock of the wood.
+  chop: (c) => shot(c, 0.35, 'chop', (n, sr, rng) => add(burst(n, sr, rng, 1800, 2, 0.008, 2.5), ring(n, sr, [[230, 0.8, 0.05], [410, 0.4, 0.03]])), 0.1),
+  // A hoe through the soil: a scrape, with a stone ticked at the start.
+  hoe: (c) => shot(c, 0.3, 'hoe', (n, sr, rng) => {
+    const scrape = burst(n, sr, rng, 1400, 1.2, 0.12, 1);
+    for (let i = 0; i < n; i++) scrape[i] *= Math.min(1, i / (sr * 0.02));
+    return add(scrape, burst(n, sr, rng, 3200, 4, 0.006, 0.8));
+  }, 0.05),
+  // Weeds pulled: three quick rustles.
+  weed: (c) => shot(c, 0.35, 'weed', (n, sr, rng) => {
+    const hiss = lowpass(highpass(noise(n, rng), sr, 2500), sr, 7000);
+    for (let i = 0; i < n; i++) { const t = i / sr; const k = (t % 0.11) / 0.11; hiss[i] *= Math.sin(Math.PI * k) * (t < 0.33 ? 1 : 0); }
+    return hiss;
+  }, 0.04),
+  // A barrow's wheel wanting oil: a short rising-and-falling squeak.
+  squeak: (c) => shot(c, 0.18, 'squeak', (n, sr) => {
+    const out = new Float32Array(n);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      ph += (1700 + 600 * Math.sin(Math.PI * k) + 40 * Math.sin(2 * Math.PI * 31 * i / sr)) / sr;
+      out[i] = (Math.sin(2 * Math.PI * ph) + 0.3 * Math.sin(4 * Math.PI * ph)) * Math.sin(Math.PI * k);
+    }
+    return out;
+  }, 0.035),
+  // Gold bars going into the barrow: two dull tinks.
+  load: (c) => shot(c, 0.4, 'load', (n, sr) => {
+    const a = ring(n, sr, [[1500, 1, 0.07], [3900, 0.4, 0.04]]);
+    const b = ring(n, sr, [[1380, 0.7, 0.07], [3600, 0.3, 0.04]]);
+    const off = Math.floor(sr * 0.13);
+    for (let i = n - 1; i >= off; i--) a[i] += b[i - off];
+    return a;
+  }, 0.06),
+};
+// The sawmill's blade, a loop: the teeth's whine (harmonics of the tooth rate, wobbling once a
+// loop) over a band of hiss. Mono, because it has a place; folded at the seam like the bed.
+function sawBuffer(ctx, secs = 2) {
+  const sr = HIT_SR;
+  const len = Math.floor(sr * secs), fade = Math.floor(sr * 0.2), n = len + fade;
+  const rng = makeRng('craft:saw');
+  const hiss = highpass(lowpass(noise(n, rng), sr, 4200), sr, 1800);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const wob = 1 + 0.01 * Math.sin(2 * Math.PI * t / secs);
+    let v = 0;
+    for (let h = 1; h <= 6; h++) v += Math.sin(2 * Math.PI * 180 * h * wob * t) / h;
+    out[i] = v * 0.5 + hiss[i] * 1.2;
+  }
+  const chs = [seam(out, len, fade)];
+  level(chs, 0.08);
   return intoBuffer(ctx, chs, sr);
 }
 
@@ -1205,6 +1326,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // The church bell: two in the tower, struck in turn, and one through the wall of a room.
       bells: Array.from({ length: BELLS }, () => mkVoice(null, { ref: 24, rolloff: 0.7, volume: 0.9, part: 'bell' })),
       bellRoom: mkBed(null, 'bell'),
+      // The workshops' blows, the crowd at work, and the saw's blade.
+      crafts: Array.from({ length: CRAFTS }, () => mkVoice(null, { ref: 5, rolloff: 1.7, volume: 0.6, part: 'work' })),
+      workers: Array.from({ length: WORKERS }, () => ({ ...mkVoice(null, { ref: 5, rolloff: 1.9, volume: 0.45, part: 'work' }), id: null, f: null, next: 0 })),
+      saw: { ...mkLoop({ ref: 5, rolloff: 1.6, volume: 0, part: 'work', cut: 3000 }), want: 0 },
       // Who says hello: two voices with a place, given each greeting's phrase as it is said.
       greeters: Array.from({ length: GREETERS }, () => ({ ...mkVoice(null, { ref: 3, rolloff: 1.6, volume: 0.7, part: 'greetings' }), id: null })),
       // The families made the first time they are wanted, a step a frame (need, makeMore).
@@ -1230,8 +1355,13 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     kraken: (c) => murmurSong(c, 'kraken'),
     borrel: (c) => murmurSong(c, 'borrel'),
     bell: (c) => bellSong(c),
+    ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+    saw: (c) => once(sawBuffer, c),
     ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
+  // A buffer that is quick to make, made in one step all the same, so every family goes through
+  // need() and makeMore() and stats().making tells the truth.
+  function* once(make, c) { yield; return make(c); }
   function need(name) {
     if (built.buffers[name]) return built.buffers[name];
     if (!built.making[name] && LAZY[name]) built.making[name] = LAZY[name](ctx);
@@ -1647,6 +1777,94 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     }
   }
 
+  // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against
+  // what it saw last pick. A counter that went up is a blow that landed (the smith's and the
+  // butcher's `hits`); a word that changed is a step of the work (the baker's `phase`); `cutting` is
+  // the sawmill's state. The first sighting of a workshop only remembers - a counter that was 312
+  // when you walked up is not 312 blows.
+  const seenCraft = new Map();
+  function steerCrafts(look) {
+    const cues = look.indoors || !live('work') ? [] : (look.crafts || []);
+    let saw = null, sawD = SAW_RANGE;
+    for (const c of cues) {
+      if (!c || !c.at) continue;
+      const d = flat(c.at);
+      if (c.kind === 'saw') { if (d < sawD) { saw = c; sawD = d; } continue; }
+      const was = seenCraft.get(c.id);
+      seenCraft.set(c.id, { hits: c.hits, phase: c.phase });
+      if (d > CRAFT_RANGE) continue;
+      if (c.kind === 'smith' || c.kind === 'butcher') need(c.kind === 'smith' ? 'anvil' : 'cleaver');
+      if (c.kind === 'baker') { need('oven'); need('thud'); }
+      if (!was) continue;
+      let buf = null, volume = 0.6, rate = 1;
+      if ((c.kind === 'smith' || c.kind === 'butcher') && c.hits > was.hits) {
+        buf = built.buffers[c.kind === 'smith' ? 'anvil' : 'cleaver'];
+        rate = 0.95 + Math.random() * 0.1;
+      } else if (c.kind === 'baker' && c.phase !== was.phase) {
+        if (c.phase === 'bake') buf = built.buffers.oven;
+        else if (c.phase === 'rest') { buf = built.buffers.thud; volume = 0.4; }
+      }
+      if (!buf) continue;
+      const v = built.crafts.find((s) => !s.audio.isPlaying) || built.crafts[0];
+      if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
+      v.audio.setVolume(volume * edge(d, CRAFT_RANGE));
+      fire(v, c.at[0], c.at[1], c.at[2], rate);
+    }
+    if (seenCraft.size > 64) seenCraft.clear();
+    // The saw: the nearest mill's blade, idling or under load.
+    const s = built.saw;
+    s.want = saw ? (saw.cutting ? 0.32 : 0.13) * edge(sawD, SAW_RANGE) : 0;
+    if (saw) {
+      s.holder.position.set(saw.at[0], saw.at[1], saw.at[2]);
+      s.filter.frequency.setTargetAtTime(saw.cutting ? 5200 : 2400, ctx.currentTime, 0.15);
+      s.audio.setPlaybackRate(saw.cutting ? 1.06 : 1);
+    }
+    loopTo(s, s.want > 0 || s.audio.isPlaying ? need('saw') : null, s.want);
+    if (saw) s.holder.updateMatrixWorld(true);
+  }
+
+  // The crowd at work beside the hammers: the nearest few whose word makes a noise, sticky per
+  // settler like the hammer slots, each heard at its word's own tempo.
+  function steerWorkers(look) {
+    const rows = [];
+    if (!look.indoors && live('work')) {
+      for (const crowd of look.crowds) {
+        if (!crowd) continue;
+        for (const f of crowd.values()) {
+          if (!f.visible || f.hidden || !WORK_SOUNDS[f.anim]) continue;
+          const dx = f.pos[0] - camera.position.x, dz = f.pos[1] - camera.position.z;
+          if (dx * dx + dz * dz > WORK_RANGE * WORK_RANGE) continue;
+          rows.push({ id: f.id, origin: f.pos, f });
+        }
+      }
+    }
+    const want = nearestFirst(rows, [camera.position.x, camera.position.z]).slice(0, WORKERS);
+    const wanted = new Set(want.map((r) => r.id));
+    for (const slot of built.workers) if (!wanted.has(slot.id)) { slot.id = null; slot.f = null; }
+    for (const row of want) {
+      need(WORK_SOUNDS[row.f.anim].buf);
+      if (built.workers.some((s) => s.id === row.id)) continue;
+      const free = built.workers.find((s) => s.id === null);
+      if (!free) break;
+      free.id = row.id;
+      free.f = row.f;
+      free.next = clock + ((row.f.phase || 0) / (2 * Math.PI)) * WORK_SOUNDS[row.f.anim].every;
+    }
+  }
+  function work() {
+    for (const slot of built.workers) {
+      if (!slot.id || clock < slot.next || !live('work')) continue;
+      const f = slot.f, kind = WORK_SOUNDS[f.anim];
+      if (!f.visible || f.hidden || !kind) continue;
+      slot.next = clock + kind.every * (0.92 + Math.random() * 0.16);
+      const buf = built.buffers[kind.buf];
+      if (!buf) continue;
+      if (slot.audio.buffer !== buf) { if (slot.audio.isPlaying) slot.audio.stop(); slot.audio.setBuffer(buf); }
+      slot.audio.setVolume(kind.volume);
+      fire(slot, f.pos[0], (f.y || 0) + 0.4, f.pos[1], 0.9 + Math.random() * 0.2);
+    }
+  }
+
   // Hello (greetings.js): who to say it is the greeter's, how it sounds is ours. The phrases are
   // three small buffers, asked for the first time our settlers are about outside, and nobody is
   // asked to say anything until all of them exist - or the first hello would be spent (the greeter
@@ -1717,6 +1935,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     steerBorrel(look);
     steerBell(look);
     greet(look);
+    steerCrafts(look);
+    steerWorkers(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -1801,6 +2021,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (look) maybeGull(look, PICK_S);
     clinks(dt);
     strike();
+    work();
     makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
@@ -1906,6 +2127,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
+    craft: CRAFTS + 1, worker: WORKERS,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -1914,6 +2136,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub: Object.values(built.pubs).map((p) => p.out),
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
+      craft: [...built.crafts, built.saw], worker: built.workers,
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();
@@ -1992,6 +2215,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       },
       playing: built ? placedVoices().filter((v) => v.audio.isPlaying).length : 0,
       hammering: built ? built.hammers.filter((h) => h.id).length : 0,
+      working: built ? built.workers.filter((h) => h.id).length : 0,
       // The population the last pick walked, and how much of it was at work. `crowd` may
       // be three hundred and `voices` is still seven.
       crowd: seen,

@@ -8697,6 +8697,40 @@ function walkerForGreeting() {
   if (!w || !w.pos || w.vehicle || w.deck) return null;
   return { x: w.pos.x, z: w.pos.z, fx: Math.sin(w.yaw || 0), fz: Math.cos(w.yaw || 0) };
 }
+// The workshops sound.js listens to (Plans/meer-geluiden.md, phase 4), as cues and nothing else:
+// the smith's and the butcher's `hits` (a blow that landed), the baker's `phase`, the sawmill's
+// `cutting` - each read off the module that draws it, which knows nothing of sound - and where in
+// the world the work happens, through the workshop's own root. Only ours, and only within reach.
+const CRAFT_CUE_R = 90;
+function craftCues() {
+  const out = [];
+  const near = (rec) => rec.group.visible && rec.group.position.distanceToSquared(camera.position) < CRAFT_CUE_R * CRAFT_CUE_R;
+  const at = (root, local) => {
+    _door.set(local[0], local[1], local[2]);
+    root.updateMatrixWorld();
+    root.localToWorld(_door);
+    return [_door.x, _door.y, _door.z];
+  };
+  for (const rec of state.byId.values()) {
+    if (rec.smithy && near(rec)) {
+      const s = rec.smithy;
+      out.push({ kind: 'smith', id: rec.id, at: at(s.root, s.G.anvil), hits: s.hits || 0 });
+    }
+    if (rec.butcher && near(rec)) {
+      const s = rec.butcher;
+      out.push({ kind: 'butcher', id: rec.id, at: at(s.root, [s.G.work[0], 0.8, s.G.work[2]]), hits: s.hits || 0 });
+    }
+    if (rec.baker && near(rec)) {
+      const b = rec.baker;
+      out.push({ kind: 'baker', id: rec.id, at: at(b.root, [b.work[0], 0.8, b.work[2]]), phase: b.mode === 'work' ? b.phase : 'away' });
+    }
+    if (rec.sawmill && near(rec)) {
+      const m = rec.sawmill;
+      out.push({ kind: 'saw', id: rec.id, at: at(m.root, m.G.blade), cutting: !!m.cutting });
+    }
+  }
+  return out;
+}
 // Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
 // about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
 // rings from its own tower. The bake has no anchor for it.
@@ -8741,6 +8775,8 @@ function soundSnapshot() {
     // you are on foot on our island - a hull's deck and a guest island's street are not ours.
     ours: state.settlers ? state.settlers.figures() : null,
     walker: walkerForGreeting(),
+    // The workshops' cues (craftCues): what sound diffs to hear a blow land or the oven open.
+    crafts: craftCues(),
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

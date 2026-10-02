@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still seventeen placed voices', () => {
+test('three hundred settlers hammering at once are still twenty-six placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,7 +245,7 @@ test('three hundred settlers hammering at once are still seventeen placed voices
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 17, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings');
+  assert.equal(s0.cap, 26, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
   assert.equal(s0.bedSources, 6, 'and the sea, the wind, the two rooms, and the glass and the bell in a room over them');
 
@@ -833,6 +833,103 @@ test('Greetings off in Settings: nobody says anything', () => {
   const sound = heardSound(look);
   run(sound, 3);
   assert.equal(sound.stats().greeted, 0);
+});
+
+// --- the crafts (phase 4) --------------------------------------------------
+
+// How many times the newest buffer of `secs` length at the hammer's rate has been started.
+const shots = (secs) => {
+  const b = ctx.buffers.findLast((x) => x.sampleRate === 22050 && x.length === Math.floor(22050 * secs));
+  return b ? ctx.started.filter((s) => s === b).length : 0;
+};
+
+test('a blow that lands is heard once; a counter that stays put is not; the first look only remembers', () => {
+  store = {};
+  const look = village(1, { anim: 'still', tavern: false });
+  const smith = { kind: 'smith', id: 'civic:smithy', at: [4, 0.5, 0], hits: 312 };
+  look.crafts = [smith];
+  const sound = heardSound(look);
+  run(sound, 1);
+  const anvil = () => shots(0.8);
+  const before = anvil();
+  assert.equal(before, 0, 'walking up to a smithy that has struck 312 times is not 312 blows');
+  smith.hits = 313;
+  run(sound, 0.5);
+  assert.equal(anvil(), 1, 'one blow, one ring');
+  run(sound, 2);
+  assert.equal(anvil(), 1, 'and nothing while the count stands still');
+  smith.hits = 314;
+  look.indoors = true;
+  run(sound, 0.5);
+  assert.equal(anvil(), 1, 'nothing from a room');
+  look.indoors = false;
+  smith.hits = 315;
+  run(sound, 0.5);
+  assert.equal(anvil(), 2);
+  // The baker: the oven door when the loaf goes in.
+  const baker = { kind: 'baker', id: 'civic:bakery', at: [0, 0.5, 4], phase: 'in' };
+  look.crafts = [baker];
+  run(sound, 0.5);
+  baker.phase = 'bake';
+  run(sound, 0.5);
+  assert.equal(shots(0.6), 1, 'the oven door');
+});
+
+test('the saw idles, and bites when a log is on it', () => {
+  store = {};
+  const look = village(1, { anim: 'still', tavern: false });
+  const mill = { kind: 'saw', id: 'civic:sawmill', at: [6, 0.5, 0], cutting: false };
+  look.crafts = [mill];
+  const sound = heardSound(look);
+  run(sound, 1);
+  const idle = sound.stats().families.craft;
+  assert.equal(idle.playing, 1, 'the blade always turns');
+  const saw = ctx.buffers.findLast((x) => x.length === 22050 * 2);
+  const quiet = loudest(saw);
+  mill.cutting = true;
+  run(sound, 0.5);
+  assert.ok(loudest(saw) > quiet * 2, 'and is louder through a log');
+  look.crafts = [];
+  run(sound, 2);
+  assert.equal(sound.stats().families.craft.playing, 0, 'walked away: it stops');
+});
+
+test('three hundred settlers chopping, hoeing and pushing barrows are four voices', () => {
+  store = {};
+  const words = ['chop', 'hoe', 'weed', 'barrow', 'carry', 'load'];
+  const look = village(300, { anim: 'still', tavern: false });
+  let i = 0;
+  for (const f of look.crowds[0].values()) f.anim = words[i++ % words.length];
+  const sound = heardSound(look);
+  let peak = 0;
+  for (let k = 0; k < 20 * 60; k++) {
+    sound.update(1 / 60);
+    const w = sound.stats().families.worker;
+    peak = Math.max(peak, w.playing);
+    assert.ok(w.placed <= 4);
+  }
+  assert.ok(peak > 0 && peak <= 4, `heard, and at most four at once (${peak})`);
+  sound.setMix('work', false);
+  const n = ctx.started.length;
+  run(sound, 5);
+  assert.equal(sound.stats().working, 0, 'Crafts and hammers off: nobody is picked');
+  assert.ok(ctx.started.length - n <= 1, 'and nothing started');
+});
+
+test('every craft is synthesised, finite and inside the rails', () => {
+  for (const secs of [0.8, 0.3, 0.6, 0.25, 0.35, 0.18, 0.4]) {
+    const b = ctx.buffers.findLast((x) => x.sampleRate === 22050 && x.length === Math.floor(22050 * secs));
+    if (!b) continue;
+    const d = b.getChannelData(0);
+    let peak = 0;
+    for (const v of d) { assert.ok(Number.isFinite(v)); peak = Math.max(peak, Math.abs(v)); }
+    assert.ok(peak > 0.01 && peak <= 1, `${secs} s: peak ${peak}`);
+  }
+  const saw = ctx.buffers.findLast((x) => x.length === 22050 * 2);
+  const d = saw.getChannelData(0);
+  let worst = 0;
+  for (let i = 1; i < d.length; i++) worst = Math.max(worst, Math.abs(d[i] - d[i - 1]));
+  assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the saw loops without a click');
 });
 
 // --- 3. the noises themselves ---------------------------------------------
