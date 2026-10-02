@@ -35,6 +35,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [app-zonder-apk-bijwerken.md](app-zonder-apk-bijwerken.md) — de telefoon-app haalt een ondertekende
+  pagina-bundel op (web/ + shared/) en draait die vanaf de volgende start, met terugval op de ingebakken
+  kopie; een nieuwe APK alleen nog als de schil verandert.
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
