@@ -1062,6 +1062,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .sysmenu-body section > h3.sec:first-child { margin-top: 0; }
 .sysmenu-body #settings-body section > h3.sec:first-child { margin-top: 15px; }
 .sysmenu[data-tab="screen"] .sysmenu-body section[data-tab="screen"]:not([hidden]),
+.sysmenu[data-tab="audio"] .sysmenu-body section[data-tab="audio"]:not([hidden]),
 .sysmenu[data-tab="controls"] .sysmenu-body section[data-tab="controls"]:not([hidden]),
 .sysmenu[data-tab="island"] .sysmenu-body section[data-tab="island"]:not([hidden]),
 .sysmenu[data-tab="help"] .sysmenu-body section[data-tab="help"]:not([hidden]) { display: block; }

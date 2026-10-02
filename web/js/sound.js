@@ -32,6 +32,7 @@
 import * as THREE from 'three';
 import { nearestFirst } from 'shared/regions.mjs';
 import { makeRng, clamp } from 'shared/rng.mjs';
+import { MIX_BUSES, MIX_PARTS, busOf, clampMix, loadMix, saveMix } from './sound-mix.js';
 
 // Remembered per browser, like the avatar and the chat mode: which of them is a setting
 // of the *island* is decided by whether it lives in config.json, and how loud somebody
@@ -54,6 +55,21 @@ const GULLS = 2;
 const HAMMER_RANGE = 70;
 const GULL_RANGE = 75;
 const TAVERN_RANGE = 60;
+const BORREL_RANGE = 70;
+
+// A tavern heard from outside is heard through its door (Plans/meer-geluiden.md): its source hangs
+// at the door, and a lowpass on it is open to PUB_OPEN at the threshold and shut to PUB_SHUT a few
+// steps along the wall - the distance to the door is the whole of the occlusion, no raycast.
+const PUB_OPEN = 1200;
+const PUB_SHUT = 600;
+const PUB_OPEN_R = 5;
+// The Salty Kraken always has its crew in (Plans/piratenkroeg.md), so it hums even when nobody
+// from the village is at its door; this much of a full house.
+const KRAKEN_CREW = 0.35;
+// Glasses: two pooled voices out of doors, one inside, and a clink every few seconds where it is
+// busy - the gap shrinks with the crowd.
+const CLINKS = 2;
+const CLINK_GAP = [3, 14];
 
 // How fast a settler hammers. settler-figures.js swings the arm and the hammer off
 // `Math.sin(time * 8 + f.phase)`, so a blow lands once per 2*pi/8 seconds, and `f.phase`
@@ -260,21 +276,35 @@ function windBuffer(ctx, secs = 12) {
 // that no two syllable rates are the same and about a third of the syllables are missed
 // out. Mono, because it is a positional source and a stereo buffer would go round the
 // panner rather than through it.
-function murmurBuffer(ctx, secs = 6) {
-  const sr = BED_SR;
+//
+// The same machinery makes three rooms' worth (Plans/meer-geluiden.md, "De kroegen buiten"): the
+// village tavern, the Salty Kraken - lower, rougher, a growl now and then and boots on the boards -
+// and the borrel on the square, more voices and brighter, out in the open. The wall is no longer
+// baked in: a tavern's murmur is heard whole inside, so what muffles it outside is a filter on the
+// source that opens towards the door (steerPubs). What is baked is the top above `top` Hz, which
+// even a room you are standing in does not give you over five people talking.
+const MURMURS = {
+  // Syllables per loop rather than per second, so every voice's gating is periodic in the
+  // loop and the seam has nothing to hide. 19..29 over six seconds is 3.2 to 4.8 a second,
+  // which is about the rate of speech you cannot make out the words of.
+  village: { secs: 6, rates: [19, 21, 23, 26, 29], base: 230, step: 95, q: 2.2, top: 2200, laughs: 1, level: 0.14 },
+  kraken: { secs: 7, rates: [17, 19, 22, 25, 27, 31], base: 165, step: 70, q: 1.6, top: 1700, laughs: 2, growls: 3, stamps: 9, level: 0.15 },
+  borrel: { secs: 8, rates: [21, 23, 25, 27, 29, 33, 35, 37], base: 220, step: 60, q: 2.4, top: 3200, laughs: 3, level: 0.13 },
+};
+function* murmurSong(ctx, kind = 'village') {
+  const o = MURMURS[kind];
+  const sr = BED_SR, secs = o.secs;
   const len = Math.floor(sr * secs);
   const fade = Math.floor(sr * 0.5);
   const n = len + fade;
   const out = new Float32Array(n);
-  // Syllables per loop rather than per second, so every voice's gating is periodic in the
-  // loop and the seam has nothing to hide. 19..29 over six seconds is 3.2 to 4.8 a second,
-  // which is about the rate of speech you cannot make out the words of.
-  const RATES = [19, 21, 23, 26, 29];
-  for (let v = 0; v < RATES.length; v++) {
-    const rng = makeRng(`murmur:${v}`);
-    const k = RATES[v];
-    const f = 230 + v * 95 + rng.range(-25, 25);
-    const band = resonate(noise(n, rng), sr, f, 2.2);
+  // The village keeps the seeds it always had, so its murmur is the one the island already had.
+  const seed = (v) => (kind === 'village' ? `murmur:${v}` : `murmur:${kind}:${v}`);
+  for (let v = 0; v < o.rates.length; v++) {
+    const rng = makeRng(seed(v));
+    const k = o.rates[v];
+    const f = o.base + v * o.step + rng.range(-25, 25);
+    const band = resonate(noise(n, rng), sr, f, o.q);
     // Which syllables this voice actually says. One array of `k`, so cycle c and cycle
     // c + k say the same thing and the loop closes.
     const said = [];
@@ -288,12 +318,68 @@ function murmurBuffer(ctx, secs = 6) {
       const s = p - cycle;
       out[i] += band[i] * Math.pow(Math.sin(Math.PI * s), 1.6) * 0.9;
     }
+    yield;
   }
-  // Through the door. Everything above 900 Hz is what would let you make out a word, and
-  // a tavern you can make out words in is a tavern you are standing inside.
-  const muffled = lowpass(out, sr, 900);
-  const chs = [seam(muffled, len, fade)];
-  level(chs, 0.14);
+  // What makes a room of people a room rather than a recording of one: now and then somebody
+  // laughs - five quick "ha"s, falling - and in the Kraken somebody growls and somebody stamps.
+  // Each written well inside the loop, clear of the fold at its seam, so the loop still closes.
+  const rng = makeRng(`murmur:${kind}:room`);
+  const inside = (dur) => Math.floor(fade + rng.next() * (len - fade - dur * sr));
+  for (let l = 0; l < (o.laughs || 0); l++) {
+    const at = inside(0.9), f0 = 480 + rng.range(-60, 90);
+    const buzz = resonate(noise(Math.floor(0.9 * sr), rng), sr, f0, 3);
+    for (let h = 0; h < 5; h++) {
+      const a0 = Math.floor(h * 0.14 * sr), L = Math.floor(0.1 * sr);
+      for (let i = 0; i < L; i++) out[at + a0 + i] += buzz[a0 + i] * Math.sin(Math.PI * i / L) * (1 - h * 0.13) * 1.6;
+    }
+  }
+  for (let g = 0; g < (o.growls || 0); g++) {
+    // "Arr": a low voice with its formant sliding down, half a second.
+    const at = inside(0.6), L = Math.floor(0.55 * sr);
+    const raw = noise(L, rng);
+    for (let i = 0; i < L; i++) raw[i] *= Math.pow(Math.sin(Math.PI * i / L), 0.8);
+    const sweep = lowpass(raw, sr, (i) => 900 - 500 * (i / L));
+    const body = resonate(sweep, sr, 140 + rng.range(-15, 15), 4);
+    for (let i = 0; i < L; i++) out[at + i] += (body[i] * 2.4 + sweep[i] * 0.6);
+  }
+  for (let s = 0; s < (o.stamps || 0); s++) {
+    const at = inside(0.1), L = Math.floor(0.09 * sr);
+    let ph = 0;
+    for (let i = 0; i < L; i++) {
+      const t = i / sr;
+      ph += (45 + 25 * Math.exp(-t / 0.02)) / sr;
+      out[at + i] += Math.sin(2 * Math.PI * ph) * Math.exp(-t / 0.03) * 0.5;
+    }
+  }
+  yield;
+  const chs = [seam(lowpass(out, sr, o.top), len, fade)];
+  level(chs, o.level);
+  return intoBuffer(ctx, chs, sr);
+}
+// The village's, at build() like the rest of the first set: run straight through.
+function murmurBuffer(ctx) {
+  const gen = murmurSong(ctx, 'village');
+  for (;;) { const r = gen.next(); if (r.done) return r.value; }
+}
+
+// --- a clink ---------------------------------------------------------------
+//
+// Two glasses meeting: two high rings a fourth and a bit apart, gone in a sixth of a second - the
+// shanty's tankard (shantySong) on its own, so a tavern and the borrel can set it down whenever
+// somebody drinks. Played at a rate jittered per clink, so no two are the same glass.
+function clinkBuffer(ctx) {
+  const sr = HIT_SR;
+  const n = Math.floor(sr * 0.22);
+  const rng = makeRng('clink');
+  const src = noise(n, rng);
+  const a = resonate(src, sr, 2800, 18), b = resonate(src, sr, 4100, 22), c = resonate(src, sr, 5300, 26);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    out[i] = (a[i] + b[i] * 0.7 + c[i] * 0.35) * Math.exp(-t / 0.03) * Math.min(1, t / 0.0008);
+  }
+  const chs = [out];
+  level(chs, 0.06);
   return intoBuffer(ctx, chs, sr);
 }
 
@@ -862,6 +948,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   let nextGull = GULL_GAP[0];
   let clock = 0;                 // seconds the graph has run; the hammers keep time by it
   let fade = 0;                  // seconds since the switch was last thrown on
+  // The mix from Settings -> Audio (sound-mix.js), read once here and then kept by setMix: a
+  // slider moved while the sound is off is remembered and heard the moment it comes on.
+  const mix = loadMix();
+  let masterAt = -1;             // what the listener was last set to, so a frame sets it once
 
   // What the last snapshot asked for, and where the bed has actually got to. Two numbers
   // rather than one because the bed crossfades over seconds: walking from the middle of
@@ -894,19 +984,44 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     muffleAt = OPEN_HZ;
     applyMuffle();
 
+    // The mix (sound-mix.js, Settings -> Audio): a gain per bus on the listener's input, and a gain
+    // per part on its bus. Every voice made below is moved off the listener onto its part's node
+    // (`route`) the moment it exists. three r170's Audio connects `this.gain` to
+    // `listener.getInput()` in its constructor and never touches that connection again - its
+    // connect/disconnect/setFilters only rewire source -> filters -> getOutput(), and
+    // PositionalAudio only panner -> gain - so one move, straight after `new`, holds for good.
+    const buses = {};
+    for (const b of MIX_BUSES) {
+      buses[b] = ctx.createGain();
+      buses[b].gain.value = mix[b];
+      buses[b].connect(listener.getInput());
+    }
+    const parts = {};
+    for (const [id, , b] of MIX_PARTS) {
+      parts[id] = ctx.createGain();
+      parts[id].gain.value = mix[id] ? 1 : 0;
+      parts[id].connect(buses[b]);
+    }
+    const route = (audio, part) => {
+      audio.gain.disconnect();
+      audio.gain.connect(parts[part]);
+      return audio;
+    };
+
     const buffers = {
       surf: surfBuffer(ctx),
       wind: windBuffer(ctx),
       murmur: murmurBuffer(ctx),
       hammer: hammerBuffer(ctx),
       gull: gullBuffer(ctx),
+      clink: clinkBuffer(ctx),
     };
 
     // The bed. Not positional: it is the weather, it has no place on the island, and a
     // panner on it would swing the sea round your head every time you turned the camera.
-    const mkBed = (buffer) => {
-      const a = new THREE.Audio(listener);
-      a.setBuffer(buffer);
+    const mkBed = (buffer, part = 'sea') => {
+      const a = route(new THREE.Audio(listener), part);
+      if (buffer) a.setBuffer(buffer);
       a.setLoop(true);
       a.setVolume(0);
       const filter = ctx.createBiquadFilter();
@@ -914,7 +1029,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       filter.frequency.value = 7000;
       filter.Q.value = 0.7;
       a.setFilters([filter]);
-      a.play();
+      if (buffer) a.play();
       return { audio: a, filter };
     };
 
@@ -924,38 +1039,95 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     const anchor = new THREE.Group();
     scene.add(anchor);
 
-    const mkVoice = (buffer, { ref, rolloff, volume }) => {
+    // A voice is made at build() whether or not its buffer exists yet: a family made the first
+    // time it is wanted (`need`) hands its buffer over when it is done, and until then the voice
+    // is a panner and a gain that nothing plays through.
+    const mkVoice = (buffer, { ref, rolloff, volume, part, cut = null }) => {
       const holder = new THREE.Object3D();
-      const a = new THREE.PositionalAudio(listener);
-      a.setBuffer(buffer);
+      const a = route(new THREE.PositionalAudio(listener), part);
+      if (buffer) a.setBuffer(buffer);
       a.setRefDistance(ref);
       a.setRolloffFactor(rolloff);
       a.setDistanceModel('exponential');
       a.setVolume(volume);
+      let filter = null;
+      if (cut) {
+        filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = cut;
+        filter.Q.value = 0.7;
+        a.setFilters([filter]);
+      }
       holder.add(a);
       anchor.add(holder);
-      return { holder, audio: a };
+      return { holder, audio: a, filter };
+    };
+    const mkLoop = (opts) => {
+      const v = mkVoice(null, opts);
+      v.audio.setLoop(true);
+      return v;
     };
 
     built = {
       buffers,
+      buses,
+      parts,
+      route,
       anchor,
+      mkBed,
       sea: mkBed(buffers.surf),
       wind: mkBed(buffers.wind),
       // Sticky slots: a builder keeps the same voice for as long as they keep hammering,
       // so a blow does not jump between panners and the rhythm survives a re-pick.
       hammers: Array.from({ length: HAMMERS }, () => ({
-        ...mkVoice(buffers.hammer, { ref: 7, rolloff: 1.9, volume: 0.5 }),
+        ...mkVoice(buffers.hammer, { ref: 7, rolloff: 1.9, volume: 0.5, part: 'work' }),
         id: null, f: null, next: 0,
       })),
-      gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42 })),
-      tavern: mkVoice(buffers.murmur, { ref: 6, rolloff: 2.2, volume: 0 }),
+      gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42, part: 'birds' })),
+      // The two taverns, each its own loop hung at its door (steerPubs), and each its own bed for
+      // when you are inside it. One village tavern and one Salty Kraken an island at most.
+      pubs: {
+        village: {
+          out: mkLoop({ ref: 6, rolloff: 2.2, volume: 0, part: 'tavern', cut: PUB_SHUT }),
+          in: mkBed(null, 'tavern'),
+          buffer: 'murmur', busy: 0, at: null, clinkIn: CLINK_GAP[0],
+        },
+        kraken: {
+          out: mkLoop({ ref: 6, rolloff: 2.0, volume: 0, part: 'tavern', cut: PUB_SHUT }),
+          in: mkBed(null, 'tavern'),
+          buffer: 'kraken', busy: 0, at: null, clinkIn: CLINK_GAP[0],
+        },
+      },
+      // The glasses: two at the doors and on the square, one inside whichever room you are in.
+      clinks: Array.from({ length: CLINKS }, () => mkVoice(buffers.clink, { ref: 4, rolloff: 1.8, volume: 0.5, part: 'tavern', cut: PUB_SHUT })),
+      clinkRoom: mkBed(null, 'tavern'),
+      borrel: { ...mkLoop({ ref: 8, rolloff: 1.6, volume: 0, part: 'borrel' }), clinkIn: CLINK_GAP[0] },
+      borrelClinks: Array.from({ length: CLINKS }, () => mkVoice(buffers.clink, { ref: 5, rolloff: 1.7, volume: 0.45, part: 'borrel' })),
+      // The families made the first time they are wanted, a step a frame (need, makeMore).
+      making: {},
       // The rave's music, made the first Saturday night it is within earshot, and the Salty
       // Kraken's shanty, made the first time you come near the harbour (makeSong).
       rave: null,
       shanty: null,
     };
-    built.tavern.audio.setLoop(true);
+    built.clinkRoom.audio.setLoop(false);
+    built.clinkRoom.audio.setBuffer(buffers.clink);
+    built.clinkRoom.filter.frequency.value = 9000;
+    for (const p of Object.values(built.pubs)) p.in.filter.frequency.value = 9000;
+  }
+
+  // The families that are not made at build(): a generator per buffer, stepped once a frame by
+  // makeMore until it hands its buffer back, and started only by the first thing that wants it -
+  // so a page that never goes near the Kraken never makes its murmur. `need` answers the buffer
+  // once it exists and null until then.
+  const LAZY = {
+    kraken: (c) => murmurSong(c, 'kraken'),
+    borrel: (c) => murmurSong(c, 'borrel'),
+  };
+  function need(name) {
+    if (built.buffers[name]) return built.buffers[name];
+    if (!built.making[name] && LAZY[name]) built.making[name] = LAZY[name](ctx);
+    return null;
   }
 
   // The songs, and how each is heard: loud and whole inside, a muffled tune through the walls
@@ -988,7 +1160,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   function makeTracks(kind) {
     const el = makeElement();
     el.preload = 'auto';
-    const a = new THREE.Audio(listener);
+    const a = built.route(new THREE.Audio(listener), 'tracks');
     a.setMediaElementSource(el);
     a.setVolume(0);
     const filter = ctx.createBiquadFilter();
@@ -1036,7 +1208,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // positional, like the bed - turning your head in a hall that loud changes nothing - and the
   // loudness outside is the distance to the building, which main.js measures.
   function makeSong(kind) {
-    const a = new THREE.Audio(listener);
+    const a = built.route(new THREE.Audio(listener), 'songs');
     a.setLoop(true);
     a.setVolume(0);
     const filter = ctx.createBiquadFilter();
@@ -1049,6 +1221,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
   // A bar of each song being written a frame, until it is done (raveSong says why).
   function makeMore() {
+    for (const [name, gen] of Object.entries(built.making)) {
+      const step = gen.next();
+      if (!step.done) continue;
+      delete built.making[name];
+      built.buffers[name] = step.value;
+    }
     for (const kind of Object.keys(SONGS)) {
       const r = built[kind];
       if (!r || !r.making) continue;
@@ -1184,25 +1362,169 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     return nearestFirst(rows, [camera.position.x, camera.position.z]).slice(0, HAMMERS);
   }
 
-  // The tavern, and only ours. A hum from a neighbour's tavern sixty units of open water
-  // away is not a sound that would carry, and looking for one would mean walking every
-  // guest island's records as well. With the Salty Kraken there are two, and the murmur is
-  // one voice: it goes to whichever of them is nearer the ears.
-  let tavernAt = null;
-  function findTavern(look) {
-    tavernAt = null;
-    if (!look.records) return;
-    let best = Infinity;
+  // Whether a part is worth playing at all: switched on, and neither its bus nor the master at
+  // zero. The gain nodes already make a part that is off silent; this is what makes it free, so a
+  // muted hammer is not started six times a second into a gain of nothing.
+  const live = (part) => !!mix[part] && mix[busOf(part)] > 0 && mix.master > 0;
+
+  // The last fifth of a range is a slope to nothing, so a source leaving the pool, or the island
+  // falling behind you, fades rather than clicks off.
+  const edge = (d, range) => clamp((range - d) / (0.2 * range), 0, 1);
+  const flat = (at) => Math.hypot(at[0] - camera.position.x, at[2] - camera.position.z);
+
+  // A loop with a place: given its buffer the moment there is one, glided to `want`, started on the
+  // first moment it is wanted and stopped only once its gain has actually reached nothing - or
+  // closing time would be a cut rather than a fade.
+  function loopTo(v, buf, want) {
+    const a = v.audio;
+    if (buf && a.buffer !== buf) {
+      if (a.isPlaying) a.stop();
+      a.setBuffer(buf);
+    }
+    a.gain.gain.setTargetAtTime(want, ctx.currentTime, want > 0 ? 0.25 : 0.4);
+    if (want > 0 && a.buffer && !a.isPlaying) a.play();
+    else if (want <= 0 && a.isPlaying && a.getVolume() <= 0.001) a.stop();
+  }
+
+  // The taverns, and only ours. A hum from a neighbour's tavern sixty units of open water away is
+  // not a sound that would carry. main.js hands the doors (`look.pubs`, [{ kind, at: [x, y, z] }]:
+  // the village tavern's front, the Salty Kraken's PUB_GATE at the foot of its stair); a snapshot
+  // without them is read off the records, door = the middle of the lot.
+  function pubsOf(look) {
+    if (Array.isArray(look.pubs)) return look.pubs;
+    const out = [];
+    if (!look.records) return out;
     for (const rec of look.records.values()) {
       const type = rec.spec && rec.spec.civicType;
       if ((type !== 'tavern' && type !== 'piratetavern') || !rec.group || !rec.group.visible) continue;
-      const d = camera ? camera.position.distanceToSquared(rec.group.position) : 0;
-      if (d < best) { best = d; tavernAt = rec.group.position; }
+      const p = rec.group.position;
+      out.push({ kind: type === 'tavern' ? 'village' : 'kraken', at: [p.x, p.y || 0, p.z] });
+    }
+    return out;
+  }
+
+  // Busier in the evening, quieter in the morning: the hour is the sea's (the snapshot's `hour`).
+  const eveningOf = (hour) => (hour == null ? 1 : hour >= 18 || hour < 1 ? 1.25 : hour < 11 ? 0.75 : 1);
+
+  function steerPubs(look) {
+    const now = ctx.currentTime;
+    const sites = { village: null, kraken: null };
+    for (const p of pubsOf(look)) if (p && p.at && Object.hasOwn(sites, p.kind) && !sites[p.kind]) sites[p.kind] = p;
+    // Busy means people stood still near the door, which is what a borrel is, plus anybody stood
+    // still there the rest of the week. Walking past does not count: a street with somebody
+    // crossing it is not a full bar. One walk of the crowd for both doors, and only for a door
+    // within earshot.
+    const near = [];
+    for (const [kind, site] of Object.entries(sites)) {
+      const pub = built.pubs[kind];
+      pub.busy = 0;
+      pub.d = site ? flat(site.at) : Infinity;
+      if (site && !look.indoors && pub.d < TAVERN_RANGE) near.push([pub, site.at]);
+    }
+    if (near.length) {
+      for (const crowd of look.crowds) {
+        if (!crowd) continue;
+        for (const f of crowd.values()) {
+          if (!f.visible || f.hidden || f.anim === 'walk' || f.anim === 'haul' || f.anim === 'step'
+            || f.anim === 'carry' || f.anim === 'barrow') continue;
+          for (const [pub, at] of near) {
+            const ex = f.pos[0] - at[0], ez = f.pos[1] - at[2];
+            if (ex * ex + ez * ez < 11 * 11) pub.busy++;
+          }
+        }
+      }
+    }
+    const room = look.indoors ? look.room || null : null;
+    const evening = eveningOf(look.hour);
+    for (const [kind, pub] of Object.entries(built.pubs)) {
+      const site = sites[kind];
+      pub.at = site ? site.at : null;
+      const full = clamp(pub.busy / 9, 0, 1);
+      pub.full = kind === 'kraken' ? KRAKEN_CREW + (1 - KRAKEN_CREW) * full : full;
+      // Outside: through the door, by the distance to it.
+      let want = 0;
+      if (site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
+        want = Math.min(0.6, pub.full * 0.5 * evening) * edge(pub.d, TAVERN_RANGE);
+      }
+      pub.want = want;
+      const buf = want > 0 || pub.out.audio.isPlaying ? need(pub.buffer) : null;
+      if (pub.at) pub.out.holder.position.set(pub.at[0], pub.at[1] + 1, pub.at[2]);
+      pub.out.filter.frequency.setTargetAtTime(
+        PUB_SHUT + (PUB_OPEN - PUB_SHUT) * Math.exp(-(Number.isFinite(pub.d) ? pub.d : 99) / PUB_OPEN_R), now, 0.2);
+      loopTo(pub.out, buf, want);
+      // Last, for the reason given in fire(): a panner that is not playing ignores this.
+      if (pub.at) pub.out.holder.updateMatrixWorld(true);
+      // Inside: the room itself, unmuffled, as a bed. In the village tavern it is the room's whole
+      // sound (it has no song of its own) and goes down under the keeper's tracks when there are
+      // some; in the Kraken it sits under the jukebox.
+      const inside = room === (kind === 'village' ? 'tavern' : 'piratetavern');
+      pub.inside = inside;
+      const inWant = inside && live('tavern') ? (kind === 'village' ? (playlists.tavern ? 0.12 : 0.26) : 0.11) : 0;
+      loopTo(pub.in, inWant > 0 || pub.in.audio.isPlaying ? need(pub.buffer) : null, inWant);
+    }
+  }
+
+  // The borrel on the square (gatheringAt in shared/daylight.mjs): its own loop at the middle of
+  // the square while the village is out there, louder with every set of tables carried out and on
+  // a Friday more than at coffee time. Outside a gathering the square is quiet but for the hammers.
+  function steerBorrel(look) {
+    const b = built.borrel;
+    let want = 0;
+    const g = look.gathering, at = look.square;
+    if (g && at && !look.indoors && live('borrel')) {
+      const d = flat(at);
+      if (d < BORREL_RANGE) want = clamp(0.12 + 0.04 * (look.tables || 0), 0, 0.36) * (g.friday ? 1.3 : 1) * edge(d, BORREL_RANGE);
+    }
+    b.want = want;
+    b.friday = !!(g && g.friday);
+    b.at = at || null;
+    if (b.at) b.holder.position.set(at[0], at[1] + 1.2, at[2]);
+    loopTo(b, want > 0 || b.audio.isPlaying ? need('borrel') : null, want);
+    if (b.at) b.holder.updateMatrixWorld(true);
+  }
+
+  // A glass set down now and then wherever it is busy: at a tavern's door (through the same
+  // wall as its murmur), in the room you are in, on the square at the borrel. Per frame rather
+  // than per pick, on a timer per place whose gap shrinks as the place fills up.
+  function gap(full) {
+    return (CLINK_GAP[0] + Math.random() * (CLINK_GAP[1] - CLINK_GAP[0])) / (0.4 + full);
+  }
+  function clinks(dt) {
+    if (!live('tavern') && !live('borrel')) return;
+    for (const pub of Object.values(built.pubs)) {
+      if (!(pub.want > 0.02) && !pub.inside) continue;
+      pub.clinkIn -= dt;
+      if (pub.clinkIn > 0) continue;
+      pub.clinkIn = gap(pub.inside ? 1 : pub.full);
+      const rate = 0.85 + Math.random() * 0.4;
+      if (pub.inside) {
+        const a = built.clinkRoom.audio;
+        if (a.isPlaying) { try { a.stop(); } catch { /* it had already ended */ } }
+        a.setVolume(0.25 + Math.random() * 0.25);
+        a.setPlaybackRate(rate);
+        try { a.play(); } catch { /* the next glass will do */ }
+      } else if (pub.at) {
+        const v = built.clinks.find((c) => !c.audio.isPlaying) || built.clinks[0];
+        v.audio.setVolume((0.3 + 0.5 * pub.full) * edge(pub.d, TAVERN_RANGE));
+        v.filter.frequency.value = pub.out.filter.frequency.value * 2.5;
+        fire(v, pub.at[0] + (Math.random() - 0.5) * 1.2, pub.at[1] + 1, pub.at[2] + (Math.random() - 0.5) * 1.2, rate);
+      }
+    }
+    const b = built.borrel;
+    if (b.want > 0.02 && b.at && live('borrel')) {
+      b.clinkIn -= dt;
+      if (b.clinkIn <= 0) {
+        b.clinkIn = gap(b.friday ? 1.6 : 0.8);
+        const v = built.borrelClinks.find((c) => !c.audio.isPlaying) || built.borrelClinks[0];
+        const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 5;
+        fire(v, b.at[0] + Math.cos(a) * r, b.at[1] + 1, b.at[2] + Math.sin(a) * r, 0.85 + Math.random() * 0.4);
+      }
     }
   }
 
   function repick(look) {
-    findTavern(look);
+    steerPubs(look);
+    steerBorrel(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -1221,7 +1543,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
     // --- the hammers ---
     // Indoors nobody outside is worth hearing, and the bed is already down to a fifth.
-    const want = look.indoors ? [] : builders(look);
+    const want = look.indoors || !live('work') ? [] : builders(look);
     const wanted = new Set(want.map((r) => r.id));
     for (const slot of built.hammers) if (!wanted.has(slot.id)) { slot.id = null; slot.f = null; }
     for (const row of want) {
@@ -1236,41 +1558,6 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // stream, which is ordered and load-bearing.
       free.next = clock + ((row.f.phase || 0) / (2 * Math.PI)) / HAMMER_HZ;
     }
-
-    // --- the tavern ---
-    // Busy means people standing at the tables, which is what a borrel is, plus anybody
-    // stood still near the door the rest of the week. Walking past does not count: a
-    // street with somebody crossing it is not a full bar.
-    let busy = 0;
-    if (tavernAt && !look.indoors) {
-      const dx = tavernAt.x - camera.position.x, dz = tavernAt.z - camera.position.z;
-      if (dx * dx + dz * dz < TAVERN_RANGE * TAVERN_RANGE) {
-        for (const crowd of look.crowds) {
-          if (!crowd) continue;
-          for (const f of crowd.values()) {
-            if (!f.visible || f.hidden || f.anim === 'walk' || f.anim === 'haul' || f.anim === 'step') continue;
-            const ex = f.pos[0] - tavernAt.x, ez = f.pos[1] - tavernAt.z;
-            if (ex * ex + ez * ez < 11 * 11) busy++;
-          }
-        }
-        // A set of tables carried out for the borrel counts double: whoever is sitting at
-        // them was already counted by the loop above, and the furniture is how we know
-        // they are there for a drink rather than standing in the street.
-        busy += (look.tables || 0) * 2;
-      }
-    }
-    const hum = clamp(busy / 9, 0, 1) * 0.5;
-    if (tavernAt) built.tavern.holder.position.copy(tavernAt);
-    built.tavern.audio.setVolume(hum);
-    // Started on the first busy moment rather than at build time, so an island with no
-    // tavern - or a quiet Tuesday - runs no source at all. Stopped again only once the
-    // gain has actually reached zero, or closing time would be a cut rather than a fade.
-    if (hum > 0 && !built.tavern.audio.isPlaying) built.tavern.audio.play();
-    else if (hum <= 0 && built.tavern.audio.isPlaying && built.tavern.audio.getVolume() <= 0.001) {
-      built.tavern.audio.stop();
-    }
-    // Last, for the reason given in fire(): a panner that is not playing ignores this.
-    if (tavernAt) built.tavern.holder.updateMatrixWorld(true);
   }
 
   // A cry over the water, on its own slow clock. Daylight only: a gull calling at two in
@@ -1279,7 +1566,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     nextGull -= dt;
     if (nextGull > 0) return;
     nextGull = GULL_GAP[0] + Math.random() * (GULL_GAP[1] - GULL_GAP[0]);
-    if (look.indoors || (look.night || 0) > 0.3) return;
+    if (look.indoors || (look.night || 0) > 0.3 || !live('birds')) return;
     if (!look.quays || !look.quays.length) return;
     let best = null, bestD = GULL_RANGE * GULL_RANGE;
     for (const q of look.quays) {
@@ -1315,15 +1602,17 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     built.sea.audio.setVolume(bed.seaAt * bed.duckAt);
     built.wind.audio.setVolume(bed.windAt * bed.duckAt);
     // And the master comes up over a second and a half, because a bed that arrives all at
-    // once reads as a fault rather than as an island.
-    if (fade < 1.6) listener.setMasterVolume(Math.min(1, fade / 1.5));
+    // once reads as a fault rather than as an island - to the Master slider, not past it.
+    const master = Math.min(1, fade / 1.5) * mix.master;
+    if (master !== masterAt) { masterAt = master; listener.setMasterVolume(master); }
 
     if (look) maybeGull(look, PICK_S);
+    clinks(dt);
     makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
     for (const slot of built.hammers) {
-      if (!slot.id || clock < slot.next) continue;
+      if (!slot.id || clock < slot.next || !live('work')) continue;
       const f = slot.f;
       // A little off true, per blow: four hammers on the same machine-cut beat is a
       // factory, and the settlers' own gait is jittered for exactly the same reason.
@@ -1340,6 +1629,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (!gestured || !soundPossible()) return;
     if (!built) build();
     fade = 0;
+    masterAt = -1;
     since = PICK_S;
     nextGull = GULL_GAP[0];                     // never a gull in the first breath
     ctx.resume().catch(() => { /* the browser said no; the next gesture asks again */ });
@@ -1355,8 +1645,34 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     // The graph is kept, so switching back on is instant, and the context is suspended,
     // so a switched-off island costs no audio thread at all.
     if (listener) listener.setMasterVolume(0);
+    masterAt = -1;
     if (ctx) ctx.suspend().catch(() => { /* already gone */ });
     return on;
+  }
+
+  // Settings -> Audio. One slider or one part: kept per browser (saveMix, only what differs from
+  // the default) and heard at once - the bus or part node glides there, and the master is set on
+  // the next frame. Works with the sound off and before the graph exists: then it is only kept,
+  // and build() starts every node where the mix says.
+  function setMix(key, value) {
+    const v = clampMix(key, value);
+    if (v == null) return false;
+    mix[key] = v;
+    saveMix(key, v);
+    applyMix();
+    return true;
+  }
+  function resetMix() {
+    const fresh = loadMix(null);
+    for (const k of Object.keys(fresh)) { mix[k] = fresh[k]; saveMix(k, fresh[k]); }
+    applyMix();
+  }
+  function applyMix() {
+    masterAt = -1;
+    if (!built) return;
+    const now = ctx.currentTime;
+    for (const b of MIX_BUSES) built.buses[b].gain.setTargetAtTime(mix[b], now, 0.05);
+    for (const [id] of MIX_PARTS) built.parts[id].gain.setTargetAtTime(mix[id] ? 1 : 0, now, 0.05);
   }
 
   // The first touch of the page. Registered at construction and capturing, so it sees the
@@ -1392,6 +1708,34 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     cut: Math.round(built[kind].filter.frequency.value),
   } : null);
 
+  // Every placed voice by family, which is the ceiling `cap` counts - built once, at these
+  // lengths, and never again. And the beds: the voices with no place (the sea, the wind, the two
+  // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
+  const FAMILIES = {
+    hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS,
+  };
+  const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
+  function familyVoices() {
+    return {
+      hammer: built.hammers, gull: built.gulls,
+      pub: Object.values(built.pubs).map((p) => p.out),
+      clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks],
+    };
+  }
+  const placedVoices = () => Object.values(familyVoices()).flat();
+  const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom];
+  function families() {
+    const out = {};
+    for (const [name, voices] of Object.entries(familyVoices())) {
+      out[name] = {
+        cap: FAMILIES[name],
+        placed: voices.filter((v) => v.id || v.audio.isPlaying).length,
+        playing: voices.filter((v) => v.audio.isPlaying).length,
+      };
+    }
+    return out;
+  }
+
   const api = {
     // What the person asked for, which is what the chip draws. Not whether a note is being
     // played: the two differ for exactly as long as it takes somebody who left it on to
@@ -1409,6 +1753,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     clockOf: (kind) => (kind === 'rave' ? raveClock() : kind === 'shanty' ? shantyClock() : null),
     // Under the sea, 0..1: the master bus goes through water (see applyMuffle).
     setUnderwater,
+    // Settings -> Audio (sound-mix.js): a slider or a part, kept per browser and heard at once.
+    setMix,
+    resetMix,
+    mix: () => ({ ...mix }),
     // There is nothing to hear from a test and nothing to see in a screenshot, so the only
     // way to check the two promises this module makes - that nothing exists before the
     // gesture, and that a village of three hundred is still nine sources - is to read them
@@ -1420,12 +1768,23 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       context: ctx ? ctx.state : null,
       // The ceiling, and what is actually standing. These two are equal by construction:
       // every pool is built once, at its length, and nothing here allocates a voice again.
-      cap: HAMMERS + GULLS + 1,
+      cap: CAP,
       // How far under the sea the listener is, and where the master lowpass has been sent.
       underwater: Math.round(underwater * 100) / 100,
       muffle: Math.round(muffleAt),
-      voices: built ? built.hammers.length + built.gulls.length + 1 : 0,
-      bedSources: built ? 2 : 0,
+      voices: built ? placedVoices().length : 0,
+      bedSources: built ? flatVoices().length : 0,
+      // Per family: the ceiling, how many have a place this moment and how many are sounding.
+      families: built ? families() : null,
+      // Settings -> Audio as this module holds it, and what each bus and part node is set to.
+      mix: { ...mix },
+      buses: built ? Object.fromEntries(MIX_BUSES.map((b) => [b, Math.round(built.buses[b].gain.value * 100) / 100])) : null,
+      pubs: built ? Object.fromEntries(Object.entries(built.pubs).map(([k, p]) => [k, {
+        want: Math.round(p.want * 100) / 100, busy: p.busy, inside: !!p.inside,
+        playing: p.out.audio.isPlaying, inPlaying: p.in.audio.isPlaying, cut: Math.round(p.out.filter.frequency.value),
+      }])) : null,
+      borrel: built ? { want: Math.round(built.borrel.want * 100) / 100, playing: built.borrel.audio.isPlaying } : null,
+      making: built ? Object.keys(built.making) : [],
       // Where the bed has got to, rounded. The only way to see that the sea comes up as
       // you walk down to it and goes quiet again after dark, short of having ears.
       bed: {
@@ -1433,11 +1792,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
         wind: Math.round(bed.windAt * 1000) / 1000,
         duck: Math.round(bed.duckAt * 100) / 100,
       },
-      playing: built
-        ? built.hammers.filter((h) => h.audio.isPlaying).length
-          + built.gulls.filter((g) => g.audio.isPlaying).length
-          + (built.tavern.audio.isPlaying ? 1 : 0)
-        : 0,
+      playing: built ? placedVoices().filter((v) => v.audio.isPlaying).length : 0,
       hammering: built ? built.hammers.filter((h) => h.id).length : 0,
       // The population the last pick walked, and how much of it was at work. `crowd` may
       // be three hundred and `voices` is still seven.

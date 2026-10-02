@@ -39,7 +39,17 @@ function param(value = 0) {
     cancelScheduledValues() { return this; },
   };
 }
-const wire = () => ({ connect() {}, disconnect() {} });
+// Every node remembers what it was connected to, so a test can walk the graph from a playing
+// source to the speakers and multiply the gains on the way (heard, below): that is how the
+// Settings -> Audio buses are checked to silence what they say and nothing else.
+const wire = () => {
+  const n = {
+    outs: new Set(),
+    connect(to) { n.outs.add(to); return to; },
+    disconnect(to) { if (to === undefined) n.outs.clear(); else n.outs.delete(to); },
+  };
+  return n;
+};
 
 function fakeContext() {
   const calls = { gain: 0, panner: 0, source: 0, buffer: 0, filter: 0 };
@@ -54,20 +64,19 @@ function fakeContext() {
     // No positionX on the panner, so three.js takes its setPosition path - the one branch
     // it has that does not need an AudioParam per axis.
     listener: { setPosition() {}, setOrientation() {} },
-    createGain() { calls.gain++; return { ...wire(), gain: param(1) }; },
-    createBiquadFilter() { calls.filter++; return { ...wire(), type: '', frequency: param(0), Q: param(1) }; },
-    createPanner() { calls.panner++; return { ...wire(), setPosition() {}, setOrientation() {} }; },
+    createGain() { calls.gain++; return Object.assign(wire(), { gain: param(1) }); },
+    createBiquadFilter() { calls.filter++; return Object.assign(wire(), { type: '', frequency: param(0), Q: param(1) }); },
+    createPanner() { calls.panner++; return Object.assign(wire(), { setPosition() {}, setOrientation() {} }); },
     // The keeper's own tracks go through a media element (web/js/sound.js setPlaylists).
     createMediaElementSource() { return wire(); },
     createBufferSource() {
       calls.source++;
-      const s = {
-        ...wire(),
+      const s = Object.assign(wire(), {
         buffer: null, loop: false, loopStart: 0, loopEnd: 0,
         detune: param(0), playbackRate: param(1), onended: null,
         start() { live.add(s); started.push(s.buffer); },
         stop() { live.delete(s); },
-      };
+      });
       return s;
     },
     createBuffer(channels, length, sampleRate) {
@@ -98,6 +107,7 @@ let store = {};
 globalThis.localStorage = {
   getItem: (k) => (k in store ? store[k] : null),
   setItem: (k, v) => { store[k] = String(v); },
+  removeItem: (k) => { delete store[k]; },
 };
 globalThis.document = {
   hidden: false,
@@ -119,6 +129,23 @@ const { createSound, soundPossible } = await import('../web/js/sound.js');
 
 const ctx = fakeContext();
 THREE.AudioContext.setContext(ctx);
+
+// How loud a node comes out of the speakers: the product of every gain on the loudest path from
+// it to the destination, 0 when no path gets there.
+function heard(node, seen = new Set()) {
+  if (node === ctx.destination) return 1;
+  if (seen.has(node)) return 0;
+  seen.add(node);
+  let best = 0;
+  for (const to of node.outs || []) best = Math.max(best, heard(to, seen));
+  seen.delete(node);
+  return best * (node.gain ? node.gain.value : 1);
+}
+// The loudest of the live sources playing `buffer`, as heard; null when none is playing.
+function loudest(buffer) {
+  const playing = [...ctx.live].filter((s) => s.buffer === buffer);
+  return playing.length ? Math.max(...playing.map((s) => heard(s))) : null;
+}
 
 // --- a village to listen to ------------------------------------------------
 
@@ -205,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still seven placed voices', () => {
+test('three hundred settlers hammering at once are still thirteen placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -218,8 +245,9 @@ test('three hundred settlers hammering at once are still seven placed voices', (
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 7, '4 hammers + 2 gulls + 1 tavern');
-  assert.equal(s0.bedSources, 2, 'and the sea and the wind over them');
+  assert.equal(s0.cap, 13, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses');
+  assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
+  assert.equal(s0.bedSources, 5, 'and the sea, the wind, the two rooms and the glass in a room over them');
 
   // Half a minute of frames, with the camera walking east across the whole village, which
   // is what keeps re-deciding who the nearest four are.
@@ -232,10 +260,10 @@ test('three hundred settlers hammering at once are still seven placed voices', (
     assert.equal(s.voices, s.cap, 'nothing ever allocated a voice');
   }
   assert.ok(peak > 0, 'somebody was heard hammering');
-  assert.ok(peak <= 7, `at most the cap was ever sounding, saw ${peak}`);
-  // Nine started-and-not-stopped sources: two bed loops, and at most the seven placed
-  // voices. Three hundred settlers, half a minute, and not a tenth.
-  assert.ok(ctx.live.size - wasLive <= 9, `live sources: ${ctx.live.size - wasLive}`);
+  assert.ok(peak <= s0.cap, `at most the cap was ever sounding, saw ${peak}`);
+  // Started-and-not-stopped sources: the beds, and at most the placed voices. Three hundred
+  // settlers, half a minute, and not a tenth.
+  assert.ok(ctx.live.size - wasLive <= s0.cap + s0.bedSources, `live sources: ${ctx.live.size - wasLive}`);
 });
 
 test('a slot follows the settler in it rather than the other way round', () => {
@@ -262,8 +290,9 @@ test('a gull over the quay, rarely, and never after dark', () => {
   const sound = made(look);
   sound.setOn(true);
   dispatch('pointerdown');
-  // The gull buffer is the fifth this run made; surf, wind, murmur and hammer come first.
-  const gull = ctx.buffers[ctx.buffers.length - 1];
+  // The gull buffer is the fifth this run made; surf, wind, murmur and hammer come first, the
+  // glass after it.
+  const gull = ctx.buffers[ctx.buffers.length - 2];
   const cries = () => ctx.started.filter((b) => b === gull).length;
 
   // Two minutes of daylight. GULL_GAP is 17 to 48 seconds, so two is the floor and five
@@ -279,23 +308,30 @@ test('a gull over the quay, rarely, and never after dark', () => {
   assert.equal(cries(), byDay, 'a gull calling at night is a different bird');
 });
 
-test('the tavern hums when there is somebody at the tables, and not otherwise', () => {
+test('the tavern hums when there is somebody at its door, and not otherwise', () => {
   store = {};
-  // Nobody near the door, and the tavern sixty units off, so distance is not the reason.
+  // Nobody near the door, and nobody else either, so distance is not the reason.
   const look = village(4, { anim: 'still' });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   const sound = made(look);
   sound.setOn(true);
   dispatch('pointerdown');
-  const murmur = ctx.buffers[ctx.buffers.length - 3];  // surf, wind, murmur, hammer, gull
+  const murmur = ctx.buffers[ctx.buffers.length - 4];  // surf, wind, murmur, hammer, gull, clink
   const humming = () => ctx.started.filter((b) => b === murmur).length;
   for (let i = 0; i < 60; i++) sound.update(1 / 60);
   assert.equal(humming(), 0, 'an empty tavern runs no source at all');
 
-  // Friday half past four: the tables come out and the village walks over.
-  look.tables = 5;
+  // Evening: three of them stand about outside the door.
+  const [a, b, c] = look.crowds[0].values();
+  for (const f of [a, b, c]) { f.pos[0] = 3; f.pos[1] = 3; }
   for (let i = 0; i < 60; i++) sound.update(1 / 60);
   assert.equal(humming(), 1, 'and starts one when there is something to hear');
+  assert.equal(sound.stats().pubs.village.busy, 3);
+  // Walking past is not drinking.
+  for (const f of [a, b, c]) f.anim = 'walk';
+  for (let i = 0; i < 200; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().pubs.village.busy, 0);
+  assert.equal(sound.stats().pubs.village.playing, false, 'and it fades out and stops');
 });
 
 // The castle on a Saturday night (Plans/DONE/rave-in-het-kasteel.md). 2.6 MB of music is not
@@ -309,7 +345,7 @@ test('the rave is made the first time it is within earshot, and is one source in
   dispatch('pointerdown');
   for (let i = 0; i < 30; i++) sound.update(1 / 60);
   assert.equal(sound.stats().rave, null, 'no Saturday night, no music');
-  assert.equal(sound.stats().buffers, 5, 'and nothing synthesised for it');
+  assert.equal(sound.stats().buffers, 6, 'and nothing synthesised for it');
   assert.equal(sound.raveClock(), null);
 
   look.rave = { inside: false, dist: 12 };
@@ -381,7 +417,7 @@ test('the shanty is made near the Kraken, muffled on the quay and whole inside, 
   dispatch('pointerdown');
   for (let i = 0; i < 30; i++) sound.update(1 / 60);
   assert.equal(sound.stats().shanty, null, 'nobody near the harbour, no shanty');
-  assert.equal(sound.stats().buffers, 5, 'and nothing synthesised for it');
+  assert.equal(sound.stats().buffers, 6, 'and nothing synthesised for it');
   assert.equal(sound.shantyClock(), null);
   assert.equal(sound.clockOf('shanty'), null);
 
@@ -501,6 +537,160 @@ test('without an element to play through, tracks are ignored and the rooms keep 
   assert.equal(sound.stats().tracks, null);
 });
 
+// --- the taverns and the borrel (Plans/meer-geluiden.md, phase 1) -------
+
+// Runs `secs` of frames.
+const run = (sound, secs) => { for (let i = 0; i < secs * 60; i++) sound.update(1 / 60); };
+function heardSound(look, opts) {
+  const sound = made(look, opts);
+  sound.setOn(true);
+  dispatch('pointerdown');
+  return sound;
+}
+
+test('a tavern is heard through its door: open at the threshold, shut along the wall', () => {
+  store = {};
+  const look = village(4, { anim: 'still', tavern: false });
+  look.pubs = [{ kind: 'village', at: [2, 0, 2] }];
+  for (const f of look.crowds[0].values()) { f.pos[0] = 3; f.pos[1] = 2; }
+  const sound = heardSound(look);
+  run(sound, 1);
+  const atDoor = sound.stats().pubs.village;
+  assert.ok(atDoor.playing && atDoor.want > 0, 'four at the door: it hums');
+  // The camera stands at the origin, three units from the door. Move the door off along the wall.
+  look.pubs = [{ kind: 'village', at: [16, 0, 2] }];
+  for (const f of look.crowds[0].values()) { f.pos[0] = 17; f.pos[1] = 2; }
+  run(sound, 1);
+  const along = sound.stats().pubs.village;
+  assert.ok(atDoor.cut > along.cut + 200, `the filter opens towards the door (${atDoor.cut} Hz there, ${along.cut} Hz along)`);
+  assert.ok(along.cut >= 600 && atDoor.cut <= 1200);
+});
+
+test('the Salty Kraken hums with nobody from the village there, and has a voice of its own', () => {
+  store = {};
+  const look = village(2, { anim: 'still', tavern: false });
+  for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
+  look.pubs = [{ kind: 'kraken', at: [6, 0, 0] }];
+  const sound = heardSound(look);
+  sound.update(1 / 6);
+  assert.deepEqual(sound.stats().making, ['kraken'], 'its murmur is made the first time it is wanted, a step a frame');
+  run(sound, 1);
+  const k = sound.stats().pubs.kraken;
+  assert.ok(k.playing && k.want > 0, 'the crew are always in');
+  assert.equal(sound.stats().pubs.village.playing, false, 'and the village tavern, which is not there, is silent');
+  assert.equal(sound.stats().buffers, 7, 'one more buffer, the Kraken\'s own');
+  const kraken = ctx.buffers[ctx.buffers.length - 1];
+  assert.equal(kraken.numberOfChannels, 1);
+  assert.ok(loudest(kraken) > 0, 'and it reaches the speakers');
+});
+
+test('inside the village tavern the murmur is the room, whole, and outside it is not', () => {
+  store = {};
+  const look = village(3, { anim: 'still' });
+  const sound = heardSound(look);
+  const murmur = ctx.buffers[ctx.buffers.length - 4];
+  look.indoors = true;
+  look.room = 'tavern';
+  run(sound, 1);
+  const s = sound.stats().pubs.village;
+  assert.equal(s.inside, true);
+  assert.equal(s.inPlaying, true, 'the room murmurs');
+  assert.equal(s.playing, false, 'the door outside is not where we are');
+  assert.ok(loudest(murmur) > 0);
+  look.indoors = false;
+  look.room = null;
+  run(sound, 2);
+  assert.equal(sound.stats().pubs.village.inPlaying, false, 'out of the door the room goes');
+});
+
+test('the borrel is a loop on the square while the village is out there, made only then', () => {
+  store = {};
+  const look = village(3, { anim: 'still', tavern: false });
+  look.square = [0, 0, 4];
+  const sound = heardSound(look);
+  run(sound, 1);
+  assert.equal(sound.stats().borrel.playing, false, 'no gathering, a quiet square');
+  assert.equal(sound.stats().buffers, 6, 'and nothing made for it');
+  look.gathering = { friday: false };
+  look.tables = 2;
+  run(sound, 2);
+  const coffee = sound.stats().borrel;
+  assert.ok(coffee.playing && coffee.want > 0, 'coffee time: the square talks');
+  look.gathering = { friday: true };
+  look.tables = 5;
+  run(sound, 1);
+  assert.ok(sound.stats().borrel.want > coffee.want, 'and on a Friday with the tables out, more');
+  // Glasses on the square: the borrel's clinks.
+  const clink = ctx.buffers.findLast((b) => b.length === Math.floor(22050 * 0.22));
+  const before = ctx.started.filter((b) => b === clink).length;
+  run(sound, 30);
+  assert.ok(ctx.started.filter((b) => b === clink).length - before >= 2, 'somebody puts a glass down');
+  look.gathering = null;
+  run(sound, 3);
+  assert.equal(sound.stats().borrel.playing, false, 'back to work');
+});
+
+test('Settings -> Audio: a bus or a part at zero silences what it says, and nothing else', () => {
+  store = {};
+  const look = village(40);
+  look.pubs = [{ kind: 'village', at: [-8, 0, -6] }];
+  for (const f of look.crowds[0].values()) if (f.pos[0] < -6) f.anim = 'still';
+  const sound = heardSound(look);
+  run(sound, 3);
+  const surf = ctx.buffers[ctx.buffers.length - 6];
+  const murmur = ctx.buffers[ctx.buffers.length - 4];
+  const hammer = ctx.buffers[ctx.buffers.length - 3];
+  const now = () => ({ surf: loudest(surf), murmur: loudest(murmur), hammer: loudest(hammer) });
+  // A hammer is a one-shot, so it is heard only between blows: a second of frames finds one.
+  const hammered = () => { let best = 0; for (let i = 0; i < 60; i++) { sound.update(1 / 60); best = Math.max(best, loudest(hammer) || 0); } return best; };
+  const full = now();
+  assert.ok(full.surf > 0 && full.murmur > 0, 'the sea and the tavern, at full');
+  assert.ok(hammered() > 0, 'and a hammer');
+
+  sound.setMix('speech', 0);
+  run(sound, 0.2);
+  assert.equal(loudest(murmur) || 0, 0, 'Speech at zero: the tavern is silent');
+  assert.ok(loudest(surf) > 0, 'and the sea is not');
+  assert.ok(hammered() > 0, 'nor the hammers');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { speech: 0 }, 'only what moved is kept');
+
+  sound.setMix('speech', 1);
+  assert.equal(store['promptholm.sound.mix'], undefined, 'a slider back at full leaves nothing behind');
+  sound.setMix('work', false);
+  run(sound, 0.2);
+  assert.equal(hammered(), 0, 'Crafts and hammers off: no blow is even struck');
+  assert.ok(loudest(murmur) > 0 && loudest(surf) > 0, 'and the rest carries on');
+
+  sound.setMix('work', true);
+  // The bed is still gliding towards where the coast wants it, so measured across one frame.
+  const was = loudest(surf);
+  sound.setMix('ambience', 0.5);
+  sound.update(1 / 60);
+  const half = loudest(surf);
+  assert.ok(Math.abs(half - was * 0.5) < was * 0.05, `Ambience at a half halves the sea (${half} of ${was})`);
+  sound.setMix('master', 0);
+  run(sound, 0.2);
+  assert.equal(loudest(surf) || 0, 0, 'Master at zero: nothing at all');
+  assert.equal(loudest(murmur) || 0, 0);
+  assert.equal(sound.setMix('loudness', 3), false, 'a key that is not one of ours is refused');
+  sound.resetMix();
+  assert.equal(store['promptholm.sound.mix'], undefined, 'and the defaults keep nothing');
+});
+
+test('the mix is kept per browser and used from the first note', () => {
+  store = { 'promptholm.sound.mix': JSON.stringify({ music: 0.25, tavern: false }) };
+  const sound = made(village(3));
+  assert.equal(sound.mix().music, 0.25, 'read back before there is a graph');
+  assert.equal(sound.mix().tavern, false);
+  sound.setMix('master', 0.5);
+  assert.equal(sound.stats().built, false, 'and set without making one');
+  sound.setOn(true);
+  dispatch('pointerdown');
+  assert.equal(sound.stats().buses.music, 0.25, 'the bus starts where the mix says');
+  run(sound, 1);
+  assert.equal(sound.stats().pubs.village.playing, false, 'and a part that is off is never started');
+});
+
 // --- 3. the noises themselves ---------------------------------------------
 
 test('every voice is synthesised, finite, and inside the rails', () => {
@@ -508,10 +698,10 @@ test('every voice is synthesised, finite, and inside the rails', () => {
   const sound = made();
   sound.setOn(true);
   dispatch('pointerdown');
-  assert.equal(sound.stats().buffers, 5, 'sea, wind, murmur, hammer, gull');
+  assert.equal(sound.stats().buffers, 6, 'sea, wind, murmur, hammer, gull, clink');
 
-  // The five this run made are the tail of the fake's list; earlier tests filled the head.
-  const mine = ctx.buffers.slice(-5);
+  // The six this run made are the tail of the fake's list; earlier tests filled the head.
+  const mine = ctx.buffers.slice(-6);
   for (const buf of mine) {
     assert.ok(buf.length > 1000, 'a buffer with nothing in it is silence nobody notices');
     for (let c = 0; c < buf.numberOfChannels; c++) {
@@ -537,7 +727,7 @@ test('the bed loops without a click in it', () => {
   // point is a thump once every ten seconds. The head and the tail of a folded buffer sit
   // at the same point in the swell, so the step between the last sample and the first has
   // to be no worse than the steps inside it.
-  const [surf, wind] = ctx.buffers.slice(-5);
+  const [surf, wind, murmur] = ctx.buffers.slice(-6);
   for (const buf of [surf, wind]) {
     assert.equal(buf.numberOfChannels, 2, 'the bed has width; the placed voices are mono');
     for (let c = 0; c < buf.numberOfChannels; c++) {
@@ -548,6 +738,12 @@ test('the bed loops without a click in it', () => {
       assert.ok(seam <= worst, `the loop point jumps ${seam}, worse than any step inside (${worst})`);
     }
   }
+  // And the tavern's murmur, which is a loop too, and mono because it has a place.
+  assert.equal(murmur.numberOfChannels, 1);
+  const d = murmur.getChannelData(0);
+  let worst = 0;
+  for (let i = 1; i < d.length; i++) worst = Math.max(worst, Math.abs(d[i] - d[i - 1]));
+  assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the murmur loops without a click');
 });
 
 test('nothing in here is fetched, loaded or decoded', () => {

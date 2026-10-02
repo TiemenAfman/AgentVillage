@@ -342,7 +342,7 @@ Harde plafonds, zoals nu: array-lengtes, geen budget dat geteld wordt. Per tier 
 
 Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst eerst.
 
-1. **Het tabblad Audio, de bussen, de kroegen buiten en de borrel.** Eerst de mix-bussen en het
+1. ✅ **Het tabblad Audio, de bussen, de kroegen buiten en de borrel.** Eerst de mix-bussen en het
    tabblad, omdat elke volgende fase ze nodig heeft en ze klein zijn. Dan bouwen op wat er al is (de
    murmur-loop, `busy`, de liederen): de bron naar de deur, een filter dat opengaat bij de deur, een
    tweede bron voor de Kraken met een eigen stem, clinks, het geroezemoes binnen in de dorpskroeg, en

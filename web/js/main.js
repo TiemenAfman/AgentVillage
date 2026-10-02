@@ -7931,6 +7931,9 @@ Everything is copied and checked first; the island then starts again there. The 
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    // Settings -> Audio: sound.js keeps the mix (sound-mix.js) and plays it at once.
+    onSoundMix: (key, value) => { if (state.sound) state.sound.setMix(key, value); },
+    onSoundMixReset: () => { if (state.sound) state.sound.resetMix(); },
     // Which code this is, for the foot of the menu: the islander's release (or checkout) from
     // /api/hello; on a phone, what the pack baked in, if anything.
     buildLabel: () => {
@@ -8667,14 +8670,52 @@ function debounce(fn, msv) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), msv); };
 }
 
+// The doors sound.js hangs the taverns' murmur at (Plans/meer-geluiden.md, "De kroegen buiten"):
+// the village tavern's front, half a lot forward of its middle along its own facing, and the Salty
+// Kraken's baked `anchor.door` at the foot of its stair (PUB_GATE), through the record's own group
+// so a turned or lifted pub is heard from where it stands. Only ours, and only standing ones.
+const _door = new THREE.Vector3();
+function pubDoors() {
+  const out = [];
+  for (const [id, kind] of [['civic:tavern', 'village'], ['civic:piratetavern', 'kraken']]) {
+    const rec = state.byId.get(id);
+    if (!rec || !rec.group.visible) continue;
+    const anchor = rec.built && rec.built.anchors && rec.built.anchors.door;
+    if (anchor) _door.set(anchor[0], anchor[1], anchor[2]);
+    else _door.set(0, 0, 1.4);
+    rec.group.updateMatrixWorld();
+    rec.group.localToWorld(_door);
+    out.push({ kind, at: [_door.x, _door.y, _door.z] });
+  }
+  return out;
+}
+// The middle of the square, where the borrel's murmur is: the town's centre cell on our ground.
+function squareCentre() {
+  const town = state.village && state.village.island && state.village.island.town;
+  if (!town || !town.centre || !state.terrain) return null;
+  const [x, z] = state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return [x, groundAt(x, z), z];
+}
+
 // Everything web/js/sound.js is ever told about the island, taken six times a second. One
 // function rather than a dozen setters, because what sound wants is a picture of the place
 // and this is the only file that has one - and because it keeps the whole of sound's reach
 // into main.js on one screen, where it can be read.
 function soundSnapshot() {
+  const cal = worldNow();
+  const hour = currentHour();
+  const gathering = gatheringAt(cal.weekday, hour);
   return {
     night: state.world ? state.world.state.night : 0,
     indoors: !!state.inside,
+    // Which room, when indoors: a tavern you are standing in is heard whole (sound.js steerPubs).
+    room: state.inside ? state.inside.room : null,
+    hour,
+    // The doors the taverns are heard through, and the square the borrel is on while there is one
+    // (gatheringAt, the sea's clock and the sea's list, like the tables the frame carries out).
+    pubs: pubDoors(),
+    gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
+    square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands
     // answers "sea" instead of the height of the nearer coast - the OPEN_SEA rule in
     // shared/regions.mjs, which is exactly the question the bed is asking.

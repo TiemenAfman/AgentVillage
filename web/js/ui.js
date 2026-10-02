@@ -9,6 +9,7 @@ import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } 
 import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 import { NOCLIP_KEY } from './noclip.js';
+import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -878,6 +879,23 @@ export function createUI(handlers) {
       .map((k) => `<button class="chip${state.graphics.detail === k ? ' on' : ''}" data-detail="${k}">${DETAIL_LABELS[k]}</button>`).join('')}</div>`
       + `<p class="muted" style="margin:4px 0 0">${has} Auto shows HD on a full-strength machine.</p></div>`;
   }
+  // Settings -> Audio (sound-mix.js, Plans/meer-geluiden.md): the four sliders and a switch per
+  // part, drawn from the one table and the mix as this browser keeps it. The Sound chip above them
+  // (index.html) is still the one on/off switch; these only say how loud. A move goes one way, to
+  // main.js and on to sound.setMix, which keeps it and plays it.
+  function audioSection() {
+    const m = loadMix();
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    const slider = ([key, label]) => `<div class="setting-row"><label>${label} <span class="muted" id="mix-${key}-value">${pct(m[key])}</span></label>`
+      + `<input type="range" min="0" max="1" step="${MIX_STEP}" value="${m[key]}" data-mix="${key}"></div>`;
+    return '<div><h3 class="sec">Volume</h3>'
+      + `<p class="muted" style="margin:0 0 12px">Ambience is the island itself - sea, wind, birds, the crafts, the bell; Music the rave, the shanties and your own tracks; Speech the greetings and the murmur of the taverns and the borrel.</p>`
+      + MIX_LEVELS.map(slider).join('')
+      + '<h3 class="sec">What you hear</h3>'
+      + `<div class="chips wrap">${MIX_PARTS.map(([key, label]) => `<button class="chip${m[key] ? ' on' : ''}" data-mixpart="${key}" aria-pressed="${!!m[key]}">${label}</button>`).join('')}</div>`
+      + `<div class="chips wrap" style="margin-top:9px"><button class="chip" data-mix-reset="1">Everything at full</button></div>`
+      + `<p class="muted" style="margin-top:9px">This browser remembers it. The sliders work with the sound off too; you hear them when it comes on.</p></div>`;
+  }
   function renderSettings() {
     const chosen = NAMEPLATES.find(([k]) => k === signMode);
     // One section per tab of the menu (sysmenu.js); the Island one only for the keeper, whose
@@ -932,10 +950,24 @@ export function createUI(handlers) {
         ? 'On: <kbd>`</kbd> flies a free camera through walls, ground and water (<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, <kbd>Space</kbd>/<kbd>E</kbd> up, <kbd>Shift</kbd>/<kbd>Q</kbd> down, the wheel for speed); <code>__noclip</code> in the console.'
         : 'Off. A free-flying camera for looking at the graphics, also on with <code>?noclip</code> in the address.'}</p>`;
     el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
+      + `<section data-tab="audio">${audioSection()}</section>`
       + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
+    el('settings-body').querySelectorAll('[data-mix]').forEach((r) => r.addEventListener('input', () => {
+      if (handlers.onSoundMix) handlers.onSoundMix(r.dataset.mix, Number(r.value));
+      const out = document.getElementById(`mix-${r.dataset.mix}-value`);
+      if (out) out.textContent = `${Math.round(Number(r.value) * 100)}%`;
+    }));
+    el('settings-body').querySelectorAll('[data-mixpart]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onSoundMix) handlers.onSoundMix(b.dataset.mixpart, !loadMix()[b.dataset.mixpart]);
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-mix-reset]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onSoundMixReset) handlers.onSoundMixReset();
+      renderSettings();
+    }));
     el('settings-body').querySelectorAll('[data-buildmode]').forEach((b) => b.addEventListener('click', () => {
       buildOn = !buildOn;
       try { if (buildOn) localStorage.setItem(BUILD_KEY, '1'); else localStorage.removeItem(BUILD_KEY); } catch { /* kept for this page only */ }
