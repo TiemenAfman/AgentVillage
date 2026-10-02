@@ -587,6 +587,11 @@ async function handle(req, res) {
       // the 'sea' event tells every page the mode anyway.
       seaMode: seaModeOf(),
       seaOpen: seaModeOf() === 'join' && isOpenSea(SEA().url),
+      // Whether this page's keeper may set the world's clock: only on a sea this islander
+      // raised itself (single or host), and only for the keeper - everybody else, a visitor
+      // on a hosted sea included, sees the sea's time and cannot touch it
+      // (Plans/zeetijd-van-de-host.md, POST /api/sea-time).
+      seaHost: who.role === 'islander' && hostsSea(),
       token: who.role === 'islander' ? ISLAND_TOKEN : null,
       // The key to the sea, for the keeper's own page only.
       //
@@ -1235,6 +1240,18 @@ if (req.url === '/api/command' && req.method === 'POST') {
     // Everyone's page is told where to look now, including a visitor's.
     broadcast(() => ({ sea: sea.mode === 'join' ? sea.url : null, mode: sea.mode }), 'sea');
     return json(res, 200, { ok: true, sea: { mode: sea.mode, url: sea.url } });
+  }
+
+  // The host setting the world's clock: `{ hour }` (0..24) or `{ real: true }`. Keeper-only by
+  // not being on PUBLIC_API, and refused unless the sea is our own: a keeper who joined
+  // somebody else's sea is a guest there, and the open sea has no host at all. Straight onto
+  // the sea object - it runs in this process - so the sea grows no door for it; the sea then
+  // tells every joined page, ours included (Plans/zeetijd-van-de-host.md).
+  if (p === '/api/sea-time' && req.method === 'POST') {
+    if (!hostsSea()) return json(res, 403, { error: 'only whoever hosts the sea sets its clock' });
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    try { return json(res, 200, { ok: true, clock: ownSea.setTime(body || {}) }); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
   }
 
   // Hands a card to a settler and starts the agent that works it.
@@ -1904,6 +1921,9 @@ function islandBundle() {
 
 // Which world this island is in: a sea of its own (single, host) or somebody else's (join).
 function seaModeOf() { return SEA().mode === 'host' || SEA().mode === 'join' ? SEA().mode : 'single'; }
+// Whether the sea this island is in is the one it raised itself - the only sea whose clock
+// its keeper may set.
+function hostsSea() { return seaModeOf() !== 'join' && !!ownSea; }
 
 // Where this page should look for the world.
 //

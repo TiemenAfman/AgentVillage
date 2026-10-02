@@ -53,6 +53,7 @@ import { createNameplate } from './nameplate.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
+import { openSeaClock } from './sea-clock.js';
 import { createAnimalPanel } from './animal-dossier.js';
 import { createAnimalBatch, createAnimalView } from './animal-view.js';
 import { createHerds } from './herds.js';
@@ -2156,6 +2157,22 @@ function onRefusedBySea(m) {
 // open sea (seaQuietNotice). A phone has no hello, only the sea it was packed with.
 function learnSea(hello) {
   state.seaWords = { url: hello.sea || null, mode: hello.seaMode || null, open: !!hello.seaOpen };
+  // Whether this keeper raised the sea and so may set its clock (serve.mjs `hostsSea`). Asked
+  // again on every followSea, so leaving for somebody else's sea takes it away. Never on a
+  // phone, which has no islander and no sea of its own.
+  state.seaHost = !STANDALONE && !!hello.seaHost;
+}
+
+// The host's pick from the clock chip, to the islander that runs the sea. Nothing changes
+// here until the sea says so: the broadcast `{t:'clock'}` reaches this page like every other.
+async function setSeaTime(want) {
+  try {
+    const r = await mine('/api/sea-time', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(want) });
+    const body = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((body && body.error) || `the island answered ${r.status}`);
+  } catch (e) {
+    state.ui.toast(`The sea's clock stays as it was: ${escapeHtml(e.message || String(e))}`);
+  }
 }
 function onSeaStatus(status) {
   if (status === 'on') { state.ui.setSeaQuiet(null); return; }
@@ -4116,10 +4133,12 @@ addEventListener('keydown', (e) => {
 // Walk is Enter and not W: a W that is still held when the feet take over would walk on at once
 // (and W A S D E are the feet's, see Plans/DONE/esc-menu-en-knoppenbalk.md). T (say) is
 // islandchat.js's own, from either mode; the chip's badge is its `data-key` in index.html.
-// H is the clock's hour preview (a lens on this screen, the sea's clock is not touched).
+// The clock chip has no key: it is the sea's clock, not a lens on this screen, and only the
+// sea's host may set it, from the chip itself (Plans/zeetijd-van-de-host.md;
+// tests/sea-clock-chip.test.mjs fails on a key here).
 const ORBIT_KEYS = {
   i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
-  b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn', h: 'clock-chip',
+  b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn',
 };
 // On foot the quest log is a toast (side panels are closed while walking), on its own key
 // (keybinds.js `quests`, default K) - checked here and not in walk.js, which has no use for it.
@@ -4907,6 +4926,9 @@ function onFleetNews(world, one, clock) {
   if (clock && Number.isFinite(clock.now)) {
     state.seaSkewMs = clock.now - Date.now();
     if (Number.isFinite(clock.tz)) state.seaTz = clock.tz;
+    // How far the host has set the sea's clock off the real time, for the chip's words only:
+    // `now` above already carries it. A sea from before this says nothing, which is zero.
+    state.seaShiftMs = Number.isFinite(clock.shift) ? clock.shift : 0;
   }
   // In at last - so the next refusal is news again rather than a repeat.
   if (world) { lastRefusal = null; state.fleet = world.islands || []; rehomeFrom(state.fleet); syncFleet(state.fleet); return; }
@@ -7512,10 +7534,15 @@ function frame(nowMs) {
   if (state.ghost) state.ghost.update(dt);
   // Hover labels and a ghost fight over the same pointer, and the ghost wins.
   if (state.mode === 'orbit' && !(state.ghost && state.ghost.holding())) updateLabels();
-  // A lens (`?hour`, the clock chip, the chronicle) changes this screen only, so the chip
-  // says so - nobody should screenshot "the world at noon" while it is evening out there.
-  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season,
-    state.hourOverride != null || state.chronicle.t != null);
+  // A lens (`?hour`, the chronicle) changes this screen only, so the chip says so - nobody
+  // should screenshot "the world at noon" while it is evening out there. The chip itself is
+  // no lens: it is the sea's clock, and only the sea's host may set it, for everybody
+  // (Plans/zeetijd-van-de-host.md).
+  state.ui.setClock(hour, state.world ? state.world.season() : calendar.season, {
+    lens: state.hourOverride != null || state.chronicle.t != null,
+    host: !!state.seaHost,
+    shifted: !!state.seaShiftMs,
+  });
   drawAgentBars(eye);
   questFrame(nowMs);
   if (state.hunt) state.hunt.frame(dt, nowMs / 1000);
@@ -7904,10 +7931,12 @@ Everything is copied and checked first; the island then starts again there. The 
     },
     onLive: () => setLiveMode(),
     onSpeed: (s) => { state.chronicle.speed = s; },
-    onToggleTime: () => {
-      const hours = [null, 7, 12, 18.5, 22];
-      const i = hours.indexOf(state.hourOverride);
-      state.hourOverride = hours[(i + 1) % hours.length];
+    // The sea's clock. Only its host gets anything from a click: the hours to set the whole
+    // sea to (web/js/sea-clock.js). Everybody else - a visitor, a phone, a keeper on somebody
+    // else's sea - gets nothing, on purpose: the time is the sea's, never one screen's.
+    onClockChip: (chip) => {
+      if (!state.seaHost) return;
+      openSeaClock({ anchor: chip, shifted: !!state.seaShiftMs, pick: setSeaTime });
     },
     onToggleWalk: () => (state.mode === 'walk' ? exitWalk() : enterWalk()),
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),

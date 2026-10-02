@@ -233,7 +233,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           // and the page draws what it always drew. The clock rides along: which moment it
           // is and whose afternoon that is, so two players in different time zones do not
           // see two different skies over the same water.
-          if (m.world) onWorld(m.world, null, { now: m.now, tz: m.tz });
+          if (m.world) onWorld(m.world, null, { now: m.now, tz: m.tz, shift: m.shift });
           // And what the sky over that world is doing. Silence here is clear weather and
           // nothing else: an island on its own says nothing, and so does a sea older than
           // the weather. Neither is a version mismatch and neither is worth a word to
@@ -280,7 +280,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // The clocks going forward or back, twice a year. The same two numbers the welcome
         // carries, handed to the same place, so a page connected across the switch does not
         // keep last week's offset until it next reconnects - see lib/seaclock.mjs.
-        case 'clock': onWorld(null, null, { now: m.now, tz: m.tz }); break;
+        case 'clock': onWorld(null, null, { now: m.now, tz: m.tz, shift: m.shift }); break;
         // Somebody else's settlers. `fr` says who the numbers mean and comes once per
         // island; `f` is where they have got to and comes on the beat. Passed through as
         // they arrived - lib/settlerwire.mjs is the only thing that knows the shape, and

@@ -116,7 +116,10 @@ export function createUI(handlers) {
   // to the avatar and the chat mode.
   el('sound-btn').addEventListener('click', () => handlers.onSound && handlers.onSound());
   el('reset-btn').addEventListener('click', () => handlers.onOverview());
-  el('clock-chip').addEventListener('click', () => handlers.onToggleTime());
+  // The sea's clock. No lens any more - nobody previews another hour on their own screen
+  // (Plans/zeetijd-van-de-host.md); main.js opens the host's popover and does nothing for
+  // anybody else.
+  el('clock-chip').addEventListener('click', () => handlers.onClockChip && handlers.onClockChip(el('clock-chip')));
   // A keeper's words can be tapped away: on a phone there is no Esc to press.
   el('speech').addEventListener('click', () => handlers.onSpeechTap && handlers.onSpeechTap());
 
@@ -305,16 +308,23 @@ export function createUI(handlers) {
     el('live-text').textContent = mode === 'off' ? 'Offline' : mode === 'replay' ? 'Replay' : 'Live';
   }
 
-  function setClock(hour, seasonName, lens = false) {
+  // `lens`: a developer's `?hour` or the chronicle is showing another moment on this screen.
+  // `host`: this keeper raised the sea and may set its clock. `shifted`: the host has.
+  function setClock(hour, seasonName, { lens = false, host = false, shifted = false } = {}) {
     const h = Math.floor(hour), m = Math.floor((hour - h) * 60);
     const chip = el('clock-chip');
     // Called every frame: once() keeps an unchanged chip from being rewritten (and its hover with it).
-    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${lens ? ' · preview' : ''}`;
+    const tag = lens ? ' · preview' : shifted ? ' · set by host' : '';
+    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${seasonName[0].toUpperCase()}${seasonName.slice(1)}${tag}`;
     once('clock-chip', `${h >= 6 && h < 20 ? CLOCK_SUN : CLOCK_MOON}<span>${text}</span>`);
     chip.classList.toggle('lens', lens);
-    chip.title = lens
-      ? 'A preview of the hour on this screen only - the sea keeps its own clock. Click (or H) for the next hour, and back to live after 22:00.'
-      : 'Time of day on the island. Click (or H) to preview 07:00, 12:00, 18:30 or 22:00 on this screen only.';
+    chip.classList.toggle('host', host);
+    const title = lens
+      ? 'Another moment on this screen only (?hour or the chronicle) - the sea keeps its own clock.'
+      : host
+        ? `The sea's clock, which everybody on your sea follows.${shifted ? ' You have set it off the real time.' : ''} Click to set it.`
+        : `The sea's clock - the same hour for everybody on this sea.${shifted ? ' Its host has set it.' : ''}`;
+    if (chip.title !== title) chip.title = title;
   }
 
   // --- now building --------------------------------------------------------

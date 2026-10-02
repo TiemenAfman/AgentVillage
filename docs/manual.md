@@ -1116,7 +1116,10 @@ anything that stood: they are new plots and nothing else.
 | The school | 25 apprentices: it is where they are taught |
 | Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
-The day and night follow the real clock; the season follows the month. Windows light up
+The day and night follow the sea's clock - the real time, unless whoever hosts the sea has
+set it to another hour from the clock at the top right, for everybody on it (the chip then
+says *set by host*). Nobody else can change it, and a sea that restarts is back on the real
+time. The season follows the month. Windows light up
 after dark, campfires flicker, fireflies come out, and the lighthouse throws a beam you can
 watch turn — including somebody else's, sweeping across the water from their island to
 yours, or flashing at the edge of sight from one too far away to make out.
