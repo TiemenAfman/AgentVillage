@@ -157,7 +157,7 @@
 </div>
 
 <!-- The menu behind Esc and the ☰ (web/js/sysmenu.js), and it is the settings: one window,
-     four tabs (Plans/DONE/esc-menu-en-knoppenbalk.md, "Tweede ronde"). The chips in it that stood in
+     five tabs (Plans/DONE/esc-menu-en-knoppenbalk.md, "Tweede ronde"; Audio from Plans/meer-geluiden.md). The chips in it that stood in
      the bar before are moved rather than copied, so ui.js still finds them by id. What ui.js
      draws itself (#settings-body) comes in sections carrying their own data-tab; the stylesheet
      shows only the open tab's. -->
@@ -167,6 +167,7 @@
       <h2 id="sysmenu-title">Promptholm</h2>
       <div class="sysmenu-tabs" role="tablist">
         <button class="sysmenu-tab" role="tab" data-tabbtn="screen">This screen</button>
+        <button class="sysmenu-tab" role="tab" data-tabbtn="audio">Audio</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="controls">Controls</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="island" id="tab-island" hidden>Island</button>
         <button class="sysmenu-tab" role="tab" data-tabbtn="help">Help</button>
@@ -175,10 +176,12 @@
       <p class="muted sysmenu-build" id="sysmenu-build"></p>
     </nav>
     <div class="sysmenu-body">
-      <section data-tab="screen">
+      <section data-tab="audio">
         <h3 class="sec">Sound</h3>
         <div class="chips wrap"><button class="chip" id="sound-btn" title="The sea, the wind and the village" aria-pressed="false">Sound</button></div>
         <p class="muted">The sea where there is sea, the wind where there is not, and the village round you. This browser remembers it.</p>
+      </section>
+      <section data-tab="screen">
         <h3 class="sec">Show on the island</h3>
         <div class="chips wrap" role="group" aria-label="Show on the island">
           <button class="chip on" data-filter="code" aria-pressed="true" title="Claude Code sessions: show or hide their houses">Code</button>

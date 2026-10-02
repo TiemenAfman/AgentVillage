@@ -2116,6 +2116,30 @@ every count it read as headbanging; 44.1 kHz, 13.5 MB, made only near the pub) -
 `PUBLIC_API`), played whole one after the other through a media element main.js hands in (`makeElement`), so
 sound.js itself still fetches nothing. `audio/` is gitignored for a worktree, whose HOME is the checkout.
 
+**Every voice in sound.js sits on a part, every part on a bus** ([Plans/meer-geluiden.md](Plans/meer-geluiden.md)).
+`web/js/sound-mix.js` is the one table (`MIX_LEVELS`: master + the buses ambience/music/speech; `MIX_PARTS`:
+`[id, label, bus]`, sea, birds, work, bell, tavern, borrel, greetings, songs, tracks...), read by ui.js to
+draw Settings -> **Audio** (its own tab, `data-tab="audio"`; the Sound chip moved there and is still the one
+on/off switch, `promptholm.sound`) and by sound.js to build one GainNode per bus on `listener.getInput()`
+and one per part on its bus. A new voice goes through `route(audio, part)` straight after `new
+THREE.Audio`/`PositionalAudio`: three r170 connects `audio.gain` to the listener in the constructor and
+never touches that output again, so the one move holds. Master is `listener.setMasterVolume` (times the
+switch-on fade). Kept per browser in `promptholm.sound.mix`, only what differs from the defaults, written
+only by `sound.setMix` (main.js `onSoundMix` from ui.js); a part that is off is also not *fired*
+(`live(part)`), so muting is free. A family of buffers beyond the first six (surf, wind, murmur, hammer,
+gull, clink) is a generator in `LAZY`, started by `need(name)` the first time something within reach wants
+it and stepped a frame at a time by `makeMore` - `stats().buffers` and `making` say which exist.
+What sound hears comes only through `soundSnapshot()` in main.js; a drawing module never calls sound, it
+exposes a cheap read-only **cue** (a counter, a clock, a state word) that the snapshot collects and sound
+diffs against what it saw last pick; the first sighting of a cue only remembers (a smithy that has
+struck 312 times is not 312 blows). The taverns are heard at their *doors* (`pubDoors`: the village
+tavern's front, the Kraken's baked `anchor.door`), through a lowpass that opens towards the door. The
+church bell strikes on the sea's clock (`clock` = `worldNow().hour`, null under a lens) and only on a
+turn of the minute this page saw itself, less than `BELL_SKIP_MIN` forward. Greetings are decided by
+`web/js/greetings.js` (pure; a settler's pitch from `<id>:voice`, never `<id>:walk`). What counts as
+sea for the bed is *wide* water (`seaAt`: water 5 units off on three sides) - depth cannot tell a
+river bed from the dredged harbour, both are -0.55.
+
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
 `hamletEntrances` in `web/js/hamlet-sign-placement.js`) finds where the road network crosses the edge of

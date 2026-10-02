@@ -157,6 +157,9 @@ export function attachSmithy(group, at, material, yaw = 0) {
     time: 0, heat: 1, rng: makeRng('smithy'),
     // 'work' at the anvil, 'in' walking to the door, 'inside', 'out' walking back.
     mode: 'work', walked: 0, blowAt: 0, blows: 0, struck: false, walkPhase: 0,
+    // Blows that have landed, ever: a cue for web/js/sound.js (Plans/meer-geluiden.md), which hears
+    // the anvil ring when this goes up. Counted at the impact, not the swing, and never reset.
+    hits: 0,
     coalsBase: new Float32Array(coals.geometry.attributes.aEmissive.array),
     pathLength: pathLength(G.path),
   };
@@ -238,6 +241,7 @@ export function updateSmithy(smithy, dt) {
   }
   if (working && !smithy.struck && smithy.swungAt !== undefined && t - smithy.swungAt >= IMPACT_S) {
     smithy.struck = true;
+    smithy.hits++;
     const [ax, ay, az] = G.anvil;
     spawn(smithy.sparks, 7, (c) => {
       c.life = rng.range(0.25, 0.5);

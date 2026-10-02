@@ -132,7 +132,8 @@ import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
-import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
+import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
+import { lavaLines } from './lava.js';
 import { installPageKeys } from './page-keys.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
@@ -7960,6 +7961,9 @@ Everything is copied and checked first; the island then starts again there. The 
       if (state.ghost && state.ghost.holding()) state.ghost.drop();
     },
     onSound: () => state.ui.setSound(state.sound.toggle()),
+    // Settings -> Audio: sound.js keeps the mix (sound-mix.js) and plays it at once.
+    onSoundMix: (key, value) => { if (state.sound) state.sound.setMix(key, value); },
+    onSoundMixReset: () => { if (state.sound) state.sound.resetMix(); },
     // Which code this is, for the foot of the menu: the islander's release (or checkout) from
     // /api/hello; on a phone, what the pack baked in, if anything.
     buildLabel: () => {
@@ -8696,14 +8700,279 @@ function debounce(fn, msv) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), msv); };
 }
 
+// The doors sound.js hangs the taverns' murmur at (Plans/meer-geluiden.md, "De kroegen buiten"):
+// the village tavern's front, half a lot forward of its middle along its own facing, and the Salty
+// Kraken's baked `anchor.door` at the foot of its stair (PUB_GATE), through the record's own group
+// so a turned or lifted pub is heard from where it stands. Only ours, and only standing ones.
+const _door = new THREE.Vector3();
+function pubDoors() {
+  const out = [];
+  for (const [id, kind] of [['civic:tavern', 'village'], ['civic:piratetavern', 'kraken']]) {
+    const rec = state.byId.get(id);
+    if (!rec || !rec.group.visible) continue;
+    const anchor = rec.built && rec.built.anchors && rec.built.anchors.door;
+    if (anchor) _door.set(anchor[0], anchor[1], anchor[2]);
+    else _door.set(0, 0, 1.4);
+    rec.group.updateMatrixWorld();
+    rec.group.localToWorld(_door);
+    out.push({ kind, at: [_door.x, _door.y, _door.z] });
+  }
+  return out;
+}
+// Where you stand and which way you face, for a greeting: on foot, outside, on our own island, not
+// at a tiller or on a deck. walk.js faces along (sin yaw, cos yaw).
+function walkerForGreeting() {
+  if (state.mode !== 'walk' || state.inside || state.guest || !state.walk) return null;
+  const w = state.walk.state;
+  if (!w || !w.pos || w.vehicle || w.deck) return null;
+  return { x: w.pos.x, z: w.pos.z, fx: Math.sin(w.yaw || 0), fz: Math.cos(w.yaw || 0) };
+}
+// The workshops sound.js listens to (Plans/meer-geluiden.md, phase 4), as cues and nothing else:
+// the smith's and the butcher's `hits` (a blow that landed), the baker's `phase`, the sawmill's
+// `cutting` - each read off the module that draws it, which knows nothing of sound - and where in
+// the world the work happens, through the workshop's own root. Only ours, and only within reach.
+const CRAFT_CUE_R = 90;
+function craftCues() {
+  const out = [];
+  const near = (rec) => rec.group.visible && rec.group.position.distanceToSquared(camera.position) < CRAFT_CUE_R * CRAFT_CUE_R;
+  const at = (root, local) => {
+    _door.set(local[0], local[1], local[2]);
+    root.updateMatrixWorld();
+    root.localToWorld(_door);
+    return [_door.x, _door.y, _door.z];
+  };
+  for (const rec of state.byId.values()) {
+    if (rec.smithy && near(rec)) {
+      const s = rec.smithy;
+      out.push({ kind: 'smith', id: rec.id, at: at(s.root, s.G.anvil), hits: s.hits || 0 });
+    }
+    if (rec.butcher && near(rec)) {
+      const s = rec.butcher;
+      out.push({ kind: 'butcher', id: rec.id, at: at(s.root, [s.G.work[0], 0.8, s.G.work[2]]), hits: s.hits || 0 });
+    }
+    if (rec.baker && near(rec)) {
+      const b = rec.baker;
+      out.push({ kind: 'baker', id: rec.id, at: at(b.root, [b.work[0], 0.8, b.work[2]]), phase: b.mode === 'work' ? b.phase : 'away' });
+    }
+    if (rec.sawmill && near(rec)) {
+      const m = rec.sawmill;
+      out.push({ kind: 'saw', id: rec.id, at: at(m.root, m.G.blade), cutting: !!m.cutting });
+    }
+  }
+  return out;
+}
+// The rounds sound.js listens to (Plans/meer-geluiden.md, phase 8), as cues their modules keep for
+// themselves: the timber wagon's stage and its horse (timberrun.js where, on the sea's clock), the
+// gold run's cart while it is under way and the pit's bar count (goldrun.js focus/bars), and every
+// fisherman's `bites` with where he stands and where his float lands (three units out, +z of him).
+const _fish = new THREE.Vector3();
+function roundCues() {
+  const out = { wagon: null, gold: null, bars: null, pit: null, fishers: [] };
+  try {
+    const w = state.timberRun && state.timberRun.where ? state.timberRun.where(timeNow()) : null;
+    if (w && w.horse) out.wagon = { stage: w.stage, at: [w.horse[0], groundAt(w.horse[0], w.horse[1]), w.horse[1]] };
+  } catch { /* the wagon is cosmetic: no sound sooner than a broken frame */ }
+  if (state.goldRun) {
+    const at = state.goldRun.focus();
+    if (at) out.gold = { at: [at[0], groundAt(at[0], at[1]), at[1]], moving: state.goldRun.busy() };
+    out.bars = state.goldRun.bars();
+    const pit = state.byId.get('civic:goldpit');
+    if (pit && pit.group.visible) out.pit = pit.group.position.toArray();
+  }
+  for (const rec of state.byId.values()) {
+    const f = rec.fisher;
+    if (!f || !f.figure || !f.figure.visible) continue;
+    f.figure.getWorldPosition(_fish);
+    const at = [_fish.x, _fish.y, _fish.z];
+    f.figure.localToWorld(_fish.set(0, 0, 3));
+    out.fishers.push({ id: rec.id, at, float: [_fish.x, 0, _fish.z], bites: f.bites || 0 });
+  }
+  return out;
+}
+// Our rivers as points in the scene, once per terrain (terrain.rivers are courses of grid cells),
+// and the nearest of a list to the ears within a reach - which is all the river's sound needs.
+const RIVER_EAR = 34;
+let riverOf = null, riverPts = [];
+function riverPoints() {
+  const t = state.terrain;
+  if (!t) return [];
+  if (t !== riverOf) {
+    riverOf = t;
+    riverPts = [];
+    for (const course of t.rivers || []) for (const [gx, gz] of course) {
+      const [x, z] = t.cellWorld(gx, gz);
+      riverPts.push([x, 0, z]);
+    }
+  }
+  return riverPts;
+}
+function nearestOn(points, reach) {
+  let best = null, bestD = reach * reach;
+  const cx = camera.position.x, cz = camera.position.z;
+  for (const p of points) {
+    const d = (p[0] - cx) ** 2 + (p[2] - cz) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+// The volcano, when one of the islands we have drawn is it: its middle (the crater) and its lava
+// as points in the scene, worked out once per region from lava.js's own lines.
+const lavaOf = new Map();
+function volcanoNear() {
+  for (const g of state.guests) {
+    const r = g.region;
+    const t = r && r.terrain;
+    if (!t || !t.lavaFlows || !t.lavaFlows.length || !r.origin) continue;
+    const [ox, oz] = r.origin;
+    if (Math.hypot(ox - camera.position.x, oz - camera.position.z) > 360) continue;
+    let pts = lavaOf.get(r.id);
+    if (!pts || pts.terrain !== t) {
+      pts = [];
+      for (const { points } of lavaLines(t)) for (const [x, z] of points) pts.push([x + ox, 1, z + oz]);
+      pts.terrain = t;
+      lavaOf.set(r.id, pts);
+    }
+    return { crater: [ox, 30, oz], lava: nearestOn(pts, 44) };
+  }
+  return { crater: null, lava: null };
+}
+// The story animals sound.js listens to: our own, as animal-view.js draws them (act word, place).
+function storyAnimals() {
+  if (!state.homeHerd || !state.homeHerd.animals) return [];
+  const out = [];
+  for (const a of state.homeHerd.animals()) {
+    if (!a || !a.visible || !a.pos) continue;
+    out.push({ id: a.id, species: a.species, act: a.act, at: [a.pos[0], a.y || 0, a.pos[1]] });
+  }
+  return out;
+}
+// The ambient animals near the ears (herds.js, home hangs at the scene's origin so its positions
+// are the scene's), the stable's three, and nothing past HERD_EAR.
+const HERD_EAR = 50;
+const _herdAt = new THREE.Vector3();
+function herdsNear() {
+  const out = [];
+  const cx = camera.position.x, cz = camera.position.z;
+  if (state.ambient && state.ambient.animals) {
+    for (const a of state.ambient.animals()) {
+      if (!a.drawn || Math.hypot(a.x - cx, a.z - cz) > HERD_EAR) continue;
+      out.push({ id: a.id, kind: a.kind, at: [a.x, a.y, a.z] });
+    }
+  }
+  const stable = state.byId.get('civic:stable');
+  if (stable && stable.stable && stable.group.visible && stable.stable.root.visible) {
+    stable.stable.animals.forEach((a, i) => {
+      a.object.getWorldPosition(_herdAt);
+      if (Math.hypot(_herdAt.x - cx, _herdAt.z - cz) > HERD_EAR) return;
+      out.push({ id: `stable:${i}`, kind: a.kind || (i === 0 ? 'horse' : 'chicken'), at: [_herdAt.x, _herdAt.y, _herdAt.z] });
+    });
+  }
+  return out;
+}
+// How much forest is round a point, 0..1, for the wind in the leaves and the birds: the trunks of
+// world.js solids() (circles with no top: a boulder has one) counted once per landscape into cells
+// of WOOD_CELL, and read as the 3 x 3 cells round the point. Built again only when solids() hands
+// back a new list (a tree felled, a reseed), never per pick.
+const WOOD_CELL = 8;
+let woodGrid = null, woodFrom = null;
+function woodsAt(x, z) {
+  const solids = state.world && state.world.solids ? state.world.solids() : null;
+  if (!solids) return 0;
+  if (solids !== woodFrom) {
+    woodFrom = solids;
+    woodGrid = new Map();
+    for (const s of solids) {
+      if (!(s.r > 0) || s.top) continue;
+      const k = `${Math.floor(s.x / WOOD_CELL)},${Math.floor(s.z / WOOD_CELL)}`;
+      woodGrid.set(k, (woodGrid.get(k) || 0) + 1);
+    }
+  }
+  const cx = Math.floor(x / WOOD_CELL), cz = Math.floor(z / WOOD_CELL);
+  let n = 0;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) n += woodGrid.get(`${cx + dx},${cz + dz}`) || 0;
+  return Math.min(1, n / 36);
+}
+// How many of our buildings stand within ten units: the roofs the rain is heard on.
+function roofsNear(x, z) {
+  let n = 0;
+  for (const rec of state.byId.values()) {
+    if (!rec.group.visible) continue;
+    const dx = rec.group.position.x - x, dz = rec.group.position.z - z;
+    if (dx * dx + dz * dz < 100 && ++n >= 12) break;
+  }
+  return n;
+}
+function lighthouseAt() {
+  const rec = state.byId.get('civic:lighthouse');
+  if (!rec || !rec.group.visible) return null;
+  const p = rec.group.position;
+  return [p.x, p.y, p.z];
+}
+// Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
+// about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
+// rings from its own tower. The bake has no anchor for it.
+function chapelBell() {
+  const rec = state.byId.get('civic:chapel');
+  if (!rec || !rec.group.visible) return null;
+  _door.set(0, 1.45, 0.53);
+  rec.group.updateMatrixWorld();
+  rec.group.localToWorld(_door);
+  return { at: [_door.x, _door.y, _door.z] };
+}
+// The middle of the square, where the borrel's murmur is: the town's centre cell on our ground.
+function squareCentre() {
+  const town = state.village && state.village.island && state.village.island.town;
+  if (!town || !town.centre || !state.terrain) return null;
+  const [x, z] = state.terrain.cellWorld(town.centre[0], town.centre[1]);
+  return [x, groundAt(x, z), z];
+}
+
 // Everything web/js/sound.js is ever told about the island, taken six times a second. One
 // function rather than a dozen setters, because what sound wants is a picture of the place
 // and this is the only file that has one - and because it keeps the whole of sound's reach
 // into main.js on one screen, where it can be read.
 function soundSnapshot() {
+  const cal = worldNow();
+  const hour = currentHour();
+  const gathering = gatheringAt(cal.weekday, hour);
   return {
     night: state.world ? state.world.state.night : 0,
     indoors: !!state.inside,
+    // Which room, when indoors: a tavern you are standing in is heard whole (sound.js steerPubs).
+    room: state.inside ? state.inside.room : null,
+    hour,
+    // The doors the taverns are heard through, and the square the borrel is on while there is one
+    // (gatheringAt, the sea's clock and the sea's list, like the tables the frame carries out).
+    pubs: pubDoors(),
+    // The church bell in the chapel's tower, and the sea's clock it strikes by - null under a lens
+    // (?hour, the chronicle), whose hour is not the one every other page is on.
+    bell: chapelBell(),
+    clock: state.chronicle.t != null || state.hourOverride != null ? null : cal.hour,
+    // Who may say hello (web/js/greetings.js): our own settlers, and where you stand and face when
+    // you are on foot on our island - a hull's deck and a guest island's street are not ours.
+    ours: state.settlers ? state.settlers.figures() : null,
+    walker: walkerForGreeting(),
+    // The workshops' cues (craftCues): what sound diffs to hear a blow land or the oven open.
+    crafts: craftCues(),
+    // The sky's word (rain on the roofs, a fog that dulls everything), how much wood is round the
+    // ears, how many roofs the rain is drumming on, and the lighthouse a foghorn sounds from.
+    sky: skyWord(),
+    woods: woodsAt(camera.position.x, camera.position.z),
+    roofs: roofsNear(camera.position.x, camera.position.z),
+    lighthouse: lighthouseAt(),
+    // Our story animals as drawn (their act words are the cue), and the ambient flocks and the
+    // stable's horse and hens near the ears, each with where it is in the scene.
+    animals: storyAnimals(),
+    herds: herdsNear(),
+    // Water and fire: the nearest point of one of our rivers, the volcano's middle and the nearest
+    // point of its lava when it is within reach, and the bubbles the divers have breathed out.
+    river: nearestOn(riverPoints(), RIVER_EAR),
+    ...volcanoNear(),
+    bubbled: state.seaLife && state.seaLife.emitted ? state.seaLife.emitted() : null,
+    // The rounds' cues (roundCues): the timber wagon on the sea's clock, the gold run, the fisherman.
+    rounds: roundCues(),
+    gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
+    square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands
     // answers "sea" instead of the height of the nearer coast - the OPEN_SEA rule in
     // shared/regions.mjs, which is exactly the question the bed is asking.
