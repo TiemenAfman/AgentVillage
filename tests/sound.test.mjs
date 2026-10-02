@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still twenty-eight placed voices', () => {
+test('three hundred settlers hammering at once are still thirty-two placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,7 +245,7 @@ test('three hundred settlers hammering at once are still twenty-eight placed voi
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 28, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn');
+  assert.equal(s0.cap, 32, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
   assert.equal(s0.bedSources, 10, 'and the sea, the wind, the two rooms, the glass and the bell in a room, and the four of the hour and the sky');
 
@@ -1027,6 +1027,48 @@ test('an owl at night in the woods, a cuckoo by day in them, neither out in the 
   run(sound, 400);
   assert.ok(shots(0.9) >= 1, 'a cuckoo by day');
   assert.equal(shots(2.2), owls, 'and no owl at noon');
+});
+
+// --- the animals (phase 6) -------------------------------------------------
+
+test('a story animal is heard when its act changes to one with a sound, once', () => {
+  store = {};
+  const hen = { id: 'animal:hen', species: 'chicken', act: 'peck', at: [3, 0, 0] };
+  const look = inland({ hour: 12, animals: [hen] });
+  const sound = heardSound(look);
+  run(sound, 1);
+  const pecks = () => shots(0.4);
+  assert.equal(pecks(), 0, 'pecking when we arrived is not news');
+  hen.act = 'still';
+  run(sound, 1);
+  hen.act = 'peck';
+  run(sound, 1);
+  assert.equal(pecks(), 1, 'she starts pecking: we hear it');
+  run(sound, 5);
+  assert.equal(pecks(), 1, 'and only once per start');
+  hen.act = 'walk';
+  run(sound, 4);
+  assert.equal(pecks(), 1, 'walking has no sound of its own');
+});
+
+test('a field of three hundred sheep is four voices and a bleat every few seconds at most', () => {
+  store = {};
+  const herds = Array.from({ length: 300 }, (_, i) => ({ id: `sheep:${i}`, kind: 'sheep', at: [(i % 20) - 10, 0, Math.floor(i / 20) - 7] }));
+  const look = inland({ hour: 12, herds });
+  const sound = heardSound(look);
+  let peak = 0;
+  const baa = () => shots(0.9);
+  for (let i = 0; i < 60 * 60; i++) { sound.update(1 / 60); peak = Math.max(peak, sound.stats().families.animal.playing); }
+  const n = baa();
+  assert.ok(peak <= 4, `four voices at most (${peak})`);
+  assert.ok(n >= 4 && n <= 25, `bleating, but not a racket: ${n} in a minute`);
+  look.night = 1;
+  run(sound, 60);
+  assert.equal(baa(), n, 'a field at night is asleep');
+  look.night = 0;
+  look.indoors = true;
+  run(sound, 60);
+  assert.equal(baa(), n, 'and not heard from a room');
 });
 
 // --- 3. the noises themselves ---------------------------------------------

@@ -8731,6 +8731,39 @@ function craftCues() {
   }
   return out;
 }
+// The story animals sound.js listens to: our own, as animal-view.js draws them (act word, place).
+function storyAnimals() {
+  if (!state.homeHerd || !state.homeHerd.animals) return [];
+  const out = [];
+  for (const a of state.homeHerd.animals()) {
+    if (!a || !a.visible || !a.pos) continue;
+    out.push({ id: a.id, species: a.species, act: a.act, at: [a.pos[0], a.y || 0, a.pos[1]] });
+  }
+  return out;
+}
+// The ambient animals near the ears (herds.js, home hangs at the scene's origin so its positions
+// are the scene's), the stable's three, and nothing past HERD_EAR.
+const HERD_EAR = 50;
+const _herdAt = new THREE.Vector3();
+function herdsNear() {
+  const out = [];
+  const cx = camera.position.x, cz = camera.position.z;
+  if (state.ambient && state.ambient.animals) {
+    for (const a of state.ambient.animals()) {
+      if (!a.drawn || Math.hypot(a.x - cx, a.z - cz) > HERD_EAR) continue;
+      out.push({ id: a.id, kind: a.kind, at: [a.x, a.y, a.z] });
+    }
+  }
+  const stable = state.byId.get('civic:stable');
+  if (stable && stable.stable && stable.group.visible && stable.stable.root.visible) {
+    stable.stable.animals.forEach((a, i) => {
+      a.object.getWorldPosition(_herdAt);
+      if (Math.hypot(_herdAt.x - cx, _herdAt.z - cz) > HERD_EAR) return;
+      out.push({ id: `stable:${i}`, kind: a.kind || (i === 0 ? 'horse' : 'chicken'), at: [_herdAt.x, _herdAt.y, _herdAt.z] });
+    });
+  }
+  return out;
+}
 // How much forest is round a point, 0..1, for the wind in the leaves and the birds: the trunks of
 // world.js solids() (circles with no top: a boulder has one) counted once per landscape into cells
 // of WOOD_CELL, and read as the 3 x 3 cells round the point. Built again only when solids() hands
@@ -8822,6 +8855,10 @@ function soundSnapshot() {
     woods: woodsAt(camera.position.x, camera.position.z),
     roofs: roofsNear(camera.position.x, camera.position.z),
     lighthouse: lighthouseAt(),
+    // Our story animals as drawn (their act words are the cue), and the ambient flocks and the
+    // stable's horse and hens near the ears, each with where it is in the scene.
+    animals: storyAnimals(),
+    herds: herdsNear(),
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

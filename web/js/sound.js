@@ -101,6 +101,10 @@ const OWL_GAP = [70, 200];
 const CUCKOO_GAP = [50, 140];
 const FOGHORN_GAP = [40, 90];
 const HORN_RANGE = 260;
+// The animals (phase 6): four voices, nearest first, and never two calls in ANIMAL_GAP on the island.
+const ANIMALS = 4;
+const ANIMAL_RANGE = 40;
+const ANIMAL_GAP = 2.5;
 // Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
 // hello more than twice at once.
 const GREETERS = 2;
@@ -719,6 +723,94 @@ const HOUR_SHOTS = {
     }
     return lowpass(out, sr, 700);
   }, 0.12),
+};
+
+// --- the animals ------------------------------------------------------------
+//
+// Plans/meer-geluiden.md, phase 6: the story animals on their act words (a hen pecks and scratches,
+// a goat butts, a sparrow chirps and takes off) and the ambient flocks and herds of herds.js on
+// slow clocks of their own (a sheep, a cow, a hen, a duck), and the stable's horse. A voice that is
+// a voice is a buzz at its pitch through two formants (`call`); the rest is noise and envelopes,
+// like the crafts. Honest note, as for the gull: a cow is about the limit of what this does well.
+function call(n, sr, rng, { f0, f1 = f0, form, vib = 0, vibHz = 6, trem = 0, tremHz = 8, breath = 0.1, at = 0, len = n }) {
+  const raw = new Float32Array(n);
+  const L = Math.min(len, n - at);
+  let ph = 0;
+  for (let i = 0; i < L; i++) {
+    const k = i / L, t = i / sr;
+    ph += (f0 + (f1 - f0) * k) * (1 + vib * Math.sin(2 * Math.PI * vibHz * t)) / sr;
+    const env = Math.pow(Math.sin(Math.PI * k), 0.6) * (1 - trem + trem * (0.5 + 0.5 * Math.sin(2 * Math.PI * tremHz * t)));
+    raw[at + i] = ((2 * (ph - Math.floor(ph)) - 1) + (rng.next() * 2 - 1) * breath) * env;
+  }
+  const out = new Float32Array(n);
+  for (const [f, q, g] of form) add(out, resonate(raw, sr, f, q).map((v) => v * g));
+  for (let i = 0; i < n; i++) out[i] += raw[i] * 0.05;
+  return out;
+}
+const ANIMAL_SHOTS = {
+  baa: (c) => shot(c, 0.9, 'baa', (n, sr, rng) => call(n, sr, rng, { f0: 260, f1: 230, form: [[700, 4, 1], [1700, 6, 0.5]], vib: 0.04, vibHz: 7, trem: 0.6, tremHz: 9 }), 0.08),
+  moo: (c) => shot(c, 1.5, 'moo', (n, sr, rng) => {
+    // "m" closed, then "oo" opening: the formant slides up a little as the mouth opens.
+    const a = call(n, sr, rng, { f0: 125, f1: 98, form: [[300, 3, 1], [750, 5, 0.4]], vib: 0.01, breath: 0.05 });
+    return lowpass(a, sr, 1400);
+  }, 0.09),
+  cluck: (c) => shot(c, 0.55, 'cluck', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    for (const at of [0, 0.16, 0.3]) add(out, call(n, sr, rng, { f0: 340, f1: 300, form: [[950, 5, 1], [2600, 7, 0.3]], at: Math.floor(at * sr), len: Math.floor(0.07 * sr), breath: 0.25 }));
+    return out;
+  }, 0.07),
+  quack: (c) => shot(c, 0.55, 'quack', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    for (const at of [0, 0.26]) add(out, call(n, sr, rng, { f0: 380, f1: 260, form: [[1100, 4, 1], [2500, 6, 0.6]], at: Math.floor(at * sr), len: Math.floor(0.19 * sr), breath: 0.35 }));
+    return out;
+  }, 0.08),
+  bleat: (c) => shot(c, 0.7, 'bleat', (n, sr, rng) => call(n, sr, rng, { f0: 420, f1: 360, form: [[850, 4, 1], [2100, 6, 0.6]], vib: 0.05, vibHz: 8, trem: 0.75, tremHz: 13 }), 0.07),
+  snort: (c) => shot(c, 0.6, 'snort', (n, sr, rng) => {
+    const r = lowpass(noise(n, rng), sr, 900);
+    for (let i = 0; i < n; i++) { const t = i / sr; r[i] *= Math.exp(-t / 0.18) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 32 * t)); }
+    return r;
+  }, 0.07),
+  peck: (c) => shot(c, 0.4, 'peck', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    for (const at of [0, 0.13, 0.24]) {
+      const i0 = Math.floor(at * sr);
+      const tap = burst(Math.floor(sr * 0.03), sr, rng, 2200, 3, 0.004, 1);
+      for (let i = 0; i < tap.length; i++) out[i0 + i] += tap[i];
+    }
+    return out;
+  }, 0.04),
+  scratch: (c) => shot(c, 0.4, 'scratch', (n, sr, rng) => {
+    const r = highpass(lowpass(noise(n, rng), sr, 5000), sr, 1500);
+    for (let i = 0; i < n; i++) { const t = i / sr; r[i] *= (t % 0.13) < 0.07 ? Math.sin(Math.PI * (t % 0.13) / 0.07) : 0; }
+    return r;
+  }, 0.035),
+  chirp: (c) => shot(c, 0.35, 'chirp', (n, sr) => {
+    const out = new Float32Array(n);
+    for (const [at, f0, f1] of [[0, 3600, 5200], [0.14, 3900, 4800]]) {
+      const i0 = Math.floor(at * sr), L = Math.floor(0.06 * sr);
+      let ph = 0;
+      for (let i = 0; i < L; i++) { ph += (f0 + (f1 - f0) * i / L) / sr; out[i0 + i] += Math.sin(2 * Math.PI * ph) * Math.sin(Math.PI * i / L); }
+    }
+    return out;
+  }, 0.05),
+  bonk: (c) => shot(c, 0.3, 'bonk', (n, sr, rng) => add(ring(n, sr, [[150, 1, 0.07], [260, 0.4, 0.04]]), burst(n, sr, rng, 700, 1.5, 0.02, 0.6)), 0.09),
+  flap: (c) => shot(c, 0.4, 'flap', (n, sr, rng) => {
+    const r = lowpass(noise(n, rng), sr, 1800);
+    for (let i = 0; i < n; i++) { const t = i / sr; const k = (t % 0.085) / 0.085; r[i] *= Math.pow(Math.sin(Math.PI * k), 2) * Math.exp(-t / 0.25); }
+    return r;
+  }, 0.05),
+};
+// What each animal says, and when. A story animal's act word that changes to one of these is heard
+// once; an ambient animal calls on its own clock, `every` seconds on average.
+const ACT_SOUNDS = {
+  chicken: { peck: 'peck', scratch: 'scratch', dust: 'scratch', fly: 'flap' },
+  goat: { butt: 'butt', nudge: 'bleat', nibble: null },
+  sparrow: { chirp: 'chirp', fly: 'flap', hop: null, steal: 'chirp' },
+};
+const ACT_ALIAS = { butt: 'bonk' };
+const CALLS = {
+  sheep: { buf: 'baa', every: 45 }, cow: { buf: 'moo', every: 70 }, chicken: { buf: 'cluck', every: 28 },
+  duck: { buf: 'quack', every: 35 }, goat: { buf: 'bleat', every: 55 }, horse: { buf: 'snort', every: 60 },
 };
 
 // --- a clink ---------------------------------------------------------------
@@ -1479,6 +1571,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       },
       rare: mkVoice(null, { ref: 14, rolloff: 1.0, volume: 0.6, part: 'birds' }),
       horn: mkVoice(null, { ref: 30, rolloff: 0.6, volume: 0.8, part: 'weather' }),
+      // The animals' voices.
+      animals: Array.from({ length: ANIMALS }, () => mkVoice(null, { ref: 4, rolloff: 1.7, volume: 0.6, part: 'birds' })),
       // Who says hello: two voices with a place, given each greeting's phrase as it is said.
       greeters: Array.from({ length: GREETERS }, () => ({ ...mkVoice(null, { ref: 3, rolloff: 1.6, volume: 0.7, part: 'greetings' }), id: null })),
       // The families made the first time they are wanted, a step a frame (need, makeMore).
@@ -1511,6 +1605,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     rain: (c) => rainSong(c, 'rain'),
     roofs: (c) => rainSong(c, 'roofs'),
     ...Object.fromEntries(Object.entries(HOUR_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+    ...Object.fromEntries(Object.entries(ANIMAL_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
     ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
   // A buffer that is quick to make, made in one step all the same, so every family goes through
@@ -2013,6 +2108,52 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (sky === 'fog' && look.lighthouse) need('foghorn');
   }
 
+  // The animals. Story animals (look.animals: { id, species, act, at }) by their act word, diffed like
+  // a cue - a word that changed to one with a sound is heard once, and the first sighting only
+  // remembers; the ambient flocks and the stable (look.herds: { id, kind, at }) each on a clock of
+  // its own, started at a random point so a field of sheep does not bleat in step. Nearest first,
+  // at most ANIMALS voices and one call every ANIMAL_GAP seconds on the island. Daylight only for
+  // the ambient ones: a field at night is asleep.
+  const lastAct = new Map();
+  const nextCall = new Map();
+  let calledAt = -Infinity;
+  function animalSay(buf, at, volume, rate) {
+    if (!buf || clock - calledAt < ANIMAL_GAP) return false;
+    calledAt = clock;
+    const v = built.animals.find((s) => !s.audio.isPlaying) || built.animals[0];
+    if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
+    v.audio.setVolume(volume);
+    fire(v, at[0], at[1] + 0.3, at[2], rate);
+    return true;
+  }
+  function steerAnimals(look) {
+    if (look.indoors || !live('birds')) return;
+    const story = (look.animals || []).filter((a) => a && a.at && flat(a.at) < ANIMAL_RANGE)
+      .sort((a, b) => flat(a.at) - flat(b.at));
+    for (const a of story) {
+      const was = lastAct.get(a.id);
+      lastAct.set(a.id, a.act);
+      const words = ACT_SOUNDS[a.species] || {};
+      const word = words[a.act];
+      if (word) need(ACT_ALIAS[word] || word);
+      if (was === undefined || was === a.act || !word) continue;
+      animalSay(built.buffers[ACT_ALIAS[word] || word], a.at, 0.6 * edge(flat(a.at), ANIMAL_RANGE), 0.92 + Math.random() * 0.16);
+    }
+    if (lastAct.size > 64) lastAct.clear();
+    if ((look.night || 0) > 0.5) return;
+    const herd = (look.herds || []).filter((a) => a && a.at && CALLS[a.kind] && flat(a.at) < ANIMAL_RANGE)
+      .sort((a, b) => flat(a.at) - flat(b.at)).slice(0, 12);
+    for (const a of herd) {
+      const c = CALLS[a.kind];
+      need(c.buf);
+      if (!nextCall.has(a.id)) nextCall.set(a.id, clock + Math.random() * c.every);
+      if (clock < nextCall.get(a.id)) continue;
+      nextCall.set(a.id, clock + c.every * (0.6 + Math.random() * 0.8));
+      animalSay(built.buffers[c.buf], a.at, 0.55 * edge(flat(a.at), ANIMAL_RANGE), 0.9 + Math.random() * 0.2);
+    }
+    if (nextCall.size > 256) nextCall.clear();
+  }
+
   // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against
   // what it saw last pick. A counter that went up is a blow that landed (the smith's and the
   // butcher's `hits`); a word that changed is a step of the work (the baker's `phase`); `cutting` is
@@ -2173,6 +2314,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     greet(look);
     steerCrafts(look);
     steerWorkers(look);
+    steerAnimals(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -2222,9 +2364,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (nextGull > 0) return;
     nextGull = GULL_GAP[0] + Math.random() * (GULL_GAP[1] - GULL_GAP[0]);
     if (look.indoors || (look.night || 0) > 0.3 || !live('birds')) return;
-    if (!look.quays || !look.quays.length) return;
+    // Over the gulls herds.js has wheeling about, when there are some within reach; else over the
+    // nearest quay head, as it always was.
+    const spots = [...(look.herds || []).filter((a) => a && a.kind === 'gull' && a.at).map((a) => [a.at[0], a.at[2]]), ...(look.quays || [])];
+    if (!spots.length) return;
     let best = null, bestD = GULL_RANGE * GULL_RANGE;
-    for (const q of look.quays) {
+    for (const q of spots) {
       const dx = q[0] - camera.position.x, dz = q[1] - camera.position.z;
       const d = dx * dx + dz * dz;
       if (d < bestD) { bestD = d; best = q; }
@@ -2371,7 +2516,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, worker: WORKERS, rare: 2,
+    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -2381,6 +2526,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
       craft: [...built.crafts, built.saw], worker: built.workers, rare: [built.rare, built.horn],
+      animal: built.animals,
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();

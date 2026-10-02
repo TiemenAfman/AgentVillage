@@ -363,9 +363,11 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    zonder `top`) in cellen van 8 en wordt pas opnieuw geteld als `solids()` een nieuwe lijst geeft;
    het weer komt als woord uit weather.js `skyWord()`; `roofsNear` telt de gebouwen binnen tien. De
    koekoek staat voor "een vogel in het bos overdag"; een merel zit in het ochtendkoor.
-6. **Dieren.** De verhaaldieren op hun act-woorden, de kuddes van herds.js op hun eigen trage klok,
+6. ✅ **Dieren.** De verhaaldieren op hun act-woorden, de kuddes van herds.js op hun eigen trage klok,
    het paard van de stal en de meeuwen op de plekken van de ambient meeuwen in plaats van alleen
-   boven de kade.
+   boven de kade. *Gebouwd*: de act-woorden zijn de cue (`homeHerd.animals()`), een kudde roept op
+   een eigen klok per dier, nooit 's nachts, en op het eiland hooguit één roep per 2,5 s; de hoeven
+   van het paard horen bij de houtkar (fase 8).
 7. **Water en vuur.** De rivier en de trechter, de vulkaan (rommel en borrel), en het onderwater-bed
    met bellen.
 8. **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
