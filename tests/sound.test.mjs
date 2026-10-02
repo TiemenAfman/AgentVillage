@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still thirty-two placed voices', () => {
+test('three hundred settlers hammering at once are still thirty-four placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,9 +245,9 @@ test('three hundred settlers hammering at once are still thirty-two placed voice
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 32, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals');
+  assert.equal(s0.cap, 34, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals + a river and the lava');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
-  assert.equal(s0.bedSources, 10, 'and the sea, the wind, the two rooms, the glass and the bell in a room, and the four of the hour and the sky');
+  assert.equal(s0.bedSources, 13, 'and the sea, the wind, the two rooms, the glass and the bell in a room, the four of the hour and the sky, the rumble, the sea from below and its bubbles');
 
   // Half a minute of frames, with the camera walking east across the whole village, which
   // is what keeps re-deciding who the nearest four are.
@@ -1069,6 +1069,76 @@ test('a field of three hundred sheep is four voices and a bleat every few second
   look.indoors = true;
   run(sound, 60);
   assert.equal(baa(), n, 'and not heard from a room');
+});
+
+// --- the sea is heard at the sea -------------------------------------------
+
+test('the middle of the island does not hear the surf, even with a river through it', () => {
+  store = {};
+  // Land everywhere but a river 0.55 deep running past the camera, and open sea from x = 60.
+  const look = inland();
+  look.depthAt = (x, z) => (x > 60 ? -2.5 : Math.abs(z - 3) < 2 ? -0.55 : 1.5);
+  const sound = heardSound(look);
+  run(sound, 15);
+  const middle = sound.stats().bed.sea;
+  assert.ok(middle < 0.01, `a river is not a coastline (${middle})`);
+  look.depthAt = (x) => (x > 1 ? -2.5 : 1.5);       // standing at the waterline
+  run(sound, 15);
+  assert.ok(sound.stats().bed.sea > 0.1, `on the beach the sea is the loudest thing (${sound.stats().bed.sea})`);
+});
+
+// --- water and fire (phase 7) ----------------------------------------------
+
+test('a river babbles where you stand by it, and not across the island', () => {
+  store = {};
+  const look = inland({ river: [4, 0, 2] });
+  const sound = heardSound(look);
+  run(sound, 1);
+  assert.equal(sound.stats().families.water.playing, 1, 'by the river');
+  look.river = null;
+  run(sound, 3);
+  assert.equal(sound.stats().families.water.playing, 0, 'and gone when you walk off');
+});
+
+test('the volcano rumbles louder towards its crater', () => {
+  store = {};
+  const look = inland({ crater: [250, 30, 0] });
+  const sound = heardSound(look);
+  run(sound, 10);
+  const far = sound.stats().hours.rumble;
+  look.crater = [40, 30, 0];
+  run(sound, 12);
+  const near = sound.stats().hours.rumble;
+  assert.ok(far > 0 && near > far * 3, `${far} far off, ${near} at its foot`);
+  look.lava = [5, 1, 0];
+  run(sound, 1);
+  assert.ok(sound.stats().families.water.playing >= 1, 'and the lava bubbles beside you');
+});
+
+test('under the sea the beds from above go down and the sea\'s own comes up, with the bubbles', () => {
+  store = {};
+  const look = inland({ hour: 6, night: 0.2, woods: 1, bubbled: 0 });
+  const sound = heardSound(look);
+  run(sound, 10);
+  const dry = sound.stats().hours;
+  assert.ok(dry.dawn > 0.05 && dry.under === 0);
+  const surface = loudest(ctx.buffers.findLast((b) => b.sampleRate === 16000));
+  sound.setUnderwater(1);
+  run(sound, 10);
+  const wet = sound.stats().hours;
+  assert.ok(wet.under > 0.1, 'the drone under the water');
+  const below = loudest(ctx.buffers.findLast((b) => b.sampleRate === 16000));
+  assert.ok(below < surface * 0.35, `the birds through the surface: ${below} of ${surface}`);
+  const blips = () => shots(0.35);
+  const n = blips();
+  look.bubbled = 3;
+  run(sound, 0.5);
+  assert.equal(blips(), n + 1, 'a breath out: a burble');
+  run(sound, 2);
+  assert.equal(blips(), n + 1, 'and no more while nobody breathes');
+  sound.setUnderwater(0);
+  run(sound, 12);
+  assert.ok(sound.stats().hours.under < 0.005, 'back up: gone');
 });
 
 // --- 3. the noises themselves ---------------------------------------------

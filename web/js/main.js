@@ -132,6 +132,7 @@ import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
+import { lavaLines } from './lava.js';
 import { installPageKeys } from './page-keys.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
@@ -8731,6 +8732,53 @@ function craftCues() {
   }
   return out;
 }
+// Our rivers as points in the scene, once per terrain (terrain.rivers are courses of grid cells),
+// and the nearest of a list to the ears within a reach - which is all the river's sound needs.
+const RIVER_EAR = 34;
+let riverOf = null, riverPts = [];
+function riverPoints() {
+  const t = state.terrain;
+  if (!t) return [];
+  if (t !== riverOf) {
+    riverOf = t;
+    riverPts = [];
+    for (const course of t.rivers || []) for (const [gx, gz] of course) {
+      const [x, z] = t.cellWorld(gx, gz);
+      riverPts.push([x, 0, z]);
+    }
+  }
+  return riverPts;
+}
+function nearestOn(points, reach) {
+  let best = null, bestD = reach * reach;
+  const cx = camera.position.x, cz = camera.position.z;
+  for (const p of points) {
+    const d = (p[0] - cx) ** 2 + (p[2] - cz) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+// The volcano, when one of the islands we have drawn is it: its middle (the crater) and its lava
+// as points in the scene, worked out once per region from lava.js's own lines.
+const lavaOf = new Map();
+function volcanoNear() {
+  for (const g of state.guests) {
+    const r = g.region;
+    const t = r && r.terrain;
+    if (!t || !t.lavaFlows || !t.lavaFlows.length || !r.origin) continue;
+    const [ox, oz] = r.origin;
+    if (Math.hypot(ox - camera.position.x, oz - camera.position.z) > 360) continue;
+    let pts = lavaOf.get(r.id);
+    if (!pts || pts.terrain !== t) {
+      pts = [];
+      for (const { points } of lavaLines(t)) for (const [x, z] of points) pts.push([x + ox, 1, z + oz]);
+      pts.terrain = t;
+      lavaOf.set(r.id, pts);
+    }
+    return { crater: [ox, 30, oz], lava: nearestOn(pts, 44) };
+  }
+  return { crater: null, lava: null };
+}
 // The story animals sound.js listens to: our own, as animal-view.js draws them (act word, place).
 function storyAnimals() {
   if (!state.homeHerd || !state.homeHerd.animals) return [];
@@ -8859,6 +8907,11 @@ function soundSnapshot() {
     // stable's horse and hens near the ears, each with where it is in the scene.
     animals: storyAnimals(),
     herds: herdsNear(),
+    // Water and fire: the nearest point of one of our rivers, the volcano's middle and the nearest
+    // point of its lava when it is within reach, and the bubbles the divers have breathed out.
+    river: nearestOn(riverPoints(), RIVER_EAR),
+    ...volcanoNear(),
+    bubbled: state.seaLife && state.seaLife.emitted ? state.seaLife.emitted() : null,
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

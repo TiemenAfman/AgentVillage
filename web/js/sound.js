@@ -105,6 +105,14 @@ const HORN_RANGE = 260;
 const ANIMALS = 4;
 const ANIMAL_RANGE = 40;
 const ANIMAL_GAP = 2.5;
+// Water and fire (phase 7): how far each is heard, and how loud.
+const RIVER_RANGE = 30;
+const LAVA_RANGE = 40;
+const RUMBLE_RANGE = 320;
+const RUMBLE_LOUD = 0.22;
+const UNDER_LOUD = 0.16;
+// What is left of the beds from above the water at the bottom of a dive.
+const OVER_DEEP = 0.25;
 // Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
 // hello more than twice at once.
 const GREETERS = 2;
@@ -137,7 +145,15 @@ const GULL_GAP = [17, 48];
 // The bed, in master-volume terms. The sea at the water's edge is the loudest thing on the
 // island and it is still under a quarter of the range - everything else has to fit over it.
 const SEA_LOUD = 0.26;
-const SEA_QUIET = 0.05;          // the same sea heard from the middle of the island
+// The same sea from the middle of the island: next to nothing. It was 0.05, which with every
+// river, lake and harbour channel counted as sea put surf in the middle of Hoogezand (the keeper,
+// 2 October 2026).
+const SEA_QUIET = 0.006;
+// What counts as sea to the ears: water that is wide, not merely wet. Depth cannot tell them apart -
+// a river's bed (RIVER_BED) and the dredged harbour (CHANNEL_H) are both -0.55 - but width can: a
+// wet probe is sea only if there is water SEA_WIDE off it on at least three of its four sides,
+// which a river two units across or a lake of radius four never has.
+const SEA_WIDE = 5;
 const WIND_LOUD = 0.085;         // inland, in the open
 const WIND_QUIET = 0.035;        // down at the water, where the surf covers it
 
@@ -812,6 +828,72 @@ const CALLS = {
   sheep: { buf: 'baa', every: 45 }, cow: { buf: 'moo', every: 70 }, chicken: { buf: 'cluck', every: 28 },
   duck: { buf: 'quack', every: 35 }, goat: { buf: 'bleat', every: 55 }, horse: { buf: 'snort', every: 60 },
 };
+
+// --- water and fire ---------------------------------------------------------
+//
+// Plans/meer-geluiden.md, phase 7: a river babbling where you stand by one, the volcano's rumble
+// growing towards the crater and its lava bubbling by the nearest flow, and under the sea a low
+// drone with the odd tick of a shrimp on the gravel, and the burble of the bubbles a diver breathes
+// out. Loops, all folded at the seam or written modulo their length.
+function* waterSong(ctx, kind, secs = 4) {
+  const sr = BED_SR, len = Math.floor(sr * secs), fade = Math.floor(sr * 0.4), n = len + fade;
+  const rng = makeRng(`water:${kind}`);
+  const out = new Float32Array(n);
+  if (kind === 'river') {
+    // A few resonances that wander, each once a loop, over a hiss: water over stones.
+    for (const [f0, swing, q] of [[420, 120, 3], [760, 200, 3.5], [1150, 260, 4], [1700, 300, 5]]) {
+      const src = noise(n, rng), cutAt = (i) => f0 + swing * Math.sin(2 * Math.PI * i / len + f0);
+      const lp = lowpass(src, sr, cutAt), band = highpass(lp, sr, f0 * 0.6);
+      for (let i = 0; i < n; i++) out[i] += band[i] * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * i / len + q)) * 1.2;
+      yield;
+    }
+    for (let g = 0; g < 40; g++) {
+      const i0 = Math.floor(rng.next() * (n - sr * 0.05)), f = 500 + rng.next() * 900, L = Math.floor(sr * 0.03);
+      for (let i = 0; i < L; i++) out[i0 + i] += Math.sin(2 * Math.PI * (f + 2000 * i / sr) * i / sr) * Math.sin(Math.PI * i / L) * 0.3;
+    }
+  } else if (kind === 'rumble') {
+    // Under 80 Hz, breathing once and three times a loop, with a little of 150 Hz for a laptop.
+    const low = lowpass(lowpass(noise(n, rng), sr, 70), sr, 70);
+    const mid = lowpass(highpass(noise(n, rng), sr, 120), sr, 260);
+    for (let i = 0; i < n; i++) {
+      const e = 0.6 + 0.25 * Math.sin(2 * Math.PI * i / len) + 0.15 * Math.sin(2 * Math.PI * 3 * i / len + 1);
+      out[i] = (low[i] * 14 + mid[i] * 0.6 + 0.25 * Math.sin(2 * Math.PI * 38 * i / sr)) * e;
+    }
+    yield;
+  } else if (kind === 'lava') {
+    // Blups: a pitch rising through each, under a sizzle.
+    const sizzle = highpass(noise(n, rng), sr, 2800);
+    for (let i = 0; i < n; i++) out[i] = sizzle[i] * 0.08;
+    for (let b = 0; b < 26; b++) {
+      const i0 = Math.floor(rng.next() * (n - sr * 0.1)), L = Math.floor(sr * (0.05 + rng.next() * 0.05)), f0 = 90 + rng.next() * 80;
+      let ph = 0;
+      for (let i = 0; i < L; i++) { ph += (f0 + 260 * i / L) / sr; out[i0 + i] += Math.sin(2 * Math.PI * ph) * Math.exp(-i / L * 3) * (0.5 + rng.next() * 0.5); }
+    }
+    yield;
+  } else {
+    // Under the sea: a low drone, and shrimp clicking on the gravel.
+    const drone = lowpass(lowpass(noise(n, rng), sr, 220), sr, 220);
+    for (let i = 0; i < n; i++) out[i] = drone[i] * 6 * (0.8 + 0.2 * Math.sin(2 * Math.PI * i / len));
+    for (let c = 0; c < 70; c++) {
+      const i0 = Math.floor(rng.next() * (n - 40)), f = 2200 + rng.next() * 1800, a = 0.1 + rng.next() * 0.3;
+      for (let i = 0; i < 30; i++) out[i0 + i] += Math.sin(2 * Math.PI * f * i / sr) * Math.exp(-i / 6) * a;
+    }
+    yield;
+  }
+  const chs = [seam(out, len, fade)];
+  level(chs, kind === 'rumble' ? 0.14 : 0.09);
+  return intoBuffer(ctx, chs, sr);
+}
+// A diver's breath going up: three blips, each a little higher.
+const bubbleShot = (c) => shot(c, 0.35, 'bubble', (n, sr) => {
+  const out = new Float32Array(n);
+  [0, 0.09, 0.2].forEach((at, k) => {
+    const i0 = Math.floor(at * sr), L = Math.floor(0.04 * sr), f0 = 420 + k * 160;
+    let ph = 0;
+    for (let i = 0; i < L; i++) { ph += (f0 + 900 * i / L) / sr; out[i0 + i] += Math.sin(2 * Math.PI * ph) * Math.sin(Math.PI * i / L); }
+  });
+  return out;
+}, 0.05);
 
 // --- a clink ---------------------------------------------------------------
 //
@@ -1568,7 +1650,13 @@ export function createSound({ camera, scene, island, makeElement = null }) {
         crickets: { ...mkBed(null, 'night'), want: 0, at: 0 },
         rain: { ...mkBed(null, 'weather'), want: 0, at: 0 },
         roofs: { ...mkBed(null, 'weather'), want: 0, at: 0 },
+        rumble: { ...mkBed(null, 'water'), want: 0, at: 0 },
+        under: { ...mkBed(null, 'underwater'), want: 0, at: 0, below: true },
       },
+      // The river and the lava: a loop each, hung at the nearest point of what they belong to.
+      river: { ...mkLoop({ ref: 5, rolloff: 1.5, volume: 0, part: 'water' }), want: 0 },
+      lava: { ...mkLoop({ ref: 5, rolloff: 1.5, volume: 0, part: 'water' }), want: 0 },
+      bubbles: mkBed(null, 'underwater'),
       rare: mkVoice(null, { ref: 14, rolloff: 1.0, volume: 0.6, part: 'birds' }),
       horn: mkVoice(null, { ref: 30, rolloff: 0.6, volume: 0.8, part: 'weather' }),
       // The animals' voices.
@@ -1584,6 +1672,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     };
     built.clinkRoom.audio.setLoop(false);
     built.bellRoom.audio.setLoop(false);
+    built.bubbles.audio.setLoop(false);
+    built.bubbles.filter.frequency.value = 9000;
     built.bellRoom.filter.frequency.value = 900;
     built.clinkRoom.audio.setBuffer(buffers.clink);
     built.clinkRoom.filter.frequency.value = 9000;
@@ -1606,6 +1696,11 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     roofs: (c) => rainSong(c, 'roofs'),
     ...Object.fromEntries(Object.entries(HOUR_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
     ...Object.fromEntries(Object.entries(ANIMAL_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+    river: (c) => waterSong(c, 'river'),
+    rumble: (c) => waterSong(c, 'rumble', 6),
+    lava: (c) => waterSong(c, 'lava'),
+    under: (c) => waterSong(c, 'under', 6),
+    bubble: (c) => once(bubbleShot, c),
     ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
   // A buffer that is quick to make, made in one step all the same, so every family goes through
@@ -1809,14 +1904,27 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // should still sound like the coast. The archipelago is asked rather than the terrain, so
   // the channel between two islands answers "sea" instead of handing back the height of
   // the nearer coast - which is what OPEN_SEA in shared/regions.mjs is for.
+  //
+  // Two rings, near and further out, the near one counting double: the surf is heard from a few
+  // houses back, and fades over a street or two rather than at one ring's edge. Only water deeper
+  // than SEA_WIDE across counts - a river or a lake is not the sea - and the answer is squared on the way
+  // out, so a single wet probe far off is a whisper and not a fifth of the beach.
+  function seaAt(look, x, z) {
+    if (!(look.depthAt(x, z) < 0)) return false;
+    let n = 0;
+    for (const [dx, dz] of [[SEA_WIDE, 0], [-SEA_WIDE, 0], [0, SEA_WIDE], [0, -SEA_WIDE]]) if (look.depthAt(x + dx, z + dz) < 0) n++;
+    return n >= 3;
+  }
   function coastliness(look) {
-    const R = 13;
     let wet = 0;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      if (look.depthAt(camera.position.x + Math.cos(a) * R, camera.position.z + Math.sin(a) * R) < 0) wet++;
+    for (const [R, w] of [[12, 2], [26, 1]]) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + R;
+        if (seaAt(look, camera.position.x + Math.cos(a) * R, camera.position.z + Math.sin(a) * R)) wet += w;
+      }
     }
-    return wet / 8;
+    const k = wet / 24;
+    return Math.min(1, k * (0.6 + 0.4 * k) * 1.25);
   }
 
   // Who is hammering, nearest first. `nearestFirst` wants rows with an `origin` and an
@@ -2059,13 +2167,15 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const buf = built.buffers[name];
       const a = b.audio;
       if (buf && a.buffer !== buf) a.setBuffer(buf);
-      a.setVolume(b.at * duckOver());
+      a.setVolume(b.at * (b.below ? 1 : duckOver()));
       if (b.at > 0.0005 && a.buffer && !a.isPlaying) a.play();
       else if (b.want <= 0 && b.at < 0.0005 && a.isPlaying) a.stop();
     }
   }
-  // The beds that come from above the water go down as the listener does (phase 7 sets `over`).
-  const duckOver = () => 1;
+  // The beds that come from above the water go down as the listener does: sound goes badly
+  // through the surface, so at the bottom of a dive the wind, the birds, the crickets and the rain
+  // are a quarter of what they were - on top of the master's lowpass (setUnderwater).
+  const duckOver = () => 1 - (1 - OVER_DEEP) * underwater;
 
   // An owl in the woods at night, a cuckoo in them by day, the foghorn in a fog: each on a slow
   // clock of its own, never in the first minute, and only where it belongs.
@@ -2106,6 +2216,45 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (night > 0.6 && woods > 0.15) need('owl');
     if (night < 0.3 && woods > 0.2) need('cuckoo');
     if (sky === 'fog' && look.lighthouse) need('foghorn');
+  }
+
+  // The river, the volcano and the sea from underneath. `look.river` and `look.lava` are the nearest
+  // point of a river or a flow ([x, y, z], main.js measures them), `look.crater` where the volcano
+  // stands; the under-sea bed follows the lens's own 0..1 (setUnderwater), and a bubble burbles
+  // whenever the bubbles the divers breathe out (sea-life.js `emitted`, a cue) have gone up.
+  let bubbledSeen = null, bubbleAt = -Infinity;
+  function steerWater(look) {
+    const out = !look.indoors;
+    const H = built.hours;
+    const crater = look.crater;
+    const dc = crater ? flat(crater) : Infinity;
+    H.rumble.want = out && crater && live('water') ? RUMBLE_LOUD * Math.pow(clamp(1 - dc / RUMBLE_RANGE, 0, 1), 2) : 0;
+    H.under.want = live('underwater') ? UNDER_LOUD * underwater : 0;
+    if (H.rumble.want > 0) need('rumble');
+    if (H.under.want > 0) need('under');
+    for (const [name, range, at] of [['river', RIVER_RANGE, look.river], ['lava', LAVA_RANGE, look.lava]]) {
+      const v = built[name];
+      const d = at ? flat(at) : Infinity;
+      v.want = out && at && live('water') && d < range ? 0.45 * edge(d, range) * duckOver() : 0;
+      if (at) v.holder.position.set(at[0], at[1] + 0.2, at[2]);
+      loopTo(v, v.want > 0 || v.audio.isPlaying ? need(name) : null, v.want);
+      if (at) v.holder.updateMatrixWorld(true);
+    }
+    const n = Number.isFinite(look.bubbled) ? look.bubbled : null;
+    if (n != null && bubbledSeen != null && n > bubbledSeen && underwater > 0.5 && live('underwater')) {
+      const buf = need('bubble');
+      if (buf && clock - bubbleAt > 0.35) {
+        bubbleAt = clock;
+        const a = built.bubbles.audio;
+        if (a.buffer !== buf) a.setBuffer(buf);
+        if (a.isPlaying) { try { a.stop(); } catch { /* it had finished */ } }
+        a.setVolume(0.3 + Math.random() * 0.2);
+        a.setPlaybackRate(0.85 + Math.random() * 0.4);
+        try { a.play(); } catch { /* the next breath will do */ }
+      }
+    }
+    if (underwater > 0.3) need('bubble');
+    bubbledSeen = n;
   }
 
   // The animals. Story animals (look.animals: { id, species, act, at }) by their act word, diffed like
@@ -2315,6 +2464,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     steerCrafts(look);
     steerWorkers(look);
     steerAnimals(look);
+    steerWater(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -2399,8 +2549,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     bed.seaAt += (bed.seaWant - bed.seaAt) * k;
     bed.windAt += (bed.windWant - bed.windAt) * k;
     bed.duckAt += (bed.duckWant - bed.duckAt) * (1 - Math.exp(-dt / 0.8));
-    built.sea.audio.setVolume(bed.seaAt * bed.duckAt);
-    built.wind.audio.setVolume(bed.windAt * bed.duckAt);
+    // Under the sea the surf is a dull rush (the master's lowpass does the dulling) and the wind is
+    // nearly gone: it is a bed from above the water.
+    built.sea.audio.setVolume(bed.seaAt * bed.duckAt * (1 - 0.4 * underwater));
+    built.wind.audio.setVolume(bed.windAt * bed.duckAt * duckOver());
     // And the master comes up over a second and a half, because a bed that arrives all at
     // once reads as a fault rather than as an island - to the Master slider, not past it.
     const master = Math.min(1, fade / 1.5) * mix.master;
@@ -2516,7 +2668,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS,
+    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -2526,12 +2678,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
       craft: [...built.crafts, built.saw], worker: built.workers, rare: [built.rare, built.horn],
-      animal: built.animals,
+      animal: built.animals, water: [built.river, built.lava],
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();
   const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom, built.bellRoom,
-    ...Object.values(built.hours)];
+    ...Object.values(built.hours), built.bubbles];
   function families() {
     const out = {};
     for (const [name, voices] of Object.entries(familyVoices())) {

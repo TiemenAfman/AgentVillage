@@ -368,8 +368,14 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    boven de kade. *Gebouwd*: de act-woorden zijn de cue (`homeHerd.animals()`), een kudde roept op
    een eigen klok per dier, nooit 's nachts, en op het eiland hooguit één roep per 2,5 s; de hoeven
    van het paard horen bij de houtkar (fase 8).
-7. **Water en vuur.** De rivier en de trechter, de vulkaan (rommel en borrel), en het onderwater-bed
-   met bellen.
+7. ✅ **Water en vuur.** De rivier en de trechter, de vulkaan (rommel en borrel), en het onderwater-bed
+   met bellen. *Gebouwd*: de rivier hangt aan het dichtstbijzijnde punt van `terrain.rivers`, de lava
+   aan dat van `lavaLines` op het gasteiland met `lavaFlows`; de bellen-cue is sea-life.js
+   `emitted()`. De trechter kreeg geen eigen kabbel (daar is de zee al). *Erbij, na een opmerking van
+   de keeper*: de zee klonk midden op het eiland, omdat elke natte cel (rivier, meer, havengeul) als
+   zee telde en de zee overal een bodem van 0,05 had. Nu telt een natte sonde alleen als er ook
+   water ligt op 5 eenheden aan drie van de vier kanten (`seaAt`) - diepte kan het niet zeggen, want
+   rivierbed en havengeul zijn allebei -0,55 - op twee ringen (12 en 26), en de bodem is 0,006.
 8. **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
    visser (werp en plons). Laatst, omdat ze zeldzaam zijn en het meeste uitzoekwerk vragen om in de
    pas te lopen met het beeld.

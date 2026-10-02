@@ -73,7 +73,11 @@ function createBubbles(cap) {
   const owed = new Map();
   return {
     points,
+    // Every bubble ever let go: a cue for web/js/sound.js (Plans/meer-geluiden.md), which burbles
+    // when it goes up. Nothing else reads it.
+    emitted: 0,
     emit(x, y, z) {
+      this.emitted++;
       const i = next; next = (next + 1) % cap;
       positions[i * 3] = x + (Math.random() - 0.5) * 0.12;
       positions[i * 3 + 1] = y;
@@ -270,6 +274,8 @@ export function createSeaLife({ scene, bedAt, tier = 'full' }) {
     },
     // The bed has changed (an island joined, the islets moved): plan again from scratch.
     reshape() { cache.clear(); dirty = true; },
+    // How many bubbles have gone up, ever: sound.js's cue for a diver breathing out.
+    emitted: () => bubbles.emitted,
     stats() {
       let n = 0;
       for (const kind of KIND_NAMES) n += still[kind] ? still[kind].count : 0;
