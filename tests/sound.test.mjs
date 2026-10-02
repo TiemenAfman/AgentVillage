@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still thirteen placed voices', () => {
+test('three hundred settlers hammering at once are still fifteen placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,9 +245,9 @@ test('three hundred settlers hammering at once are still thirteen placed voices'
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 13, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses');
+  assert.equal(s0.cap, 15, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
-  assert.equal(s0.bedSources, 5, 'and the sea, the wind, the two rooms and the glass in a room over them');
+  assert.equal(s0.bedSources, 6, 'and the sea, the wind, the two rooms, and the glass and the bell in a room over them');
 
   // Half a minute of frames, with the camera walking east across the whole village, which
   // is what keeps re-deciding who the nearest four are.
@@ -689,6 +689,109 @@ test('the mix is kept per browser and used from the first note', () => {
   assert.equal(sound.stats().buses.music, 0.25, 'the bus starts where the mix says');
   run(sound, 1);
   assert.equal(sound.stats().pubs.village.playing, false, 'and a part that is off is never started');
+});
+
+// --- the church bell (phase 2) ---------------------------------------------
+
+// The bell's buffer is the only four-second one at the hammer's rate.
+const bellBuffer = () => ctx.buffers.findLast((b) => b.sampleRate === 22050 && b.length === 22050 * 4);
+const strokes = () => { const b = bellBuffer(); return b ? ctx.started.filter((s) => s === b).length : 0; };
+
+function bellIsland() {
+  const look = village(2, { anim: 'still', tavern: false });
+  look.bell = { at: [10, 3, 0] };
+  return look;
+}
+// Hours as worldNow() gives them: whole minutes over sixty.
+const at = (h, m) => h + m / 60;
+
+test('the bell strikes the hour on the sea\'s clock, as many times as the hour', () => {
+  store = {};
+  const look = bellIsland();
+  look.clock = at(13, 58);
+  const sound = heardSound(look);
+  run(sound, 1);
+  assert.ok(bellBuffer(), 'made the first time the chapel and the clock are both there');
+  const before = strokes();
+  look.clock = at(13, 59);
+  run(sound, 1);
+  assert.equal(strokes(), before, 'nothing on the minute before');
+  look.clock = at(14, 0);
+  run(sound, 1);
+  assert.equal(strokes() - before, 1, 'the first stroke at once');
+  run(sound, 6);
+  assert.equal(strokes() - before, 2, 'two o\'clock: two strokes, and no more');
+  assert.equal(sound.stats().bell.queued, 0);
+  look.clock = at(14, 29);
+  run(sound, 1);
+  look.clock = at(14, 30);
+  run(sound, 4);
+  assert.equal(strokes() - before, 3, 'and one on the half hour');
+  look.clock = at(14, 59);
+  run(sound, 1);
+  look.clock = at(15, 0);
+  run(sound, 10);
+  assert.equal(strokes() - before, 6, 'three at three');
+});
+
+test('the bell does not strike on loading, under a lens, after a long sleep or at night', () => {
+  store = {};
+  const look = bellIsland();
+  look.clock = at(16, 0);
+  const sound = heardSound(look);
+  run(sound, 10);
+  const before = strokes();
+  assert.equal(before, strokes(), 'a page that loads at four does not strike four');
+  look.clock = at(16, 29);
+  run(sound, 1);
+  look.clock = null;                       // ?hour, the chronicle: not the sea's time
+  run(sound, 1);
+  look.clock = at(16, 30);
+  run(sound, 3);
+  assert.equal(strokes(), before, 'the lens forgot the minute: no stroke on coming back');
+  look.clock = at(16, 31);
+  run(sound, 1);
+  look.clock = at(18, 0);                  // a tab that slept an hour and a half
+  run(sound, 10);
+  assert.equal(strokes(), before, 'an hour it did not see pass is not rung');
+  look.clock = at(22, 59);
+  run(sound, 1);
+  look.clock = at(23, 0);
+  run(sound, 10);
+  assert.equal(strokes(), before, 'quiet from eleven');
+  look.clock = at(6, 59);
+  run(sound, 1);
+  look.clock = at(7, 0);
+  run(sound, 20);
+  assert.equal(strokes() - before, 7, 'and seven at seven');
+});
+
+test('switched off in Settings, the bell is not struck at all', () => {
+  store = { 'promptholm.sound.mix': JSON.stringify({ bell: false }) };
+  const look = bellIsland();
+  look.clock = at(8, 59);
+  const sound = heardSound(look);
+  run(sound, 1);
+  const before = strokes();
+  look.clock = at(9, 0);
+  run(sound, 25);
+  assert.equal(strokes(), before);
+});
+
+test('the bell is a bell: finite, inside the rails, and dying away into silence', () => {
+  const b = bellBuffer();
+  assert.ok(b, 'made by the tests above');
+  const d = b.getChannelData(0);
+  let peak = 0, head = 0, tail = 0;
+  for (let i = 0; i < d.length; i++) {
+    assert.ok(Number.isFinite(d[i]));
+    peak = Math.max(peak, Math.abs(d[i]));
+    if (i < d.length / 8) head += d[i] * d[i];
+    if (i > d.length * 7 / 8) tail += d[i] * d[i];
+  }
+  assert.ok(peak <= 1 && peak > 0.05, `peak ${peak}`);
+  assert.ok(head > tail * 20, 'it rings out');
+  assert.equal(Math.abs(d[d.length - 1]), 0, 'and ends in its own silence');
 });
 
 // --- 3. the noises themselves ---------------------------------------------

@@ -160,8 +160,9 @@ weet het niet. Twee soorten timing:
   het chronicle) is niet de zee: dan is `clock` null en zwijgt de klok. Een pagina die om 14:00:10
   laadt, slaat niet alsnog twee: alleen een overgang die sound.js zelf ziet telt, en alleen een stap
   vooruit van minder dan een kwartier (een grotere sprong is een andere zee of een slapende tab).
-- **Positioneel en ver te horen**: één bron in de toren, `exponential` met `ref` 24 en `rolloff`
-  0,7, en een bereik (`BELL_RANGE`) van 320 eenheden - het hele eiland tot 384 cellen; verder hoor
+- **Positioneel en ver te horen**: twee bronnen in de toren, om de beurt geslagen (een klok galmt
+  vier seconden en de volgende slag komt na 2,4: één bron opnieuw starten kapte elke galm af),
+  `exponential` met `ref` 24 en `rolloff` 0,7, en een bereik (`BELL_RANGE`) van 320 eenheden - het hele eiland tot 384 cellen; verder hoor
   je over het water toch alleen de zee. In een kamer hoor je hem gedempt (`INDOOR_DUCK`, een
   stille bron door het bed): een kerkklok hoor je door een muur. Het is de enige plek-stem die binnen
   niet zwijgt.
@@ -259,10 +260,10 @@ Harde plafonds, zoals nu: array-lengtes, geen budget dat geteld wordt. Per tier 
 | ambachten (smid, zaag, bakker, slager, visser, goud, wagen) | 4 | 3 | 2 |
 | dieren (verhaaldieren, kuddes, paarden) | 4 | 3 | 2 |
 | meeuwen, uil, misthoorn | 3 | 2 | 1 |
-| kerkklok + begroetingen | 1 + 2 | 1 + 2 | 1 + 1 |
+| kerkklok + begroetingen | 2 + 2 | 2 + 2 | 2 + 1 |
 | loops met een plek (2 kroegen, borrel, zaagblad, rivier, lava) | 6 | 4 | 3 |
 | bedden (zee, wind, ochtend, nacht, regen, onder water) | 6 | 6 | 4 (ochtend en nacht als één) |
-| **positionele bronnen samen** | **≤ 32** | **≤ 22** | **≤ 14** |
+| **positionele bronnen samen** | **≤ 33** | **≤ 23** | **≤ 15** |
 
 - **Panning**: three's `PositionalAudio` gebruikt HRTF, en dat is per bron de duurste node in de
   graph. Op `modest` en `phone` zet sound.js `panner.panningModel = 'equalpower'`. Op `full` alleen
@@ -347,7 +348,7 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    murmur-loop, `busy`, de liederen): de bron naar de deur, een filter dat opengaat bij de deur, een
    tweede bron voor de Kraken met een eigen stem, clinks, het geroezemoes binnen in de dorpskroeg, en
    een loop op het plein tijdens `gatheringAt`.
-2. **De kerkklok.** Klein: één buffer, één bron, de klok van de zee.
+2. ✅ **De kerkklok.** Klein: één buffer, twee bronnen om de beurt, de klok van de zee.
 3. **De begroeting op straat.**
 4. **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
    werkers in de crowd (`chop`, `hoe`/`weed`, `barrow`/`carry`, `load`) als veralgemening van de

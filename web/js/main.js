@@ -8689,6 +8689,17 @@ function pubDoors() {
   }
   return out;
 }
+// Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
+// about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
+// rings from its own tower. The bake has no anchor for it.
+function chapelBell() {
+  const rec = state.byId.get('civic:chapel');
+  if (!rec || !rec.group.visible) return null;
+  _door.set(0, 1.45, 0.53);
+  rec.group.updateMatrixWorld();
+  rec.group.localToWorld(_door);
+  return { at: [_door.x, _door.y, _door.z] };
+}
 // The middle of the square, where the borrel's murmur is: the town's centre cell on our ground.
 function squareCentre() {
   const town = state.village && state.village.island && state.village.island.town;
@@ -8714,6 +8725,10 @@ function soundSnapshot() {
     // The doors the taverns are heard through, and the square the borrel is on while there is one
     // (gatheringAt, the sea's clock and the sea's list, like the tables the frame carries out).
     pubs: pubDoors(),
+    // The church bell in the chapel's tower, and the sea's clock it strikes by - null under a lens
+    // (?hour, the chronicle), whose hour is not the one every other page is on.
+    bell: chapelBell(),
+    clock: state.chronicle.t != null || state.hourOverride != null ? null : cal.hour,
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

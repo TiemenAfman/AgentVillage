@@ -69,7 +69,19 @@ const KRAKEN_CREW = 0.35;
 // Glasses: two pooled voices out of doors, one inside, and a clink every few seconds where it is
 // busy - the gap shrinks with the crowd.
 const CLINKS = 2;
+const BELLS = 2;
 const CLINK_GAP = [3, 14];
+
+// The church bell (Plans/meer-geluiden.md, "De kerkklok"): heard over the whole island, and on the
+// sea's clock, so every page strikes at the same moment. Two voices, struck in turn, because a bell
+// rings for four seconds and the next stroke comes after BELL_EVERY: one voice restarted would cut
+// every stroke's tail off. Quiet from BELL_QUIET[0] until BELL_QUIET[1] (open question 8).
+const BELL_RANGE = 320;
+const BELL_EVERY = 2.4;
+const BELL_QUIET = [23, 7];
+// A step of the clock bigger than this is not an hour passing but a tab waking up or another sea:
+// nothing is struck for it.
+const BELL_SKIP_MIN = 15;
 
 // How fast a settler hammers. settler-figures.js swings the arm and the hammer off
 // `Math.sin(time * 8 + f.phase)`, so a blow lands once per 2*pi/8 seconds, and `f.phase`
@@ -360,6 +372,44 @@ function* murmurSong(ctx, kind = 'village') {
 function murmurBuffer(ctx) {
   const gen = murmurSong(ctx, 'village');
   for (;;) { const r = gen.next(); if (r.done) return r.value; }
+}
+
+// --- the church bell -------------------------------------------------------
+//
+// A bell is not a note: its partials are not harmonics, and each dies at its own rate - the hum an
+// octave under, the prime, a minor third over it (the tierce, which is what makes a bell sound like
+// a bell and not a glass), the fifth, the nominal an octave up, and a few higher ones that are gone
+// in half a second. Each partial is a close pair a hair apart, so it beats slowly as it rings, and
+// the clapper's knock is a few milliseconds of noise at the top. A village bell, not a cathedral's:
+// the prime at 330 Hz. Made the first time the chapel is within reach of the clock, a partial a step.
+const BELL_PARTIALS = [
+  // ratio, level, seconds to die by e
+  [0.5, 0.45, 3.4], [1, 1, 2.6], [1.19, 0.62, 2.0], [1.5, 0.32, 1.5],
+  [2, 0.7, 1.5], [2.51, 0.3, 0.9], [2.99, 0.22, 0.7], [4.17, 0.16, 0.45],
+];
+function* bellSong(ctx) {
+  const sr = HIT_SR;
+  const n = Math.floor(sr * 4);
+  const out = new Float32Array(n);
+  const f0 = 330;
+  for (const [ratio, amp, decay] of BELL_PARTIALS) {
+    const f = f0 * ratio, beat = 0.6 + ratio * 0.35;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      const e = Math.exp(-t / decay) * Math.min(1, t / 0.002);
+      out[i] += amp * e * (Math.sin(2 * Math.PI * f * t) + 0.5 * Math.sin(2 * Math.PI * (f + beat) * t));
+    }
+    yield;
+  }
+  const rng = makeRng('bell');
+  const knock = resonate(noise(Math.floor(sr * 0.03), rng), sr, 2600, 3);
+  for (let i = 0; i < knock.length; i++) out[i] += knock[i] * Math.exp(-i / sr / 0.006) * 1.5;
+  // The last tenth of a second to nothing, so the buffer ends in silence of its own.
+  const tail = Math.floor(sr * 0.1);
+  for (let i = 0; i < tail; i++) out[n - tail + i] *= 1 - (i + 1) / tail;
+  const chs = [out];
+  level(chs, 0.12);
+  return intoBuffer(ctx, chs, sr);
 }
 
 // --- a clink ---------------------------------------------------------------
@@ -951,7 +1001,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // The mix from Settings -> Audio (sound-mix.js), read once here and then kept by setMix: a
   // slider moved while the sound is off is remembered and heard the moment it comes on.
   const mix = loadMix();
-  let masterAt = -1;             // what the listener was last set to, so a frame sets it once
+  let masterAt = -1;
+  let inside = false;            // the last pick's word on whether we are in a room             // what the listener was last set to, so a frame sets it once
 
   // What the last snapshot asked for, and where the bed has actually got to. Two numbers
   // rather than one because the bed crossfades over seconds: walking from the middle of
@@ -1103,6 +1154,9 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       clinkRoom: mkBed(null, 'tavern'),
       borrel: { ...mkLoop({ ref: 8, rolloff: 1.6, volume: 0, part: 'borrel' }), clinkIn: CLINK_GAP[0] },
       borrelClinks: Array.from({ length: CLINKS }, () => mkVoice(buffers.clink, { ref: 5, rolloff: 1.7, volume: 0.45, part: 'borrel' })),
+      // The church bell: two in the tower, struck in turn, and one through the wall of a room.
+      bells: Array.from({ length: BELLS }, () => mkVoice(null, { ref: 24, rolloff: 0.7, volume: 0.9, part: 'bell' })),
+      bellRoom: mkBed(null, 'bell'),
       // The families made the first time they are wanted, a step a frame (need, makeMore).
       making: {},
       // The rave's music, made the first Saturday night it is within earshot, and the Salty
@@ -1111,6 +1165,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       shanty: null,
     };
     built.clinkRoom.audio.setLoop(false);
+    built.bellRoom.audio.setLoop(false);
+    built.bellRoom.filter.frequency.value = 900;
     built.clinkRoom.audio.setBuffer(buffers.clink);
     built.clinkRoom.filter.frequency.value = 9000;
     for (const p of Object.values(built.pubs)) p.in.filter.frequency.value = 9000;
@@ -1123,6 +1179,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   const LAZY = {
     kraken: (c) => murmurSong(c, 'kraken'),
     borrel: (c) => murmurSong(c, 'borrel'),
+    bell: (c) => bellSong(c),
   };
   function need(name) {
     if (built.buffers[name]) return built.buffers[name];
@@ -1483,6 +1540,62 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (b.at) b.holder.updateMatrixWorld(true);
   }
 
+  // The bell strikes the hours on the sea's clock (`look.clock`, worldNow().hour - null under a lens,
+  // which is not the sea's time): as many strokes as the hour on a clock face, BELL_EVERY apart, and
+  // one lighter stroke on the half hour. Only a turn of the clock this page saw itself counts, and
+  // only a short step forward - so a page loaded at ten past two does not strike two, and a tab
+  // that slept an hour does not ring the hour it missed.
+  const bell = { min: null, queue: [], next: 0, at: null };
+  function steerBell(look) {
+    const hour = look.clock;
+    bell.at = look.bell && look.bell.at ? look.bell.at : null;
+    if (hour == null || !Number.isFinite(hour) || !bell.at) { bell.min = null; bell.queue.length = 0; return; }
+    if (live('bell')) need('bell');
+    const m = Math.round(hour * 60) % 1440;
+    const was = bell.min;
+    bell.min = m;
+    if (was == null || m === was) return;
+    const step = (m - was + 1440) % 1440;
+    if (step >= BELL_SKIP_MIN) return;
+    for (let k = 1; k <= step; k++) {
+      const minute = (was + k) % 1440;
+      const h = Math.floor(minute / 60);
+      if (h >= BELL_QUIET[0] || h < BELL_QUIET[1]) continue;
+      const strokes = minute % 60 === 0 ? (h % 12) || 12 : minute % 60 === 30 ? 1 : 0;
+      const from = bell.queue.length ? bell.queue[bell.queue.length - 1].t + BELL_EVERY : clock;
+      for (let s = 0; s < strokes; s++) bell.queue.push({ t: from + s * BELL_EVERY, half: minute % 60 === 30 });
+    }
+  }
+  // Strike what is due, on this module's own seconds (`clock`), which the queue was laid out on.
+  function strike() {
+    if (!bell.queue.length) return;
+    const buf = built.buffers.bell;
+    if (!live('bell')) { bell.queue.length = 0; return; }
+    if (!buf) return;                 // still being made; the strokes wait for it
+    // Strokes that waited for the buffer start from now, still BELL_EVERY apart - never all at once.
+    const late = clock - bell.queue[0].t;
+    if (late > 0.5) for (const q of bell.queue) q.t += late;
+    while (bell.queue.length && clock >= bell.queue[0].t) {
+      const q = bell.queue.shift();
+      const rate = q.half ? 1.12 : 1;
+      if (inside) {
+        const a = built.bellRoom.audio;
+        if (a.buffer !== buf) a.setBuffer(buf);
+        if (a.isPlaying) { try { a.stop(); } catch { /* it had rung out */ } }
+        a.setVolume(q.half ? 0.08 : 0.14);
+        a.setPlaybackRate(rate);
+        try { a.play(); } catch { /* the next stroke will do */ }
+        continue;
+      }
+      if (!bell.at || flat(bell.at) > BELL_RANGE) continue;
+      const v = built.bells[bell.next];
+      bell.next = (bell.next + 1) % built.bells.length;
+      if (v.audio.buffer !== buf) v.audio.setBuffer(buf);
+      v.audio.setVolume(q.half ? 0.55 : 0.9);
+      fire(v, bell.at[0], bell.at[1], bell.at[2], rate);
+    }
+  }
+
   // A glass set down now and then wherever it is busy: at a tavern's door (through the same
   // wall as its murmur), in the room you are in, on the square at the borrel. Per frame rather
   // than per pick, on a timer per place whose gap shrinks as the place fills up.
@@ -1523,8 +1636,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   }
 
   function repick(look) {
+    inside = !!look.indoors;
     steerPubs(look);
     steerBorrel(look);
+    steerBell(look);
     steerRave(look.rave || null);
     steerShanty(look.shanty || null);
     steerTavern(look.tavern || null);
@@ -1608,6 +1723,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
     if (look) maybeGull(look, PICK_S);
     clinks(dt);
+    strike();
     makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
@@ -1712,18 +1828,18 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // lengths, and never again. And the beds: the voices with no place (the sea, the wind, the two
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
-    hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS,
+    hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
     return {
       hammer: built.hammers, gull: built.gulls,
       pub: Object.values(built.pubs).map((p) => p.out),
-      clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks],
+      clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();
-  const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom];
+  const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom, built.bellRoom];
   function families() {
     const out = {};
     for (const [name, voices] of Object.entries(familyVoices())) {
@@ -1785,6 +1901,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       }])) : null,
       borrel: built ? { want: Math.round(built.borrel.want * 100) / 100, playing: built.borrel.audio.isPlaying } : null,
       making: built ? Object.keys(built.making) : [],
+      // The bell: strokes still to come this hour, and the minute of the sea's clock it last saw.
+      bell: { queued: bell.queue.length, minute: bell.min },
       // Where the bed has got to, rounded. The only way to see that the sea comes up as
       // you walk down to it and goes quiet again after dark, short of having ears.
       bed: {
