@@ -35,6 +35,12 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [meer-geluiden.md](meer-geluiden.md) — plan van 2 oktober 2026, nog niet gebouwd: meer geluid op het
+  eiland, allemaal berekend zoals nu (eigen samples van de keeper hooguit als laatste, optionele fase).
+  Geroezemoes en klinkende glazen door de kroegdeur en de borrel op het plein, de ambachten op een
+  alleen-lezen cue van wat getekend wordt (smid, zaag, bakker, werkers in de crowd), ochtendkoor,
+  krekels, regen op daken en bos, dieren, rivier en vulkaan, en een mixer in Settings. Vaste pools per
+  tier, niets op de draad.
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
