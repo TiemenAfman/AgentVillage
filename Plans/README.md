@@ -38,6 +38,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
   haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
   en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
+- 🚧 [noclip-camera.md](noclip-camera.md) — een vrije debugcamera (`` ` ``, `?noclip`, `?cam=x,y,z,yaw,pitch&room=`)
+  die door alles heen vliegt, met `window.__noclip` (`go`, `lookAt`, `room`, `island`, bladwijzers) om
+  graphics snel te bekijken zonder het lijf te besturen; tekent meteen een frame voor een screenshot.
 - 🚧 [eiland-op-eigen-schijf.md](eiland-op-eigen-schijf.md) — het eiland en het HD-pakket op een schijf naar
   keuze: een verwijzing `~/.promptholm/home.txt`, *Verplaatsen…* in Settings, en een eigen pad voor het pakket.
 - 🚧 [hitboxes-en-looppaden.md](hitboxes-en-looppaden.md) — buiten wordt walk mode preciezer: gedraaide en

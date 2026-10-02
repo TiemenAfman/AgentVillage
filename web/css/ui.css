@@ -1392,6 +1392,18 @@ body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx
 }
 #director-caption[hidden] { display: none; }
 
+/* The noclip camera's readout (web/js/noclip.js, Plans/noclip-camera.md): where it is, for a ?cam= link.
+   `noclip-clean` (__noclip.hud(false)) takes everything but the picture away for a screenshot. */
+#noclip-readout {
+  position: fixed; left: 12px; bottom: 12px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(16, 28, 32, 0.72); color: #f1e6c8;
+  font: 12px/1.3 ui-monospace, monospace;
+  pointer-events: none; z-index: 50; white-space: nowrap;
+}
+#noclip-readout[hidden] { display: none; }
+body.noclip-clean > :not(#stage):not(#panels):not(#underwater):not(script) { visibility: hidden !important; }
+
 /* --- the quest log (web/js/quest-panel.js) and the pirate (web/js/pirate.js) -------------- */
 .ql-h { font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); margin: 16px 0 6px; }
 .ql-h:first-child { margin-top: 0; }
