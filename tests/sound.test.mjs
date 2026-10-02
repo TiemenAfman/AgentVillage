@@ -232,7 +232,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still twenty-six placed voices', () => {
+test('three hundred settlers hammering at once are still twenty-eight placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -245,9 +245,9 @@ test('three hundred settlers hammering at once are still twenty-six placed voice
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 26, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers');
+  assert.equal(s0.cap, 28, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
-  assert.equal(s0.bedSources, 6, 'and the sea, the wind, the two rooms, and the glass and the bell in a room over them');
+  assert.equal(s0.bedSources, 10, 'and the sea, the wind, the two rooms, the glass and the bell in a room, and the four of the hour and the sky');
 
   // Half a minute of frames, with the camera walking east across the whole village, which
   // is what keeps re-deciding who the nearest four are.
@@ -930,6 +930,103 @@ test('every craft is synthesised, finite and inside the rails', () => {
   let worst = 0;
   for (let i = 1; i < d.length; i++) worst = Math.max(worst, Math.abs(d[i] - d[i - 1]));
   assert.ok(Math.abs(d[0] - d[d.length - 1]) <= worst, 'the saw loops without a click');
+});
+
+// --- the hour and the weather (phase 5) ------------------------------------
+
+// An island well inland: depthAt says land everywhere, so the sea does not drown the birds.
+function inland(extra = {}) {
+  const look = village(1, { anim: 'still', tavern: false });
+  look.depthAt = () => 3;
+  return Object.assign(look, extra);
+}
+
+test('the dawn chorus at dawn, inland, and not at noon or by the sea', () => {
+  store = {};
+  const look = inland({ hour: 6, night: 0.2, woods: 1 });
+  const sound = heardSound(look);
+  assert.equal(sound.stats().hours.dawn, 0);
+  run(sound, 8);
+  const dawn = sound.stats().hours.dawn;
+  assert.ok(dawn > 0.05, `the birds sing at six (${dawn})`);
+  assert.ok(sound.stats().buffers > 6, 'the chorus was made for it');
+  look.hour = 12;
+  run(sound, 12);
+  assert.ok(sound.stats().hours.dawn < 0.005, 'and are done by noon');
+  look.hour = 6;
+  look.depthAt = () => -2.5;
+  run(sound, 12);
+  assert.ok(sound.stats().hours.dawn < 0.005, 'and over the sea there is only the sea');
+});
+
+test('crickets after dark, not by day and not in the rain', () => {
+  store = {};
+  const look = inland({ hour: 23, night: 1 });
+  const sound = heardSound(look);
+  run(sound, 8);
+  assert.ok(sound.stats().hours.crickets > 0.04, 'a summer night');
+  look.sky = 'rain';
+  run(sound, 12);
+  assert.ok(sound.stats().hours.crickets < 0.005, 'the rain shuts them up');
+  assert.ok(sound.stats().hours.rain > 0.1, 'and is heard instead');
+  assert.equal(sound.stats().sky, 'rain');
+});
+
+test('rain drums on the roofs round you, and on the one over your head indoors', () => {
+  store = {};
+  const look = inland({ hour: 14, night: 0, sky: 'rain', roofs: 0 });
+  const sound = heardSound(look);
+  run(sound, 10);
+  const open = sound.stats().hours;
+  assert.ok(open.rain > 0.1 && open.roofs < 0.01, 'in a field: the rain, no roofs');
+  look.roofs = 8;
+  run(sound, 10);
+  assert.ok(sound.stats().hours.roofs > 0.1, 'in the street: the roofs too');
+  look.indoors = true;
+  run(sound, 12);
+  const room = sound.stats().hours;
+  assert.ok(room.rain < 0.01, 'inside, the open rain is gone');
+  assert.ok(room.roofs > 0.1, 'and the roof over you drums');
+  look.sky = 'clear';
+  run(sound, 15);
+  assert.ok(sound.stats().hours.roofs < 0.005, 'the shower passes');
+  sound.setMix('weather', false);
+  look.sky = 'rain';
+  run(sound, 10);
+  assert.equal(sound.stats().hours.rain, 0, 'Rain and fog off: none at all');
+});
+
+test('the foghorn only in a fog, only with a lighthouse, and rarely', () => {
+  store = {};
+  const look = inland({ hour: 14, night: 0, sky: 'fog' });
+  const sound = heardSound(look);
+  run(sound, 120);
+  const horn = () => shots(3.2);
+  assert.equal(horn(), 0, 'no lighthouse, no horn');
+  look.lighthouse = [40, 0, 0];
+  run(sound, 180);
+  const n = horn();
+  assert.ok(n >= 1 && n <= 5, `a horn now and then (${n} in three minutes)`);
+  look.sky = 'clear';
+  run(sound, 180);
+  assert.equal(horn(), n, 'and none once the fog lifts');
+});
+
+test('an owl at night in the woods, a cuckoo by day in them, neither out in the open', () => {
+  store = {};
+  const look = inland({ hour: 2, night: 1, woods: 0 });
+  const sound = heardSound(look);
+  run(sound, 400);
+  assert.equal(shots(2.2), 0, 'no wood, no owl');
+  look.woods = 0.8;
+  run(sound, 400);
+  assert.ok(shots(2.2) >= 1, 'an owl in the wood');
+  look.hour = 12;
+  look.night = 0;
+  const owls = shots(2.2);
+  run(sound, 400);
+  assert.ok(shots(0.9) >= 1, 'a cuckoo by day');
+  assert.equal(shots(2.2), owls, 'and no owl at noon');
 });
 
 // --- 3. the noises themselves ---------------------------------------------

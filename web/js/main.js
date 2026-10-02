@@ -131,7 +131,7 @@ import { loadAvatar } from './avatar.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
-import { createWeather, setSky, forceSky, haze, hazeRange } from './weather.js';
+import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
 import { installPageKeys } from './page-keys.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
@@ -8731,6 +8731,45 @@ function craftCues() {
   }
   return out;
 }
+// How much forest is round a point, 0..1, for the wind in the leaves and the birds: the trunks of
+// world.js solids() (circles with no top: a boulder has one) counted once per landscape into cells
+// of WOOD_CELL, and read as the 3 x 3 cells round the point. Built again only when solids() hands
+// back a new list (a tree felled, a reseed), never per pick.
+const WOOD_CELL = 8;
+let woodGrid = null, woodFrom = null;
+function woodsAt(x, z) {
+  const solids = state.world && state.world.solids ? state.world.solids() : null;
+  if (!solids) return 0;
+  if (solids !== woodFrom) {
+    woodFrom = solids;
+    woodGrid = new Map();
+    for (const s of solids) {
+      if (!(s.r > 0) || s.top) continue;
+      const k = `${Math.floor(s.x / WOOD_CELL)},${Math.floor(s.z / WOOD_CELL)}`;
+      woodGrid.set(k, (woodGrid.get(k) || 0) + 1);
+    }
+  }
+  const cx = Math.floor(x / WOOD_CELL), cz = Math.floor(z / WOOD_CELL);
+  let n = 0;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) n += woodGrid.get(`${cx + dx},${cz + dz}`) || 0;
+  return Math.min(1, n / 36);
+}
+// How many of our buildings stand within ten units: the roofs the rain is heard on.
+function roofsNear(x, z) {
+  let n = 0;
+  for (const rec of state.byId.values()) {
+    if (!rec.group.visible) continue;
+    const dx = rec.group.position.x - x, dz = rec.group.position.z - z;
+    if (dx * dx + dz * dz < 100 && ++n >= 12) break;
+  }
+  return n;
+}
+function lighthouseAt() {
+  const rec = state.byId.get('civic:lighthouse');
+  if (!rec || !rec.group.visible) return null;
+  const p = rec.group.position;
+  return [p.x, p.y, p.z];
+}
 // Where the bell hangs: in the chapel's saddleback tower (scripts/build-village.py builds it at
 // about (0, 1.45, 0.53) in the chapel's own frame), through the record's group so a turned chapel
 // rings from its own tower. The bake has no anchor for it.
@@ -8777,6 +8816,12 @@ function soundSnapshot() {
     walker: walkerForGreeting(),
     // The workshops' cues (craftCues): what sound diffs to hear a blow land or the oven open.
     crafts: craftCues(),
+    // The sky's word (rain on the roofs, a fog that dulls everything), how much wood is round the
+    // ears, how many roofs the rain is drumming on, and the lighthouse a foghorn sounds from.
+    sky: skyWord(),
+    woods: woodsAt(camera.position.x, camera.position.z),
+    roofs: roofsNear(camera.position.x, camera.position.z),
+    lighthouse: lighthouseAt(),
     gathering: gathering ? { friday: gathering.id === 'borrel' } : null,
     square: gathering ? squareCentre() : null,
     // The archipelago rather than our own terrain, so the channel between two islands

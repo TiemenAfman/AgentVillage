@@ -357,9 +357,12 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    de zwaai op en terug naar nul); de bakker is zijn `phase`-woord (ovenklep bij `bake`, het brood
    op de plank bij `rest`); de zaag is `mill.cutting`, dat er al was. main.js `craftCues()` leest ze
    en rekent hun plek om. Nog niet: het knetteren van de oven en het smidsvuur.
-5. **Het uur en het weer.** Ochtendkoor, krekels, uil, regen (met daken), mist (misthoorn), bos
+5. ✅ **Het uur en het weer.** Ochtendkoor, krekels, uil, regen (met daken), mist (misthoorn), bos
    (`woodsiness`). Allemaal bedden of zeldzame one-shots, dus goedkoop; het raster voor het bos is
-   het enige nieuwe in main.js.
+   het enige nieuwe in main.js. *Gebouwd*: `woodsAt` telt de stammen van `world.solids()` (cirkels
+   zonder `top`) in cellen van 8 en wordt pas opnieuw geteld als `solids()` een nieuwe lijst geeft;
+   het weer komt als woord uit weather.js `skyWord()`; `roofsNear` telt de gebouwen binnen tien. De
+   koekoek staat voor "een vogel in het bos overdag"; een merel zit in het ochtendkoor.
 6. **Dieren.** De verhaaldieren op hun act-woorden, de kuddes van herds.js op hun eigen trage klok,
    het paard van de stal en de meeuwen op de plekken van de ambient meeuwen in plaats van alleen
    boven de kade.

@@ -90,6 +90,17 @@ const WORK_SOUNDS = {
   barrow: { buf: 'squeak', every: 0.75, volume: 0.3 },
   carry: { buf: 'squeak', every: 0.85, volume: 0.35 },
 };
+// The hour and the weather (phase 5): how loud each bed is at its fullest, and how often the three
+// rare birds call. The bed's own loudness comes from where you are (inland, in the woods, by the
+// sea) and the hour, all glided over seconds like the sea.
+const DAWN_LOUD = 0.11;
+const CRICKETS_LOUD = 0.07;
+const RAIN_LOUD = 0.2;
+const ROOFS_LOUD = 0.16;
+const OWL_GAP = [70, 200];
+const CUCKOO_GAP = [50, 140];
+const FOGHORN_GAP = [40, 90];
+const HORN_RANGE = 260;
 // Two voices for the greetings (web/js/greetings.js decides who and when): the island never says
 // hello more than twice at once.
 const GREETERS = 2;
@@ -580,6 +591,135 @@ function sawBuffer(ctx, secs = 2) {
   level(chs, 0.08);
   return intoBuffer(ctx, chs, sr);
 }
+
+// --- the hour and the weather -----------------------------------------------
+//
+// Plans/meer-geluiden.md, phase 5. Beds, all of them, but for three rare birds of their own: the
+// dawn chorus, crickets after dark, rain (on the open, and on the roofs round you), and an owl, a
+// cuckoo and the lighthouse's foghorn as one-shots with a place. Made the first time the hour or
+// the sky asks for them. Everything is written into its loop modulo the loop's length, so a chirp
+// that runs past the end lands at the start and there is no seam to fold.
+const DAWN_SR = 16000;
+function* dawnSong(ctx, secs = 12) {
+  const sr = DAWN_SR, n = Math.floor(sr * secs);
+  const out = new Float32Array(n);
+  const rng = makeRng('dawn');
+  const put = (i0, len, fn) => { for (let i = 0; i < len; i++) out[(i0 + i) % n] += fn(i / sr, i / len); };
+  // Three kinds of bird: a sparrow's up-sweep, a blackbird's fluting phrase, and a wren's trill.
+  for (let c = 0; c < 70; c++) {
+    const i0 = Math.floor(rng.next() * n), kind = rng.next(), gain = 0.3 + rng.next() * 0.7;
+    if (kind < 0.5) {
+      const f0 = 3000 + rng.next() * 1200, f1 = f0 + 600 + rng.next() * 900, L = Math.floor(sr * (0.05 + rng.next() * 0.05));
+      let ph = 0;
+      put(i0, L, (t, k) => { ph += (f0 + (f1 - f0) * k) / sr; return Math.sin(2 * Math.PI * ph) * Math.sin(Math.PI * k) * gain; });
+    } else if (kind < 0.8) {
+      const notes = 3 + Math.floor(rng.next() * 3);
+      let at = i0;
+      for (let k = 0; k < notes; k++) {
+        const f = 1700 + rng.next() * 900, L = Math.floor(sr * (0.09 + rng.next() * 0.08));
+        let ph = 0;
+        put(at, L, (t, u) => { ph += f * (1 + 0.02 * Math.sin(2 * Math.PI * 7 * t)) / sr; return (Math.sin(2 * Math.PI * ph) + 0.2 * Math.sin(4 * Math.PI * ph)) * Math.sin(Math.PI * u) * gain * 0.8; });
+        at += L + Math.floor(sr * 0.03);
+      }
+    } else {
+      const f = 4300 + rng.next() * 900, L = Math.floor(sr * (0.3 + rng.next() * 0.4));
+      let ph = 0;
+      put(i0, L, (t, k) => { ph += f / sr; return Math.sin(2 * Math.PI * ph) * (0.5 + 0.5 * Math.sin(2 * Math.PI * 28 * t)) * Math.sin(Math.PI * k) * gain * 0.6; });
+    }
+    if (c % 10 === 9) yield;
+  }
+  const chs = [out];
+  level(chs, 0.05);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// Crickets: a carrier near 4.5 kHz pulsed in threes, each cricket at a rate that divides the loop,
+// so the pulsing is periodic and the loop closes.
+function* cricketSong(ctx, secs = 6) {
+  const sr = BED_SR, n = Math.floor(sr * secs);
+  const out = new Float32Array(n);
+  const rng = makeRng('crickets');
+  for (let c = 0; c < 6; c++) {
+    const f = 4100 + rng.next() * 700, per = 9 + c * 2, phase = rng.next(), gain = 0.5 + rng.next() * 0.5;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      const p = (t * per / secs + phase) % 1;         // one chirp per period
+      const inChirp = p * (secs / per);               // seconds into it
+      if (inChirp > 0.11) continue;
+      const pulse = (inChirp % 0.037) / 0.037;
+      if (pulse > 0.55) continue;
+      out[i] += Math.sin(2 * Math.PI * f * t) * Math.sin(Math.PI * pulse / 0.55) * gain;
+    }
+    yield;
+  }
+  const chs = [out];
+  level(chs, 0.05);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// Rain: a hiss in the open, and the drops on the roofs and leaves round you, which are what you
+// hear indoors as a drumming overhead. Stereo, folded at the seam like the sea.
+function* rainSong(ctx, kind = 'rain', secs = 8) {
+  const sr = BED_SR, len = Math.floor(sr * secs), fade = Math.floor(sr * 0.5), n = len + fade;
+  const chs = [];
+  for (let c = 0; c < 2; c++) {
+    const rng = makeRng(`${kind}:${c}`);
+    const out = kind === 'rain' ? highpass(lowpass(noise(n, rng), sr, 4200), sr, 700) : new Float32Array(n);
+    if (kind === 'rain') for (let i = 0; i < n; i++) out[i] *= 0.6;
+    // Drops: a tick each, ringing at the pitch of whatever it fell on.
+    const drops = kind === 'rain' ? 220 : 900;
+    for (let d = 0; d < drops; d++) {
+      const i0 = Math.floor(rng.next() * (n - 400)), f = (kind === 'rain' ? 2400 : 1200) + rng.next() * 2200, a = 0.2 + rng.next() * 0.8;
+      const L = Math.floor(sr * 0.02);
+      for (let i = 0; i < L; i++) out[i0 + i] += Math.sin(2 * Math.PI * f * i / sr) * Math.exp(-i / sr / 0.004) * a;
+    }
+    chs.push(seam(out, len, fade));
+    yield;
+  }
+  level(chs, kind === 'rain' ? 0.12 : 0.08);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// The rare ones with a place.
+const HOUR_SHOTS = {
+  // A tawny owl: hoo... hu-hoooo, falling, with a tremble in the long one.
+  owl: (c) => shot(c, 2.2, 'owl', (n, sr) => {
+    const out = new Float32Array(n);
+    const notes = [[0, 0.32, 410, 390], [0.85, 0.12, 400, 395], [1.05, 0.9, 420, 360]];
+    for (const [at, dur, f0, f1] of notes) {
+      const i0 = Math.floor(at * sr), L = Math.floor(dur * sr);
+      let ph = 0;
+      for (let i = 0; i < L && i0 + i < n; i++) {
+        const k = i / L, t = i / sr;
+        ph += (f0 + (f1 - f0) * k) * (1 + (dur > 0.5 ? 0.012 * Math.sin(2 * Math.PI * 18 * t) : 0)) / sr;
+        out[i0 + i] += (Math.sin(2 * Math.PI * ph) + 0.15 * Math.sin(4 * Math.PI * ph)) * Math.pow(Math.sin(Math.PI * k), 0.6);
+      }
+    }
+    return out;
+  }, 0.07),
+  // A cuckoo, two notes a third apart, and a blackbird would be the dawn's.
+  cuckoo: (c) => shot(c, 0.9, 'cuckoo', (n, sr) => {
+    const out = new Float32Array(n);
+    for (const [at, dur, f] of [[0, 0.22, 660], [0.32, 0.34, 545]]) {
+      const i0 = Math.floor(at * sr), L = Math.floor(dur * sr);
+      for (let i = 0; i < L; i++) out[i0 + i] += (Math.sin(2 * Math.PI * f * i / sr) + 0.1 * Math.sin(4 * Math.PI * f * i / sr)) * Math.pow(Math.sin(Math.PI * i / L), 0.5);
+    }
+    return out;
+  }, 0.06),
+  // The lighthouse's foghorn: a long low reed swelling up and down, heard across the whole island.
+  foghorn: (c) => shot(c, 3.2, 'foghorn', (n, sr) => {
+    const out = new Float32Array(n);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, e = Math.min(1, t / 0.5) * Math.min(1, (3.0 - t) / 0.8);
+      ph += 108 / sr;
+      let v = 0;
+      for (let h = 1; h <= 5; h++) v += Math.sin(2 * Math.PI * ph * h) / (h * h);
+      out[i] = v * Math.max(0, e);
+    }
+    return lowpass(out, sr, 700);
+  }, 0.12),
+};
 
 // --- a clink ---------------------------------------------------------------
 //
@@ -1330,6 +1470,15 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       crafts: Array.from({ length: CRAFTS }, () => mkVoice(null, { ref: 5, rolloff: 1.7, volume: 0.6, part: 'work' })),
       workers: Array.from({ length: WORKERS }, () => ({ ...mkVoice(null, { ref: 5, rolloff: 1.9, volume: 0.45, part: 'work' }), id: null, f: null, next: 0 })),
       saw: { ...mkLoop({ ref: 5, rolloff: 1.6, volume: 0, part: 'work', cut: 3000 }), want: 0 },
+      // The hour and the weather: four beds, and one voice for the rare birds and the foghorn.
+      hours: {
+        dawn: { ...mkBed(null, 'birds'), want: 0, at: 0 },
+        crickets: { ...mkBed(null, 'night'), want: 0, at: 0 },
+        rain: { ...mkBed(null, 'weather'), want: 0, at: 0 },
+        roofs: { ...mkBed(null, 'weather'), want: 0, at: 0 },
+      },
+      rare: mkVoice(null, { ref: 14, rolloff: 1.0, volume: 0.6, part: 'birds' }),
+      horn: mkVoice(null, { ref: 30, rolloff: 0.6, volume: 0.8, part: 'weather' }),
       // Who says hello: two voices with a place, given each greeting's phrase as it is said.
       greeters: Array.from({ length: GREETERS }, () => ({ ...mkVoice(null, { ref: 3, rolloff: 1.6, volume: 0.7, part: 'greetings' }), id: null })),
       // The families made the first time they are wanted, a step a frame (need, makeMore).
@@ -1357,6 +1506,11 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     bell: (c) => bellSong(c),
     ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
     saw: (c) => once(sawBuffer, c),
+    dawn: (c) => dawnSong(c),
+    crickets: (c) => cricketSong(c),
+    rain: (c) => rainSong(c, 'rain'),
+    roofs: (c) => rainSong(c, 'roofs'),
+    ...Object.fromEntries(Object.entries(HOUR_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
     ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
   };
   // A buffer that is quick to make, made in one step all the same, so every family goes through
@@ -1777,6 +1931,88 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     }
   }
 
+  // The hour and the sky. Each bed's want is worked out here from the snapshot's hour, night, sky,
+  // `woods` (how much forest is round the ears, 0..1) and `roofs` (how many buildings), and the
+  // frame glides it there (glideHours). A bed is started on the first moment it is wanted and
+  // stopped once it has glided to nothing, so a clear noon runs no rain at all.
+  let sky = 'clear', wetAt = 0;
+  const span = (h, a, b, c, d) => (h < a || h > d ? 0 : h < b ? (h - a) / (b - a) : h <= c ? 1 : (d - h) / (d - c));
+  function steerHours(look, wet) {
+    const H = built.hours;
+    sky = typeof look.sky === 'string' ? look.sky : 'clear';
+    wetAt = wet;
+    const raining = sky === 'rain', foggy = sky === 'fog';
+    const woods = clamp(look.woods || 0, 0, 1);
+    const hour = Number.isFinite(look.hour) ? look.hour : 12;
+    const night = clamp(look.night || 0, 0, 1);
+    const out = !look.indoors;
+    const land = 1 - wet;
+    H.dawn.want = out && live('birds') ? DAWN_LOUD * span(hour, 4.6, 5.2, 8.5, 10) * land * (0.4 + 0.6 * woods)
+      * (raining ? 0.3 : foggy ? 0.6 : 1) : 0;
+    H.crickets.want = out && live('night') ? CRICKETS_LOUD * clamp((night - 0.5) * 2, 0, 1) * land * (raining ? 0 : 1) : 0;
+    H.rain.want = raining && live('weather') ? (out ? RAIN_LOUD : 0) : 0;
+    // On the roofs round you: brighter the more of them there are; indoors, the roof over your head.
+    H.roofs.want = raining && live('weather') ? (out ? ROOFS_LOUD * clamp((look.roofs || 0) / 6, 0, 1) : ROOFS_LOUD * 0.9) : 0;
+    H.roofs.filter.frequency.setTargetAtTime(out ? 6000 : 650, ctx.currentTime, 0.4);
+    for (const [name, b] of Object.entries(H)) if (b.want > 0) need(name);
+    rareBirds(look, woods, hour, night, out);
+  }
+  function glideHours(dt) {
+    const k = 1 - Math.exp(-dt / 2.5);
+    for (const [name, b] of Object.entries(built.hours)) {
+      b.at += (b.want - b.at) * k;
+      const buf = built.buffers[name];
+      const a = b.audio;
+      if (buf && a.buffer !== buf) a.setBuffer(buf);
+      a.setVolume(b.at * duckOver());
+      if (b.at > 0.0005 && a.buffer && !a.isPlaying) a.play();
+      else if (b.want <= 0 && b.at < 0.0005 && a.isPlaying) a.stop();
+    }
+  }
+  // The beds that come from above the water go down as the listener does (phase 7 sets `over`).
+  const duckOver = () => 1;
+
+  // An owl in the woods at night, a cuckoo in them by day, the foghorn in a fog: each on a slow
+  // clock of its own, never in the first minute, and only where it belongs.
+  const rare = { owl: OWL_GAP[0], cuckoo: CUCKOO_GAP[0], horn: FOGHORN_GAP[0] / 2 };
+  function rareBirds(look, woods, hour, night, out) {
+    rare.owl -= PICK_S; rare.cuckoo -= PICK_S; rare.horn -= PICK_S;
+    const away = (r0, r1) => {
+      const a = Math.random() * Math.PI * 2, r = r0 + Math.random() * (r1 - r0);
+      return [camera.position.x + Math.cos(a) * r, camera.position.z + Math.sin(a) * r];
+    };
+    if (rare.owl <= 0) {
+      rare.owl = OWL_GAP[0] + Math.random() * (OWL_GAP[1] - OWL_GAP[0]);
+      if (out && night > 0.6 && woods > 0.15 && live('night') && need('owl')) {
+        const [x, z] = away(16, 32);
+        built.rare.audio.setBuffer(built.buffers.owl);
+        fire(built.rare, x, 6, z, 0.95 + Math.random() * 0.1);
+      }
+    }
+    if (rare.cuckoo <= 0) {
+      rare.cuckoo = CUCKOO_GAP[0] + Math.random() * (CUCKOO_GAP[1] - CUCKOO_GAP[0]);
+      if (out && night < 0.3 && hour > 7 && hour < 19 && woods > 0.2 && sky !== 'rain' && live('birds') && need('cuckoo')) {
+        const [x, z] = away(14, 28);
+        built.rare.audio.setBuffer(built.buffers.cuckoo);
+        fire(built.rare, x, 7, z, 0.97 + Math.random() * 0.06);
+      }
+    }
+    if (rare.horn <= 0) {
+      rare.horn = FOGHORN_GAP[0] + Math.random() * (FOGHORN_GAP[1] - FOGHORN_GAP[0]);
+      const at = look.lighthouse;
+      if (sky === 'fog' && at && flat(at) < HORN_RANGE && live('weather') && need('foghorn')) {
+        built.horn.audio.setBuffer(built.buffers.foghorn);
+        // Through a wall the horn is still the horn, only further off.
+        built.horn.audio.setVolume(out ? 0.8 : 0.25);
+        fire(built.horn, at[0], at[1] + 6, at[2], 1);
+      }
+    }
+    // Asked for while the sky or the hour is right, so the first call is not lost to its buffer.
+    if (night > 0.6 && woods > 0.15) need('owl');
+    if (night < 0.3 && woods > 0.2) need('cuckoo');
+    if (sky === 'fog' && look.lighthouse) need('foghorn');
+  }
+
   // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against
   // what it saw last pick. A counter that went up is a blow that landed (the smith's and the
   // butcher's `hits`); a word that changed is a step of the work (the baker's `phase`); `cutting` is
@@ -1943,15 +2179,22 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
     // --- the bed ---
     const wet = coastliness(look);
+    // Overcast and rain blow a step harder, and lower; a fog takes the edge off everything.
+    const sk = typeof look.sky === 'string' ? look.sky : 'clear';
+    const windy = sk === 'rain' ? 1.5 : sk === 'overcast' ? 1.25 : sk === 'fog' ? 0.7 : 1;
+    // In the woods the leaves join in: more of the wind's own brightness is let through.
+    const woods = clamp(look.woods || 0, 0, 1);
     bed.seaWant = SEA_QUIET + (SEA_LOUD - SEA_QUIET) * wet;
-    bed.windWant = WIND_LOUD + (WIND_QUIET - WIND_LOUD) * wet;
+    bed.windWant = (WIND_LOUD + (WIND_QUIET - WIND_LOUD) * wet) * windy * (1 + 0.3 * woods);
     // Night takes the top off as well as turning it down: after dark the sea is further
     // away and the wind is in the trees rather than in your ears.
     const night = clamp(look.night || 0, 0, 1);
-    bed.duckWant = (1 - night * (1 - NIGHT_DUCK)) * (look.indoors ? INDOOR_DUCK : 1);
-    const cut = look.indoors ? 700 : 7000 - night * 4200;
+    bed.duckWant = (1 - night * (1 - NIGHT_DUCK)) * (look.indoors ? INDOOR_DUCK : 1) * (sk === 'fog' ? 0.75 : 1);
+    const dull = sk === 'fog' ? 0.6 : sk === 'rain' || sk === 'overcast' ? 0.8 : 1;
+    const cut = look.indoors ? 700 : (7000 - night * 4200) * dull;
     built.sea.filter.frequency.setTargetAtTime(cut, ctx.currentTime, 0.6);
-    built.wind.filter.frequency.setTargetAtTime(cut, ctx.currentTime, 0.6);
+    built.wind.filter.frequency.setTargetAtTime(cut * (1 + 0.4 * woods), ctx.currentTime, 0.6);
+    steerHours(look, wet);
 
     // --- the hammers ---
     // Indoors nobody outside is worth hearing, and the bed is already down to a fifth.
@@ -2022,6 +2265,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     clinks(dt);
     strike();
     work();
+    glideHours(dt);
     makeMore();
 
     // The blows. Four `if`s a frame at the very worst, which is what a hard cap buys.
@@ -2127,7 +2371,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, worker: WORKERS,
+    craft: CRAFTS + 1, worker: WORKERS, rare: 2,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -2136,11 +2380,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub: Object.values(built.pubs).map((p) => p.out),
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
-      craft: [...built.crafts, built.saw], worker: built.workers,
+      craft: [...built.crafts, built.saw], worker: built.workers, rare: [built.rare, built.horn],
     };
   }
   const placedVoices = () => Object.values(familyVoices()).flat();
-  const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom, built.bellRoom];
+  const flatVoices = () => [built.sea, built.wind, ...Object.values(built.pubs).map((p) => p.in), built.clinkRoom, built.bellRoom,
+    ...Object.values(built.hours)];
   function families() {
     const out = {};
     for (const [name, voices] of Object.entries(familyVoices())) {
@@ -2206,6 +2451,9 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       bell: { queued: bell.queue.length, minute: bell.min },
       // How many hellos this page has said.
       greeted,
+      // The hour's and the sky's beds: where each has glided to.
+      hours: built ? Object.fromEntries(Object.entries(built.hours).map(([k, b]) => [k, Math.round(b.at * 1000) / 1000])) : null,
+      sky,
       // Where the bed has got to, rounded. The only way to see that the sea comes up as
       // you walk down to it and goes quiet again after dark, short of having ears.
       bed: {
