@@ -145,3 +145,29 @@ export function divePitch(vy) {
   const t = vy < 0 ? Math.max(-1, vy / DIVE_DOWN) : Math.min(1, vy / DIVE_UP);
   return SWIM_PITCH - t * (t < 0 ? 0.9 : 0.7);
 }
+
+// Treading water. A surface swimmer going nowhere floated face down at the stroke's 1.32, a
+// body drifting rather than one keeping its head up (the keeper's screenshot off the volcano):
+// still, the swimmer stands upright in the water instead, sunk to the shoulders - the rig is
+// 0.53 tall with its eyes at 0.42, so TREAD_SINK leaves the head out and the water at the neck.
+// `lie` is how far into the stroke the body is, 1 lying, 0 upright, eased by `stepLie` so
+// starting off tips the body forward and stopping rights it rather than snapping. Drawing only:
+// the feet (`pos.y`, what the sea's air and every pose carry) do not move, and walk.js and
+// peers.js draw the same body from the same `moving` bit, as they do the diver's pitch.
+export const TREAD_PITCH = 0.12;
+export const TREAD_SINK = 0.28;
+export const LIE_RATE = 3;
+export function stepLie(lie, moving, dt) {
+  return lie + ((moving ? 1 : 0) - lie) * Math.min(1, dt * LIE_RATE);
+}
+// The body's pitch, its drop below the feet's height and its roll, for a `lie` and the stroke's
+// own clock (`bob`): lying, the stroke rocks and rolls it as it always did; upright, it only
+// sways a little forward and back and bobs on the swell.
+export function swimPose(lie, bob) {
+  const s = Math.sin(bob);
+  return {
+    pitch: TREAD_PITCH + (SWIM_PITCH - TREAD_PITCH) * lie + s * (0.1 * lie + 0.04 * (1 - lie)),
+    dy: s * 0.03 - TREAD_SINK * (1 - lie),
+    roll: Math.sin(bob * 0.5) * 0.16 * lie,
+  };
+}

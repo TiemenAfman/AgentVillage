@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   stepDive, plungeSpeed, PLUNGE_MAX, DIVE_DRIFT, canDive, headUnder, divePitch, lookRise, SWIM_PITCH,
+  swimPose, stepLie, TREAD_PITCH, TREAD_SINK,
   LOOK_LEVEL, LOOK_DEAD, LOOK_SPAN, LOOK_LEVEL_FP, LOOK_DEAD_FP, LOOK_SPAN_FP,
   DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED, DIVE_DOWN, DIVE_UP, DIVE_HEAD, DIVE_MIN_WATER, BED_CLEAR, SHALLOW,
 } from '../web/js/diving.js';
@@ -290,4 +291,31 @@ test('over a shelf shallower than a hand and a half the diver\'s camera still ha
   // And with the eased-in blend the camera passes the surface smoothly, not in one step.
   const path = [0, 0.25, 0.5, 0.75, 1].map((b) => at(-0.4, b));
   for (let i = 1; i < path.length; i++) assert.ok(path[i] <= path[i - 1] + 1e-9, `the camera rose as it went under: ${path}`);
+});
+
+test('a swimmer going nowhere treads water upright, and lies down in the stroke to swim', () => {
+  // The keeper's screenshot: idle off the volcano, the body floated face down at the stroke's
+  // pitch. Still, it stands in the water now, sunk to the neck - the eyes (0.42 on a 0.53 rig)
+  // over the surface, which lies SINK over the feet - and swimming off tips it forward again.
+  const still = swimPose(0, 0), swimming = swimPose(1, 0);
+  assert.equal(still.pitch, TREAD_PITCH);
+  assert.ok(Math.abs(still.pitch) < 0.2, 'treading water is upright');
+  assert.ok(Math.abs(swimming.pitch - SWIM_PITCH) < 1e-12, 'the stroke lies where it always did');
+  assert.equal(swimming.dy, 0, 'lying in the stroke, the body is drawn at the feet as before');
+  const eyes = REST - TREAD_SINK + 0.42, chin = REST - TREAD_SINK + 0.33;
+  assert.ok(eyes > 0.03 && chin < 0.05, `the head is out and the shoulders in: eyes ${eyes}, chin ${chin}`);
+  // Never rolls upright, and no swell or sway takes the body more than a few degrees over.
+  for (let bob = 0; bob < 7; bob += 0.1) {
+    const p = swimPose(0, bob);
+    assert.ok(p.roll === 0, 'no roll while treading');
+    assert.ok(Math.abs(p.pitch - TREAD_PITCH) <= 0.04 + 1e-12);
+  }
+  // Eased both ways: stopping rights the body over a second or so, never in one frame.
+  let lie = 1;
+  const path = [];
+  for (let i = 0; i < 90; i++) path.push(lie = stepLie(lie, false, FRAME));
+  assert.ok(1 - path[0] < 0.1, 'one frame does not stand the body up');
+  assert.ok(lie < 0.02, `after a second and a half the swimmer is upright (lie ${lie})`);
+  for (let i = 0; i < 90; i++) lie = stepLie(lie, true, FRAME);
+  assert.ok(lie > 0.98, 'and swimming off lays it back in the stroke');
 });

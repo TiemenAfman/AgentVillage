@@ -1755,7 +1755,11 @@ units down. The phone shows B in the water through `walk.inWater()` (`touchpad.j
 through the `y` that was always sent (`peers.js`: a swimmer sent below `SURFACE_Y - DIVE_BELOW`
 is drawn there, clamped to the surface above and the bed below, tipped by `divePitch` off the
 vertical speed of their last two samples): no pose bit, no new message, and a page from before
-diving sends -0.07 and is drawn afloat.
+diving sends -0.07 and is drawn afloat. At the surface a swimmer going nowhere **treads water
+upright** (`swimPose`/`stepLie` in diving.js: `lie` eased off `moving`, the body sunk `TREAD_SINK`
+to the neck, the rig's arms out sculling through `treading`), drawn alike by walk.js and peers.js;
+drawing only - `pos.y`, the air and the wire are untouched, so a page from before it draws the
+same swimmer face down.
 
 **The sea has a floor, and it is a layer beside the terrain, never in it**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). Writing a bed into any terrain `H` -
