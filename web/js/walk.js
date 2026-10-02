@@ -16,7 +16,7 @@ import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segm
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
-import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
+import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
@@ -1887,6 +1887,9 @@ export function createWalkMode({
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
     if (keys.has('a') || keys.has('arrowleft')) ix -= 1;
     if (keys.has('d') || keys.has('arrowright')) ix += 1;
+    // The keys' share of the bars apart, for the bike: a stick's steering is read differently
+    // there (stickTurn in bicycle.js), or a thumb a few degrees off straight weaves the bike.
+    const keyX = ix, stickX = stick.x, stickZ = stick.z;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
     if (state.parked) [ix, iz] = routeInput(dt);
@@ -1949,7 +1952,8 @@ export function createWalkMode({
       state.turbo = turbo;
       // In the air the ground is asked from the floor the hop left, as a jump's is, so a hop
       // cannot change which storey you are on; the lid is a deck overhead, less a rider's head.
-      stepBike(b, { pedal: iz, turn: ix, turbo, hop: hopWanted }, dt, {
+      const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
+      stepBike(b, { pedal: iz, turn, turbo, hop: hopWanted }, dt, {
         ground: (x, z) => groundAt(x, z, b.air ? b.floor : b.y),
         blocked: (x, z) => blocked(x, z, b.y),
         ceiling: (x, z) => ceilingAt(x, z, b.floor) - HEAD - RIDE_HEAD,

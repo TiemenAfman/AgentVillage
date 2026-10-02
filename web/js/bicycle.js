@@ -36,6 +36,24 @@ const SLOPE_PULL = 2.5;
 // The water's edge, the same 0.06 walk.js calls the shore: a tyre will run on wet sand and
 // not into the sea. BOAT_FLOAT in boat.js is this same number pointed the other way.
 export const BIKE_SHORE = 0.06;
+
+// The bars from an analog stick (the phone's touch stick, a pad's left stick). A thumb
+// pushing "straight ahead" on glass is always some degrees off, and the round stick handed
+// that on as x: sin(15 degrees) is a quarter of the bars, and at BIKE_TURN a rider going
+// straight weaved. So the steering is read off the push's *angle* from the pedal axis: within
+// STICK_AXIS_DEAD of straight ahead (or back) it is nothing, past it a soft curve up to full
+// bars straight sideways, times how hard the stick is pushed. Keys are not stick: A and D
+// stay full bars.
+export const STICK_AXIS_DEAD = 0.35;   // rad, ~20 degrees either side of ahead
+export const STICK_TURN_CURVE = 1.6;
+export function stickTurn(x, z) {
+  const m = Math.min(1, Math.hypot(x, z));
+  if (!(m > 0)) return 0;
+  const off = Math.atan2(Math.abs(x), Math.abs(z));   // 0 along the pedals, pi/2 sideways
+  const t = (off - STICK_AXIS_DEAD) / (Math.PI / 2 - STICK_AXIS_DEAD);
+  if (t <= 0) return 0;
+  return Math.sign(x) * Math.pow(Math.min(1, t), STICK_TURN_CURVE) * m;
+}
 // The highest ledge it rolls up without a jump: walk.js's STEP_UP, so a bridge you walk
 // onto is a bridge you ride onto and a storey is still a wall.
 const STEP_UP = 0.45;
