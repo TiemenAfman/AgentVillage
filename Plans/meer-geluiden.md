@@ -1,6 +1,8 @@
 # Meer geluiden op het eiland
 
-**🚧 PLAN** — van 2 oktober 2026, nog niet gebouwd.
+**🚧 PLAN** — van 2 oktober 2026, in aanbouw. Dezelfde dag aangevuld met de wensen van de keeper:
+de kerkklok, de begroeting op straat en een eigen tabblad **Audio** in Settings (bij de besluiten
+hieronder).
 
 Gevraagd: meer geluid op het eiland. Dieren, omgeving die meegaat met het uur en het weer, het
 geroezemoes van de kroegen dat je buiten gedempt hoort, en de ambachten aan het werk. Doel: een
@@ -143,6 +145,55 @@ weet het niet. Twee soorten timing:
   de krater toe, en een borrel-loop met een plek bij de dichtstbijzijnde lavastroom
   (`lavaLines` in web/js/lava.js). Op een telefoon die geen bas heeft: de borrel draagt het.
 
+### De kerkklok
+
+- **De klok hangt in de kapel** (`civic:chapel`, civicType `chapel`, rung 40 in lib/village.mjs; de
+  bake is `civic_chapel` uit scripts/build-village.py, met een zadeldaktoren rond lokaal
+  (0, 1,45, 0,53)). De bake heeft geen anchor ervoor: main.js rekent dat punt om met de `group` van
+  het record (`localToWorld`), zodat een gedraaide kapel uit zijn eigen toren luidt. Geen kapel,
+  geen klok.
+- **Hij slaat de uren op de klok van de zee**, nooit op die van de pagina: de snapshot geeft
+  `clock` = `worldNow().hour` (shared/worldclock.mjs, met `seaSkewMs` en `seaTz`), en sound.js slaat
+  zodra het hele uur verspringt - zoveel slagen als het uur op een wijzerplaat (1-12), 2,4 s uit
+  elkaar - en op het halve uur één lichtere slag. Zo luidt elke pagina op hetzelfde moment (op een
+  pick van 1/6 s na), want ze rekenen allemaal hetzelfde uur uit dezelfde tijd. Een lens (`?hour`,
+  het chronicle) is niet de zee: dan is `clock` null en zwijgt de klok. Een pagina die om 14:00:10
+  laadt, slaat niet alsnog twee: alleen een overgang die sound.js zelf ziet telt, en alleen een stap
+  vooruit van minder dan een kwartier (een grotere sprong is een andere zee of een slapende tab).
+- **Positioneel en ver te horen**: één bron in de toren, `exponential` met `ref` 24 en `rolloff`
+  0,7, en een bereik (`BELL_RANGE`) van 320 eenheden - het hele eiland tot 384 cellen; verder hoor
+  je over het water toch alleen de zee. In een kamer hoor je hem gedempt (`INDOOR_DUCK`, een
+  stille bron door het bed): een kerkklok hoor je door een muur. Het is de enige plek-stem die binnen
+  niet zwijgt.
+- **'s Nachts zwijgt hij**: van 23:00 tot 7:00 slaat hij niet (`BELL_QUIET`); om 7:00 weer. Een
+  keuze van smaak, open vraag 8.
+- **Berekend**, zoals de rest: een klok is een handvol *inharmonische* partialen met elk een eigen
+  uitsterftijd - hum (0,5), prime (1), mineurterts (1,2), kwint (1,5), nominaal (2) en een paar
+  hogere (2,5, 3, 4,2) - en een korte metalen tik van de klepel. De prime rond 330 Hz: een
+  dorpsklok, geen kathedraal. Eén buffer van ~4 s op 22 kHz; de halfuurslag is dezelfde buffer,
+  hoger en zachter afgespeeld.
+
+### Begroeting op straat
+
+- **Een inwoner die je tegenkomt, zegt iets.** Loop je (walk mode, buiten, op ons eigen eiland)
+  binnen `GREET_R` (3,5) langs een van onze eigen settlers die getekend wordt, en kijk je ongeveer
+  zijn kant op (binnen ~70°), dan groet hij: een kort zinnetje van twee tot vier lettergrepen.
+- **Brabbeltaal, geen woorden en geen ballon.** Animal Crossing-achtig: pulsen door twee formanten
+  per lettergreep, met een melodie die stijgt en daalt als "hallo". Drie zinnetjes, één keer
+  berekend; per settler een eigen toonhoogte (afspeelsnelheid 0,8-1,35) uit een rng op
+  `<id>:voice` - een eigen stroom, zoals `<id>:gait`, nooit uit `<id>:walk`, die geordend en dragend
+  is. Een ballon zou tekenwerk zijn en een betekenis suggereren die er niet is; alleen de stem laat
+  het een groet blijven (een ballon kan later uit dezelfde beslissing, open vraag 10).
+- **Zeldzaam**: per settler hooguit eens in `GREET_AGAIN` (90 s), op het hele eiland hooguit eens in
+  `GREET_GAP` (4 s), en nooit meer dan de twee stemmen van de pool tegelijk. Een dorp dat je bij elke
+  stap begroet is een winkelcentrum.
+- **Van de pagina alleen**: niets op de draad; een ander scherm hoort het niet. Wie groet besluit
+  `web/js/greetings.js` (zuiver en getest), en sound.js vraagt het in zijn pick met de walker en onze
+  eigen crowd uit de snapshot - zo blijft "tekenmodules roepen sound nooit aan" waar.
+- **Elkaar groeten** (nice-to-have, meegebouwd): twee van onze settlers die lopend binnen 1,5 van
+  elkaar passeren, binnen 25 van het oor, zeggen soms iets - op het hele eiland hooguit eens in de
+  20 s.
+
 ### De kroegen buiten: geroezemoes door de muur, en de borrel op het plein
 
 Het model van de liederen blijft: **binnen luid en open, buiten gedempt, niets voorbij `range`.**
@@ -208,9 +259,10 @@ Harde plafonds, zoals nu: array-lengtes, geen budget dat geteld wordt. Per tier 
 | ambachten (smid, zaag, bakker, slager, visser, goud, wagen) | 4 | 3 | 2 |
 | dieren (verhaaldieren, kuddes, paarden) | 4 | 3 | 2 |
 | meeuwen, uil, misthoorn | 3 | 2 | 1 |
+| kerkklok + begroetingen | 1 + 2 | 1 + 2 | 1 + 1 |
 | loops met een plek (2 kroegen, borrel, zaagblad, rivier, lava) | 6 | 4 | 3 |
 | bedden (zee, wind, ochtend, nacht, regen, onder water) | 6 | 6 | 4 (ochtend en nacht als één) |
-| **positionele bronnen samen** | **≤ 29** | **≤ 19** | **≤ 12** |
+| **positionele bronnen samen** | **≤ 32** | **≤ 22** | **≤ 14** |
 
 - **Panning**: three's `PositionalAudio` gebruikt HRTF, en dat is per bron de duurste node in de
   graph. Op `modest` en `phone` zet sound.js `panner.panningModel = 'equalpower'`. Op `full` alleen
@@ -226,18 +278,45 @@ Harde plafonds, zoals nu: array-lengtes, geen budget dat geteld wordt. Per tier 
 - `stats()` krijgt per familie `cap`, `placed` en `playing`, zodat "driehonderd inwoners,
   negentien stemmen" net zo controleerbaar blijft vanaf de console.
 
-### Volume in Settings
+### Het tabblad Audio in Settings
 
-- Settings → **This screen** krijgt een sectie **Sound**: een master-schuif plus **Ambience** (zee,
-  wind, vogels, krekels, regen, water, lava), **Effects** (hamers, ambachten, dieren, kroegen) en
-  **Music** (rave, shanty, de tracks van de keeper). Per browser, zoals de chip zelf
-  (`promptholm.sound.mix`, alleen wat verschoven is), via dezelfde try/catch rond localStorage.
-- In de graph: drie `GainNode`s als bussen tussen de stemmen en `listener.getInput()`. three
-  verbindt elke `Audio.gain` in de constructor met de listener; bij het bouwen wordt die verbinding
-  verlegd naar de bus van de familie (`audio.gain.disconnect(); audio.gain.connect(bus)`). Te
-  controleren tegen de gevendorde three (r170) vóór er iets op gebouwd wordt.
-- De Sound-chip blijft aan/uit. De schuiven werken ook als het geluid uit staat (ze bewaren alleen).
-- Op de telefoon dezelfde sectie; `phoneprefs.js` hoeft het niet apart te houden.
+- **Een eigen tabblad, Audio**, naast This screen, Controls, Island en Help (`data-tabbtn="audio"` in
+  web/index.html, en een `<section data-tab="audio">` van ui.js zoals die van `screen`). De Sound-chip
+  verhuist erheen en blijft wat hij was: de **hoofdschakelaar** (`sound.toggle`, `promptholm.sound`).
+  Eén eigenaar: de chip zet aan en uit, de schuiven en vinkjes regelen alleen hoe hard.
+- **Vier schuiven**: **Master**, **Ambience**, **Music** en **Speech**, van 0 tot 100%.
+  - *Ambience* is alles van de wereld zelf: zee, wind, vogels, krekels, regen, rivier, vulkaan,
+    onder water, de ambachten, de hamers, de dieren, de rondes en de kerkklok.
+  - *Music* is de rave, de shanty's en de eigen tracks van de keeper (open vraag 7 is daarmee
+    beantwoord: één schuif, en alleen jouw muziek uit kan met het vinkje *Your own tracks*).
+  - *Speech* is wat mensen zeggen: de begroetingen en het geroezemoes van de kroegen en van de
+    borrel, met het klinken van de glazen erbij - dat hoort bij hetzelfde lawaai.
+  - *Master* vermenigvuldigt alles. Geen vijfde schuif *Effects* (open vraag 9): elk onderdeel kan
+    met zijn vinkje uit, en vier schuiven zijn in één oogopslag te begrijpen.
+- **Per onderdeel een vinkje** (aan/uit): *Sea and wind*, *Birds and animals*, *Crickets and the
+  night*, *Rain and fog*, *Crafts and hammers*, *Church bell*, *Taverns*, *The borrel*, *Greetings*,
+  *The rounds* (houtkar, goudrun, visser), *Rivers and the volcano*, *Under water*, *The rave and the
+  shanties* en *Your own tracks*. Elk onderdeel hoort bij precies één bus.
+- **Opslag**: `promptholm.sound.mix`, per browser, één object met alleen wat van de standaard afwijkt
+  (`{ "master": 0.6, "bell": false }`) - het patroon van `saveGraphic` in graphics-settings.js. Elke
+  lees- en schrijfactie in try/catch: zonder opslag gelden de standaarden en werkt een schuif nog
+  voor deze pagina. Live: een schuif of vinkje werkt meteen, ook als het geluid uit staat (dan wordt
+  het alleen bewaard), zonder herladen. De tabel van schuiven en onderdelen, hun grenzen en de opslag
+  staan in één zuivere module, `web/js/sound-mix.js` (`MIX_LEVELS`, `MIX_PARTS`, `loadMix`, `saveMix`,
+  `forgetMix`), die ui.js leest om te tekenen en sound.js om te mengen; schrijven doet alleen
+  `sound.setMix`.
+- **In de graph**: drie bussen (`GainNode`s: ambience, music, speech) op `listener.getInput()`, en per
+  onderdeel één `GainNode` op zijn bus. Elke stem wordt bij het bouwen verlegd:
+  `audio.gain.disconnect(); audio.gain.connect(part)`. **Nagekeken tegen de gevendorde three (r170,
+  web/vendor/three.module.js)**: `Audio` verbindt `this.gain` in zijn constructor met
+  `listener.getInput()`, en geen enkele methode raakt de uitgang van `gain` daarna nog aan -
+  `connect`/`disconnect`/`setFilters` verleggen alleen bron → filters → `getOutput()`, en
+  `PositionalAudio` alleen panner → gain. Eén keer verleggen, meteen na `new Audio`, is dus veilig, en
+  `getVolume`/`setVolume` blijven de eigen gain van de stem. Master is `listener.setMasterVolume` (de
+  gain van de listener, vóór de onderwater-lowpass), keer de inloop van anderhalve seconde. Een
+  onderdeel dat uit staat, wordt bovendien niet *afgevuurd*: de gain op nul maakt het stil, het
+  overslaan maakt het gratis.
+- Op de telefoon hetzelfde tabblad; `phoneprefs.js` hoeft het niet apart te houden.
 
 ### Tests
 
@@ -251,32 +330,40 @@ Harde plafonds, zoals nu: array-lengtes, geen budget dat geteld wordt. Per tier 
 - een cue die oploopt geeft precies één slag; een cue die gelijk blijft geen;
 - binnen hoor je geen hamer en geen dier, wel regen;
 - onder water zakken de bedden van boven;
-- de mix-bussen: master/ambience/effects/music op nul maakt de juiste stemmen stil en de rest niet.
+- de mix-bussen: master/ambience/music/speech op nul maakt de juiste stemmen stil en de rest niet,
+  nagelopen langs de echte verbindingen van de nep-graph, en een vinkje uit doet dat voor één
+  onderdeel (`tests/sound-mix.test.mjs` houdt de opslag);
+- de kerkklok slaat op de klok van de zee het juiste aantal keer, niet bij het laden, niet onder een
+  lens en niet 's nachts;
+- een begroeting komt alleen dichtbij en van voren, één keer per settler per `GREET_AGAIN`, met een
+  eigen toonhoogte per id (`tests/greetings.test.mjs`).
 
 ## Volgorde van oplevering
 
 Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst eerst.
 
-1. **De kroegen buiten en de borrel.** Bouwt op wat er al is (de murmur-loop, `busy`, de liederen):
-   de bron naar de deur, een filter dat opengaat bij de deur, een tweede bron voor de Kraken met een
-   eigen stem, clinks, het geroezemoes binnen in de dorpskroeg, en een loop op het plein tijdens
-   `gatheringAt`. Erbij de **mix-bussen en de schuiven in Settings**, omdat elke volgende fase ze
-   nodig heeft en ze klein zijn.
-2. **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
+1. **Het tabblad Audio, de bussen, de kroegen buiten en de borrel.** Eerst de mix-bussen en het
+   tabblad, omdat elke volgende fase ze nodig heeft en ze klein zijn. Dan bouwen op wat er al is (de
+   murmur-loop, `busy`, de liederen): de bron naar de deur, een filter dat opengaat bij de deur, een
+   tweede bron voor de Kraken met een eigen stem, clinks, het geroezemoes binnen in de dorpskroeg, en
+   een loop op het plein tijdens `gatheringAt`.
+2. **De kerkklok.** Klein: één buffer, één bron, de klok van de zee.
+3. **De begroeting op straat.**
+4. **Ambachten.** De smid (cue `blows`), het zaagblad (`feedAt`), de bakker en de slager, en de
    werkers in de crowd (`chop`, `hoe`/`weed`, `barrow`/`carry`, `load`) als veralgemening van de
    hamer-pool. Hier komt de "cue"-afspraak voor het eerst in de code.
-3. **Het uur en het weer.** Ochtendkoor, krekels, uil, regen (met daken), mist (misthoorn), bos
+5. **Het uur en het weer.** Ochtendkoor, krekels, uil, regen (met daken), mist (misthoorn), bos
    (`woodsiness`). Allemaal bedden of zeldzame one-shots, dus goedkoop; het raster voor het bos is
    het enige nieuwe in main.js.
-4. **Dieren.** De verhaaldieren op hun act-woorden, de kuddes van herds.js op hun eigen trage klok,
+6. **Dieren.** De verhaaldieren op hun act-woorden, de kuddes van herds.js op hun eigen trage klok,
    het paard van de stal en de meeuwen op de plekken van de ambient meeuwen in plaats van alleen
    boven de kade.
-5. **Water en vuur.** De rivier en de trechter, de vulkaan (rommel en borrel), en het onderwater-bed
+7. **Water en vuur.** De rivier en de trechter, de vulkaan (rommel en borrel), en het onderwater-bed
    met bellen.
-6. **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
+8. **De rondes.** De houtkar (hoeven, wielen, lossen), de goudrun (karretje, smelten, staven), de
    visser (werp en plons). Laatst, omdat ze zeldzaam zijn en het meeste uitzoekwerk vragen om in de
    pas te lopen met het beeld.
-7. **Optioneel: eigen samples van de keeper** (`HOME/audio/sfx/`), alleen als blijkt dat een
+9. **Optioneel: eigen samples van de keeper** (`HOME/audio/sfx/`), alleen als blijkt dat een
    berekende koe of geit echt niet te doen is.
 
 Na elke fase: de open zee hoeft niet geredeployd (niets op de draad), en het is een patch - geen
@@ -284,7 +371,7 @@ Na elke fase: de open zee hoeft niet geredeployd (niets op de draad), en het is 
 
 ## Open vragen voor de keeper
 
-1. **Samples, ja of nee?** Het plan gaat uit van alleen synthese, met fase 7 als ontsnapping. Wil je
+1. **Samples, ja of nee?** Het plan gaat uit van alleen synthese, met fase 9 als ontsnapping. Wil je
    dat het eiland ooit opnames gebruikt, en zo ja: alleen uit je eigen map (nooit in git), of mag een
    CC0-set wél mee in de repo en de release?
 2. **Hoeveel is genoeg?** Het budget hierboven is een plafond, geen doel. Hoor je liever een paar
@@ -298,5 +385,11 @@ Na elke fase: de open zee hoeft niet geredeployd (niets op de draad), en het is 
    laptopspeaker is alleen het tweede te horen.
 6. **Onweer** kan pas als de zee er een woord voor heeft (`lib/weather.mjs`). Wil je dat als eigen
    plan?
-7. **Muziek-schuif**: telt jouw eigen muziek (`HOME/audio`) onder dezelfde Music-schuif als de rave
-   en de shanty, of wil je die apart?
+7. ~~**Muziek-schuif**~~ - besloten: één Music-schuif voor alles, met een eigen vinkje *Your own
+   tracks* om alleen jouw muziek uit te zetten (het tabblad Audio).
+8. **De kerkklok 's nachts**: nu zwijgt hij van 23:00 tot 7:00. Liever de hele nacht door (zachter),
+   of overdag alleen de hele uren, zonder de halve?
+9. **Een vijfde schuif Effects** (ambachten, dieren en hamers los van zee en wind)? Nu vallen die
+   onder Ambience en zijn ze per vinkje uit te zetten.
+10. **De begroeting**: brabbeltaal zonder ballon, zoals nu - of toch een ballon met een woord
+    ("Morgen!", "Hoi") voor wie het geluid uit heeft?
