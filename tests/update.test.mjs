@@ -1,7 +1,8 @@
 // Who is behind, the page or the sea - and the one number that makes it a hard line.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareVersions, compareLines, updateNotice, refusalNotice, updateGate, APK_URL, RELEASES, SEA_PROTOCOL } from '../web/js/update.js';
+import { compareVersions, compareLines, updateNotice, refusalNotice, updateGate, islandNotice, APK_URL, RELEASES, SEA_PROTOCOL } from '../web/js/update.js';
+import { createLatestRelease, ASK_EVERY_MS } from '../lib/latest-release.mjs';
 import { SEA_V } from '../lib/sea.mjs';
 
 test('the page speaks the protocol the sea does', () => {
@@ -84,4 +85,44 @@ test('the gate goes up for a newer release on GitHub, whether or not the sea has
   assert.match(updateGate({ mine, sea: { version: '0.7.0' }, latest: '0.6.0' }).title, /0\.7\.0/);
   // Refused still wins: that card has no Later.
   assert.equal(updateGate({ speaks: SEA_PROTOCOL + 1, mine, latest: '0.6.0' }).blocking, true);
+});
+
+test('a desktop island hears of a newer release from GitHub, a patch included, as optional', () => {
+  // The keeper's report: the Windows window never said a patch was out. Its banner asked only
+  // the sea, by the line - so a patch, which the sea never needs, was never announced.
+  const mine = { version: '0.8.0' };
+  const patch = islandNotice({ mine, sea: { version: '0.8.0' }, latest: '0.8.1' });
+  assert.equal(patch.kind, 'release');
+  assert.match(patch.html, /v0\.8\.1 is out - an optional patch/);
+  assert.ok(patch.html.includes(RELEASES), 'it says where to get it');
+  // A newer line is announced too, without "optional".
+  const minor = islandNotice({ mine, latest: '0.9.0' });
+  assert.equal(minor.kind, 'release');
+  assert.doesNotMatch(minor.html, /optional/);
+  // Nothing when it is up to date, ahead (a checkout past the last release), or GitHub is mute.
+  assert.equal(islandNotice({ mine, latest: '0.8.0' }), null);
+  assert.equal(islandNotice({ mine: { version: '0.8.2' }, latest: '0.8.1' }), null);
+  assert.equal(islandNotice({ mine, latest: null }), null);
+  assert.equal(islandNotice({ mine: null, latest: '0.8.1' }), null);
+  // The sea's news comes first: a newer line on the sea is what keeps what is new from anybody.
+  assert.equal(islandNotice({ mine, sea: { version: '0.9.0' }, latest: '0.8.1' }).kind, 'behind');
+});
+
+test('the islander asks GitHub at most once an hour and answers from what it heard', async () => {
+  let t = 0, calls = 0, answer = { ok: true, json: async () => ({ tag_name: 'v0.8.1' }) };
+  const releases = createLatestRelease({ now: () => t, fetchImpl: async () => { calls++; return answer; } });
+  assert.equal(releases.latest(), null, 'the first question is not waited on');
+  assert.equal(await releases.settled(), '0.8.1');
+  assert.equal(calls, 1);
+  t += ASK_EVERY_MS - 1;
+  assert.equal(releases.latest(), '0.8.1');
+  assert.equal(calls, 1, 'asked again within the hour');
+  // GitHub out of reach, or answering nonsense, keeps the last good answer.
+  t += 1;
+  answer = { ok: false, status: 403 };
+  assert.equal(await releases.settled(), '0.8.1');
+  assert.equal(calls, 2);
+  t += ASK_EVERY_MS;
+  answer = { ok: true, json: async () => ({ tag_name: 'nightly' }) };
+  assert.equal(await releases.settled(), '0.8.1');
 });

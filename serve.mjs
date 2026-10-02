@@ -36,6 +36,7 @@ import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs';
 import { loadTreasure, updateTreasure, viewOf as treasureView, TREASURE_ACTIONS } from './lib/treasure.mjs';
 import { ensureMusic, listMusic, musicFile, MUSIC_TYPES, MUSIC } from './lib/music.mjs';
+import { createLatestRelease } from './lib/latest-release.mjs';
 import { loadLayout } from './lib/layout.mjs';
 import { makeTerrain } from './shared/terrain.mjs';
 import { currentUsage } from './lib/usage.mjs';
@@ -47,6 +48,9 @@ import { executeCommand } from './lib/commands.mjs';
 // Which release and commit this checkout (or unpacked release) is, read once: it is what
 // this process was started from, whatever a later pull puts on disk (lib/buildinfo.mjs).
 const BUILD = readBuildInfo(ROOT);
+// The newest release on GitHub, for the keeper's banner (lib/latest-release.mjs). Asked lazily,
+// the first time a page wants it, so an islander nobody looks at never calls out.
+const releases = createLatestRelease({ log: (line) => log(line) });
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -571,6 +575,11 @@ async function handle(req, res) {
   // full pit. The same answer rides `event: gold` whenever it changes; see watchGold. The
   // gold mine's week is in it as `mine`, under the same rule.
   if (p === '/api/gold') return json(res, 200, goldNow());
+
+  // The newest Promptholm release, as the islander last heard it from GitHub (null until then,
+  // or when GitHub is out of reach). Not a public path: the banner it feeds is the keeper's -
+  // a visitor's page is on somebody else's island, which is not theirs to update.
+  if (p === '/api/latest-release') return json(res, 200, { latest: releases.latest() });
 
   // The keeper's own music for the rooms (lib/music.mjs): what is in HOME/audio, and a file of
   // it. Not public paths, so only this machine's page hears them - they are the keeper's files,

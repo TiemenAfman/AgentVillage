@@ -68,6 +68,26 @@ export function updateNotice({ mine, sea, phone = false }) {
   };
 }
 
+// The keeper's banner on a desktop island: what the sea says first (updateNotice above - a
+// newer line on the sea is the one that matters, since what is new will not reach anybody
+// there otherwise), and failing that a newer release on GitHub (`latest`, the islander's
+// /api/latest-release, lib/latest-release.mjs). That second one is by the whole version, patch
+// included, and says it is optional: the desktop window used to hear about a release only
+// through the sea's welcome, by the line, so a patch was never announced at all and a minor
+// only once the sea had moved. A checkout is told to pull, a release where to download.
+export function islandNotice({ mine = null, sea = null, latest = null } = {}) {
+  const seaSays = updateNotice({ mine, sea });
+  if (seaSays) return seaSays;
+  if (compareVersions(mine && mine.version, latest) !== -1) return null;
+  const patch = compareLines(mine.version, latest) === 0;
+  return {
+    kind: 'release',
+    html: `<b>Promptholm v${esc(latest)} is out${patch ? ' - an optional patch' : ''}.</b> This island runs `
+      + `v${esc(mine.version)}${patch ? ' and keeps working with everybody as it is' : ''}. `
+      + `${link(`Get v${latest}`, false)}, or pull and restart if you run from a checkout.`,
+  };
+}
+
 // The app's gate: a whole-screen card with one big button, or null. The banner above is
 // right for a desktop island, where "pull and restart" is somebody at a keyboard; on a phone
 // that banner was a small box under two others, and a refused app can do nothing else at

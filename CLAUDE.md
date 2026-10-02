@@ -1248,7 +1248,11 @@ banner with the release link, newer says the sea is behind - by `version`, never
 which differs between players on the same release all the time, and by the *line* only
 (`compareLines`, major.minor): a patch apart says nothing - except on the phone, whose
 `updateGate` compares whole versions, because a phone cannot pull and that card (with a
-Later) is the only way a patch ever reaches it. **A patch release never breaks
+Later) is the only way a patch ever reaches it. The keeper's desktop page hears of a release
+from GitHub too, patches included and called optional (`islandNotice` in web/js/update.js, the
+sea's news first): the islander asks (`lib/latest-release.mjs`, at most hourly, answering from
+what it last heard) and hands it over `/api/latest-release` (not on `PUBLIC_API`), since the
+page reaches nothing it has not named. **A patch release never breaks
 compatibility with the island or the sea** (0.4.x runs on any 0.4.y's island and meets it on
 any sea): no `SEA_V` bump, no layout gate (`LAYOUT_VERSION`, `PARCEL_VERSION`,
 `TOWN_VERSION`, `ROAD_VERSION`, `SQUARE_VERSION`, `QUAY_VERSION`), nothing in `layout.json`, `config.json` or
