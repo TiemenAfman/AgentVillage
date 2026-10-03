@@ -167,3 +167,65 @@ test('from the beach along the gangway, onto the landing and up the stair', () =
   assert.ok(s.pos.x > T.stoop.x0, `reached the stoop (x ${s.pos.x.toFixed(2)})`);
   assert.ok(Math.abs(s.pos.y - T.stoop.y) < 0.12, `at the door's height: ${s.pos.y.toFixed(2)} for ${T.stoop.y.toFixed(2)}`);
 });
+
+// The deck (Plans/kraken-dek.md): from the zigzag's landing up the ladder on the hull, over the plank
+// onto the waist, round the hatch, the mast and the capstan to the step before the castle's door, up
+// the ladder onto the castle's roof - and from the waist up the other onto the forecastle. In the sea,
+// as the page stands it, and never dropped into the water or held short of a floor.
+function seaWalk(at, y) {
+  const DECK = 0.44;
+  const sea = standing(DECK);
+  handlers.keydown.length = 0;
+  handlers.keyup.length = 0;
+  const height = () => -0.8;
+  const ground = { height, bedAt: height, regionAt: () => null, levelKey: () => null };
+  const terrain = { half: 64, size: 128, worldHeight: height };
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1000);
+  const dom = { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} };
+  const walk = createWalkMode({ scene: new THREE.Scene(), camera, terrain, ground, material: new THREE.MeshBasicMaterial(), dom });
+  const T = Object.fromEntries(sea.surfaces.map((f) => [f.name, f]));
+  walk.setSurfaces(sea.surfaces);
+  walk.enter({ at: at(T), y: y(T), facing: [0, 0], blockers: sea.solids, interactables: [], onExit: noop });
+  return { walk, T };
+}
+const mid = (f, k) => (f[k + '0'] + f[k + '1']) / 2;
+const topOf = (f) => (f.y != null ? f.y : Math.max(f.y0, f.y1));
+
+test('up the ladder on the hull, onto the deck, to the castle door and up onto the roof', () => {
+  const { walk, T } = seaWalk((T) => [T.land.x0 + 0.25, T.land.z0 + 0.22], (T) => T.land.y);
+  const s = walk.state;
+  const L = T['side-ladder'], B = T.boarding, D = T['door-step'], R = T['roof-ladder'];
+  walkTo(walk, [L.x1 - 0.05, mid(L, 'z')]);
+  walkTo(walk, [L.x0 + 0.05, mid(L, 'z')]);
+  walkTo(walk, [mid(B, 'x'), B.z0 + 0.15]);
+  assert.ok(s.pos.y > topOf(L) - 0.45, `up the ladder and over onto the deck: ${s.pos.y.toFixed(2)} for ${topOf(L).toFixed(2)}`);
+  const deckY = topOf(T['waist-b-c']);
+  const path = [
+    ...walkTo(walk, [mid(B, 'x'), 0.0]),
+    ...walkTo(walk, [-1.2, 0.0]),
+    ...walkTo(walk, [-0.6, 0.6]),
+    ...walkTo(walk, [0.75, 0.6]),
+    ...walkTo(walk, [0.75, -0.95]),
+    ...walkTo(walk, [mid(D, 'x'), mid(D, 'z')]),
+  ];
+  for (const [x, z, y] of path) assert.ok(y > deckY - 0.3, `off the deck at ${x.toFixed(2)},${z.toFixed(2)}: ${y.toFixed(2)}`);
+  assert.ok(Math.hypot(s.pos.x - mid(D, 'x'), s.pos.z - mid(D, 'z')) < 0.15, `at the castle door (${s.pos.x.toFixed(2)},${s.pos.z.toFixed(2)})`);
+  walkTo(walk, [0.9, -0.95]);
+  walkTo(walk, [0.9, mid(R, 'z')]);
+  walkTo(walk, [R.x0 + 0.05, mid(R, 'z')]);
+  walkTo(walk, [R.x1 - 0.05, mid(R, 'z')]);
+  walkTo(walk, [R.x1 + 0.5, mid(R, 'z')]);
+  const roof = topOf(T['roof-a-e']);
+  assert.ok(Math.abs(s.pos.y - roof) < 0.1, `on the castle's roof: ${s.pos.y.toFixed(2)} for ${roof.toFixed(2)}`);
+});
+
+test('from the waist up onto the forecastle', () => {
+  const { walk, T } = seaWalk((T) => [mid(T['waist-b-c'], 'x'), mid(T['waist-b-c'], 'z')], (T) => topOf(T['waist-b-c']));
+  const s = walk.state;
+  const F = T['fore-ladder'];
+  walkTo(walk, [F.x1 + 0.05, mid(F, 'z')]);
+  walkTo(walk, [F.x0 + 0.05, mid(F, 'z')]);
+  walkTo(walk, [F.x0 - 0.5, mid(F, 'z')]);
+  const top = topOf(T['fore-a-c']);
+  assert.ok(Math.abs(s.pos.y - top) < 0.1, `on the forecastle: ${s.pos.y.toFixed(2)} for ${top.toFixed(2)}`);
+});

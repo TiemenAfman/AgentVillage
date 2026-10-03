@@ -2503,8 +2503,12 @@ function pirateSolids(parts, anchors, surfaces) {
     const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
     if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: ground - PIRATE_UNDER, y1 });
   }
-  const lo = anchors['solid.hull.lo'], hi = anchors['solid.hull.hi'];
-  if (lo && hi) {
+  // Every block the bake names (anchor.solid.<name>.lo|hi): the hull from its keel to under the deck, and on
+  // the deck the castles, masts, capstan, barrels and crates (Plans/kraken-dek.md).
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^solid\.([a-z]+)\.lo$/.exec(key);
+    const hi = m && anchors[`solid.${m[1]}.hi`];
+    if (!hi) continue;
     out.push({ x: (lo[0] + hi[0]) / 2, z: (lo[2] + hi[2]) / 2, hx: Math.abs(hi[0] - lo[0]) / 2, hz: Math.abs(hi[2] - lo[2]) / 2, y0: lo[1], y1: hi[1] });
   }
   return out;
