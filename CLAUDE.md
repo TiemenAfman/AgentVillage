@@ -2627,7 +2627,8 @@ environment variable (`PROMPTHOLM_*`; the old `SETTLERS_*` names are gone, with 
 "Settlers" survives only as what the island's inhabitants are called (`web/js/settlers.js`,
 `village.settlers`), which is the game's vocabulary rather than its name. The exceptions are
 deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming it is the
-owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
+owner's call), and `agentvillage.xeroxmsj.freeddns.org` and `agentvillage.freeddns.org` are real
+hostnames (the same NPM proxy: `/` to the sea on :4750, `/play` to the web on :4760).
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
