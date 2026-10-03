@@ -70,6 +70,28 @@ Gebouwd op `claude/gifted-leavitt-465053` (3 oktober 2026), niet gemerged en nie
   los groen.
 - **Bake**: 81.104 driehoeken (was ~80k; de losse steentjes eruit, de steiger erbij), budget 95.000.
 
+### Beweging (3 oktober 2026)
+
+De keeper vroeg om beweging in het exterieur: wapperende vlaggen, slingerende lantaarns en wapperende zeilen.
+
+| Besluit | Waarom |
+|---|---|
+| De twee Jolly Rogers, de drie bijgezette zeilen en de vier lantaarns aan een haak (achtersteven, boeg, voormars, deur) gaan uit de merge (`isKrakenMoving` in buildings.js) en worden **één** geometrie op de groep van het record (`web/js/kraken-motion.js`): één draw call per kroeg | Het lijf zit in de BatchedMesh en staat stil; een mesh per bewegend deel zou ~10 draw calls zijn. |
+| Op de CPU, per vertex, zoals de Batavia haar vlaggen (`batavia.js`): een vlag golft vanaf zijn lijk aan de stok, een zeil ademt en rimpelt vanaf zijn ra (de voet beweegt het meest), een lantaarn draait klein om zijn haak | Geen nieuwe shader en geen extra programmasleutel; ~35k vertices, alleen voor een record dat zichtbaar is. |
+| Alles gemeten uit de bake (deelnamen, lijk, ra, haak), niets met de hand | Een rebake verschuift de beweging mee. |
+| Op de klok van de zee (`timeNow()`), fase uit de naam | Elk scherm ziet de vlag op dezelfde plek, zoals het uithangbord. |
+| Lantaarns op een paal, de opgerolde onderzeil en de raas bewegen niet | Een lantaarn op een paal slingert niet; een ra staat vast aan de mast. |
+
+De eerste versie scheurde de vlag: op een doek van zeven kolommen boog de golf tussen twee punten verder dan
+doodshoofd en botten van het doek af stonden, en het doek kwam erdoorheen (de keeper zag het meteen). Nu is het
+doek 19 x 9, staan ze verder van het doek en is de golf rustiger.
+
+**HD**: de keeper wil buiten ook de HD-piratenvlag uit het interieur (`jollyroger.glb` in het pakket), en de rots via
+de 4090. Dat vraagt HD op het exterieur, wat er nog niet is; ontwerp loopt apart.
+
+Gasten krijgen het ook (`attachExtras` hangt het aan elk record); geen layout en niets op de draad, dus dit deel
+alleen zou een patch zijn. `tests/kraken-motion.test.mjs`.
+
 ### Open
 
 - De live-island migreert bij de eerste scan met deze code; omdat het een minor is, pas met de release (0.9.0).

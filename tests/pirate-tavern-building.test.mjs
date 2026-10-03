@@ -11,6 +11,7 @@ globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeE
 const { buildBuilding, WALK_BODY_R } = await import('../web/js/buildings.js');
 const models = await import('../web/js/models.js');
 const { HERO_BUDGETS } = await import('../scripts/model-rules.mjs');
+const { buildKrakenMotion } = await import('../web/js/kraken-motion.js');
 delete globalThis.document;
 const spec = { id: 'c:piratetavern', kind: 'civic', civicType: 'piratetavern', style: 'unknown' };
 
@@ -42,7 +43,13 @@ test('the Salty Kraken is one bounded geometry with every sheet and a night glow
     assert.equal(g.attributes[name].count, count);
     assert.ok(g.attributes[name].array.every(Number.isFinite));
   }
-  for (const sheet of [0, 1, 2, 3, 4]) assert.ok(g.attributes.aSheet.array.includes(sheet), `sheet ${sheet}`);
+  // Every sheet between the body and what moves in the wind (web/js/kraken-motion.js), which took the
+  // sails' dark reef bands - the body's only `wall` parts - with it.
+  const moving = buildKrakenMotion();
+  for (const sheet of [0, 1, 2, 3, 4]) {
+    assert.ok(g.attributes.aSheet.array.includes(sheet) || moving.geometry.attributes.aSheet.array.includes(sheet), `sheet ${sheet}`);
+  }
+  moving.geometry.dispose();
   assert.ok(g.attributes.aEmissive.array.includes(1), 'the windows glow at night');
   assert.ok(b.bbox.max.y <= b.height);
   // Its lot is 11 along the water and 6 deep: inside it, less a hand at every edge - but for the

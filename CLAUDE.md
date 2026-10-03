@@ -2122,7 +2122,11 @@ door with the stoop's height as its `floor`. **The rock has a skirt**: below the
 down `SKIRT` (2.7), widening, instead of being cut flat at y = 0 (a seam where rock met sand), and the whole model is
 lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's ground is `anchor.door[1]`, not 0 -
 `pirateTavernGround` returns `QUAY_DECK - door.y` in the sea and the lowest front ground `- door.y` on the beach, and
-`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). Rebuild with `node scripts/blender.mjs --background --python
+`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its flags, set sails and hooked lanterns move**:
+`isKrakenMoving` (buildings.js) keeps them out of the merge and `web/js/kraken-motion.js` hangs them as ONE geometry on the
+record's group, moved per vertex on the CPU like the Batavia's flags, measured off the bake by part name, on the sea's clock
+(`attachExtras` / `animateExtras` / record-extras.js); a new moving part means a name in both regexes
+(`tests/kraken-motion.test.mjs` holds them equal). Rebuild with `node scripts/blender.mjs --background --python
 scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
 .blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
 `scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`

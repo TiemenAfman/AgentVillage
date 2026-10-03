@@ -468,6 +468,9 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 // The sawmill's parts that move (scripts/build-sawmill.py): baked inside the yard asset so it
 // stands on the ground, left out of its merge, and hung on their own pivots by sawmill.js. A
 // part with several colours bakes as `name:0`, `name:1`, which the optional tail allows.
+// The Salty Kraken's parts that move in the wind (web/js/kraken-motion.js): its two Jolly Rogers, its
+// three set sails and the lanterns that hang on a hook. Out of the merged body; that file hangs them.
+export const isKrakenMoving = (n) => /^Salty ((great|fore) jolly roger( (crossbone|knuckle|skull|socket))?|(fore course|fore topsail|aft topsail)( (reef band|boltrope|patch))?|(stern|bow|fore top|door) lantern (ring|cap|rim|glass|stile|band|base|foot|finial))( \d+)?(:\d+)?$/.test(n);
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
@@ -1663,8 +1666,10 @@ function civic(parts, spec, rng) {
       // The Salty Kraken, the pirates' pub (Plans/piratenkroeg.md), authored in
       // assets/piratetavern/ facing the water (+z). It bakes no anchor.flag on purpose: every
       // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
-      parts.push(...meshAsset('piratetavern'));
+      parts.push(...meshAsset('piratetavern', 0xffffff, { skip: isKrakenMoving }));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
+      // Its flags, sails and hanging lanterns move (web/js/kraken-motion.js, hung by main.js).
+      animated.krakenMotion = true;
       // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on its
       // post at the foot of the stair; what swings is hung by main.js on `animated.piratesign`, at the
       // same point once the porch has lifted it (`anchors.sign`) and at the same turn.

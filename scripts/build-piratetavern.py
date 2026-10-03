@@ -755,9 +755,14 @@ for x, y, z, L in ((FORE_X - 0.35, 3.5, 0.78, 0.55), (FORE_X + 0.3, 4.3, -0.55, 
 
 def jolly_roger(name, at, fw, fh, direction=1, tails=False):
     """A flag flying from `at` (its luff at the staff) towards +x (direction 1) or -x, cloth and
-    skull on both faces; `tails` cuts a swallow-tail in the fly."""
+    skull on both faces; `tails` cuts a swallow-tail in the fly.
+
+    The flag waves on the island (web/js/kraken-motion.js), so the cloth is fine enough to bend
+    smoothly under the skull and bones, and they stand a little further off it: at seven columns a
+    wave bent the cloth more between two of its points than the skull stood off it, and the cloth
+    came through the skull."""
     x0, y0, z0 = at
-    cols, rows = 7, 5
+    cols, rows = 19, 9
     grid = []
     for j in range(rows):
         f = j / (rows - 1)
@@ -777,7 +782,7 @@ def jolly_roger(name, at, fw, fh, direction=1, tails=False):
     ex, ey = x0 + direction * fw * 0.45, y0 - fh * 0.48
     k = fh / 0.22
     for s in (1, -1):
-        zz = z0 + 0.035 * math.sin(0.45 * math.pi * 2.2 + 0.5) * 0.45 + s * 0.012
+        zz = z0 + 0.035 * math.sin(0.45 * math.pi * 2.2 + 0.5) * 0.45 + s * 0.016
         for sgn in (-1, 1):
             a = (ex - sgn * 0.085 * k, ey - 0.075 * k, zz)
             b = (ex + sgn * 0.085 * k, ey + 0.055 * k, zz)
@@ -786,10 +791,10 @@ def jolly_roger(name, at, fw, fh, direction=1, tails=False):
                 ball(name + ' knuckle', end, (0.013 * k, 0.013 * k, 0.005), BONE, seg=3, rings=2)
         half = [(0, .05), (.026, .045), (.041, .03), (.045, .01), (.038, -.01), (.033, -.02), (.031, -.035), (.016, -.042)]
         outline = [(x * k, (.012 + y) * k) for x, y in half] + [(-x * k, (.012 + y) * k) for x, y in reversed(half[1:])]
-        plate(name + ' skull', outline, ex, ey, zz + s * 0.004, 0.003, BONE)
+        plate(name + ' skull', outline, ex, ey, zz + s * 0.006, 0.003, BONE)
         for sx in (-1, 1):
             hexagon = [(.0125 * k * math.cos(i * math.tau / 6), .0125 * k * math.sin(i * math.tau / 6)) for i in range(6)]
-            plate(name + ' socket', hexagon, ex + sx * .017 * k, ey + .024 * k, zz + s * 0.0068, 0.002, FLAG)
+            plate(name + ' socket', hexagon, ex + sx * .017 * k, ey + .024 * k, zz + s * 0.0088, 0.002, FLAG)
 
 
 jolly_roger('great jolly roger', (JR1[0] + 0.03, JR1[1] - 0.08, JR1[2]), 0.62, 0.52, 1)
