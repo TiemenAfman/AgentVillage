@@ -1087,7 +1087,8 @@ for x, z in ((PX0 + 0.05, LOT_EDGE - 0.06), ((PX0 + PX1) / 2, LOT_EDGE - 0.06), 
 
 
 # The skirt: every rock below the ground is drawn on down to SKIRT, wider as it goes, so the rock
-# rises out of the water (or the sand) rather than standing on it. Its top half is left as it was.
+# rises out of the water (or the sand) rather than standing on it, on a foot wider than itself. Its
+# top half is left as it was.
 FLARE = 0.35
 
 
@@ -1101,12 +1102,19 @@ def skirt(o):
         return
     cx = sum(w.x for w in ws) / len(ws)
     cy = sum(w.y for w in ws) / len(ws)
+    # Not the lower half of the ball drawn out, which ran to a point: an icicle under every boulder. Each
+    # vertex below the ground is pushed out to at least the boulder's own width, widening further
+    # (FLARE) the deeper it goes, so the rock stands on a broad foot on the bed like a hill in the sea.
+    R = max(math.hypot(w.x - cx, w.y - cy) for w in ws) or 1.0
     for v, w in zip(me.vertices, ws):
         if w.z >= 0:
             continue
         t = w.z / lo
-        f = 1 + FLARE * t
-        v.co = inv @ Vector((cx + (w.x - cx) * f, cy + (w.y - cy) * f, -SKIRT * t))
+        dx, dy = w.x - cx, w.y - cy
+        r = math.hypot(dx, dy)
+        want = R * (1 + FLARE * t)
+        f = max(1.0, want / r) if r > 1e-6 else 1.0
+        v.co = inv @ Vector((cx + dx * f, cy + dy * f, -SKIRT * t))
     me.update()
 
 
