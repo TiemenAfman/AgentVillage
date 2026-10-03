@@ -963,9 +963,17 @@ lantern('door lantern', (LX, DOOR_SILL + 0.55, DOOR_Z + 0.13), 1.05, ship=False)
 # with `lo` at its foot - the ship's own vocabulary, scripts/model-rules.mjs - read by
 # web/js/buildings.js as `surfaces`), and each is drawn
 # as treads a settler's step apart on two stringers, with a rail on its open side.
+#
+# The foot is not at the rock's foot but SINK up it (Plans/kraken-op-zee.md, "Dieper in het water"): the
+# page stands this landing on the docks' deck, just over the sea, so everything below it is under water -
+# a band of rock between the sea and the hull, not a plinth (the keeper's line, 3 October). The flights
+# are the shorter for it; the door stays where it is in the hull.
+SINK = 1.0
 Y = DOOR_SILL
+F = SINK                           # the foot of the stair, the landing it comes down to
+MID = (F + Y) / 2                  # the landing between the flights
 STAIR_W, GAP, LAND_L, STOOP_L = 0.42, 0.06, 0.62, 0.7
-RUN = (Y / 2) / math.tan(math.radians(31))
+RUN = ((Y - F) / 2) / math.tan(math.radians(31))
 UZ0 = HZ + 0.14                    # clear of the hull's own solid (web/js/buildings.js pirateSolids)
 UZ1 = UZ0 + STAIR_W
 WZ0, WZ1 = UZ1 + GAP, UZ1 + GAP + STAIR_W
@@ -974,9 +982,9 @@ XLE = XE - RUN                     # the landing's east edge
 XLW = XLE - LAND_L
 SURFACES = {
     'stoop': ((XE, Y, HZ + 0.02), (XE + STOOP_L, Y, UZ1)),
-    'up': ((XLE, Y / 2, UZ0), (XE, Y, UZ1)),
-    'land': ((XLW, Y / 2, UZ0), (XLE, Y / 2, WZ1)),
-    'down': ((XE, 0.0, WZ0), (XLE, Y / 2, WZ1)),
+    'up': ((XLE, MID, UZ0), (XE, Y, UZ1)),
+    'land': ((XLW, MID, UZ0), (XLE, MID, WZ1)),
+    'down': ((XE, F, WZ0), (XLE, MID, WZ1)),
 }
 RISE = 0.085
 
@@ -999,15 +1007,15 @@ def flight(name, lo, hi, z0, z1):
         sweep(name + ' stringer', [(x0, max(y0 - 0.06, 0.035), z), (x1, max(y1 - 0.06, 0.035), z)], [0.03, 0.03], POST, ship=False, sides=4)
 
 
-flight('stair lower', (XE, 0.0), (XLE, Y / 2), WZ0, WZ1)
-flight('stair upper', (XLE, Y / 2), (XE, Y), UZ0, UZ1)
-box('stair landing', ((XLW + XLE) / 2, Y / 2 - 0.02, (UZ0 + WZ1) / 2), (LAND_L, 0.04, WZ1 - UZ0), TREAD, ship=False, round_=0.006)
+flight('stair lower', (XE, F), (XLE, MID), WZ0, WZ1)
+flight('stair upper', (XLE, MID), (XE, Y), UZ0, UZ1)
+box('stair landing', ((XLW + XLE) / 2, MID - 0.02, (UZ0 + WZ1) / 2), (LAND_L, 0.04, WZ1 - UZ0), TREAD, ship=False, round_=0.006)
 box('stair stoop', (XE + STOOP_L / 2, Y - 0.02, (HZ + 0.02 + UZ1) / 2), (STOOP_L, 0.04, UZ1 - HZ - 0.02), TREAD, ship=False, round_=0.006)
 # What carries the landing and the stoop: posts down to the ground.
 for x, z in ((XLW + 0.05, WZ1 - 0.05), (XLE - 0.05, WZ1 - 0.05), (XLW + 0.05, UZ0 + 0.05)):
-    rod('stair landing post', (x, 0, z), (x, Y / 2 - 0.04, z), 0.03, POST, ship=False, sides=4)
+    rod('stair landing post', (x, F, z), (x, MID - 0.04, z), 0.03, POST, ship=False, sides=4)
 for x in (XE + 0.06, XE + STOOP_L - 0.06):
-    rod('stair stoop post', (x, 0, UZ1 - 0.04), (x, Y - 0.04, UZ1 - 0.04), 0.03, POST, ship=False, sides=4)
+    rod('stair stoop post', (x, F, UZ1 - 0.04), (x, Y - 0.04, UZ1 - 0.04), 0.03, POST, ship=False, sides=4)
 # Rails: on the lower flight's water side, round the landing's open sides, on the upper flight's
 # water side (the drop to the lower flight) and round the stoop.
 RAIL_H = 0.32
@@ -1037,11 +1045,11 @@ def rail(name, pts, posts_every=0.55):
 # landing in front of the foot (Plans/kraken-op-zee.md), and a rail down to the bottom tread stood
 # across the way from the planks to the stair.
 RAIL_FROM = 0.4
-_rf = (XE - RAIL_FROM, Y / 2 * RAIL_FROM / RUN, WZ1 + 0.02)
-lower_posts = rail('stair lower rail', [_rf, (XLE, Y / 2, WZ1 + 0.02), (XLW, Y / 2, WZ1 + 0.02), (XLW, Y / 2, UZ0)])
-rail('stair upper rail', [(XLE, Y / 2, UZ1 + 0.03), (XE, Y, UZ1 + 0.03), (XE + STOOP_L, Y, UZ1 + 0.03), (XE + STOOP_L, Y, HZ + 0.04)])
+_rf = (XE - RAIL_FROM, F + (MID - F) * RAIL_FROM / RUN, WZ1 + 0.02)
+lower_posts = rail('stair lower rail', [_rf, (XLE, MID, WZ1 + 0.02), (XLW, MID, WZ1 + 0.02), (XLW, MID, UZ0)])
+rail('stair upper rail', [(XLE, MID, UZ1 + 0.03), (XE, Y, UZ1 + 0.03), (XE + STOOP_L, Y, UZ1 + 0.03), (XE + STOOP_L, Y, HZ + 0.04)])
 post_lantern('stair foot lantern', (_rf[0], _rf[1] + RAIL_H - 0.02, _rf[2]), 0.03, 1.0, ship=False)
-post_lantern('stair landing lantern', (XLW, Y / 2 + RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
+post_lantern('stair landing lantern', (XLW, MID + RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
 post_lantern('stair stoop lantern', (XE + STOOP_L, Y + RAIL_H - 0.02, UZ1 + 0.03), 0.03, 0.95, ship=False)
 
 # ---- the rock under the stair, and the rock kept inside the lot -------------------------------------------
@@ -1052,8 +1060,8 @@ post_lantern('stair stoop lantern', (XE + STOOP_L, Y + RAIL_H - 0.02, UZ1 + 0.03
 # anybody from walking underneath instead. Every rock is also kept inside the lot.
 for f, r in ((0.25, 0.32), (0.5, 0.42), (0.78, 0.46)):
     x = XE + (XLE - XE) * f
-    boulder('stair rock', (x, 0.0, (WZ0 + WZ1) / 2 - 0.05), (r * 1.2, Y / 2 * f + 0.1, r), ROCK_DARK, jag=0.15, subdiv=2)
-boulder('stair rock', ((XLW + XLE) / 2, 0.0, (UZ0 + WZ1) / 2), (0.55, Y / 2, 0.55), ROCK_DARK, jag=0.15, subdiv=2)
+    boulder('stair rock', (x, F, (WZ0 + WZ1) / 2 - 0.05), (r * 1.2, (MID - F) * f + 0.1, r), ROCK_DARK, jag=0.15, subdiv=2)
+boulder('stair rock', ((XLW + XLE) / 2, F, (UZ0 + WZ1) / 2), (0.55, MID - F, 0.55), ROCK_DARK, jag=0.15, subdiv=2)
 
 
 # ---- the landing at the foot of the stair, where the gangway comes in -----------------------------------
@@ -1068,22 +1076,22 @@ PX0, PX1 = 1.45, XE + 1.75
 PZ0 = WZ1 + 0.03
 # Each a hair into the flight and into the other, so there is no seam to fall through between them:
 # the gangway's walker comes in at x = 2.0, over the foot of the lower flight.
-SURFACES['pier'] = ((PX0, 0.0, WZ1 - 0.03), (PX1, 0.0, LOT_EDGE))
-SURFACES['jetty'] = ((XE - 0.05, 0.0, WZ0 - 0.04), (PX1, 0.0, PZ0 + 0.03))
+SURFACES['pier'] = ((PX0, F, WZ1 - 0.03), (PX1, F, LOT_EDGE))
+SURFACES['jetty'] = ((XE - 0.05, F, WZ0 - 0.04), (PX1, F, PZ0 + 0.03))
 PLANK = 0.16
 _n = round((PX1 - PX0) / PLANK)
 for i in range(_n):
     x = PX0 + (PX1 - PX0) * (i + 0.5) / _n
-    box('landing plank', (x, -0.03, (PZ0 + LOT_EDGE) / 2), ((PX1 - PX0) / _n - 0.012, 0.05, LOT_EDGE - PZ0), TREAD, ship=False)
+    box('landing plank', (x, F - 0.03, (PZ0 + LOT_EDGE) / 2), ((PX1 - PX0) / _n - 0.012, 0.05, LOT_EDGE - PZ0), TREAD, ship=False)
 _n = round((PZ0 - WZ0 + 0.04) / PLANK)
 for i in range(_n):
     z = WZ0 - 0.04 + (PZ0 - WZ0 + 0.04) * (i + 0.5) / _n
-    box('landing plank', ((XE + PX1) / 2, -0.03, z), (PX1 - XE, 0.05, (PZ0 - WZ0 + 0.04) / _n - 0.012), TREAD, ship=False)
+    box('landing plank', ((XE + PX1) / 2, F - 0.03, z), (PX1 - XE, 0.05, (PZ0 - WZ0 + 0.04) / _n - 0.012), TREAD, ship=False)
 for x in (PX0 + 0.05, (PX0 + PX1) / 2, PX1 - 0.05):
-    box('landing beam', (x, -0.09, (WZ0 + LOT_EDGE) / 2), (0.08, 0.08, LOT_EDGE - WZ0), POST, ship=False)
+    box('landing beam', (x, F - 0.09, (WZ0 + LOT_EDGE) / 2), (0.08, 0.08, LOT_EDGE - WZ0), POST, ship=False)
 for x, z in ((PX0 + 0.05, LOT_EDGE - 0.06), ((PX0 + PX1) / 2, LOT_EDGE - 0.06), (PX1 - 0.05, LOT_EDGE - 0.06),
              (PX1 - 0.05, WZ0), (PX0 + 0.05, PZ0 + 0.04)):
-    rod('landing pile', (x, -SKIRT, z), (x, 0.06, z), 0.045, POST, ship=False, sides=6)
+    rod('landing pile', (x, -SKIRT, z), (x, F + 0.06, z), 0.045, POST, ship=False, sides=6)
 
 
 # The skirt: every rock below the ground is drawn on down to SKIRT, wider as it goes, so the rock
@@ -1163,20 +1171,20 @@ for o in list(bpy.context.scene.objects):
 # ---- at the foot of the stair: the sign on its post, barrels, a crate, rope ---------------------------
 # The sign (web/js/piratesign.js) stands on its own post beside the stair's foot, its arm out east
 # over the way in and its board facing the water, where the island's camera reads it.
-FOOT = (XE + 0.3, 0.0, (WZ0 + WZ1) / 2)
-SIGN_POST = (XE + 0.6, 0.0, WZ1 + 0.16)       # east of where the gangway comes in
-box('sign post', (SIGN_POST[0], 0.56, SIGN_POST[2]), (0.075, 1.12, 0.075), POST, ship=False, round_=0.008)
-box('sign post cap', (SIGN_POST[0], 1.13, SIGN_POST[2]), (0.1, 0.03, 0.1), POST, ship=False, round_=0.006)
-rod('sign post brace', (SIGN_POST[0] + 0.035, 0.72, SIGN_POST[2]), (SIGN_POST[0] + 0.2, 0.975, SIGN_POST[2]), 0.012, POST, ship=False, sides=4)
-SIGN_AT = (SIGN_POST[0] + 0.04, 0.98, SIGN_POST[2])
+FOOT = (XE + 0.3, F, (WZ0 + WZ1) / 2)
+SIGN_POST = (XE + 0.6, F, WZ1 + 0.16)       # east of where the gangway comes in
+box('sign post', (SIGN_POST[0], F + 0.56, SIGN_POST[2]), (0.075, 1.12, 0.075), POST, ship=False, round_=0.008)
+box('sign post cap', (SIGN_POST[0], F + 1.13, SIGN_POST[2]), (0.1, 0.03, 0.1), POST, ship=False, round_=0.006)
+rod('sign post brace', (SIGN_POST[0] + 0.035, F + 0.72, SIGN_POST[2]), (SIGN_POST[0] + 0.2, F + 0.975, SIGN_POST[2]), 0.012, POST, ship=False, sides=4)
+SIGN_AT = (SIGN_POST[0] + 0.04, F + 0.98, SIGN_POST[2])
 box('sign wall plate', (SIGN_AT[0] - 0.003, SIGN_AT[1], SIGN_AT[2]), (0.008, 0.1, 0.07), IRON, ship=False)
 for x, z in ((XE + 0.95, WZ1 - 0.05), (XE + 1.17, WZ1 - 0.12)):
-    rod('barrel', (x, 0, z), (x, .27, z), .105, OAK, ship=False, top=.095, sides=8)
+    rod('barrel', (x, F, z), (x, F + .27, z), .105, OAK, ship=False, top=.095, sides=8)
     for y in (.05, .20):
-        rod('barrel hoop', (x, y, z), (x, y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
-    rod('barrel lid', (x, .268, z), (x, .28, z), .09, DARK, ship=False, sides=8)
-box('crate', (XE + 1.02, 0.1, WZ1 - 0.36), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
-rod('rope coil', (XE + 1.42, 0, WZ1 - 0.02), (XE + 1.42, .045, WZ1 - 0.02), .085, ROPE, ship=False, sides=8)
+        rod('barrel hoop', (x, F + y, z), (x, F + y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
+    rod('barrel lid', (x, F + .268, z), (x, F + .28, z), .09, DARK, ship=False, sides=8)
+box('crate', (XE + 1.02, F + 0.1, WZ1 - 0.36), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
+rod('rope coil', (XE + 1.42, F, WZ1 - 0.02), (XE + 1.42, F + .045, WZ1 - 0.02), .085, ROPE, ship=False, sides=8)
 
 # ---- anchors ----------------------------------------------------------------------------------------
 # anchor.door is where a settler stands to go in: on the ground at the foot of the stair. The

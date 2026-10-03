@@ -101,6 +101,15 @@ bake.
 Gasten krijgen het ook (`attachExtras` hangt het aan elk record); geen layout en niets op de draad, dus dit deel
 alleen zou een patch zijn. `tests/kraken-motion.test.mjs`.
 
+### Dieper in het water (3 oktober 2026)
+
+De keeper tekende de waterlijn halverwege de rots: met de trapvoet op de grond van de rots stond die als een sokkel
+onder het schip. Nu staat de voet van de trap (en de steiger, en `anchor.door`) `SINK` = 1 hoger op de rots; de pagina
+zet die nog steeds op dekhoogte, dus alles zakt 1 en het water komt halverwege de rots. De twee trappen zijn korter
+(van ~3,2 naar ~2,2 hoog), naar dezelfde deur. Rotsen die nu op traphoogte onder de treden door lopen, tellen daar
+niet meer als muur (`pirateSolids`: een punt onder een vloer van de trap wordt beloopt, niet ingelopen). Mogelijk
+iets te diep; de keeper beoordeelt het in het spel.
+
 ### Open
 
 - De live-island migreert bij de eerste scan met deze code; omdat het een minor is, pas met de release (0.9.0).

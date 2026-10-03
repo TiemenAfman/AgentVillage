@@ -2444,6 +2444,14 @@ const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in s
 function pirateSolids(parts, anchors, surfaces) {
   const out = [];
   const ground = (anchors.door && anchors.door[1]) || 0;
+  // A point of the rock under one of the stair's floors is walked over, not into: the stair stands on
+  // the rock (since the stair's foot went up the rock, Plans/kraken-op-zee.md, rocks reach under the
+  // flights at a walker's height, and their box stood across the treads).
+  const under = (x, y, z) => surfaces.some((f) => {
+    if (x < f.x0 || x > f.x1 || z < f.z0 || z > f.z1) return false;
+    const top = f.y != null ? f.y : f.y0 + (f.y1 - f.y0) * (x - f.x0) / ((f.x1 - f.x0) || 1);
+    return y <= top + 0.02;
+  });
   for (const g of parts) {
     const name = g.userData.part?.args?.[0] || '';
     if (PIRATE_WALKED.test(name)) continue;
@@ -2455,6 +2463,7 @@ function pirateSolids(parts, anchors, surfaces) {
       if (y > y1) y1 = y;
       if (y > ground + WALK_CLEARANCE || y < ground - PIRATE_UNDER) continue;
       const x = p.getX(i), z = p.getZ(i);
+      if (under(x, y, z)) continue;
       if (x < x0) x0 = x;
       if (x > x1) x1 = x;
       if (z < z0) z0 = z;
