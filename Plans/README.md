@@ -35,6 +35,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [start-op-land.md](start-op-land.md) — wie geen eiland heeft (app en web) begint op land: op het
+  plein van een vrije starter, anders op een eilandje bij een spelerseiland, anders bij de vulkaan, met
+  de eigen skiff afgemeerd voor de kust; bij het claimen van de starter een vriendelijk bericht en de
+  skiff buiten het land van de nieuwkomer.
 - 🚧 [app-zonder-apk-bijwerken.md](app-zonder-apk-bijwerken.md) — de telefoon-app haalt een ondertekende
   pagina-bundel op (web/ + shared/) en draait die vanaf de volgende start, met terugval op de ingebakken
   kopie; een nieuwe APK alleen nog als de schil verandert.

@@ -16,6 +16,7 @@ import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
 import { isletsNear } from 'shared/islets.mjs';
+import { startTarget, starterSpot, isletSpot } from 'shared/start.mjs';
 import { kindOf } from 'shared/crafts.mjs';
 import { createCrowdView } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
@@ -8541,17 +8542,26 @@ Everything is copied and checked first; the island then starts again there. The 
       // `why` (lib/players.mjs evict) is only ever 'drown' so far; a sea from before it sends
       // none and gets the generic words, which name a place we were not sent home from.
       const drowned = m.why === 'drown';
+      // The starter we stood on was taken by a newcomer (lib/sea.mjs retireStarter): nobody
+      // threw us off, and the sea laid our skiff out past the newcomer's coast, at m.x/m.z.
+      const settled = m.why === 'settled';
       exitWalk({ force: true });
       state.walk.setPaused(false);
       // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
       // it is climbed into at once, so a respawn is back at the oars and not treading water.
       const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
+      if (skiff && settled && Number.isFinite(m.x) && Number.isFinite(m.z)) {
+        skiff.x = m.x; skiff.z = m.z;
+        skiff.craft.place(skiff.x, skiff.z, skiff.yaw);
+      }
       if (skiff) {
         enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
         takeBoat(skiff);
         state.ui.toast(drowned
           ? 'You ran out of breath, and were hauled back into your boat.'
-          : `The people of ${m.island || 'that island'} put you back in your boat.`);
+          : settled
+            ? `${escapeHtml(m.island || "This island")} has just been settled${m.by ? ` by <b>${escapeHtml(m.by)}</b>` : ''}. Your boat was waiting for you - the sea is wide.`
+            : `The people of ${m.island || 'that island'} put you back in your boat.`);
         return;
       }
       enterWalk({ at: [m.x, m.z] });
@@ -8731,6 +8741,9 @@ async function standaloneHome() {
     .map((i) => ({ half: i.reach ?? (i.gridSize || OPEN_HOME) / 2, origin: i.origin }));
   state.islandId = null;
   state.homeOrigin = nextOrigin(placed, OPEN_HOME / 2);
+  // Home stays that berth of water - a starter or an islet on it would lie over the island the
+  // page draws at the origin - and the body starts somewhere else in the world, on land.
+  state.start = state.homeOrigin ? await chooseStart() : null;
   return {
     v: 1,
     generatedAt: new Date().toISOString(),
@@ -8751,6 +8764,12 @@ async function standaloneHome() {
 // what hands us - and so that the fleet is in the water before you look up.
 function castOffOnArrival(tries = 0) {
   if (!(state.net && state.net.id()) && tries < 50) { setTimeout(() => castOffOnArrival(tries + 1), 200); return; }
+  if (state.start) {
+    const start = state.start;
+    state.start = null;
+    arriveOnLand(start).then((ok) => { if (!ok) castOffOnArrival(tries); });
+    return;
+  }
   // Bow towards the nearest coast, so the first thing on screen is somewhere to row to.
   // The boat steps along (sin yaw, cos yaw) - see stepAshore - hence atan2(x, z).
   let yaw = 0, near = Infinity;
@@ -8771,6 +8790,77 @@ function castOffOnArrival(tries = 0) {
   if (state.net) state.net.launchBoat(b.id, x, z, yaw);
   enterWalk({ at: [x, z], facing: [x + Math.sin(yaw) * 10, z + Math.cos(yaw) * 10], pitch: 0.12 });
   takeBoat(b);
+}
+
+// Where somebody with no island begins (Plans/start-op-land.md, shared/start.mjs): asked once,
+// of the fleet as the boot found it - the fleet changes, and a start that moved with it would
+// be worse than a longer row. Null keeps the old start, afloat at home.
+async function chooseStart() {
+  try {
+    const target = startTarget(state.fleet, { extra: [{ half: OPEN_HOME / 2, origin: state.homeOrigin }] });
+    if (!target) return null;
+    const who = wandererId();
+    if (target.kind === 'islet') {
+      const spot = isletSpot(target.islet, who);
+      return spot && { ...spot, kind: 'islet', near: target.near ? target.near.name : null };
+    }
+    // The square is in the bundle, not the row: fetched once here, and again by the fleet sync
+    // that raises the island (a starter is 64 across, a few kilobytes).
+    const bundle = await sea(`/island/${encodeURIComponent(target.row.id)}`).then((r) => r.json());
+    if (!bundle || !bundle.island) return null;
+    const terrain = makeTerrain(bundle.island.seed, { size: bundle.island.gridSize });
+    const spot = starterSpot(target.row, terrain, bundle, who);
+    return spot && { ...spot, kind: 'starter', id: target.row.id, name: bundle.island.name };
+  } catch {
+    return null;
+  }
+}
+
+// Who this browser is to the start's scatter: not the player id, which is new on every
+// connect, but a word kept per browser, so a reload stands you where you stood.
+function wandererId() {
+  try {
+    let id = localStorage.getItem('promptholm.wanderer');
+    if (!id) { id = Math.random().toString(36).slice(2, 10); localStorage.setItem('promptholm.wanderer', id); }
+    return id;
+  } catch {
+    return 'wanderer';
+  }
+}
+
+// On land, with the skiff moored off it and nobody at its tiller. The place is looked at first,
+// so it is the island drawn whole (pickDetailed) and its islets the ones laid out (syncIslets):
+// a body set down before its ground is raised stands in open sea and swims. A starter that does
+// not come up within a few seconds - gone from under us, a fetch that failed - is false, and
+// the caller rows off the old way.
+async function arriveOnLand(start) {
+  const home = state.homeOrigin || [0, 0];
+  const [sx, sz] = worldToScene(start.stand, home);
+  const [bx, bz] = worldToScene(start.skiff, home);
+  controls.target.set(sx, 0, sz);
+  syncIslets();
+  if (start.kind === 'starter') {
+    const until = performance.now() + 8000;
+    while (!state.sea.get(start.id) && performance.now() < until) {
+      await syncFleet();
+      if (!state.sea.get(start.id)) await new Promise((res) => setTimeout(res, 250));
+    }
+    if (!state.sea.get(start.id)) return false;
+  }
+  const self = state.net && state.net.id();
+  // Bow to the shore, as a boat is tied up. The boat steps along (sin yaw, cos yaw).
+  const yaw = Math.atan2(sx - bx, sz - bz);
+  const craft = createBoat({ scene, material: buildingMat });
+  craft.place(bx, bz, yaw);
+  const b = { id: `boat:w-${self}`, x: bx, z: bz, yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null, own: true };
+  state.boats.push(b);
+  // A launch always comes with the tiller (lib/boats.mjs), so it is let go at once.
+  if (state.net) { state.net.launchBoat(b.id, bx, bz, yaw); state.net.dropBoat(b.id); }
+  enterWalk({ at: [sx, sz], facing: [bx, bz], pitch: 0.12 });
+  state.ui.toast(start.kind === 'starter'
+    ? `You wake on the square of <b>${escapeHtml(start.name)}</b>. Your boat is moored off the shore.`
+    : `You wake on a little island${start.near ? ` off <b>${escapeHtml(start.near)}</b>` : ''}. Your boat is moored off the beach.`);
+  return true;
 }
 
 // A reconnect is a new player id, and the sea sank the skiff named after the old one when

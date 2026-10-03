@@ -1041,9 +1041,12 @@ boat's stamina pool), so a second kind of vehicle in it would make them all lie.
 mounts and dismounts in any walk mode created with `bikes: true` (the island and `/demo`, not
 rooms); the bike comes out of the satchel and goes back in, so no server state exists for it.
 `stepBike` (`web/js/bicycle.js`) is pure like `stepBoat` and takes walk.js's own `groundAt` and
-`blocked`, so water, walls and ledges above `STEP_UP` stop it exactly as they stop feet. Space hops with
+`blocked`, so walls and ledges above `STEP_UP` stop it exactly as they stop feet. Water stops it
+only past `BIKE_WADE` (0.3) deep: a puddle on the beach and a shelving shore are ridden on the bed,
+a river's middle (0.68 at the shallowest on Hoogezand), the fairway (`CHANNEL_H`) and the sea are
+walls. Getting on and off still wants dry ground (`BIKE_SHORE`), since feet in water swim. Space hops with
 the feet's own `JUMP_V`/`GRAVITY` (copied into `BIKE_HOP`/`BIKE_GRAVITY`, the test reads walk.js);
-in the air water is no wall, and a landing in it sets `splash`, on which walk.js puts the bike
+in the air water is no wall, and a landing in deep water sets `splash`, on which walk.js puts the bike
 away and leaves a swimmer. The camera on a bike is free: any look input resets
 `riddenSinceLook`, and it only trails the bike again after `RECENTRE_AFTER` of riding (the boat
 still trails every frame). The mesh
@@ -1133,6 +1136,23 @@ in `tests/support/sea.mjs` and the sea tests' own `createSea`), because every be
 island count in them assumes an empty ring - pass `starters: true` to test them. The fleet
 row carries `reach`, and the phone's `standaloneHome()` lays its open-water berth on it: on
 `gridSize / 2` it put its skiff inside the room a starter holds for its claimer.
+
+**Without an island you start on land** ([Plans/start-op-land.md](Plans/start-op-land.md)), app and
+web alike (the `STANDALONE` path). `shared/start.mjs` is the pure choice, made once in
+`standaloneHome` (`chooseStart`) of the fleet the boot found: the free starter with the **highest**
+slot (a newcomer takes the lowest first, and every wanderer meets on the same square), else the islet
+nearest an islander's island (`live` first, then id), else the islet nearest the volcano; `starterSpot`
+/ `isletSpot` give a stand (on the square off the well and tables; on an islet dry and clear of palm
+trunks) and a skiff on the first water `SKIFF_DEPTH` deep straight out from it. A starter is known by
+`starter: true` on its fleet row, or by its id (`5ea5` + slot) against a sea from before the flag.
+`homeOrigin` stays the open-water berth - a start region over it would overlap home - so the start is
+just a world point; `arriveOnLand` looks at it first (orbit target, so `pickDetailed`/`syncIslets`
+raise its ground) and waits for the starter's region before `enterWalk`, or a body set down early
+swims. The skiff is launched there and let go at once (`dropBoat`), so respawn (`health.refuge`) is
+the start's shore. When the starter is taken, `retireStarter(took, newcomer)` lays a wanderer's skiff
+past the edge of the **newcomer's** grid (`SKIFF_CLEAR`) before the evict - it takes the starter's
+berth, not its coast - and `evicted` carries `why: 'settled'` + `by`, which the page turns into a
+friendly toast and the skiff's new place.
 
 **The volcano's lava has bridges, and they are ordinary bridges.** `volcanoBridges()` in
 `shared/volcano.mjs` picks three crossings per flow (apron, mid-cone, high cone) from the
@@ -2645,7 +2665,8 @@ environment variable (`PROMPTHOLM_*`; the old `SETTLERS_*` names are gone, with 
 "Settlers" survives only as what the island's inhabitants are called (`web/js/settlers.js`,
 `village.settlers`), which is the game's vocabulary rather than its name. The exceptions are
 deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming it is the
-owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
+owner's call), and `agentvillage.xeroxmsj.freeddns.org` and `agentvillage.freeddns.org` are real
+hostnames (the same NPM proxy: `/` to the sea on :4750, `/play` to the web on :4760).
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,
