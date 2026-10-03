@@ -112,6 +112,8 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   in ondiep water, met een loopplank van het zand naar de voet van de trap (afgeleid uit het plot, gelopen als
   steiger), rotsen die uit het water oprijzen in plaats van op de grond te staan, en de tentakel in de rots.
   Eénmalige verhuizing van de kroeg die al op het strand staat; een minor.
+- 🚧 [kraken-dek.md](kraken-dek.md) — het dek van de Salty Kraken beloopbaar: middendek en beide kasteeldaken met ladders,
+  een deur in het achterkasteel naar het luik in het kraaiennest binnen, en een ladder langs de romp vanaf de trap.
 - 🚧 [bloom-en-aa.md](bloom-en-aa.md) — bloom en anti-aliasing als instelling (Settings → Graphics): three's
   postprocessing gevendord, bloom eerst alleen in kamers, AA MSAA / SMAA / uit.
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de

@@ -2142,7 +2142,14 @@ door with the stoop's height as its `floor`. **The rock has a skirt**: below the
 down `SKIRT` (2.7), widening, instead of being cut flat at y = 0 (a seam where rock met sand), and the whole model is
 lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's ground is `anchor.door[1]`, not 0 -
 `pirateTavernGround` returns `QUAY_DECK - door.y` in the sea and the lowest front ground `- door.y` on the beach, and
-`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its flags, set sails and hooked lanterns move**:
+`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its deck is walked** ([Plans/kraken-dek.md](Plans/kraken-dek.md)): the waist, the castle's roof and the
+forecastle are `deck.*`/`stair.*` strips the bake works out through `world_of` (heel across, sheer along), what
+stands on them `solid.<letters>.lo|hi` blocks (footprint at their foot - a mast leans with the heel) read by
+`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs and
+one up the hull from the zigzag's landing; a rock under a stair floor is no wall (`under`). The castle front's door
+(`deck.door-step`, `krakenDeckDoor` in main.js) is a second `kind: 'tavern'` interactable with a `spot` (the room
+opens at `HATCH` in the crow's nest) and a `front` (the room's doorway still leads to the stoop); the hatch is an
+interior `exits` entry (`kind: 'exit'`, `onLeave(to)` -> `leaveInterior('deck')`). **Its flags, set sails and hooked lanterns move**:
 `isKrakenMoving` (buildings.js) keeps them out of the merge and `web/js/kraken-motion.js` hangs them as ONE geometry on the
 record's group, moved per vertex on the CPU like the Batavia's flags, measured off the bake by part name, on the sea's clock
 (`attachExtras` / `animateExtras` / record-extras.js); a new moving part means a name in both regexes

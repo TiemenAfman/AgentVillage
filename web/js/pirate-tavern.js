@@ -35,7 +35,7 @@
 // at you, and the quest mark over whoever the story is waiting on - plus Captain Spack Jarrow,
 // the one of them who is a model of his own (captain.js).
 import * as THREE from 'three';
-import { meshAsset } from './buildings.js';
+import { meshAsset, box, C } from './buildings.js';
 import { createFigures, settlerLook } from './settler-figures.js';
 import { createQuestMark, MARK_LIFT } from './quest-mark.js';
 import { captainModel } from './captain.js';
@@ -283,6 +283,17 @@ export function buildPirateTavern({ FLOOR, rect }) {
   }
   for (const b of EXTRA_BLOCKERS) blockers.push({ ...b, y1: upTo(b.y0, b.y1) });
 
+  // ---- the hatch up to the deck (Plans/kraken-dek.md) ---------------------------------------------
+  // A ship's ladder up the mast's east face from the crow's nest into the ridge, and the dark of the open
+  // hatch at its head. A handful of boxes, not the hall's bake: that is 34 MB to bake again.
+  {
+    const { y, face, mz } = K.HATCH, top = K.F + K.CEILING - 0.06;
+    for (const s of [-1, 1]) parts.push(box(0.05, top - y, 0.05, C.darkWood, { x: face + 0.03, y, z: mz + s * 0.2, sheet: 'plank' }));
+    for (let h = y + 0.24; h < top - 0.08; h += 0.26) parts.push(box(0.04, 0.035, 0.42, C.plank, { x: face + 0.03, y: h, z: mz, sheet: 'plank' }));
+    parts.push(box(0.62, 0.03, 0.62, 0x0d0b0a, { x: face, y: top, z: mz }));
+    for (const s of [-1, 1]) parts.push(box(0.68, 0.06, 0.06, C.darkWood, { x: face, y: top - 0.03, z: mz + s * 0.34, sheet: 'plank' }));
+  }
+
   // ---- seats ---------------------------------------------------------------------------------
   // `floor` is the storey a seat is on: walk mode offers it only to somebody standing there.
   for (let i = 0; i < stools.n; i++) {
@@ -346,6 +357,8 @@ export function buildPirateTavern({ FLOOR, rect }) {
   return {
     name: 'the Salty Kraken',
     parts, roof, pieces, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
+    // The other way out: up the hatch onto the deck outside (interior.js `exits`, main.js leaveInterior).
+    exits: [{ id: 'hatch', kind: 'exit', to: 'deck', x: K.HATCH.x, z: K.HATCH.z, r: 0.8, floor: K.HATCH.y, label: 'the hatch', prompt: 'climb up onto the deck' }],
     // The glow round every flame and lit window, read off the parts themselves, and the moonlight
     // through the skylights (room-glow.js; the light plan is kraken-layout.js LIGHTS).
     halos: halosOf(parts), roofHalos: halosOf(roof),

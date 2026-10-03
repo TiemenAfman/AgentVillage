@@ -606,11 +606,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // its show running with nobody in it - its walk mode is never entered, so there is no door to walk
   // out of and nothing to leave by; main.js takes it down with unpeek.
   let peeking = false;
-  function leave() {
+  function leave(to = null) {
     if (left || peeking) return;
     left = true;
     walk.exit();
-    if (onLeave) onLeave();
+    if (onLeave) onLeave(to);
   }
 
   // The camera lives in the room too. Rather than sliding it sideways off a wall -- which
@@ -776,6 +776,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // how you get off the stool, which walk mode already does on its own.
   function onInteract(it) {
     if (it.kind === 'crew') { if (onTalk) onTalk(it); return; }
+    // A second way out (the Salty Kraken's hatch to its deck, Plans/kraken-dek.md): `onLeave` is told where to.
+    if (it.kind === 'exit') { leave(it.to); return; }
     if (it.kind !== 'seat') return;
     if (!walk.state.sitting) { walk.sitOn({ x: it.x, z: it.z, y: it.y, yaw: it.yaw }); return; }
     const s = served[it.index];
@@ -808,7 +810,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       y: back ? back.y : Infinity,
       facing: back ? [back.at[0] + Math.sin(back.yaw), back.at[1] + Math.cos(back.yaw)] : [def.spawn.x, def.spawn.z - 1],
       blockers,
-      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || []),
+      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || [], def.exits || []),
       onInteract,
       // Esc (and the pad's Back) is the menu's key indoors as it is on the island, when the room's
       // owner says so (main.js); the way out is the door. /demo has no menu and still steps outside.
@@ -879,6 +881,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   function promptFor(near) {
+    if (near.kind === 'exit') return near.prompt;
     if (near.kind === 'crew') {
       return lastExtra.business === near.who ? `${near.name} has something for you` : `speak to ${near.name}`;
     }

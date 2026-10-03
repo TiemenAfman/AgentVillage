@@ -37,6 +37,7 @@ import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
 import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
+import { HATCH as KRAKEN_HATCH } from './kraken-layout.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -1182,6 +1183,17 @@ function interactables() {
         ...(stoop ? { floor: stoop.y + p.y } : {}),
         label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
       });
+      // And the door in the castle's front on its deck (Plans/kraken-dek.md): into the same room, but up
+      // through the hatch in the loft - and out of the room by its front door you are on the stoop, not here.
+      const deck = krakenDeckDoor(rec);
+      if (deck && stoop) {
+        out.push({
+          id: `${rec.id}:deck`, kind: 'tavern', room: 'piratetavern', x: deck.at[0], z: deck.at[1], r: 0.8, floor: deck.y,
+          label: 'the Salty Kraken', prompt: 'go below',
+          spot: { at: [KRAKEN_HATCH.x, KRAKEN_HATCH.y, KRAKEN_HATCH.z], yaw: -Math.PI / 2, pitch: 0.05 },
+          front: { at: [p.x + sx * c + sz * s, p.z - sx * s + sz * c], y: stoop.y + p.y },
+        });
+      }
     } else if (rec.spec.civicType === 'castle') {
       // At the gate, not the middle of the lot: a seven by seven castle measured from its
       // centre would answer E from behind its back wall. A getter for the prompt, because
@@ -2026,7 +2038,7 @@ function walkCallbacks() {
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'goldmine') state.ui.toast(mineWords(state.gold));
       else if (it.kind === 'goldsmith') state.ui.toast(smithWords());
-      else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'tavern') enterInterior(it.room, it, it.spot || null);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'chronicle') openChronicle();
       else if (it.kind === 'keeper') speakToKeeper(it);
@@ -2547,7 +2559,7 @@ function roomFor(room) {
     try {
       inside = createInterior({
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
-        onLeave: () => leaveInterior(),
+        onLeave: (to) => leaveInterior(to),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
         onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
@@ -2594,6 +2606,9 @@ function enterInterior(room, at, spot = null) {
   // walked through.
   const w = state.walk.state;
   cameFrom = { at: [w.pos.x, w.pos.z], y: w.pos.y, facing: at ? [at.x, at.z] : null };
+  // In through the Salty Kraken's deck door: its front door is still the stoop (the room's doorway leads
+  // there), so that is where its way out puts you; the hatch is the way back to the deck.
+  if (at && at.front) cameFrom = { at: at.front.at, y: at.front.y, facing: null };
   state.walk.exit();
   state.inside = inside;
   const rave = room === 'rave';
@@ -2611,8 +2626,23 @@ function enterInterior(room, at, spot = null) {
   if (state.net) state.net.setRoom(inside.room, inside.walk);
 }
 
-function leaveInterior() {
+// The step before the door in the Salty Kraken's castle front (scripts/build-piratetavern.py, the
+// `deck.door-step` floor): where on the island, at what height, and a point to face - away from the
+// door, down the waist. Null for a bake from before the deck was walked.
+function krakenDeckDoor(rec) {
+  const f = rec && rec.built && (rec.built.surfaces || []).find((q) => q.name === 'door-step');
+  if (!f) return null;
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y), p = rec.group.position;
+  const at = (x, z) => [p.x + x * c + z * s, p.z - x * s + z * c];
+  const mx = (f.x0 + f.x1) / 2, mz = (f.z0 + f.z1) / 2;
+  return { at: at(mx, mz), y: f.y + p.y, facing: at(mx - 2, mz) };
+}
+
+function leaveInterior(to = null) {
   if (!state.inside) return;
+  // Up the Salty Kraken's hatch: out onto its deck at the castle's door, not down at its front door.
+  const deck = to === 'deck' ? krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
+  if (deck) cameFrom = { at: deck.at, y: deck.y, facing: deck.facing };
   state.inside = null;
   forgetRoom();
   state.ui.setIndoors(false);
@@ -2621,6 +2651,9 @@ function leaveInterior() {
   // Still on foot: walk mode picks up again on the step outside the door.
   state.walk.enter({
     at: (cameFrom && cameFrom.at) || [0, 0],
+    // From the height you went in at (the Kraken's stoop is up its rock, its deck higher still): found
+    // from the top, the deck door's spot would take whatever floor is highest over it.
+    y: cameFrom && cameFrom.y != null ? cameFrom.y + 0.05 : Infinity,
     facing: cameFrom && cameFrom.facing,
     blockers: walkableBlockers(),
     interactables: interactables(),

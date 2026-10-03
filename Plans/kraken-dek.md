@@ -43,4 +43,19 @@ op het dek staan via je gewone positie. Het is dus een patch, al gaat hij mee in
 
 ## Stand
 
-In aanbouw op `claude/gifted-leavitt-465053`.
+Gebouwd op `claude/gifted-leavitt-465053` (3 oktober 2026).
+
+- **Het luik zit in het kraaiennest, niet in de oosthoek van de lofts.** Daar was het pikkedonker: geen van de zeven
+  lampen reikt ertot, en een extra lamp mag niet (het aantal lichten zit in de programmasleutel). Het kraaiennest is
+  een van de lofts en wordt verlicht door de twee kaarsenboten en de maan. Het luik heeft een ladder langs de oostkant
+  van de mast naar een luik in de nok (`HATCH` in kraken-layout.js, getekend met een paar blokken in pirate-tavern.js).
+- **De ingang van de ladders in de dakleuningen** is een hand breder dan de ladder. Door de slagzij ligt de rand van
+  het dak een paar centimeter verder naar het water dan de voet van de ladder.
+- **Blokken krijgen het grondvlak van hun voet**: met de top meegerekend helde de mast 0,4 opzij en sloot hij het dek af.
+- **Twee vaten bij de kaapstander zijn weg**: ze stonden aan de voet van de dakladder. De deur staat aan de landzijde
+  (z -0,36), de dakladder aan de waterzijde.
+- Gemeten met de echte walk mode (`tests/pirate-stair-walk.test.mjs`): van het bordes de buitenladder op, over de
+  plank aan dek, om luik, mast en kaapstander naar de deur, de dakladder op naar het kasteeldak; en van het middendek
+  naar het voorkasteel. In de pagina op een kopie van Hoogezand: E bij de deur zet je in het kraaiennest, E bij het luik
+  weer bij de deur, en door de voordeur van de zaal kom je op het stoepje van de trap uit.
+- Bake: 85.080 driehoeken.

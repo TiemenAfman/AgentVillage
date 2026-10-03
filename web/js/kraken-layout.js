@@ -145,6 +145,12 @@ const BOAT_GUNWALE = Math.max(POOL.surface + 0.07, 0.171);
 // A hammock (scripts/krakenkit/hammock.py) is HAMMOCK.len between its hooks at HAMMOCK.hook over its
 // lowest point (its stand-in's 0.261, stretched to the HD model's 0.466 of sag); each is scaled to its
 // own span, and the room hangs its slings from the hooks.
+// The hatch up to the deck outside (Plans/kraken-dek.md): in the crow's nest, a ladder up the mast's east
+// face to a hatch in the ridge, and E at its foot puts you on the deck of the galleon outside, at the
+// castle's front door - the way back in. The nest, because the lofts' far corners are dark: the two sloops
+// and the moon light it, and the room has its seven lights. `x`, `z` where you stand at its foot, `y` that
+// floor, `face` the x of the mast's face the ladder stands on, `mz` the mast's z.
+export const HATCH = { x: 0.38, z: -1.25, y: U, face: 0.16, mz: -1.6 };
 export const HAMMOCK = { len: 1.25, hook: 0.462 };
 
 // The ship's parts (web/js/krakenkit-mesh.js), where they stand.
