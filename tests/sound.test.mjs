@@ -1084,7 +1084,8 @@ test('the middle of the island does not hear the surf, even with a river through
   assert.ok(middle < 0.01, `a river is not a coastline (${middle})`);
   look.depthAt = (x) => (x > 1 ? -2.5 : 1.5);       // standing at the waterline
   run(sound, 15);
-  assert.ok(sound.stats().bed.sea > 0.1, `on the beach the sea is the loudest thing (${sound.stats().bed.sea})`);
+  // Over the wind at the water (WIND_QUIET 0.02) and far over the middle; SEA_LOUD is 0.12.
+  assert.ok(sound.stats().bed.sea > 0.04, `on the beach the sea is the loudest thing (${sound.stats().bed.sea})`);
 });
 
 // --- water and fire (phase 7) ----------------------------------------------

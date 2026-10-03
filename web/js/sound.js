@@ -64,7 +64,7 @@ const GULLS = 2;
 // grid is 64 across, so 70 is "anywhere on this island" and no further.
 const HAMMER_RANGE = 70;
 const GULL_RANGE = 75;
-const TAVERN_RANGE = 60;
+const TAVERN_RANGE = 35;
 const BORREL_RANGE = 70;
 
 // A tavern heard from outside is heard through its door (Plans/meer-geluiden.md): its source hangs
@@ -160,7 +160,9 @@ const GULL_GAP = [17, 48];
 
 // The bed, in master-volume terms. The sea at the water's edge is the loudest thing on the
 // island and it is still under a quarter of the range - everything else has to fit over it.
-const SEA_LOUD = 0.26;
+// It was 0.26, with waves every 10 s and wind at 0.085: far too loud and too busy on the live
+// island (the keeper, 3 October 2026), so the bed is roughly halved and its loops are longer.
+const SEA_LOUD = 0.12;
 // The same sea from the middle of the island: next to nothing. It was 0.05, which with every
 // river, lake and harbour channel counted as sea put surf in the middle of Hoogezand (the keeper,
 // 2 October 2026).
@@ -170,8 +172,8 @@ const SEA_QUIET = 0.006;
 // wet probe is sea only if there is water SEA_WIDE off it on at least three of its four sides,
 // which a river two units across or a lake of radius four never has.
 const SEA_WIDE = 5;
-const WIND_LOUD = 0.085;         // inland, in the open
-const WIND_QUIET = 0.035;        // down at the water, where the surf covers it
+const WIND_LOUD = 0.045;         // inland, in the open
+const WIND_QUIET = 0.02;         // down at the water, where the surf covers it
 
 // How much of the whole thing is left after dark. Not silence: an island at night is the
 // sea and the wind and nothing else, which is most of what is here anyway.
@@ -292,7 +294,7 @@ function intoBuffer(ctx, chs, sr) {
 // do not arrive on a beat. So the swell is three sines whose periods are the loop, a third
 // of it and a seventh - all whole fractions, so the loop is seamless, and mutually prime,
 // so within one turn of it no two crests land together twice.
-function surfBuffer(ctx, secs = 10) {
+function surfBuffer(ctx, secs = 18) {
   const sr = BED_SR;
   const len = Math.floor(sr * secs);
   const fade = Math.floor(sr * 0.8);
@@ -327,7 +329,7 @@ function surfBuffer(ctx, secs = 10) {
 // Inland it is what you hear instead of the sea. A band of noise whose centre rises with
 // the gust, because a stronger gust through the same grass is a brighter one - a fixed
 // band with a moving gain is the sound of somebody turning a volume knob.
-function windBuffer(ctx, secs = 12) {
+function windBuffer(ctx, secs = 20) {
   const sr = BED_SR;
   const len = Math.floor(sr * secs);
   const fade = Math.floor(sr * 0.8);
@@ -2110,7 +2112,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Outside: through the door, by the distance to it.
       let want = 0;
       if (site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
-        want = Math.min(0.6, pub.full * 0.5 * evening) * edge(pub.d, TAVERN_RANGE);
+        want = Math.min(0.25, pub.full * 0.22 * evening) * edge(pub.d, TAVERN_RANGE);
       }
       pub.want = want;
       const buf = want > 0 || pub.out.audio.isPlaying ? need(pub.buffer) : null;
