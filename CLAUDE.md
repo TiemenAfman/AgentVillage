@@ -1134,6 +1134,23 @@ island count in them assumes an empty ring - pass `starters: true` to test them.
 row carries `reach`, and the phone's `standaloneHome()` lays its open-water berth on it: on
 `gridSize / 2` it put its skiff inside the room a starter holds for its claimer.
 
+**Without an island you start on land** ([Plans/start-op-land.md](Plans/start-op-land.md)), app and
+web alike (the `STANDALONE` path). `shared/start.mjs` is the pure choice, made once in
+`standaloneHome` (`chooseStart`) of the fleet the boot found: the free starter with the **highest**
+slot (a newcomer takes the lowest first, and every wanderer meets on the same square), else the islet
+nearest an islander's island (`live` first, then id), else the islet nearest the volcano; `starterSpot`
+/ `isletSpot` give a stand (on the square off the well and tables; on an islet dry and clear of palm
+trunks) and a skiff on the first water `SKIFF_DEPTH` deep straight out from it. A starter is known by
+`starter: true` on its fleet row, or by its id (`5ea5` + slot) against a sea from before the flag.
+`homeOrigin` stays the open-water berth - a start region over it would overlap home - so the start is
+just a world point; `arriveOnLand` looks at it first (orbit target, so `pickDetailed`/`syncIslets`
+raise its ground) and waits for the starter's region before `enterWalk`, or a body set down early
+swims. The skiff is launched there and let go at once (`dropBoat`), so respawn (`health.refuge`) is
+the start's shore. When the starter is taken, `retireStarter(took, newcomer)` lays a wanderer's skiff
+past the edge of the **newcomer's** grid (`SKIFF_CLEAR`) before the evict - it takes the starter's
+berth, not its coast - and `evicted` carries `why: 'settled'` + `by`, which the page turns into a
+friendly toast and the skiff's new place.
+
 **The volcano's lava has bridges, and they are ordinary bridges.** `volcanoBridges()` in
 `shared/volcano.mjs` picks three crossings per flow (apron, mid-cone, high cone) from the
 terrain alone - axis-aligned, exactly over the lava + bank run, landing on plain ground -
