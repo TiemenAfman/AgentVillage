@@ -1957,7 +1957,7 @@ export function createWalkMode({
     // ---- on the bike ------------------------------------------------------------
     // The boat's shape again - W and S are the pedals and the brakes, A and D the bars, the
     // camera trails the front wheel - but on the feet's ground: `blocked` is the same wall a
-    // walker meets, and the water's edge is where it stops. Shift is standing on the pedals,
+    // walker meets, and the edge of deep water (BIKE_WADE) is where it stops. Shift is standing on the pedals,
     // and it spends the body's pool the way a run does.
     if (state.bike) {
       const b = state.bike;
