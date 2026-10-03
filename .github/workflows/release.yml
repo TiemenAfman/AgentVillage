@@ -261,3 +261,18 @@ jobs:
             promptholm-android.apk
             promptholm-web.zip
             promptholm-web.json
+
+  # The web version (Plans/spelen-in-de-browser.md): the keeper's home server serves it from a
+  # Portainer git stack that follows the branch `play` (docker-compose.play.yml), so a release
+  # moves that branch onto its own commit and the push is what redeploys it - that box's
+  # convention, a git stack and a push webhook. Not `main`: the web gets releases, not every
+  # commit. A push with this workflow's GITHUB_TOKEN starts no workflow, but it does fire the
+  # repository's webhooks. Only once both builds are out, so the page never runs ahead of the
+  # release it names.
+  play:
+    needs: [tag, windows, android]
+    if: ${{ !cancelled() && needs.windows.result == 'success' && needs.android.result == 'success' && (startsWith(github.ref, 'refs/tags/') || needs.tag.outputs.tag != '') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git push --force origin "${GITHUB_SHA}:refs/heads/play"

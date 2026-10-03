@@ -19,6 +19,7 @@
     "app:build": "tauri build --no-bundle",
     "app:pack": "node scripts/pack-release.mjs",
     "android:pack": "node scripts/pack-android.mjs",
+    "web:pack": "node scripts/pack-web.mjs",
     "android:apk": "node scripts/pack-android.mjs && cd src-android && tauri android build --apk --debug --target aarch64",
     "tauri": "tauri",
     "models": "node scripts/models.mjs",

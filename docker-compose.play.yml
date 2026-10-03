@@ -1,0 +1,47 @@
+# The web version as a Portainer stack (Plans/spelen-in-de-browser.md).
+#
+# A static page and nothing else: no island, no sea, no secrets. The page joins the sea from the
+# visitor's own browser, the way the app on a phone does. Deployed like the sea - a git stack with
+# a GitHub push webhook, environment in Portainer's stack environment, the outside world through
+# Nginx Proxy Manager - but following the branch `play`, which release.yml moves onto each release.
+services:
+  play:
+    build:
+      context: .
+      dockerfile: Dockerfile.play
+      args:
+        # The sea the page joins. The open sea by default; a page on the internet cannot carry a
+        # key, so a keyed sea is refused at pack time.
+        PLAY_SEA: ${PLAY_SEA:-https://agentvillage.xeroxmsj.freeddns.org/}
+    image: promptholm-play
+    # Locally built, never pulled - see docker-compose.sea.yml: without this a webhook redeploy
+    # fails on "pull access denied" and keeps the old container, silently.
+    pull_policy: build
+    container_name: promptholm-play
+    restart: unless-stopped
+    ports:
+      - "4760:80"
+    environment:
+      # How many builds stay on the shelf for tabs opened before a redeploy (deploy/play/shelf.sh).
+      PLAY_KEEP: ${PLAY_KEEP:-3}
+    volumes:
+      # Unlike the sea, a volume on purpose: it holds the last few shelves, so a tab opened before
+      # a redeploy still finds its own lazy modules. Throwing it away costs only those tabs.
+      - play-shelf:/usr/share/nginx/html/play
+
+volumes:
+  play-shelf:
+
+# ---- putting it on the box ---------------------------------------------------------
+#
+#   Portainer -> Stacks -> Add stack -> Repository
+#     Repository URL      this repo
+#     Reference           refs/heads/play
+#     Compose path        docker-compose.play.yml
+#     Environment         PLAY_SEA (optional)
+#     Automatic updates   Webhook
+#
+# The webhook goes into the repository's GitHub webhooks, push event only - or, until somebody
+# with the rights adds it, redeploy by hand after a release. Then in Nginx Proxy Manager: a Custom
+# Location /play -> http://<this box>:4760 on the open sea's proxy host (or a proxy host of its
+# own), Cache Assets off.

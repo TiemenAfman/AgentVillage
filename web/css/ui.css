@@ -1311,6 +1311,7 @@ body.standalone .titlecard { min-width: 0; padding: 8px 12px; }
    X button. Tucked up under the single chip row instead. */
 body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
 .touchpad { position: fixed; inset: 0; z-index: 1; touch-action: none; user-select: none; -webkit-user-select: none; }
+.touchpad[hidden] { display: none; }
 .tp-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.45); background: rgba(20,24,30,.18); pointer-events: none; }
 .tp-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
@@ -1363,17 +1364,20 @@ body.standalone .topright { top: var(--st); right: var(--sr); z-index: 11; }
 /* Tappable: it opens the sea chart (main.js onMinimapTap). */
 body.standalone .minimap { top: calc(var(--st) + 50px); right: var(--sr); width: 144px; height: 144px;
   pointer-events: auto; cursor: pointer; }
-/* Toasts and the island chat used to sit bottom-left, which is exactly where a left thumb
+/* What follows up to the Controls panel is for thumbs, and so under body.touch rather than
+   body.standalone: the web is a page with no islander too, and somebody at it may be at a
+   keyboard (main.js showInputMode, web/js/device.js). The app always carries both classes.
+   Toasts and the island chat used to sit bottom-left, which is exactly where a left thumb
    lands for the stick - and they took the touch. Top middle, and see-through to fingers. */
-body.standalone #toasts { left: 50%; right: auto; bottom: auto; top: calc(var(--st) + 50px); transform: translateX(-50%);
+body.touch #toasts { left: 50%; right: auto; bottom: auto; top: calc(var(--st) + 50px); transform: translateX(-50%);
   width: min(340px, calc(100vw - 200px)); pointer-events: none; }
-body.standalone #toasts .act, body.standalone #toasts button, body.standalone #toasts a { pointer-events: auto; }
-body.standalone .islandchat { left: var(--sl); bottom: auto; top: calc(var(--st) + 64px); max-width: min(300px, 42vw); }
+body.touch #toasts .act, body.touch #toasts button, body.touch #toasts a { pointer-events: auto; }
+body.touch .islandchat { left: var(--sl); bottom: auto; top: calc(var(--st) + 64px); max-width: min(300px, 42vw); }
 /* Fingers are wider than a cursor: 44px is the least a tap target should be. */
-body.standalone .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
-body.standalone .x, body.standalone .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
-body.standalone .speech { pointer-events: auto; cursor: pointer; }
-body.standalone .skew { bottom: calc(var(--sb) + 170px); }
+body.touch .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
+body.touch .x, body.touch .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
+body.touch .speech { pointer-events: auto; cursor: pointer; }
+body.touch .skew { bottom: calc(var(--sb) + 170px); }
 body.standalone .tp-cluster { right: var(--sr); bottom: var(--sb); }
 /* The Controls panel (ui.js openPhone): one setting a row, big enough for a thumb. */
 .phone-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }

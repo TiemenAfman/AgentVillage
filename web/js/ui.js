@@ -608,9 +608,12 @@ export function createUI(handlers) {
   // (setWalking among them) hand some of these chips their `hidden` back later.
   // The app on a phone. It also gets the two chips a phone needs and a keyboard does not:
   // Say, for the island chat that otherwise only T opens, and Controls (phoneprefs.js).
-  let standalone = false;
-  function setStandalone() {
+  let standalone = false, keyboardToo = false;
+  // `keyboard`: the web, where the same page may be at a keyboard as well as under thumbs - so
+  // Settings keeps the key table beside the touch controls (Plans/spelen-in-de-browser.md).
+  function setStandalone({ keyboard = false } = {}) {
     standalone = true;
+    keyboardToo = keyboard;
     document.body.classList.add('standalone');
     el('say-btn').hidden = false;
     el('phone-btn').hidden = false;
@@ -961,7 +964,7 @@ export function createUI(handlers) {
         : 'Off. A free-flying camera for looking at the graphics, also on with <code>?noclip</code> in the address.'}</p>`;
     el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
       + `<section data-tab="audio">${audioSection()}</section>`
-      + (standalone ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
+      + (standalone && !keyboardToo ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
     el('settings-body').querySelectorAll('[data-signs]')
       .forEach((b) => b.addEventListener('click', () => handlers.onSigns(b.dataset.signs)));
@@ -1476,7 +1479,7 @@ export function createUI(handlers) {
     if (!s) { p.hidden = true; p.innerHTML = ''; return; }
     p.hidden = false;
     p.innerHTML = `<b class="speech-who">${esc(s.who)}</b><span class="speech-line">${esc(s.line)}</span>`
-      + `<span class="speech-key">${document.body.classList.contains('standalone') ? 'Tap or <kbd>X</kbd> to walk on'
+      + `<span class="speech-key">${document.body.classList.contains('touch') ? 'Tap or <kbd>X</kbd> to walk on'
         : padConnected ? '<kbd>X</kbd> walk on' : '<kbd>Esc</kbd> walk on'}</span>`;
   }
 

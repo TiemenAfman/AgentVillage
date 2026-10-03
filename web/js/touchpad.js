@@ -81,6 +81,7 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   const onFoot = layer.querySelectorAll('.tp-foot');
 
   let seen = false;
+  let shown = true;
   const move = { x: 0, y: 0 };
   const drag = { x: 0, y: 0 };
   let zoom = 1;
@@ -187,7 +188,7 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
 
   function poll() {
     justPressed.clear();
-    if (!seen) return null;
+    if (!seen || !shown) return null;
     for (const i of held) if (!prev.has(i)) justPressed.add(i);
     prev.clear();
     for (const i of held) prev.add(i);
@@ -235,15 +236,36 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   function relayout() { layer.classList.toggle('lefty', prefs().lefty); }
   relayout();
 
-  return { poll, id: () => 'touch', connected: () => seen, caption, setHands, relayout };
+  // On the web the layer comes and goes with the controls in use (main.js showInputMode, device.js):
+  // hidden, it lies over nothing, and whatever a thumb held - the stick, a button, a look - is let
+  // go of, or a thumb that left the glass for the keyboard would walk on for ever. The app never
+  // hides it.
+  function setShown(on) {
+    if (on === shown) return;
+    shown = on;
+    layer.hidden = !on;
+    if (on) return;
+    stick = null; move.x = 0; move.y = 0; stickEl.hidden = true;
+    lookers.clear(); pinch = null;
+    drag.x = 0; drag.y = 0; zoom = 1;
+    held.clear(); prev.clear();
+    for (const b of layer.querySelectorAll('.tp-btn.on')) {
+      b.classList.remove('on');
+      if (b.dataset.hand && onHand) onHand(b.dataset.hand, false);
+    }
+  }
+
+  return { poll, id: () => 'touch', connected: () => seen && shown, caption, setHands, relayout, setShown };
 }
 
 // A real pad when one is plugged in, the screen otherwise. Both are polled every frame
 // regardless, so the touch layer's per-poll state (the look drag, which buttons were just
 // pressed) never piles up while the other one is winning.
-export function eitherPad(a, b) {
+// `onA`, when given, hears every poll the real pad answered (the web hides the thumb controls
+// once a pad is used, device.js padUsed).
+export function eitherPad(a, b, onA = null) {
   return {
-    poll() { const pa = a.poll(); const pb = b.poll(); return pa || pb; },
+    poll() { const pa = a.poll(); const pb = b.poll(); if (pa && onA) onA(pa); return pa || pb; },
     id: () => (a.connected() ? a.id() : b.id()),
     connected: () => a.connected() || b.connected(),
   };

@@ -187,7 +187,7 @@ test('the haze is the far plane alone and never waits for Object Distance, which
   assert.match(view, /withObjectDistance\(state\.graphics\)/);
   assert.equal(GRAPHICS_LIMITS.objectDistance, undefined);
   // The page starts at its own machine's defaults.
-  assert.match(main, /graphics: withObjectDistance\(loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: !!STANDALONE \}\)\]\)\)/);
+  assert.match(main, /graphics: withObjectDistance\(loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: HANDHELD \}\)\]\)\)/);
 });
 
 test('the sky is drawn on the far plane, so a short view never shows the clear colour', () => {

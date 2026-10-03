@@ -32,6 +32,9 @@ npm run models -- props            # bake one set
 npm run models:preview             # render assets/<set>/renders/<asset>.png
 npm run app                        # build the islander, then run the window (tauri dev; needs Rust)
 npm run app:build                  # promptholm-island.exe + promptholm.exe in src-tauri/target/release/
+npm run web:pack                   # the browser version: dist/play/<id>/ + version.json + the door
+                                   # (--sea <url>; try it with `node scripts/serve-play.mjs`, launch.json
+                                   # `sea-local` + `play-local`)
 git tag v0.2.0 && git push origin v0.2.0   # release: .github/workflows/release.yml builds both exes on
                                    # windows-latest and attaches promptholm-windows-x64.zip; the tag must
                                    # equal "version" in src-tauri/tauri.conf.json or the job stops
@@ -2495,8 +2498,11 @@ bike before swinging back. Per-device settings live in `web/js/phoneprefs.js` (l
 read live; `quality: 'light'` is the default and means `modest`, since `MODEST_GPU` knows no
 phone GPU). A keeper's conversation has its own input mode (`parley` in `input.js`: X/B/BACK)
 and a tappable `#speech` - Esc was the only way out. Android's back button: `phoneBack()`
-holds one `history` entry while any overlay is open and `popstate` closes them. All phone
-layout is under `body.standalone` in `web/css/ui.css`, edges from `--sl/--sr/--st/--sb`
+holds one `history` entry while any overlay is open and `popstate` closes them. Phone layout
+is split in two in `web/css/ui.css`: `body.standalone` for "no island" (no walk/plan/build
+buttons, no chronicle, the safe-area edges) and `body.touch` for thumbs (the cluster, toasts and
+chat out of the stick's half, 44px targets, a tappable speech, no key letters on chips) - the app
+carries both always, the web only while somebody is touching (below). Edges from `--sl/--sr/--st/--sb`
 (`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
 the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
 The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
@@ -2530,7 +2536,39 @@ leaving the folder and writes `next`. It becomes `current` at the next start or 
 step zips `src-android/dist/` and signs it (`scripts/sign-bundle.mjs`, secret `BUNDLE_SIGNING_KEY`, refusing
 a key whose public half is not the committed one); `scripts/bundle-key.mjs` makes the pair. The signed bytes
 are written twice, `message` in bundle.rs and in sign-bundle.mjs, held to one signature by both languages'
-tests.
+tests. On the web (`WEB_PLAY`, below) none of this runs: the bundle commands and `updateGate` are the
+app's (`APP`), and the web's newer page is a reload off its shelf.
+
+## The web
+
+The phone's page without the phone ([Plans/spelen-in-de-browser.md](Plans/spelen-in-de-browser.md)):
+`npm run web:pack` (`scripts/pack-web.mjs`, sharing `scripts/pack-page.mjs` with pack-android, whose
+output is byte for byte what it was) lays out `dist/play/<id>/` (`<version>-<commit7>`, `shelfId`) with
+`PROMPTHOLM_STANDALONE = { sea, build, host: 'web', shelf }`, a `.gz` beside every file worth it, the
+manifest's `start_url`/`scope` at `../`, then `play/version.json` and `play/index.html` (the door, a
+redirect keeping query and hash) - the pointer last. One folder a build so a deploy never mixes modules in
+a browser cache; the server keeps the last few (`deploy/play/shelf.sh`). pack-web and pack-page never
+import `lib/paths.mjs` (it moves an island on import, and this runs in a Docker stage): `OPEN_SEA` is
+copied, `tests/play-web.test.mjs` holds it equal. **Three words where STANDALONE was one**
+(`web/js/device.js`): `STANDALONE` = no islander (planner, noclip, room memory, sky, skiff stay on it);
+`APP` = the Android app, a pack with no `host` (Rust commands, `updateGate`, APK links - never on the
+web); `HANDHELD` = the app or a coarse pointer with nothing that hovers, which alone picks the `phone`
+graphics tier, pixel ratio, `DETAILED`, shadows, sea life, `IMP_LIMIT` and phone prefs' quality. The touch
+layer is made on every standalone page but shown only in input mode `touch` (`state.inputMode`,
+`showInputMode`/`inputSeen` in main.js, `nextInputMode`): a touch or pen `pointerdown` shows it, a key, a
+`pointerType: 'mouse'` move or a used pad (`eitherPad`'s third argument, `padUsed`) hides it, and
+`touchpad.setShown(false)` lets go of everything held; the app is always `touch`. Settings → Controls shows
+the key table *and* the touch button on the web (`setStandalone({ keyboard })`). Updating is a reload:
+`askShelf` fetches `playUrl('version.json')` (api.js: the folder above the page's own) at boot, on every
+welcome and every ten minutes, and `webNotice` (update.js) offers **Reload** (`data-update-reload`, through
+the door, not onto the named shelf) for a different shelf that is not older, else what the sea says, never a
+download. The sea needs nothing: its JSON routes are `Access-Control-Allow-Origin: *` and `/ws` checks no
+Origin, as the app on `tauri.localhost` already relied on - but `maxPlayers` (32) counts every web tab.
+Hosting is `Dockerfile.play` (node stage installs only three, packs; `nginx:alpine` with
+`deploy/play/nginx.conf`: `gzip_static`, immutable shelves, no-cache door and version.json, `.mjs` as
+JavaScript) and `docker-compose.play.yml`, a git stack on the branch **`play`**, which release.yml's `play`
+job force-pushes to each release once both builds are out - so the web gets releases, not every commit on
+main. The shelves live in a volume (`play-shelf`), on purpose, unlike the sea.
 
 ## Layout of the source
 
