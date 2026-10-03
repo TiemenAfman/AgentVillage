@@ -95,7 +95,7 @@ import { attachClock, updateClock, attachResetClock, updateResetClock } from './
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachPirateSign, updatePirateSign } from './piratesign.js';
-import { attachKrakenMotion, updateKrakenMotion } from './kraken-motion.js';
+import { attachKrakenMotion, updateKrakenMotion, setKrakenDetail } from './kraken-motion.js';
 import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/DONE/stal-en-veld.md).
@@ -3703,8 +3703,15 @@ function hdOn() {
   const tier = graphicsTier({ modest, phone: HANDHELD });
   return hdInstalled() && hdWanted(state.graphics.detail, tier, { deviceMemory: navigator.deviceMemory ?? null });
 }
+// Every Salty Kraken drawn on this page, ours and the neighbours', for what HD switches outside.
+function* krakenRecords() {
+  for (const rec of state.byId.values()) if (rec.krakenMotion) yield rec;
+  for (const g of state.guests) for (const rec of g.records || []) if (rec.krakenMotion) yield rec;
+}
 function applyDetail() {
   for (const r of rooms.values()) if (r.setDetail) r.setDetail(hdOn());
+  // And outside: the Salty Kraken's flags (web/js/kraken-motion.js), ours and every neighbour's.
+  for (const rec of krakenRecords()) setKrakenDetail(rec.krakenMotion, hdOn());
   if (state.graphics.detail === 'hd') hdMissingSaid();
 }
 let hdMissingTold = false;
@@ -5530,7 +5537,7 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail, found = nul
     rec.pirateSign = attachPirateSign(group, buildingMat, { at: built.anchors.sign, yaw: built.animated.piratesign.yaw });
   }
   // And its flags, sails and hanging lanterns in the wind (web/js/kraken-motion.js), on the same clock.
-  if (built.animated && built.animated.krakenMotion) rec.krakenMotion = attachKrakenMotion(group, buildingMat);
+  if (built.animated && built.animated.krakenMotion) rec.krakenMotion = attachKrakenMotion(group, buildingMat, { hd: hdOn() });
   // The Batavia (web/js/batavia.js): her swell goes on her own mesh rather than on the group,
   // whose position and turn blockersOf reads, and her flags hang on that mesh and lean with her.
   if (built.animated && built.animated.ship) {
@@ -8695,7 +8702,9 @@ Everything is copied and checked first; the island then starts again there. The 
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
   // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list here; a model is fetched
   // when a room that has its piece wants it. A room built before the list lands is all bake.
-  if (!STANDALONE) loadHdManifest().then(() => { if (state.graphics.detail === 'hd') hdMissingSaid(); });
+  // The pack's answer comes after the island is drawn: what stands outside is switched then (rooms are
+  // built later and ask for themselves).
+  if (!STANDALONE) loadHdManifest().then(() => { applyDetail(); if (state.graphics.detail === 'hd') hdMissingSaid(); });
   // No islander to hear from and none to install from: /events and sw.js are both its own.
   if (STANDALONE) return;
   connect();

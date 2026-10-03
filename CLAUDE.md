@@ -2126,7 +2126,12 @@ lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's gro
 `isKrakenMoving` (buildings.js) keeps them out of the merge and `web/js/kraken-motion.js` hangs them as ONE geometry on the
 record's group, moved per vertex on the CPU like the Batavia's flags, measured off the bake by part name, on the sea's clock
 (`attachExtras` / `animateExtras` / record-extras.js); a new moving part means a name in both regexes
-(`tests/kraken-motion.test.mjs` holds them equal). Rebuild with `node scripts/blender.mjs --background --python
+(`tests/kraken-motion.test.mjs` holds them equal). With Detail on HD and the pack holding `civic_kraken_jollyroger`,
+both flags fly the hall's HD flag instead (`setKrakenDetail`, switched by main.js `applyDetail`, also once the
+manifest arrives): loaded by **`hdOutside`** in hd-pieces.js - a pack piece used outside, not fitted to its kit bake
+and without the room's light - fitted per axis to the bake cloth, waved in its vertex shader by the same sum (the
+phase reduced in JS: sea seconds lose all precision in a shader float), while the bake's flag groups are folded to
+one point (`m.hide`). Rebuild with `node scripts/blender.mjs --background --python
 scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
 .blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
 `scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`

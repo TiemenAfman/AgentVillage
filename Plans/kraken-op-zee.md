@@ -86,8 +86,17 @@ De eerste versie scheurde de vlag: op een doek van zeven kolommen boog de golf t
 doodshoofd en botten van het doek af stonden, en het doek kwam erdoorheen (de keeper zag het meteen). Nu is het
 doek 19 x 9, staan ze verder van het doek en is de golf rustiger.
 
-**HD**: de keeper wil buiten ook de HD-piratenvlag uit het interieur (`jollyroger.glb` in het pakket), en de rots via
-de 4090. Dat vraagt HD op het exterieur, wat er nog niet is; ontwerp loopt apart.
+**HD buiten** (gebouwd): met Detail op HD en het pakket aanwezig vliegen beide Jolly Rogers de HD-vlag uit het
+interieur (`civic_kraken_jollyroger`, `jollyroger.glb`). `hdOutside` in hd-pieces.js laadt een stuk van het pakket
+voor buiten: zonder de pascontrole tegen de kit-bake (die zou de hele kit van 17 MB laden om een vlag te hijsen) en
+zonder het warme kamerlicht. `kraken-motion.js` zet hem per as op de maat van het bake-doek (lijk op de stok, dikte
+de eigen), laat hem golven met dezelfde som in een vertex-shader (38k vertices; de fase in JS teruggebracht, want
+zee-tijd in seconden past niet in een shader-float) en vouwt het bake-doek, de schedel en de botten op één punt
+zolang hij hangt. Wisselen gaat live (`applyDetail`, ook na het antwoord van het pakket). De HD-vlag is een
+wandbanier met een eigen stokje bovenaan; dat leest buiten als een banier aan een ra. De rots heeft nog geen
+HD-model: de RAW van de 4090 staat in `refs/krakenkit/3d/`, en buiten de vlag is er nog geen mechanisme om delen
+van het lijf (de rots) te vervangen - dat vraagt een tweede pad naast de merge, met de muren en cameradozen van de
+bake.
 
 Gasten krijgen het ook (`attachExtras` hangt het aan elk record); geen layout en niets op de draad, dus dit deel
 alleen zou een patch zijn. `tests/kraken-motion.test.mjs`.

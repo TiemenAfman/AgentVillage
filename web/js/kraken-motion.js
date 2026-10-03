@@ -21,6 +21,11 @@ import * as THREE from 'three';
 import { hash32 } from 'shared/rng.mjs';
 import { mesh, mergeParts, isKrakenMoving } from './buildings.js';
 import * as models from './models.js';
+import { hdOutside } from './hd-pieces.js';
+
+// The pack's Jolly Roger (the hall's, `civic_kraken_jollyroger` in HOME/hd/hd-manifest.json): with HD on
+// and the pack holding it, both flags fly that instead of the bake's cloth (`setKrakenDetail`).
+export const HD_FLAG = 'civic_kraken_jollyroger';
 
 const ASSET = 'piratetavern';
 const FLAG_RE = /^Salty (great|fore) jolly roger( (crossbone|knuckle|skull|socket))?( \d+)?(:\d+)?$/;
@@ -122,6 +127,9 @@ export function buildKrakenMotion() {
     geometry,
     base: Float32Array.from(geometry.attributes.position.array),
     group: Uint8Array.from(gi),
+    // Per group, 1 while something else stands in for it (an HD flag): its vertices are put on one
+    // point, so the one merged geometry and its one draw call stay as they are.
+    hide: new Uint8Array(order.length),
     groups: order.map((k) => groups.get(k)).map(({ all, cloth, ...g }) => ({ ...g, kind: KIND[g.kind] })),
   };
 }
@@ -140,9 +148,11 @@ export function moveKraken(m, t, out) {
     if (G.kind === KIND.sail) return { breathe: Math.sin(TAU * t / S.breatheS + G.seed) };
     return null;
   });
+  const hide = m.hide || null;
   for (let v = 0, i = 0; v < group.length; v++, i += 3) {
     let x = base[i], y = base[i + 1], z = base[i + 2];
     const G = groups[group[v]];
+    if (hide && hide[group[v]]) { out[i] = G.lo[0]; out[i + 1] = G.lo[1]; out[i + 2] = G.lo[2]; continue; }
     if (G.kind === KIND.flag) {
       // Flying towards +x from its luff at the staff (jolly_roger in the bake).
       const len = G.hi[0] - G.lo[0] || 1;
@@ -173,25 +183,107 @@ export function moveKraken(m, t, out) {
   return out;
 }
 
-export function attachKrakenMotion(group, material) {
+export function attachKrakenMotion(group, material, { hd = false } = {}) {
   const m = buildKrakenMotion();
   if (!m) return null;
   const node = new THREE.Mesh(m.geometry, material);
   node.castShadow = true;
   node.receiveShadow = true;
   group.add(node);
-  return { group, node, m };
+  const s = { group, node, m, hd: false, flags: null, phase: { value: 0 } };
+  if (hd) setKrakenDetail(s, true);
+  return s;
+}
+
+// ---- the HD flags --------------------------------------------------------------------------------
+// The pack's flag fitted to the bake's cloth of one flag group, axis by axis: its lowest x on the
+// luff (G.lo[0], where the cloth meets the staff), its length and height the cloth's, its thickness
+// its own (scaled up with the rest it would be a plank). Then it flies by the same sum as the cloth
+// in `moveKraken` - in its vertex shader rather than on the CPU: the pack's flag has 38k vertices,
+// and two of them rewritten and uploaded every frame was most of a millisecond for one pub.
+const FLAG_KEY = 'kraken-flag';
+function flagMaterial(src, G, phase) {
+  const m = src.clone();
+  m.envMap = null;                     // the room's warm light (hd-pieces.js warmRoom) is not out here
+  m.fog = true;
+  const F = MOTION.flag, len = (G.hi[0] - G.lo[0]) || 1;
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uKrLo: { value: G.lo[0] }, uKrLen: { value: len }, uKrSeed: { value: G.seed }, uKrPhase: phase });
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'uniform float uKrLo, uKrLen, uKrSeed, uKrPhase;\nvoid main() {')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+  float krD = max(0.0, transformed.x - uKrLo), krK = krD / uKrLen;
+  transformed.z += ${F.swing.toFixed(4)} * uKrLen * krK * sin(${F.wave.toFixed(4)} * krD / uKrLen - uKrPhase + uKrSeed);
+  transformed.y -= ${F.droop.toFixed(4)} * uKrLen * krK * krK;`);
+  };
+  // One program for both flags: the numbers that differ are uniforms.
+  m.customProgramCacheKey = () => FLAG_KEY;
+  return m;
+}
+function hdFlags(s, model) {
+  const box = new THREE.Box3();
+  for (const { geometry } of model.meshes) { geometry.computeBoundingBox(); box.union(geometry.boundingBox); }
+  const out = [];
+  s.m.groups.forEach((G, gi) => {
+    if (G.kind !== KIND.flag) return;
+    const sx = (G.hi[0] - G.lo[0]) / ((box.max.x - box.min.x) || 1);
+    const sy = (G.hi[1] - G.lo[1]) / ((box.max.y - box.min.y) || 1);
+    const fit = new THREE.Matrix4().makeTranslation(G.lo[0], G.lo[1], (G.lo[2] + G.hi[2]) / 2)
+      .multiply(new THREE.Matrix4().makeScale(sx, sy, 1))
+      .multiply(new THREE.Matrix4().makeTranslation(-box.min.x, -box.min.y, -(box.min.z + box.max.z) / 2));
+    for (const { geometry, material } of model.meshes) {
+      const g = geometry.clone().applyMatrix4(fit);
+      g.computeBoundingSphere();
+      g.boundingSphere.radius += 0.5;   // it flies a fraction of a unit out of its box
+      const mats = [].concat(material).map((mt) => flagMaterial(mt, G, s.phase));
+      const mesh = new THREE.Mesh(g, Array.isArray(material) ? mats : mats[0]);
+      mesh.name = `hd:flag ${G.key}`;
+      out.push({ mesh, gi });
+    }
+  });
+  return out;
+}
+
+// HD on or off for this pub: the pack's flag in place of each Jolly Roger's cloth, skull and bones,
+// or the bake's. With no pack, or before its flag has landed, the bake's - and once it lands, if HD
+// is still wanted, it goes up then.
+export function setKrakenDetail(s, hd) {
+  if (!s) return;
+  s.hd = !!hd;
+  if (s.hd && !s.flags) {
+    // Asked once with a callback; after that `updateKrakenMotion` looks again every frame (a map lookup), so
+    // a pub built or switched before the pack answered still gets its flags whichever came first.
+    const model = hdOutside(HD_FLAG, s.asked ? null : () => { if (s.hd && !s.gone && !s.flags) setKrakenDetail(s, true); });
+    s.asked = true;
+    if (model) {
+      s.flags = hdFlags(s, model);
+      for (const { mesh } of s.flags) s.group.add(mesh);
+    }
+  }
+  const on = s.hd && !!s.flags && s.flags.length > 0;
+  for (const { mesh } of s.flags || []) mesh.visible = on;
+  s.m.groups.forEach((G, gi) => { if (G.kind === KIND.flag) s.m.hide[gi] = on ? 1 : 0; });
 }
 
 export function updateKrakenMotion(s, t) {
   if (!s || !Number.isFinite(t)) return;
+  if (s.hd && !s.flags) setKrakenDetail(s, true);
   const pos = s.m.geometry.attributes.position;
   moveKraken(s.m, t, pos.array);
   pos.needsUpdate = true;
+  // The shader's phase, reduced here: sea time in seconds is ~1.8e9, which a float in a shader holds
+  // to a few minutes.
+  s.phase.value = (MOTION.flag.speed * t) % TAU;
 }
 
 export function disposeKrakenMotion(s) {
   if (!s) return;
+  s.gone = true;
   s.group.remove(s.node);
   s.m.geometry.dispose();
+  for (const { mesh } of s.flags || []) {
+    s.group.remove(mesh);
+    mesh.geometry.dispose();
+    for (const mt of [].concat(mesh.material)) mt.dispose();
+  }
 }

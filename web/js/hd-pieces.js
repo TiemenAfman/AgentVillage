@@ -214,6 +214,53 @@ function hdModel(piece, onReady) {
   return null;
 }
 
+// ---- outside -------------------------------------------------------------------------------------
+// A piece of the pack used on a building outside (Plans/kraken-op-zee.md, "HD buiten"): the Salty
+// Kraken's flags fly the pack's Jolly Roger. Not `hdModel`: what it stands in for outside is not
+// the kit piece it was fitted to in the room, so it is not measured against that bake (which would
+// also mean loading the room's whole kit, 17 MB, to fly a flag) - the caller fits it to what it
+// replaces - and it gets none of the room's light (`warmRoom`, ENV_FILL): outside the sun lights
+// it. `{ meshes }` once it has landed - every mesh's geometry in the GLB's own frame after the
+// manifest's `at`, and its material - null while it loads or after it failed; `onReady` once.
+const outside = new Map();
+export function hdOutside(asset, onReady) {
+  const piece = hdPieceOf(asset);
+  if (!piece) return null;
+  let t = outside.get(asset);
+  if (!t) {
+    t = {};
+    t.ready = import('three/addons/loaders/GLTFLoader.js')
+      .then(({ GLTFLoader }) => new GLTFLoader().loadAsync(mineUrl(`/api/hd/${encodeURIComponent(piece.file)}`)))
+      .then((gltf) => {
+        const { x, y, z, turn, s } = piece.at;
+        const root = gltf.scene;
+        root.scale.multiplyScalar(s);
+        root.rotation.y += (turn * Math.PI) / 2;
+        root.position.set(x, y, z);
+        root.updateMatrixWorld(true);
+        const meshes = [];
+        root.traverse((o) => {
+          if (!o.isMesh) return;
+          const geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+          for (const m of [].concat(o.material)) m.fog = true;
+          meshes.push({ geometry, material: o.material });
+        });
+        if (!meshes.length) throw new Error('no mesh in it');
+        t.meshes = meshes;
+        return t;
+      })
+      .catch((e) => {
+        t.failed = true;
+        console.warn(`hd pack: ${piece.file} is not used outside (${asset}) - ${e.message || e}`);
+        return null;
+      });
+    outside.set(asset, t);
+  }
+  if (t.meshes) return t;
+  if (!t.failed && onReady) t.ready.then((r) => { if (r) onReady(r); });
+  return null;
+}
+
 // ---- in a room ---------------------------------------------------------------------------------
 // `pieces` is what the room left out of its merge: [{ asset, at: { x, y, z, ry, s }, roof, geoms }],
 // one per placement (seven stools are seven). `scene` takes the floor's pieces, `roof` (an Object3D

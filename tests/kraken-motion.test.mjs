@@ -62,3 +62,22 @@ test('what is fixed stays, what is free moves a little, and the sea time decides
   });
   m.geometry.dispose();
 });
+
+// HD outside (web/js/kraken-motion.js setKrakenDetail): while the pack's flag flies, the bake's cloth,
+// skull and bones are put on one point - the geometry and its one draw call stay - and everything
+// else moves exactly as before.
+test('a flag the pack stands in for is folded away, and nothing else changes', () => {
+  const m = buildKrakenMotion();
+  const n = m.base.length;
+  const plain = moveKraken(m, 5.5, new Float32Array(n));
+  const flags = m.groups.map((G, gi) => (G.key.startsWith('flag ') ? gi : -1)).filter((gi) => gi >= 0);
+  assert.equal(flags.length, 2);
+  for (const gi of flags) m.hide[gi] = 1;
+  const hidden = moveKraken(m, 5.5, new Float32Array(n));
+  for (let v = 0; v < m.group.length; v++) {
+    const G = m.groups[m.group[v]], i = v * 3;
+    if (flags.includes(m.group[v])) assert.deepEqual([hidden[i], hidden[i + 1], hidden[i + 2]], [...G.lo].map(Math.fround));
+    else assert.deepEqual([hidden[i], hidden[i + 1], hidden[i + 2]], [plain[i], plain[i + 1], plain[i + 2]]);
+  }
+  m.geometry.dispose();
+});
