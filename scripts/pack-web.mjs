@@ -26,7 +26,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { readBuildInfo } from '../lib/buildinfo.mjs';
-import { copyPage, writeStandalone, shelfId, doorHtml, shelfJson, webManifest, GZIP_EXT } from './pack-page.mjs';
+import { copyPage, writeStandalone, shelfId, contentStamp, doorHtml, shelfJson, webManifest, GZIP_EXT, ROOM_ONLY } from './pack-page.mjs';
 
 export const OPEN_SEA = 'https://agentvillage.xeroxmsj.freeddns.org/';
 
@@ -58,7 +58,8 @@ export async function packWeb({ sea = OPEN_SEA, out = path.join(ROOT, 'dist', 'p
   if (health && health.keyed) throw new Error(`${sea} wants a key, and a page on the internet cannot keep one`);
 
   const build = readBuildInfo(ROOT);
-  const id = shelfId(build);
+  // Only hashed when there is no commit to name the build by (pack-page.mjs shelfId).
+  const id = shelfId(build, build.commit ? null : contentStamp([WEB, SHARED], (p) => ROOM_ONLY.has(path.basename(p))));
   const shelf = path.join(out, id);
   copyPage({ web: WEB, shared: SHARED, out: shelf });
   writeStandalone(shelf, { sea, build, host: 'web', shelf: id });
