@@ -2543,7 +2543,7 @@ app's (`APP`), and the web's newer page is a reload off its shelf.
 
 The phone's page without the phone ([Plans/spelen-in-de-browser.md](Plans/spelen-in-de-browser.md)):
 `npm run web:pack` (`scripts/pack-web.mjs`, sharing `scripts/pack-page.mjs` with pack-android, whose
-output is byte for byte what it was) lays out `dist/play/<id>/` (`<version>-<commit7>`, `shelfId`) with
+output is byte for byte what it was) lays out `dist/play/<id>/` (`<version>-<commit7>`, or a content hash of web/+shared/ where there is no `.git` - a Portainer git stack clones without one, the sea's `/health` says commit null too; `shelfId`, `contentStamp`) with
 `PROMPTHOLM_STANDALONE = { sea, build, host: 'web', shelf }`, a `.gz` beside every file worth it, the
 manifest's `start_url`/`scope` at `../`, then `play/version.json` and `play/index.html` (the door, a
 redirect keeping query and hash) - the pointer last. One folder a build so a deploy never mixes modules in

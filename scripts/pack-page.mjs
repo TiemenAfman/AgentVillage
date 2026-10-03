@@ -8,6 +8,7 @@
 // callers hand in the folders.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 // Less the sets only a room of one's own island is drawn from (models.js LAZY: the Salty Kraken's
 // hall and ship's parts, 47 MB): a page with no island has no rooms, and they are only ever
@@ -38,12 +39,33 @@ export function writeStandalone(out, standalone) {
 
 // The name of one build's shelf: its version and commit, as the folder play/<id>/. Not the version
 // alone - two builds of one version are different modules, and a browser cache that knew both under
-// one path would mix them. Only what is safe in a path survives.
-export function shelfId(build) {
+// one path would mix them; and deploy/play/shelf.sh keeps a shelf that is already there, so a second
+// build under the same name would never be put out at all. Where there is no commit to say - a
+// Portainer git stack clones without a usable .git (measured: the sea's /health says commit null) -
+// `stamp`, a hash of what is packed, says it instead. Only what is safe in a path survives.
+export function shelfId(build, stamp = null) {
   const clean = (s) => String(s || '').replace(/[^0-9A-Za-z.-]/g, '');
   const version = clean(build && build.version) || 'dev';
-  const commit = clean(build && build.commit).slice(0, 7);
-  return commit ? `${version}-${commit}` : version;
+  const suffix = clean(build && build.commit).slice(0, 7) || clean(stamp).slice(0, 7);
+  return suffix ? `${version}-${suffix}` : version;
+}
+
+// That hash: every file under the folders, by path and content, in a fixed order - so the same tree
+// gives the same name on any machine, and any change gives another.
+export function contentStamp(dirs, skip = () => false) {
+  const hash = crypto.createHash('sha256');
+  const walk = (root, dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const p = path.join(dir, e.name);
+      if (skip(p)) continue;
+      if (e.isDirectory()) { walk(root, p); continue; }
+      hash.update(`${path.relative(root, p).split(path.sep).join('/')}\0`);
+      hash.update(fs.readFileSync(p));
+      hash.update('\0');
+    }
+  };
+  for (const d of dirs) walk(path.dirname(d), d);
+  return hash.digest('hex').slice(0, 7);
 }
 
 // play/index.html, the door: always to the newest shelf, with the query and the hash along

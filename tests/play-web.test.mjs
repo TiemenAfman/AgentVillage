@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { handheldOf, firstInputMode, nextInputMode, padUsed } from '../web/js/device.js';
 import { webNotice, SEA_PROTOCOL } from '../web/js/update.js';
-import { shelfId, doorHtml, shelfJson, webManifest, withStandalone, copyPage, ROOM_ONLY } from '../scripts/pack-page.mjs';
+import { shelfId, contentStamp, doorHtml, shelfJson, webManifest, withStandalone, copyPage, ROOM_ONLY } from '../scripts/pack-page.mjs';
 import { OPEN_SEA as PACKED_SEA } from '../scripts/pack-web.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -78,6 +78,28 @@ test('a shelf is named so a path can hold it', () => {
   assert.equal(shelfId({ version: '0.8.1', commit: null }), '0.8.1');
   assert.equal(shelfId({ version: null, commit: null }), 'dev');
   assert.equal(shelfId({ version: '../0.8"<x', commit: 'c633e4d9999' }), '..0.8x-c633e4d');
+  // A Portainer git stack has no commit to give: the content hash names the build instead.
+  assert.equal(shelfId({ version: '0.8.2', commit: null }, 'abcdef0123'), '0.8.2-abcdef0');
+  assert.equal(shelfId({ version: '0.8.2', commit: '57d081c' }, 'abcdef0'), '0.8.2-57d081c', 'the stamp outranked the commit');
+});
+
+test('the content stamp follows the files and nothing else', () => {
+  const at = fs.mkdtempSync(path.join(os.tmpdir(), 'stamp-'));
+  const a = path.join(at, 'web'), b = path.join(at, 'shared');
+  fs.mkdirSync(path.join(a, 'js'), { recursive: true });
+  fs.mkdirSync(b);
+  fs.writeFileSync(path.join(a, 'js', 'main.js'), 'one');
+  fs.writeFileSync(path.join(a, 'js', 'krakenkit-mesh.js'), 'room');
+  fs.writeFileSync(path.join(b, 'terrain.mjs'), 'ground');
+  const skip = (p) => ROOM_ONLY.has(path.basename(p));
+  const first = contentStamp([a, b], skip);
+  assert.match(first, /^[0-9a-f]{7}$/);
+  assert.equal(contentStamp([a, b], skip), first, 'the same tree named itself twice');
+  fs.writeFileSync(path.join(a, 'js', 'krakenkit-mesh.js'), 'another room');
+  assert.equal(contentStamp([a, b], skip), first, 'a file left out of the pack moved the name');
+  fs.writeFileSync(path.join(a, 'js', 'main.js'), 'two');
+  assert.notEqual(contentStamp([a, b], skip), first, 'a changed module kept the old shelf name');
+  fs.rmSync(at, { recursive: true, force: true });
 });
 
 test('the door keeps the query, and the pointer names the shelf', () => {
