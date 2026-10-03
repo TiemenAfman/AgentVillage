@@ -2786,6 +2786,11 @@ function worldMapData() {
 }
 
 function enterWalk(spot = null) {
+  // Nothing to walk on until boot() has raised the island: the walk mode is made after the
+  // village is fetched and the village is put up after that, and Enter (or a pad's A) during
+  // the boot screen read `state.village.island` off a null. Returned from, like enterPlan
+  // without a planner, rather than queued: the boot screen is still up, nobody saw a button.
+  if (!state.walk || !state.village) return;
   if (state.mode === 'noclip') exitNoclip();
   if (state.mode === 'walk') return;
   if (state.mode === 'plan') exitPlan();
@@ -4136,7 +4141,9 @@ addEventListener('keydown', (e) => {
   // and M are walk.js's, and W A S D E are the feet. Not over another overlay, where a letter
   // may be somebody typing into a board's filter without an input having the focus. A chip
   // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
-  else if (ORBIT_KEYS[k] && !openPanel()) {
+  // Nor while the boot screen is up: it covers the chips, so their keys wait for it too
+  // (a failed boot leaves it up for good, and nothing behind it was ever made).
+  else if (ORBIT_KEYS[k] && !openPanel() && !booting()) {
     // Enter is also how a focused button is pressed: leave that to the browser, or the chip
     // would be clicked twice. Nor while the main menu (which has its own buttons) is up.
     if (k === 'enter' && (/^(BUTTON|A|SUMMARY)$/.test(t && t.tagName) || !document.getElementById('mainmenu').hidden)) return;
@@ -4150,6 +4157,11 @@ addEventListener('keydown', (e) => {
 // The clock chip has no key: it is the sea's clock, not a lens on this screen, and only the
 // sea's host may set it, from the chip itself (Plans/zeetijd-van-de-host.md;
 // tests/sea-clock-chip.test.mjs fails on a key here).
+// The boot screen (ui.js boot) is still standing: `gone` is what boot(true) puts on it.
+function booting() {
+  const b = document.getElementById('boot');
+  return !!b && !b.classList.contains('gone');
+}
 const ORBIT_KEYS = {
   i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
   b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn',
