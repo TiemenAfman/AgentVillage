@@ -93,10 +93,9 @@ zonder het warme kamerlicht. `kraken-motion.js` zet hem per as op de maat van he
 de eigen), laat hem golven met dezelfde som in een vertex-shader (38k vertices; de fase in JS teruggebracht, want
 zee-tijd in seconden past niet in een shader-float) en vouwt het bake-doek, de schedel en de botten op één punt
 zolang hij hangt. Wisselen gaat live (`applyDetail`, ook na het antwoord van het pakket). De HD-vlag is een
-wandbanier met een eigen stokje bovenaan; dat leest buiten als een banier aan een ra. De rots heeft nog geen
-HD-model: de RAW van de 4090 staat in `refs/krakenkit/3d/`, en buiten de vlag is er nog geen mechanisme om delen
-van het lijf (de rots) te vervangen - dat vraagt een tweede pad naast de merge, met de muren en cameradozen van de
-bake.
+wandbanier met een eigen stokje bovenaan; dat leest buiten als een banier aan een ra. De rots blijft de bake: een RAW van Pixal3D op de 4090 (`refs/krakenkit/3d/kraken-rots-pixal3d-raw.glb`) is op
+3 oktober in het spel onder het schip bekeken, en de keeper koos de bake-rots. Er is dus geen mechanisme om delen
+van het lijf te vervangen; alleen de vlaggen gaan in HD.
 
 Gasten krijgen het ook (`attachExtras` hangt het aan elk record); geen layout en niets op de draad, dus dit deel
 alleen zou een patch zijn. `tests/kraken-motion.test.mjs`.
