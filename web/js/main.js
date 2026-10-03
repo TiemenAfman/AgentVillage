@@ -2140,7 +2140,7 @@ function onRefusedBySea(m) {
   // has no island to fall back on, so nothing else on the screen is worth reaching.
   if (why === 'version') {
     state.seaSpeaks = m.speaks;
-    const gate = STANDALONE ? updateGate({ speaks: m.speaks }) : null;
+    const gate = STANDALONE ? updateGate({ speaks: m.speaks, mine: state.build, ready: state.bundleReady }) : null;
     if (gate) state.ui.setGate(gate);
     else state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE }));
     return;
@@ -2185,7 +2185,7 @@ function onSeaStatus(status) {
 // The app's gate from all it knows: its own release, the sea's (from the welcome) and the
 // newest on GitHub (askLatestRelease). See updateGate in web/js/update.js.
 function appGate() {
-  return updateGate({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease });
+  return updateGate({ mine: state.build, sea: state.seaBuild, latest: state.latestRelease, ready: state.bundleReady, busy: state.bundleBusy });
 }
 
 // The app asks GitHub for the newest release itself (src-android/src/lib.rs, latest_release),
@@ -2199,14 +2199,27 @@ function askLatestRelease() {
   if (!ipc || typeof ipc.invoke !== 'function') return;
   if (Date.now() - releaseAsked < 3600e3) return;
   releaseAsked = Date.now();
-  ipc.invoke('latest_release').then((latest) => {
-    state.latestRelease = latest;
-    // A refusal owns the screen until the next welcome; this card is not to cover it.
-    const gate = appGate();
-    if (gate && state.seaSpeaks == null) state.ui.setGate(gate);
-  }).catch(() => {
-    // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
-  });
+  // First whether a newer page bundle is out (src-android/src/bundle.rs): fetched in the
+  // background, it turns the card into a Restart. Only then the release, so the APK card does
+  // not go up for what the bundle is about to bring. A shell from before bundles has no
+  // bundle_check and says so by refusing; that is "no bundle".
+  state.bundleBusy = true;
+  ipc.invoke('bundle_check')
+    .then((r) => { if (r && r.status === 'ready' && r.version) state.bundleReady = r.version; })
+    .catch(() => {})
+    .then(() => { state.bundleBusy = false; return ipc.invoke('latest_release'); })
+    .then((latest) => {
+      state.latestRelease = latest;
+      // A refusal owns the screen until the next welcome; this card is not to cover it.
+      const gate = appGate();
+      if (gate && state.seaSpeaks == null) state.ui.setGate(gate);
+    })
+    .catch(() => {
+      // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
+      // A bundle that came in all the same is still worth its Restart.
+      const gate = appGate();
+      if (gate && gate.restart && state.seaSpeaks == null) state.ui.setGate(gate);
+    });
 }
 
 // The desktop island's banner (web/js/update.js islandNotice): the sea's news first, else a
@@ -8547,6 +8560,12 @@ Everything is copied and checked first; the island then starts again there. The 
   if (noclipAllowed()) window.__noclip = noclipApi;
   if (!STANDALONE && (params.has('cam') || params.has('room'))) noclipFromUrl();
   requestAnimationFrame(tick);
+  // In the app: the page bundle this was served from has booted, so it is kept (bundle.rs
+  // `bundle_ok`; two starts without this and the app goes back to the page before it).
+  if (STANDALONE) {
+    const ipc = globalThis.__TAURI_INTERNALS__;
+    if (ipc && typeof ipc.invoke === 'function') ipc.invoke('bundle_ok').catch(() => {});
+  }
   // The one model that is fetched rather than baked - the volcano's imp - may start loading
   // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.
   allowImp();

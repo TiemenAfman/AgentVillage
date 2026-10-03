@@ -2503,19 +2503,34 @@ The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕
 and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
 serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
-**Updating goes through Rust, not the page** (`src-android/src/lib.rs`): the page sits on
-`tauri.localhost`, and a GitHub release asset carries no CORS header. `latest_release` asks
-the GitHub API for the newest tag, so the app's update gate (`updateGate`'s `latest`) goes up
-as soon as there is a release, not only once the sea is updated; `install_update` fetches the
-APK into the app's cache and hands it to Android's installer through **our own Kotlin**,
-`InstallerPlugin.kt` beside `MainActivity.kt` in `gen/android/app/src/main/java/com/promptholm/sea/`
-(a `@TauriPlugin` class in the app module, registered from `lib.rs` by name with
-`register_android_plugin`; a content:// URI from the manifest's FileProvider, `cache-path` in
-`res/xml/file_paths.xml`, so the file has to be in the cache). Not the opener plugin's
-`open_path`: on Android that hands a bare path to `ACTION_VIEW`, nothing answers, and up to
-0.7.0 the button fetched the whole APK and then fell back to the browser, whose download sat at
-100% and never installed. Both are app commands, so they need no entry in
+**Asking goes through Rust; installing goes through the browser** (`src-android/src/lib.rs`): the
+page sits on `tauri.localhost`, which reaches no GitHub API. `latest_release` asks the API for the
+newest tag, so the app's update gate (`updateGate`'s `latest`) goes up as soon as there is a
+release, not only once the sea is updated. The card's download button hands the stable
+`latest/download/promptholm-android.apk` link to the phone's browser (`plugin:opener|open_url`,
+web/js/ui.js; the release page if that fails), and the phone installs it from the browser's
+download - the card's `steps` and a toast say how. **The app does not install APKs itself, and must
+not again**: 0.7.1 to 0.8.1 fetched the APK in Rust and handed it to the installer through an
+`InstallerPlugin.kt` with `REQUEST_INSTALL_PACKAGES`, and Play Protect blocked the whole app as
+harmful ("Schadelijke app geblokkeerd"): an unknown app that downloads and installs APKs is a
+dropper to it. `latest_release` is an app command, so it needs no entry in
 `capabilities/default.json` (only plugin calls from the page do).
+
+**The page updates without an APK** ([Plans/app-zonder-apk-bijwerken.md](Plans/app-zonder-apk-bijwerken.md)):
+`src-android/src/bundle.rs` puts an `Overlay` in front of the baked assets (`Context::set_assets`), so every
+file is read from `<app data>/bundles/<current>/` first and from the APK otherwise - same origin, so the
+page keeps its IPC. `bundle_check` (asked before `latest_release`, at boot and at most hourly) fetches
+`promptholm-web.json` + `.zip` from the latest release, believes the json only under the ed25519 key in
+`src-android/bundle-key.pub` (empty = never), refuses a shell newer than `src-android/shell-version` (bump it
+when a page needs a command or right an older shell lacks), checks size and sha256, unpacks with no name
+leaving the folder and writes `next`. It becomes `current` at the next start or on the card's **Restart now**
+(`bundle_apply`; `updateGate`'s `ready`, and `busy` holds the APK card back meanwhile); the page calls
+`bundle_ok` after `state.ui.boot(true)`, and two starts without it put the bundle in `failed` and go back to
+`prev` or the APK's page. A bundle never runs when the APK is as new. The release workflow's *Page bundle*
+step zips `src-android/dist/` and signs it (`scripts/sign-bundle.mjs`, secret `BUNDLE_SIGNING_KEY`, refusing
+a key whose public half is not the committed one); `scripts/bundle-key.mjs` makes the pair. The signed bytes
+are written twice, `message` in bundle.rs and in sign-bundle.mjs, held to one signature by both languages'
+tests.
 
 ## Layout of the source
 

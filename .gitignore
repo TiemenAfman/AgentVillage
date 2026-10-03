@@ -47,3 +47,4 @@ tests/.tmp-*
 
 # Python bytecode from the Blender build scripts that import each other (scripts/krakenkit/).
 __pycache__/
+bundle-signing-key.pem

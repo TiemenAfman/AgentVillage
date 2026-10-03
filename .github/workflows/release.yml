@@ -122,8 +122,10 @@ jobs:
   #
   # Signed with the keystore in the ANDROID_KEYSTORE secret (base64 of a .jks) and
   # ANDROID_KEYSTORE_PASSWORD, alias `promptholm`. Without them a throwaway key is made on
-  # the spot: it installs fine, but every release then has a different signature and a phone
-  # has to uninstall the old one before it will take the new one.
+  # the spot for a build by hand (an artifact, nothing published): it installs fine, but has a
+  # different signature from every other one. A publishing run without the secret stops. The
+  # Sign step checks the APK is not debuggable and is signed v2 + v3, and puts the
+  # certificate's SHA-256 in the job summary.
   android:
     needs: tag
     if: ${{ !cancelled() && needs.tag.result != 'failure' }}
@@ -191,6 +193,10 @@ jobs:
           if [ -n "$KEYSTORE" ]; then
             echo "$KEYSTORE" | base64 -d > release.jks
             pass="$KEYSTORE_PASSWORD"
+          elif [ -n "$RELEASE" ]; then
+            # A published APK on a throwaway key cannot update over the last one: Android says
+            # "App not installed" and the phone has to uninstall first, losing its settings.
+            echo "::error::no ANDROID_KEYSTORE secret - refusing to publish an APK on a throwaway key"; exit 1
           else
             echo "::warning::no ANDROID_KEYSTORE secret - signing with a throwaway key, so this APK will not update over an earlier one"
             pass=throwaway
@@ -200,9 +206,42 @@ jobs:
           "$bt/zipalign" -f -p 4 src-android/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk aligned.apk
           "$bt/apksigner" sign --ks release.jks --ks-key-alias promptholm --ks-pass "pass:$pass" --key-pass "pass:$pass" \
             --out promptholm-android.apk aligned.apk
-          "$bt/apksigner" verify promptholm-android.apk
+          # What a phone checks, said out loud: a release build (never debuggable - Play Protect
+          # warns about those), signed with v2 and v3 (minSdk 24, so v1 is left out on purpose and
+          # reads false), and the certificate's fingerprint in the job summary, so a release
+          # signed by another key than the last one is seen here rather than on a phone.
+          if "$bt/aapt2" dump badging promptholm-android.apk | grep -q "application-debuggable"; then
+            echo "::error::the APK is debuggable - that is a debug build, not a release"; exit 1
+          fi
+          "$bt/apksigner" verify --verbose --print-certs promptholm-android.apk | tee verify.txt
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" verify.txt || { echo "::error::not signed with v2"; exit 1; }
+          grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" verify.txt || { echo "::error::not signed with v3"; exit 1; }
+          {
+            echo "### promptholm-android.apk"
+            echo '```'
+            grep -E "^Verified using|certificate DN|certificate SHA-256" verify.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f verify.txt
           rm -f release.jks aligned.apk
           printf '%s  promptholm-android.apk\n' "$(sha256sum promptholm-android.apk | cut -d' ' -f1)" > promptholm-android.apk.sha256
+
+      # The page alone, for phones that already have the app (Plans/app-zonder-apk-bijwerken.md):
+      # src-android/dist/ as it went into this APK, zipped and signed. The app takes it only
+      # under the key it carries (src-android/bundle-key.pub) and only for a shell as new as
+      # src-android/shell-version, so a release whose page needs a newer shell is still the
+      # APK card. Without the secret there is no bundle and phones simply go on as before.
+      - name: Page bundle
+        env:
+          BUNDLE_SIGNING_KEY: ${{ secrets.BUNDLE_SIGNING_KEY }}
+        run: |
+          if [ -z "$BUNDLE_SIGNING_KEY" ]; then
+            echo "::warning::no BUNDLE_SIGNING_KEY secret - no page bundle, phones need the APK for this release"
+            exit 0
+          fi
+          (cd src-android/dist && zip -qrX ../../promptholm-web.zip .)
+          node scripts/sign-bundle.mjs promptholm-web.zip promptholm-web.json
+          { echo "### promptholm-web.zip"; echo '```'; cat promptholm-web.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: softprops/action-gh-release@v2
         if: env.RELEASE != ''
@@ -211,9 +250,14 @@ jobs:
           files: |
             promptholm-android.apk
             promptholm-android.apk.sha256
+            promptholm-web.zip
+            promptholm-web.json
 
       - uses: actions/upload-artifact@v4
         if: env.RELEASE == ''
         with:
           name: promptholm-android
-          path: promptholm-android.apk
+          path: |
+            promptholm-android.apk
+            promptholm-web.zip
+            promptholm-web.json

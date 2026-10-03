@@ -15,9 +15,10 @@ export const SEA_PROTOCOL = 3;
 // the latest release (.github/workflows/release.yml).
 export const RELEASES = 'https://github.com/TiemenAfman/AgentVillage/releases/latest';
 // The APK itself, by the one URL GitHub keeps stable across releases: `latest/download/<asset>`
-// always answers with the newest release's file. In the app a tap on it is a navigation,
-// which src-android/src/lib.rs hands to the phone's browser, which downloads it and offers
-// to install - the closest thing to "update from inside the app" that needs no native code.
+// always answers with the newest release's file. In the app a tap on it hands it to the
+// phone's browser (web/js/ui.js), which downloads it; the phone installs it from there. The
+// app does not fetch and install it itself any more: 0.7.1 to 0.8.1 did, and Play Protect
+// blocked the app as harmful for asking to install other apps (REQUEST_INSTALL_PACKAGES).
 export const APK_URL = `${RELEASES}/download/promptholm-android.apk`;
 
 // -1 when a is older than b, 1 when newer, 0 when the same, null when either is unknown.
@@ -113,16 +114,35 @@ export function islandNotice({ mine = null, sea = null, latest = null, canInstal
 // version string. With it the card goes up as soon as there is a release, not only once the
 // sea has been updated to it: the sea is behind the releases whenever nobody has got round to
 // it yet, and that is no reason for the app to be.
-export function updateGate({ speaks = null, mine = null, sea = null, latest = null } = {}) {
+//
+// `ready` is a page bundle the app has already fetched (src-android/src/bundle.rs, `bundle_check`
+// in main.js) and `busy` says it is still fetching one (Plans/app-zonder-apk-bijwerken.md): a
+// ready bundle newer than this page is a Restart, not a download, and while one is on its way the
+// APK card waits - it would be telling somebody to install what is about to arrive by itself.
+export function updateGate({ speaks = null, mine = null, sea = null, latest = null, ready = null, busy = false } = {}) {
+  const refused = Number.isInteger(speaks) && speaks > SEA_PROTOCOL;
+  if (ready && compareVersions(mine && mine.version, ready) === -1) {
+    return {
+      restart: true,
+      blocking: refused,
+      download: '#',
+      notes: RELEASES,
+      steps: '',
+      title: `Promptholm v${ready} is ready`,
+      body: 'It came in by itself while you played. Restart to play on it; it takes a second.',
+    };
+  }
+  if (busy && !refused) return null;
   const common = {
     download: APK_URL,
     notes: RELEASES,
-    steps: 'Tap the button; the app fetches it and the phone asks to install it. The first time, '
-      + 'Android sends you to settings to allow this app to install others. '
+    steps: 'Tap the button: your browser downloads the new version. When it is done, tap '
+      + '"Open" in the browser (or open promptholm-android.apk from Downloads) and choose Install. '
+      + 'The first time, Android asks you to allow your browser to install apps. '
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
       + 'once and tap the button again. After that, updates install over the top.',
   };
-  if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
+  if (refused) {
     return {
       ...common,
       blocking: true,

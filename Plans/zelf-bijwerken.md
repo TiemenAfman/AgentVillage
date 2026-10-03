@@ -10,8 +10,9 @@
 Tot 0.8.1 hoorde de desktoppagina alleen van een nieuwe versie via de welcome van de zee, en dan per
 lijn (major.minor): een patch werd nooit gemeld. 0.8.1 zet daar `islandNotice` naast (de islander
 vraagt GitHub, `lib/latest-release.mjs`), maar dan nog is bijwerken: de zip downloaden, uitpakken over
-de oude map, de tray stoppen en opnieuw starten. De telefoon doet dat al met één knop
-(`install_update` in `src-android/src/lib.rs`); de desktop kan het met minder, want de islander zelf
+de oude map, de tray stoppen en opnieuw starten. De telefoon deed dat tot 0.8.1 met één knop
+(`install_update` in `src-android/src/lib.rs`, eruit gehaald omdat Play Protect de app daarom als
+schadelijk blokkeerde: de knop geeft de APK nu aan de browser); de desktop kan het met minder, want de islander zelf
 is node en draait in de map die vervangen moet worden.
 
 ## Hoe
