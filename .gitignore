@@ -48,3 +48,7 @@ tests/.tmp-*
 # Python bytecode from the Blender build scripts that import each other (scripts/krakenkit/).
 __pycache__/
 bundle-signing-key.pem
+
+# The keeper's reference sheets and Pixal3D tries (refs/krakenkit/...): photos of others among them and
+# models of tens of MB - they stay on this machine (CLAUDE.md, "The Salty Kraken's kit").
+/refs/
