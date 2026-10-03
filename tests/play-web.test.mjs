@@ -129,7 +129,7 @@ test('the app keeps its own Rust and gate; the web asks only its shelf', () => {
   const main = read('web/js/main.js');
   assert.match(main, /const gate = APP \? updateGate\(/, 'the web could be handed the APK gate on a refusal');
   assert.match(main, /const gate = APP \? appGate\(\)/, 'the web could be handed the APK gate on a welcome');
-  assert.match(main, /if \(WEB_PLAY\) \{ askShelf\(\); return; \}\n\s+const ipc/, 'the web reaches for latest_release');
+  assert.match(main, /if \(WEB_PLAY\) \{ askShelf\(\); return; \}\r?\n\s+const ipc/, 'the web reaches for latest_release');
   // The phone's layout rules that are for thumbs moved to body.touch; the app carries both.
   const css = read('web/css/ui.css');
   for (const rule of ['body.touch #toasts {', 'body.touch .chip {', 'body.touch .speech {']) assert.ok(css.includes(rule), rule);
