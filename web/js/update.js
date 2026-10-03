@@ -163,3 +163,47 @@ export function refusalNotice(speaks, { phone = false } = {}) {
   return '<b>This sea is behind</b> and speaks an older protocol. It lets nobody on the current version in until '
     + 'whoever keeps it updates it.';
 }
+
+// The web page's banner (Plans/spelen-in-de-browser.md). A page there is a shelf, play/<id>/,
+// and updating it is a reload: the server's play/version.json (`served`, `{ version, commit,
+// path }`) names the shelf the door now leads to, and `shelf` is the one this page came off.
+// A different shelf that is not older is a newer page - by the shelf and not by the version, so
+// two builds of one version (a fix on the branch) are told apart too. `reload` is the button's
+// marker (main.js wires `data-update-reload`). Without a newer shelf, what the sea says: a refusal
+// over the protocol (`speaks`), or a sea on another line. The sea can be redeployed before the
+// web is, so "the sea has moved on" is "the page for it is on its way", never a download link -
+// there is nothing to download.
+export function webNotice({ mine = null, shelf = null, served = null, sea = null, speaks = null } = {}) {
+  const button = '<button type="button" class="update-install" data-update-reload>Reload</button>';
+  const newer = served && typeof served.path === 'string' && served.path && served.path !== shelf
+    && compareVersions(served.version, mine && mine.version) !== -1;
+  if (newer) {
+    return {
+      kind: 'reload',
+      html: `<b>A newer Promptholm is here${served.version ? ` - v${esc(served.version)}` : ''}.</b> `
+        + `Reload to play on it; this page keeps working until you do. ${button}`,
+    };
+  }
+  if (Number.isInteger(speaks) && speaks !== SEA_PROTOCOL) {
+    if (speaks < SEA_PROTOCOL) return { kind: 'sea-behind', html: refusalNotice(speaks) };
+    return {
+      kind: 'wait',
+      html: '<b>This sea has moved on</b> to a newer version and will not let this page in. The page for it '
+        + `is on its way: reload in a few minutes. ${button}`,
+    };
+  }
+  const order = compareLines(mine && mine.version, sea && sea.version);
+  if (order === null || order === 0) return null;
+  if (order < 0) {
+    return {
+      kind: 'behind',
+      html: `<b>A newer Promptholm is on the sea.</b> It runs v${esc(sea.version)} and this page v${esc(mine.version)}; `
+        + 'the page for it is on its way, and a banner here will say when to reload.',
+    };
+  }
+  return {
+    kind: 'sea-behind',
+    html: `<b>The sea is behind.</b> It runs v${esc(sea.version)} and this page v${esc(mine.version)}, so what is new `
+      + 'here may not reach anybody there until whoever keeps the sea updates it.',
+  };
+}

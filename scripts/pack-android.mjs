@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, WEB, SHARED, OPEN_SEA } from '../lib/paths.mjs';
 import { readBuildInfo } from '../lib/buildinfo.mjs';
+import { copyPage, writeStandalone } from './pack-page.mjs';
 
 const OUT = path.join(ROOT, 'src-android', 'dist');
 
@@ -42,24 +43,14 @@ if (health && health.keyed && !key) {
   process.exit(1);
 }
 
-fs.rmSync(OUT, { recursive: true, force: true });
-// Less the sets only a room of one's own island is drawn from (models.js LAZY: the Salty Kraken's
-// hall and ship's parts, 47 MB): the phone has no island, so no rooms, and they are only ever
-// imported on the way into one.
-const ROOM_ONLY = new Set(['krakenkit-mesh.js', 'piratetavern_room-mesh.js']);
-fs.cpSync(WEB, OUT, { recursive: true, filter: (src) => !ROOM_ONLY.has(path.basename(src)) });
-fs.cpSync(SHARED, path.join(OUT, 'shared'), { recursive: true });
+// Less the room sets (pack-page.mjs ROOM_ONLY): the phone has no island, so no rooms.
+copyPage({ web: WEB, shared: SHARED, out: OUT });
 
-// Ahead of every other script in the head, so it is there before main.js's graph starts.
-// JSON.stringify of plain strings, with `<` escaped so nothing in it can close the tag.
 // Which release this app is, for the "who is behind" banner (web/js/update.js): the app
 // cannot ask an islander, so it carries its own answer from the moment it was packed.
+// No `host`: a page that names none is the app (web/js/device.js), which is also what every
+// APK packed before the web version says.
 const build = readBuildInfo(ROOT);
-const inline = JSON.stringify(key ? { sea, key, build } : { sea, build }).replace(/</g, '\\u003c');
-const index = path.join(OUT, 'index.html');
-const html = fs.readFileSync(index, 'utf8');
-const at = html.indexOf('<script');
-if (at < 0) throw new Error('web/index.html has no <script> to go in front of');
-fs.writeFileSync(index, `${html.slice(0, at)}<script>window.PROMPTHOLM_STANDALONE = ${inline};</script>\n${html.slice(at)}`);
+writeStandalone(OUT, key ? { sea, key, build } : { sea, build });
 
 process.stdout.write(`pack-android: ${path.relative(ROOT, OUT)} -> ${sea}${key ? ' (keyed)' : ''}\n`);

@@ -137,14 +137,15 @@ import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
 import { createSeaLife } from './sea-life.js';
 import { CROPS, CROP_KINDS, BED_SIZE, ripeIn } from 'shared/crops.mjs';
-import { mine, mineUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
+import { mine, mineUrl, playUrl, sea, seaSocket, useSea, islanderHere, onIslanderChange, STANDALONE } from './api.js';
+import { APP, WEB_PLAY, HANDHELD, firstInputMode, nextInputMode, padUsed } from './device.js';
 import { createTouchPad, eitherPad } from './touchpad.js';
 import { prefs as phonePrefs, setPref as setPhonePref } from './phoneprefs.js';
 import { createVitals } from './vitals.js';
 import { shownPool } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy, hazePx, TIPSY } from './tipsy.js';
 import { SETTLER_DRINK_S } from './settler-figures.js';
-import { updateNotice, refusalNotice, updateGate, islandNotice, SEA_PROTOCOL } from './update.js';
+import { updateNotice, refusalNotice, updateGate, islandNotice, webNotice, SEA_PROTOCOL } from './update.js';
 import { seaQuietNotice } from './seaquiet.js';
 import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
@@ -230,7 +231,7 @@ const RENDERER_TRIES = [
 
 // Bloom and anti-aliasing as this browser chose them (Plans/bloom-en-aa.md). Anti-aliasing off
 // starts the canvas without MSAA, which a canvas only takes when it is made: hence "after reload".
-const postChoice = loadPost(postDefaults({ phone: !!STANDALONE }));
+const postChoice = loadPost(postDefaults({ phone: HANDHELD }));
 function makeRenderer() {
   let last = null;
   for (const opts of postChoice.aa === 'off' ? RENDERER_TRIES.filter((o) => !o.antialias) : RENDERER_TRIES) {
@@ -375,12 +376,12 @@ async function openBoardWithoutIsland() {
 // A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
 // MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
 // phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (!!STANDALONE && phonePrefs().quality !== 'full');
+const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 // The best this screen is drawn at; the quality governor below only ever takes from it.
 // A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
 // third more pixels to fill than 1, and fill is what a phone's GPU runs out of first.
-const basePixelRatio = Math.min(devicePixelRatio, STANDALONE && modest ? 1 : modest ? 1.15 : 1.5);
+const basePixelRatio = Math.min(devicePixelRatio, HANDHELD && modest ? 1 : modest ? 1.15 : 1.5);
 renderer.setPixelRatio(basePixelRatio);
 // The most imps this screen stands at once (imp.js), and again the governor only takes from it.
 // A lighter machine stands as few as a phone: each is a 25k-triangle skinned mesh with a
@@ -486,12 +487,14 @@ const homeBatch = createRecordBatch({ material: buildingMat, parent: scene });
 // stored or set: it is written into state.graphics here and again whenever View Distance moves,
 // so the rest of this file reads it like it always did.
 function withObjectDistance(g) {
-  g.objectDistance = objectDistanceOf(g.viewDistance, graphicsTier({ modest, phone: !!STANDALONE }));
+  g.objectDistance = objectDistanceOf(g.viewDistance, graphicsTier({ modest, phone: HANDHELD }));
   return g;
 }
 
 const state = {
   village: null, shot: null, terrain: null, world: null, settlers: null, ui: null,
+  // 'touch' or 'desk': which controls are on screen (device.js, showInputMode).
+  inputMode: firstInputMode({ app: APP, standalone: !!STANDALONE, handheld: HANDHELD }),
   // `terrain` is this island, local and origin-centred, and stays exactly that: world.js
   // and hamlets.js build their own positions out of its `half`, so they need the raw one.
   // `sea` is every island there is, in world coordinates, and it is what the camera, the
@@ -507,7 +510,7 @@ const state = {
   // (web/js/graphics-settings.js, which also hands ui.js the same numbers for its sliders);
   // onGraphicsSetting is the only thing that moves them. Plans/DONE/graphics-afstanden.md is why
   // they are not collapsed into camera.far.
-  graphics: withObjectDistance(loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })])),
+  graphics: withObjectDistance(loadGraphics(GRAPHICS_TIERS[graphicsTier({ modest, phone: HANDHELD })])),
   filters: { code: true, cowork: true, apprentices: true },
   chronicle: { t: null, playing: false, speed: 'day' },
   hourOverride: params.has('hour') ? Number(params.get('hour')) : null,
@@ -1988,7 +1991,7 @@ function takeBoat(which) {
   // at lib/players.mjs:162 widened on the server first.
   if (state.net) state.net.setRoom('boat', state.walk);
   state.walk.setInteractables(interactables());   // E means something else now
-  state.ui.toast(STANDALONE
+  state.ui.toast(state.inputMode === 'touch'
     ? 'You cast off. The stick on the left rows and steers.'
     : 'You cast off. <b>W</b> and <b>S</b> for the oars, <b>A</b> and <b>D</b> for the tiller.');
 }
@@ -2138,9 +2141,11 @@ function onRefusedBySea(m) {
   // has no island to fall back on, so nothing else on the screen is worth reaching.
   if (why === 'version') {
     state.seaSpeaks = m.speaks;
-    const gate = STANDALONE ? updateGate({ speaks: m.speaks }) : null;
+    // On the web there is no app to update: the newer page is a reload, once it is on the shelf.
+    if (WEB_PLAY) { askShelf(true); return; }
+    const gate = APP ? updateGate({ speaks: m.speaks }) : null;
     if (gate) state.ui.setGate(gate);
-    else state.ui.setUpdate(refusalNotice(m.speaks, { phone: !!STANDALONE }));
+    else state.ui.setUpdate(refusalNotice(m.speaks, { phone: APP }));
     return;
   }
   state.ui.toast(REFUSALS[why] || `The sea would not have us: ${escapeHtml(why)}.`);
@@ -2177,6 +2182,8 @@ function appGate() {
 let releaseAsked = 0;
 function askLatestRelease() {
   if (!STANDALONE) { askIslandRelease(); return; }
+  // The web has no Rust to ask and no APK to fetch: its news is the shelf it came off.
+  if (WEB_PLAY) { askShelf(); return; }
   const ipc = globalThis.__TAURI_INTERNALS__;
   if (!ipc || typeof ipc.invoke !== 'function') return;
   if (Date.now() - releaseAsked < 3600e3) return;
@@ -2190,6 +2197,33 @@ function askLatestRelease() {
     // GitHub out of reach is nothing to say: the sea's welcome still names its own release.
   });
 }
+
+// The web page's banner (web/js/update.js webNotice, Plans/spelen-in-de-browser.md): which shelf
+// play/version.json says the door now leads to, against the one this page came off, and failing
+// that what the sea says. Asked at boot, on every welcome and every ten minutes - at most once a
+// minute, since a sea that keeps restarting would otherwise ask it on every reconnect. `force`
+// is the refusal over the protocol, which is exactly when a newer page may just have arrived.
+let shelfServed = null, shelfAsked = 0;
+function askShelf(force = false) {
+  if (!force && Date.now() - shelfAsked < 60e3) { webBanner(); return; }
+  shelfAsked = Date.now();
+  fetch(playUrl('version.json'), { cache: 'no-store', credentials: 'omit' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((v) => { if (v && typeof v === 'object') shelfServed = v; webBanner(); })
+    .catch(() => webBanner());
+}
+function webBanner() {
+  state.ui.setUpdate((webNotice({
+    mine: state.build, shelf: STANDALONE.shelf || null, served: shelfServed, sea: state.seaBuild, speaks: state.seaSpeaks,
+  }) || {}).html || null);
+}
+// Through the door, not onto the shelf named in version.json: the door is the one address that
+// is always right, and the query (?stats, ?dive) goes along.
+document.addEventListener('click', (e) => {
+  const button = e.target && e.target.closest && e.target.closest('[data-update-reload]');
+  if (button) location.assign(playUrl('') + location.search + location.hash);
+});
+if (WEB_PLAY) setInterval(() => askShelf(), 600e3);
 
 // The desktop island's banner (web/js/update.js islandNotice): the sea's news first, else a
 // newer release, patches included. The islander asks GitHub (lib/latest-release.mjs, at most
@@ -2289,6 +2323,22 @@ function applyPanelMessage(m) {
 // The phone's buttons say what they would do: a word under X for what is in reach, and the
 // two hands only while there is ground under your feet to fight or drink on.
 const CAPTION = { 'step ashore': 'Land', 'take the boat': 'Board', 'step into the tavern': 'Enter', 'step into the Salty Kraken': 'Enter' };
+// Which controls are on screen (device.js, Plans/spelen-in-de-browser.md). `body.touch` carries every
+// rule that is for thumbs, and the touch layer shows or hides with it - hidden, it polls null and
+// lets go of whatever was held, so a thumb that leaves the glass for the keyboard stops walking.
+// In the app the mode never changes; on a page with an islander there is no touch layer at all.
+function showInputMode() {
+  const on = state.inputMode === 'touch';
+  document.body.classList.toggle('touch', on);
+  if (state.touch) state.touch.setShown(on);
+}
+function inputSeen(e) {
+  const next = nextInputMode(state.inputMode, e, { app: APP });
+  if (next === state.inputMode) return;
+  state.inputMode = next;
+  showInputMode();
+}
+
 function touchHud(near, walk) {
   if (!state.touch) return;
   const word = !near ? ''
@@ -3613,7 +3663,7 @@ function applyGraphics(key = null) {
 // (interior.js setDetail), one built later is built that way. Forced HD with no pack is the bake,
 // said once.
 function hdOn() {
-  const tier = graphicsTier({ modest, phone: !!STANDALONE });
+  const tier = graphicsTier({ modest, phone: HANDHELD });
   return hdInstalled() && hdWanted(state.graphics.detail, tier, { deviceMemory: navigator.deviceMemory ?? null });
 }
 function applyDetail() {
@@ -3636,8 +3686,8 @@ function onPostSetting(key, value) {
 function onGraphicsReset() {
   forgetGraphics();
   forgetPost();
-  postFx.set(postDefaults({ phone: !!STANDALONE }));
-  Object.assign(state.graphics, GRAPHICS_TIERS[graphicsTier({ modest, phone: !!STANDALONE })]);
+  postFx.set(postDefaults({ phone: HANDHELD }));
+  Object.assign(state.graphics, GRAPHICS_TIERS[graphicsTier({ modest, phone: HANDHELD })]);
   applyGraphics();
 }
 
@@ -4356,7 +4406,7 @@ async function learnTheWorld() {
 // A phone draws one: a whole guest island is its landscape as well as its houses, and on a
 // phone's GPU that is the difference that counts (measured: DETAILED was already the biggest
 // lever for guests on a modest page).
-const DETAILED = STANDALONE ? 1 : modest ? 2 : 4;
+const DETAILED = HANDHELD ? 1 : modest ? 2 : 4;
 
 // Near to *whom*. It used to be near to our own berth, which never moves - so a silhouette
 // stayed a silhouette however close you sailed, with no houses, no people and no ground to
@@ -5579,7 +5629,7 @@ function buildScene(village) {
     month: worldNow().month,
     // A phone's GPU runs out of fill before anything else, and its screen is small enough
     // that 512 texels over the shadow box still reads as a shadow.
-    shadowSize: STANDALONE && modest ? 512 : modest ? 1024 : 2048,
+    shadowSize: HANDHELD && modest ? 512 : modest ? 1024 : 2048,
     // The two graphics distances that are a property of the world rather than of this frame.
     // View Distance never comes here - it is the camera's own far plane - and the two cuts
     // are not here either: both are read every frame, not fixed when the world is built.
@@ -5723,7 +5773,7 @@ function buildScene(village) {
   if (state.seaLife) state.seaLife.dispose();
   state.seabed = createSeabed({ scene, sea: state.sea, uniforms: state.world.waterUniforms, modest });
   state.seaLife = createSeaLife({
-    scene, tier: STANDALONE ? 'phone' : modest ? 'modest' : 'full',
+    scene, tier: HANDHELD ? 'phone' : modest ? 'modest' : 'full',
     // The bed as a diver meets it, quay basin and all - walk.js's own, once there is a walk mode.
     bedAt: (x, z) => (state.walk ? state.walk.bedAt(x, z) : state.sea.bedAt(x, z)),
   });
@@ -8129,7 +8179,13 @@ Everything is copied and checked first; the island then starts again there. The 
     onTap: (x, y) => tapName(x, y),
     onHand: (side, down) => { if (state.mode === 'walk' && !state.inside) state.walk.hand(side, down); },
   }) : null;
-  state.pad = state.touch ? eitherPad(gamepad, state.touch) : gamepad;
+  // A real pad in use hides the thumb controls on the web, as a key does (device.js).
+  state.pad = state.touch ? eitherPad(gamepad, state.touch, (p) => { if (padUsed(p)) inputSeen({ type: 'pad' }); }) : gamepad;
+  // Which controls show (device.js): the app always the thumbs, the web whichever was used last.
+  showInputMode();
+  if (STANDALONE && !APP) {
+    for (const type of ['pointerdown', 'pointermove', 'keydown']) addEventListener(type, inputSeen, { capture: true, passive: true });
+  }
 
   // Who the controller is talking to. First one that says it is up, wins - a panel over
   // a room, a room over the island, the island over the sky.
@@ -8185,7 +8241,7 @@ Everything is copied and checked first; the island then starts again there. The 
     // Which release this app is, written in at pack time (scripts/pack-android.mjs), for
     // the "who is behind" banner once the sea says its own.
     state.build = STANDALONE.build || null;
-    state.ui.setStandalone();
+    state.ui.setStandalone({ keyboard: WEB_PLAY });
     askLatestRelease();
   }
   try {
@@ -8399,9 +8455,11 @@ Everything is copied and checked first; the island then starts again there. The 
       state.seaBuild = build;
       state.seaSpeaks = null;
       askLatestRelease();
-      // In the app a newer release is the gate with a Later; on a desktop island, the banner.
-      const gate = STANDALONE ? appGate() : null;
+      // In the app a newer release is the gate with a Later; on a desktop island, the banner;
+      // on the web, the shelf (askShelf, above, from askLatestRelease).
+      const gate = APP ? appGate() : null;
       if (gate) state.ui.setGate(gate);
+      else if (WEB_PLAY) webBanner();
       else if (STANDALONE) state.ui.setUpdate((updateNotice({ mine: state.build, sea: build, phone: true }) || {}).html || null);
       else islandBanner();
     },

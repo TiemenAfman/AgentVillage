@@ -47,7 +47,7 @@
 // nearest the camera first (`pickImps`); the rest stay instanced figures.
 import * as THREE from 'three';
 import { modelUrl } from './assets.js';
-import { STANDALONE } from './api.js';
+import { HANDHELD } from './device.js';
 import { isGuard } from 'shared/volcano.mjs';
 import { hash32 } from 'shared/rng.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
@@ -68,7 +68,7 @@ export const wantsImp = (id) => isGuard(id);
 // the ones near enough to matter. One rule for both with a different number, rather than
 // "all" here and a cap there, because the cap is also what keeps a slow laptop honest.
 export const IMP_CAP = Object.freeze({ desktop: 16, phone: 6 });
-export const IMP_LIMIT = STANDALONE ? IMP_CAP.phone : IMP_CAP.desktop;
+export const IMP_LIMIT = HANDHELD ? IMP_CAP.phone : IMP_CAP.desktop;
 // How many of those the page may stand right now: IMP_LIMIT, unless the quality governor
 // (quality.js) has turned it down on a machine that cannot keep up. A function rather than a
 // number handed to each crowd at creation, because the governor turns it while the volcano's

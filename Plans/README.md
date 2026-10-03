@@ -35,6 +35,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [spelen-in-de-browser.md](spelen-in-de-browser.md) — Promptholm spelen zonder app of installatie: de
+  telefoonpagina zonder islander als web-schap (`play/<id>/` + een deur + `version.json`) op de thuisserver
+  (nginx, git-stack op de branch `play`), met toetsen, controller én touch naast elkaar, de graphicstier
+  van de machine, en bijwerken = een banner met Reload. Gebouwd; de stack, NPM en het domein zijn nog
+  handwerk.
 - 🚧 [meer-geluiden.md](meer-geluiden.md) — plan van 2 oktober 2026, nog niet gebouwd: meer geluid op het
   eiland, allemaal berekend zoals nu (eigen samples van de keeper hooguit als laatste, optionele fase).
   Geroezemoes en klinkende glazen door de kroegdeur en de borrel op het plein, de ambachten op een

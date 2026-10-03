@@ -57,6 +57,11 @@ export function useSea(url) {
 }
 
 export function mineUrl(path) { return at(ROOT, path); }
+// The shelf this page was taken from, on the web (scripts/pack-web.mjs): a page is served out of
+// play/<id>/, and play/ above it holds version.json and the door to the newest. A third machine
+// in name only - the same server that served this file - but it is not this page's own folder,
+// and not the sea, so it gets a name of its own rather than a `../` at a call site.
+export function playUrl(path) { return at(new URL('../', ROOT), path); }
 export function seaUrl(path) { return at(seaAt, path); }
 
 // The socket, for createNet. A function rather than a constant because the sea's address
