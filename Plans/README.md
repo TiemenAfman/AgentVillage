@@ -104,6 +104,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   Pixal3D-kitstukken uit `~/.promptholm/hd/` naast de bake, met Forced SD / Auto / Forced HD onder Settings →
   Graphics (spelkant gebouwd op `claude/hd-pakket`), een eigen git voor het pakket (nog niet opgezet) en een
   skill voor de hele keten (gepland).
+- 🚧 [kraken-op-zee.md](kraken-op-zee.md) — de Salty Kraken gaat van het strand een eindje de zee in: op een rots
+  in ondiep water, met een loopplank van het zand naar de voet van de trap (afgeleid uit het plot, gelopen als
+  steiger), rotsen die uit het water oprijzen in plaats van op de grond te staan, en de tentakel in de rots.
+  Eénmalige verhuizing van de kroeg die al op het strand staat; een minor.
 - 🚧 [bloom-en-aa.md](bloom-en-aa.md) — bloom en anti-aliasing als instelling (Settings → Graphics): three's
   postprocessing gevendord, bloom eerst alleen in kamers, AA MSAA / SMAA / uit.
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de

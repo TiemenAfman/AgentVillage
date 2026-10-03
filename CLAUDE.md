@@ -2080,12 +2080,33 @@ the back of the rock runs into the dune. A pub still on the three by three it ha
 road dropped and a pass re-run if pruning cut anything (`pubMoved`); with no lot it is put back where it stood
 (`putBackAt`, the chest too) and asked again next scan; scan.mjs keeps `layout.before-pub-<ts>.json`
 (`backUpBeforePub`). Measured on a copy of Hoogezand: from behind the quay to the beach at the funnel's head,
-(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor. Outside it is render 17 built literally: a galleon
+(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor.
+**Since then it stands in the sea, on a rock a little off the shore, reached by a gangway**
+([Plans/kraken-op-zee.md](Plans/kraken-op-zee.md); on the beach it read as "a beached boat in a meadow"):
+`pirateTavernSeaSite` is asked first and the beach site above only where the sea has nothing, then the ring. The lot
+all open water (`openWater`), no corner deeper than `PUB_SEA_FLOOR` -2.2, a ring of the same water round it, water
+being what a ship on the rede may take less the depth (`seaCell`'s rules) and not the funnel + 2, the quay's clearance,
+dug water or anything `fairwayHeld` holds; its front to the land, and the gangway is **`pubGangway` in
+shared/kraken.mjs** (the one copy, with `PUB_GATE`/`pubGate`): from the stair's step straight on over `PUB_PIER_MIN`
+3 to `PUB_PIER_MAX` 12 cells of that water to the first land, ranked nearest 5 long, then shallowest. The plot
+carries `sea: true` (and no town claim), its road `path:civic:piratetavern` **begins with the gangway's cells**
+(`civicRoad` -> `gangwayRoad`, then a strandpad from where it comes ashore), and those cells are also the path's
+`pier`, which the replay forces back to PATH over water (`replayPier`, placeAll and `replayGrid`; `growCanvas`
+shifts it) - in the bundle it is an ordinary path, so no sea needs redeploying. Its lot, ring and gangway are kept
+water (`pubWaterKeys` -> `keptWater`, `fairwayHeld`, and `growStep`'s lane like the resort's); the chest stands
+beside where the gangway comes ashore (`pubChestSpots` -> `seaChestSpots`). A pub already on the beach is lifted
+once like `liftedPub` and put back if the sea has nothing; `layout.pubSea` says the question was asked (set when a
+pub stands at rung 52+), so it is never asked again - Hoogezand's went from (148,253) to (115,308) rot 0 with a
+gangway of 7, the next two scans byte-identical. The page **derives the gangway** from the plot and its own terrain
+(`pirateGangway` in web/js/pirate-ground.js), draws it with the dock set without a head (`buildPierGeometry(…,
+{ head: false })`, `state.gangways` beside `state.docks` in `buildDocks`, rebuilt on `pubSig`), walks it as
+`levels` at `QUAY_DECK` plus the ramp and a `lip` into the lot, and puts its cells in the deck map the sea's crowd
+stands on. Pub moved, new layout fields: a minor (0.9.0). Outside it is render 17 built literally: a galleon
 standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~80k
 triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
 texture of its own; the mesh module is ~10 MB). The ship is modelled at 1x and scaled `SCALE` 2.5 at the end of
 the script; the stair, door, lanterns and sign are placed after that at a settler's scale. It is made for an
-**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
+**11 x 6 lot** (bbox held to 5.45 x 2.9, the landing to the front edge at 3.0, by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
 ([Plans/piratenkroeg.md](Plans/piratenkroeg.md), "Bijsturing" and "Het kavel op het strand"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
 Rogers - and no porch (`NO_PORCH`: the rock is its footing). **Its zigzag stair is walked**: the bake names every
 floor as an `anchor.deck.<name>.lo|hi` and every ramp as an `anchor.stair.<name>.lo|hi` corner pair, the ship's
@@ -2095,8 +2116,13 @@ a height (`pirateSolids`: each part from its foot to its top, the rails from `an
 blocks `PIRATE_RAIL_H` high, a low block under each high floor so nobody walks in under the stair, the hull
 from `anchor.solid.hull.lo|hi`; `WALKED_ANCHOR` in scripts/model-rules.mjs) - `tests/pirate-stair-walk.test.mjs` walks it with the real walk mode.
 `anchor.sign` is on its own post at the stair's foot (`PIRATE_SIGN_YAW` 0, board facing the water);
-`anchor.door` is on the ground at the foot of the stair, and E answers at the stoop by the door with the
-stoop's height as its `floor`. Rebuild with `node scripts/blender.mjs --background --python
+`anchor.door` is on the floor of the **landing** at the foot of the stair (planks on piles, `pier`/`jetty`
+surfaces, reaching the lot's front edge where the gangway arrives at model x 2.0), and E answers at the stoop by the
+door with the stoop's height as its `floor`. **The rock has a skirt**: below the landing every boulder is drawn on
+down `SKIRT` (2.7), widening, instead of being cut flat at y = 0 (a seam where rock met sand), and the whole model is
+lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's ground is `anchor.door[1]`, not 0 -
+`pirateTavernGround` returns `QUAY_DECK - door.y` in the sea and the lowest front ground `- door.y` on the beach, and
+`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). Rebuild with `node scripts/blender.mjs --background --python
 scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
 .blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
 `scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`

@@ -24,8 +24,8 @@ function surfaceY(s, x, z) {
   if (s.y != null) return s.y;
   return s.y0 + (s.y1 - s.y0) * (x - s.x0) / (s.x1 - s.x0);
 }
-function floorAt(surfaces, x, z, from) {
-  let best = 0;                                  // the lot's ground
+function floorAt(surfaces, x, z, from, ground) {
+  let best = ground;                             // the lot's ground
   for (const s of surfaces) {
     const y = surfaceY(s, x, z);
     if (y != null && y <= from + STEP_UP && y > best) best = y;
@@ -45,10 +45,15 @@ test('the Salty Kraken is one bounded geometry with every sheet and a night glow
   for (const sheet of [0, 1, 2, 3, 4]) assert.ok(g.attributes.aSheet.array.includes(sheet), `sheet ${sheet}`);
   assert.ok(g.attributes.aEmissive.array.includes(1), 'the windows glow at night');
   assert.ok(b.bbox.max.y <= b.height);
-  // Its lot is 11 along the water and 6 deep: inside it, less a hand at every edge.
-  for (const [axis, half] of [['x', 5.45], ['z', 2.9]]) {
-    assert.ok(Math.max(Math.abs(b.bbox.min[axis]), Math.abs(b.bbox.max[axis])) <= half, `${axis} within its lot`);
-  }
+  // Its lot is 11 along the water and 6 deep: inside it, less a hand at every edge - but for the
+  // landing at the foot of the stair, which comes to the front edge, where the island's gangway takes
+  // over (Plans/kraken-op-zee.md).
+  assert.ok(Math.max(Math.abs(b.bbox.min.x), Math.abs(b.bbox.max.x)) <= 5.45, 'x within its lot');
+  assert.ok(-b.bbox.min.z <= 2.9, 'z within its lot at the back');
+  assert.ok(b.bbox.max.z <= 3.0 + 1e-3, 'z within its lot at the front');
+  // And it stands on its skirt: the lowest point is the asset's y = 0, the foot of the stair well above.
+  assert.ok(Math.abs(b.bbox.min.y) < 0.01, `its lowest point at ${b.bbox.min.y}`);
+  assert.ok(b.anchors.door[1] > 2, 'the rock reaches well below the foot of the stair');
   g.dispose(); b.parts.forEach((p) => p.dispose());
 });
 
@@ -77,9 +82,9 @@ test('the stair is walked from its foot to the door, over the rock and never thr
   const b = buildBuilding(spec, {});
   const S = Object.fromEntries(b.surfaces.map((s) => [s.name, s]));
   for (const name of ['down', 'land', 'up', 'stoop']) assert.ok(S[name], `a ${name} surface`);
-  // The foot: on the ground, nothing solid on it, and the lower flight starts there at 0.
-  const [fx, , fz] = b.anchors.door;
-  for (const r of b.solids) assert.ok(!blocks(r, fx, fz, 0), `solid at ${r.x.toFixed(2)},${r.z.toFixed(2)} stands on the stair's foot`);
+  // The foot: on the landing, nothing solid on it, and the lower flight starts there at its height.
+  const [fx, ground, fz] = b.anchors.door;
+  for (const r of b.solids) assert.ok(!blocks(r, fx, fz, ground), `solid at ${r.x.toFixed(2)},${r.z.toFixed(2)} stands on the stair's foot`);
   // Walk it as walk.js would, in small steps: up the lower flight to the landing, across it, up
   // the upper flight to the stoop. Every step takes the floor within reach of the last one, and no
   // solid is in the way at that height.
@@ -89,12 +94,12 @@ test('the stair is walked from its foot to the door, over the rock and never thr
     [[S.land.x0 + 0.3, zmid(S.down)], [S.land.x0 + 0.3, zmid(S.up)]],
     [[S.up.x0 + 0.05, zmid(S.up)], [S.up.x1 + 0.2, zmid(S.up)]],
   ];
-  let feet = 0, x = fx, z = fz;
+  let feet = ground, x = fx, z = fz;
   for (const [[ax, az], [bx, bz]] of legs) {
     const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.05);
     for (let i = 0; i <= n; i++) {
       x = ax + (bx - ax) * i / n; z = az + (bz - az) * i / n;
-      const y = floorAt(b.surfaces, x, z, feet);
+      const y = floorAt(b.surfaces, x, z, feet, ground);
       assert.ok(Math.abs(y - feet) < 0.1, `a step at ${x.toFixed(2)},${z.toFixed(2)} from ${feet.toFixed(2)} to ${y.toFixed(2)}`);
       feet = y;
       for (const r of b.solids) assert.ok(!blocks(r, x, z, feet), `solid at ${r.x.toFixed(2)},${r.z.toFixed(2)} blocks the stair at ${feet.toFixed(2)}`);
@@ -103,7 +108,7 @@ test('the stair is walked from its foot to the door, over the rock and never thr
   assert.ok(Math.abs(feet - S.stoop.y) < 0.01, 'the walk ends on the stoop, at the door');
   // And nobody walks in under it: at the ground, the space under the landing is solid.
   const under = [(S.land.x0 + S.land.x1) / 2, (S.land.z0 + S.land.z1) / 2];
-  assert.ok(b.solids.some((r) => blocks(r, under[0], under[1], 0)), 'under the landing is solid at the ground');
+  assert.ok(b.solids.some((r) => blocks(r, under[0], under[1], ground)), 'under the landing is solid at the ground');
   b.geometry.dispose();
 });
 

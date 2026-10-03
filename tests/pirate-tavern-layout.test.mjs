@@ -1,11 +1,15 @@
-// The Salty Kraken on the ground (Plans/piratenkroeg.md): rung 52, a galleon on a rock on a lot of
-// eleven by six (PUB_LOT) on the beach, and the pirate's chest moving from beside the village tavern
-// to behind the pub.
+// The Salty Kraken on the ground (Plans/piratenkroeg.md, Plans/kraken-op-zee.md): rung 52, a galleon
+// on a rock on a lot of eleven by six (PUB_LOT) a little off the shore in the sea, reached by a
+// gangway, and the pirate's chest moving from beside the village tavern to where the gangway comes
+// ashore.
 //
-// Held here: the pub stands on land, on PUB_LOT turned whichever way, with its front on the water
-// (PUB_FRONT_MIN of its front columns see open water within PUB_SHORE) and the step of its stair on
-// land, and a road a settler at the foot of the stair finds; the chest moves once, on the scan the
-// pub first stands, onto one of `chestSpots(pub)` with the keeper's cell dry ground and on no road;
+// Held here: the pub stands in the sea, on PUB_LOT turned whichever way, every cell of it water, its
+// gangway running from the stair's step straight to the land over PUB_PIER_MIN to PUB_PIER_MAX cells
+// of water; its road begins with the gangway (`pier`, which the replay keeps as road over the
+// water) and a settler at the foot of the stair finds it; the water stays water for the polders and
+// the dredger; the chest moves once, on the scan the pub first stands, onto one of
+// `pubChestSpots(pub)` with the keeper's cell dry ground and on no road; a pub on the beach goes out
+// to the sea once (`layout.pubSea`);
 // below 52 nothing changes; an island founded past 52 has both on its first scan and the second is
 // a no-op; turning the village tavern no longer takes the chest along; and a pub standing on the
 // three by three it was given before it was a galleon moves once onto PUB_LOT, its chest with it,
@@ -16,8 +20,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyLayout, placeAll, outsideDoor, plotDoor, stamped, fitsLot, PIRATE_ID, PUB_ID, PUB_LOT, PUB_GATE,
-  PUB_SHORE, PUB_FRONT_MIN,
+  PUB_PIER_MIN, PUB_PIER_MAX, pubChestSpots, replayGrid, keptWater, fairwayHeld, PATH,
 } from '../lib/layout.mjs';
+import { pubGangway } from '../shared/kraken.mjs';
 import { register } from 'node:module';
 import { runPlan, parsePlan, civicSites } from '../lib/plan.mjs';
 import { MILESTONES, civicIdOf } from '../lib/village.mjs';
@@ -44,9 +49,23 @@ function ladder(settlers) {
   });
   return v;
 }
-const groundOf = (seed, l) => makeTerrain(seed, { size: l.size, polders: l.polders, fairway: l.fairway, grow: l.grow || null });
+const groundOf = (seed, l) => makeTerrain(seed, { size: l.size, polders: l.polders, fairway: l.fairway, works: l.works || null, grow: l.grow || null });
 const scan = (layout, seed, n) => placeAll(layout, ladder(n), { seed, size: SIZE });
-const byPub = (chest, pub) => chestSpots(pub).some((s) => s.cell[0] === chest.gx && s.cell[1] === chest.gz && s.rot === chest.rot);
+const byPub = (chest, pub, terrain) => pubChestSpots(pub, terrain).some((s) => s.cell[0] === chest.gx && s.cell[1] === chest.gz && s.rot === chest.rot);
+// The first free stretch of dry land of `w` by `d` nearest the town's middle, for a pub put down by hand
+// the way an older island has one: on a three by three, or on the beach.
+function landBlock(layout, seed, w, d) {
+  const grid = replayGrid(groundOf(seed, layout), layout);
+  const [cx, cz] = layout.town.centre;
+  for (let r = 6; r < layout.size; r++) {
+    for (let gz = cz - r; gz <= cz + r; gz++) for (let gx = cx - r; gx <= cx + r; gx++) {
+      if (Math.max(Math.abs(gx - cx), Math.abs(gz - cz)) !== r) continue;
+      if (grid.freeBlock(gx - 1, gz - 1, w + 2, d + 2, false)) return [gx, gz];
+    }
+  }
+  return null;
+}
+const gangwayOf = (pub, terrain) => pubGangway(pub, (gx, gz) => terrain.inGrid(gx, gz) && terrain.isWater(gx, gz));
 const pathCells = (layout) => new Set(layout.paths.flatMap((q) => [...(q.cells || []), ...(q.strand || [])]).map(key));
 
 test('rung 52 is the pirate tavern, between the lighthouse and the sawmill', () => {
@@ -148,17 +167,26 @@ for (const seed of SEEDS) {
     assert.ok(pub, 'the pub was given ground');
     assert.deepEqual([pub.w, pub.d], [stamped(PUB_LOT, pub.rot).w, stamped(PUB_LOT, pub.rot).d]);
     const terrain = groundOf(seed, layout);
-    for (const [gx, gz] of cellsOf(pub)) assert.ok(terrain.isLand(gx, gz), `the pub stands in the water at ${gx},${gz}`);
-    // Its front is on the water: enough of the columns along its front see the sea close by.
+    assert.equal(pub.sea, true, 'the pub is not in the sea');
+    for (const [gx, gz] of cellsOf(pub)) assert.ok(terrain.isWater(gx, gz) && !terrain.isLand(gx, gz), `the pub stands on land at ${gx},${gz}`);
+    // Its gangway: from the stair's step straight on, the way the lot looks, over water to the land.
     const door = plotDoor(PUB_ID, pub);
-    const [dx, dz] = DOOR_DIR[pub.rot];
-    const front = cellsOf(pub).filter(([gx, gz]) => !cellsOf(pub).some((c) => c[0] === gx + dx && c[1] === gz + dz));
-    const seeing = front.filter(([gx, gz]) => [...Array(PUB_SHORE)].some((_, k) => terrain.isWater(gx + dx * (k + 1), gz + dz * (k + 1))));
-    assert.ok(seeing.length >= PUB_FRONT_MIN, `the pub does not face the water: ${seeing.length} of ${front.length} columns`);
-    // The foot of its stair is on land, not in the sea.
-    assert.ok(terrain.isLand(...door.step), 'the stair comes down into the water');
-    // A road, and one a settler standing at the door finds.
-    assert.ok(layout.paths.some((q) => q.id === `path:${PUB_ID}`), 'the pub has no road');
+    const g = gangwayOf(pub, terrain);
+    assert.ok(g, 'no gangway');
+    assert.deepEqual(g.cells[0], door.step, 'the gangway does not start at the stair');
+    assert.deepEqual(g.dir, DOOR_DIR[pub.rot], 'the gangway does not run the way the pub looks');
+    assert.ok(g.cells.length >= PUB_PIER_MIN && g.cells.length <= PUB_PIER_MAX, `a gangway of ${g.cells.length}`);
+    assert.ok(terrain.isLand(...g.shore), 'the gangway does not come ashore');
+    // A road that begins with the gangway, and one a settler standing at the door finds.
+    const road = layout.paths.find((q) => q.id === `path:${PUB_ID}`);
+    assert.ok(road, 'the pub has no road');
+    assert.deepEqual(road.pier, g.cells, 'the road does not record its planks');
+    assert.deepEqual(road.cells.slice(0, g.cells.length), g.cells, 'the road does not begin with the gangway');
+    const grid = replayGrid(terrain, layout);
+    for (const c of g.cells) assert.equal(grid.get(...c), PATH, `the replay lost the plank at ${key(c)}`);
+    // Its water is kept: from the polders and from the dredger.
+    const kept = keptWater(layout), held = fairwayHeld(layout);
+    for (const c of [...cellsOf(pub), ...g.cells]) assert.ok(kept.has(key(c)) && held.has(key(c)), `${key(c)} is not kept as water`);
     const walks = {
       paths: layout.paths, bridges: layout.bridges || [], island: { town: layout.town },
       districts: Object.entries(layout.districts).map(([id, d]) => ({ id, ...d })),
@@ -167,8 +195,8 @@ for (const seed of SEEDS) {
 
     // The chest, behind it, and nothing else moved.
     const chest = layout.plots[PIRATE_ID];
-    assert.ok(chest && byPub(chest, pub), `the chest is not behind the pub (${json(chest)})`);
-    const spot = chestSpots(pub).find((s) => s.cell[0] === chest.gx && s.cell[1] === chest.gz);
+    assert.ok(chest && byPub(chest, pub, terrain), `the chest is not by the gangway (${json(chest)})`);
+    const spot = pubChestSpots(pub, terrain).find((s) => s.cell[0] === chest.gx && s.cell[1] === chest.gz);
     assert.ok(terrain.isLand(...spot.keeper) && !terrain.isWater(...spot.keeper), 'the pirate stands in the water');
     const others = Object.entries(layout.plots).filter(([id]) => id !== PIRATE_ID).flatMap(([, p]) => cellsOf(p)).map(key);
     assert.ok(!others.includes(key(spot.keeper)), 'the pirate stands on a plot');
@@ -192,7 +220,8 @@ test('an island founded past 52 has the pub and the chest behind it on its first
     scan(layout, seed, 60);
     const pub = layout.plots[PUB_ID], chest = layout.plots[PIRATE_ID];
     assert.ok(pub, `seed ${seed}: the pub on the first scan`);
-    assert.ok(chest && byPub(chest, pub), `seed ${seed}: the chest behind it on the first scan`);
+    assert.ok(pub.sea, `seed ${seed}: the pub is not in the sea`);
+    assert.ok(chest && byPub(chest, pub, groundOf(seed, layout)), `seed ${seed}: the chest by it on the first scan`);
     const once = json(layout.plots);
     scan(layout, seed, 60);
     assert.equal(json(layout.plots), once, `seed ${seed}: the second scan moved something`);
@@ -234,20 +263,17 @@ test('with the pub standing, turning the village tavern leaves the chest where i
 // chest moves behind it, as the old code did. Then the scan at 52 and after.
 test('a pub on the old three by three moves once onto PUB_LOT, the chest with it, and then holds still', () => {
   const seed = 2024;
-  const found = emptyLayout(seed, SIZE);
-  scan(found, seed, 60);
-  const site = found.plots[PUB_ID];
-  assert.ok(site && fitsLot('piratetavern', site));
-
   const layout = emptyLayout(seed, SIZE);
   scan(layout, seed, 48);
-  const old = { gx: site.gx, gz: site.gz, w: 3, d: 3, rot: site.rot };
+  const at = landBlock(layout, seed, 3, 3);
+  assert.ok(at, 'no free three by three');
+  const old = { gx: at[0], gz: at[1], w: 3, d: 3, rot: 2 };
   layout.plots[PUB_ID] = old;
   scan(layout, seed, 48);
   scan(layout, seed, 48);
   assert.deepEqual(layout.plots[PUB_ID], old, 'the old pub moved below 52');
   assert.ok(layout.paths.some((q) => q.id === `path:${PUB_ID}`), 'the old pub has no road');
-  assert.ok(byPub(layout.plots[PIRATE_ID], old), 'the chest is not behind the old pub');
+  assert.ok(byPub(layout.plots[PIRATE_ID], old, groundOf(seed, layout)), 'the chest is not behind the old pub');
   const settled = json({ plots: layout.plots, paths: layout.paths });
   scan(layout, seed, 48);
   assert.equal(json({ plots: layout.plots, paths: layout.paths }), settled, 'the old island does not hold still');
@@ -256,7 +282,7 @@ test('a pub on the old three by three moves once onto PUB_LOT, the chest with it
   scan(layout, seed, 60);
   const pub = layout.plots[PUB_ID];
   assert.ok(pub && fitsLot('piratetavern', pub), `the pub did not move onto its lot (${json(pub)})`);
-  assert.ok(byPub(layout.plots[PIRATE_ID], pub), 'the chest did not follow the pub');
+  assert.ok(byPub(layout.plots[PIRATE_ID], pub, groundOf(seed, layout)), 'the chest did not follow the pub');
   const moved = Object.keys(before).filter((id) => before[id] !== stands(layout)[id]);
   assert.deepEqual(moved.sort(), [PIRATE_ID, PUB_ID].sort(), 'something else moved with the pub');
   const walks = {
@@ -314,10 +340,61 @@ test('on an island founded small the pub is given one ring of new coast, once', 
   go(52);
   const pub = layout.plots[PUB_ID];
   assert.ok(pub && fitsLot('piratetavern', pub), 'no pub on the scan that earned it');
-  assert.equal(layout.grow.steps.length, rings + 1, 'not one ring for the pub');
-  assert.equal(layout.pubRing, layout.grow.steps.length);
-  assert.ok(byPub(layout.plots[PIRATE_ID], pub), 'the chest did not follow');
+  // In the sea there is room on most coasts of a small island too, and then no ring is grown for it
+  // (Plans/kraken-op-zee.md); only where neither the sea nor the beach has a lot, one ring, once.
+  assert.ok(layout.grow.steps.length <= rings + 1, 'more than one ring for the pub');
+  if (layout.grow.steps.length > rings) assert.equal(layout.pubRing, layout.grow.steps.length);
+  assert.ok(byPub(layout.plots[PIRATE_ID], pub, groundOf(seed, layout)), 'the chest did not follow');
   const once = json(layout);
   go(52);
   assert.equal(json(layout), once, 'the scan after grew or moved something');
+});
+
+// The second deliberate move (Plans/kraken-op-zee.md): a Kraken already on the beach - the live
+// island's, since 1 October - goes out onto a rock in the sea once, its chest to where the gangway
+// comes ashore, and `layout.pubSea` keeps the question from being asked again.
+test('a pub on the beach goes out to sea once, the chest with it, and then holds still', () => {
+  const seed = 2024;
+  const layout = emptyLayout(seed, SIZE);
+  scan(layout, seed, 48);
+  const at = landBlock(layout, seed, 11, 6);
+  assert.ok(at, 'no free stretch of eleven by six');
+  const beach = { gx: at[0], gz: at[1], w: 11, d: 6, rot: 2 };
+  layout.plots[PUB_ID] = beach;
+  scan(layout, seed, 48);
+  assert.deepEqual(layout.plots[PUB_ID], beach, 'the beach pub moved below 52');
+  assert.equal(layout.pubSea, undefined, 'asked before the pub was earned');
+
+  const before = stands(layout);
+  scan(layout, seed, 60);
+  const pub = layout.plots[PUB_ID];
+  assert.ok(pub && pub.sea, `the pub did not go out to sea (${json(pub)})`);
+  assert.equal(layout.pubSea, true);
+  const terrain = groundOf(seed, layout);
+  assert.ok(byPub(layout.plots[PIRATE_ID], pub, terrain), 'the chest did not follow the pub');
+  const moved = Object.keys(before).filter((id) => before[id] !== stands(layout)[id]);
+  assert.deepEqual(moved.sort(), [PIRATE_ID, PUB_ID].sort(), 'something else moved with the pub');
+  const walks = {
+    paths: layout.paths, bridges: layout.bridges || [], island: { town: layout.town },
+    districts: Object.entries(layout.districts).map(([id, d]) => ({ id, ...d })),
+  };
+  assert.notEqual(houseGate(walks, layout.size, plotDoor(PUB_ID, pub).door), null, 'no road at the foot of the stair');
+
+  const once = json(layout);
+  scan(layout, seed, 60);
+  assert.equal(json(layout), once, 'the scan after the move changed something');
+  scan(layout, seed, 60);
+  assert.equal(json(layout), once);
+});
+
+test('a pub on the beach that has been asked once stays on its beach', () => {
+  const seed = 2024;
+  const layout = emptyLayout(seed, SIZE);
+  scan(layout, seed, 48);
+  const at = landBlock(layout, seed, 11, 6);
+  const beach = { gx: at[0], gz: at[1], w: 11, d: 6, rot: 2 };
+  layout.plots[PUB_ID] = beach;
+  layout.pubSea = true;
+  scan(layout, seed, 60);
+  assert.deepEqual(layout.plots[PUB_ID], beach);
 });

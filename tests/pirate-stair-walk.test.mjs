@@ -28,7 +28,16 @@ const { createWalkMode } = await import('../web/js/walk.js');
 const { buildBuilding } = await import('../web/js/buildings.js');
 
 const FRAME = 1 / 60;
-const built = buildBuilding({ id: 'c:piratetavern', kind: 'civic', civicType: 'piratetavern', style: 'unknown' }, {});
+const made = buildBuilding({ id: 'c:piratetavern', kind: 'civic', civicType: 'piratetavern', style: 'unknown' }, {});
+// Set down as the page sets it (web/js/pirate-ground.js): the foot of its stair - anchor.door, the
+// landing's floor - at `at`, the rock's skirt below it. Its floors and solids lifted with it.
+function standing(at) {
+  const lift = at - made.anchors.door[1];
+  const up = (o) => ({ ...o, ...(o.y != null ? { y: o.y + lift } : {}), ...(o.y0 != null ? { y0: o.y0 + lift } : {}), ...(o.y1 != null ? { y1: o.y1 + lift } : {}) });
+  return { surfaces: made.surfaces.map(up), solids: made.solids.map(up), anchors: { ...made.anchors, door: [made.anchors.door[0], at, made.anchors.door[2]] } };
+}
+// On the beach: the foot on the flat ground of `fresh` below.
+const built = standing(0.1);
 const S = Object.fromEntries(built.surfaces.map((s) => [s.name, s]));
 const zmid = (s) => (s.z0 + s.z1) / 2;
 const floorY = (name, x) => {
@@ -121,4 +130,40 @@ test('on the beach beside the stair you are never stuck', () => {
   assert.ok(s.pos.z > start[1] + 0.3, `walked away (z ${start[1].toFixed(2)} -> ${s.pos.z.toFixed(2)})`);
   walkTo(walk, [x + 1.2, s.pos.z], 2);          // and along it
   assert.ok(s.pos.x > x + 0.3, `walked along (x ${s.pos.x.toFixed(2)})`);
+});
+
+// In the sea (Plans/kraken-op-zee.md): water all round, the landing at a dock's deck height, and the
+// gangway a floor from the shore to the lot's front edge, where the landing takes over. From the
+// beach along the gangway, onto the landing, and up the stair to the door, never in the water.
+test('from the beach along the gangway, onto the landing and up the stair', () => {
+  const DECK = 0.44;
+  const sea = standing(DECK);
+  const T = Object.fromEntries(sea.surfaces.map((s) => [s.name, s]));
+  const [fx, , fz] = sea.anchors.door;
+  const gx = 2.0;                     // the gangway's middle: the cell under PUB_GATE's step
+  const SHORE = 3.0 + 5;              // five cells of planks, then the beach
+  handlers.keydown.length = 0;
+  handlers.keyup.length = 0;
+  const height = (x, z) => (z > SHORE ? 0.1 : -0.8);
+  const ground = { height, bedAt: height, regionAt: () => null, levelKey: () => null };
+  const terrain = { half: 64, size: 128, worldHeight: height };
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1000);
+  const dom = { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} };
+  const walk = createWalkMode({ scene: new THREE.Scene(), camera, terrain, ground, material: new THREE.MeshBasicMaterial(), dom });
+  walk.enter({ at: [gx, SHORE + 1], facing: [gx, 0], blockers: sea.solids, interactables: [], onExit: noop });
+  const plank = { name: 'gangway', x0: gx - 0.45, x1: gx + 0.45, z0: 2.7, z1: SHORE + 0.2, y: DECK };
+  walk.setSurfaces([...sea.surfaces, plank]);
+  const s = walk.state;
+  const path = [
+    ...walkTo(walk, [gx, 2.85]),
+    // straight on from the planks onto the foot of the lower flight, where the gangway points
+    ...walkTo(walk, [gx, zmid(T.down)]),
+    ...walkTo(walk, [fx, fz]),
+    ...walkTo(walk, [T.land.x0 + 0.3, zmid(T.down)]),
+    ...walkTo(walk, [T.land.x0 + 0.3, zmid(T.up)]),
+    ...walkTo(walk, [(T.stoop.x0 + T.stoop.x1) / 2, zmid(T.up)]),
+  ];
+  for (const [x, z, y] of path) if (z < SHORE) assert.ok(y > DECK - 0.1, `in the water at ${x.toFixed(2)},${z.toFixed(2)}: ${y.toFixed(2)}`);
+  assert.ok(s.pos.x > T.stoop.x0, `reached the stoop (x ${s.pos.x.toFixed(2)})`);
+  assert.ok(Math.abs(s.pos.y - T.stoop.y) < 0.12, `at the door's height: ${s.pos.y.toFixed(2)} for ${T.stoop.y.toFixed(2)}`);
 });

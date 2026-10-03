@@ -35,7 +35,7 @@ import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
-import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
+import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -502,7 +502,7 @@ const state = {
   // `sea` is every island there is, in world coordinates, and it is what the camera, the
   // haze and anything asking "is there ground here" read. For an island on its own the two
   // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
-  sea: createArchipelago(), region: null, guests: [], boats: [], docks: [],
+  sea: createArchipelago(), region: null, guests: [], boats: [], docks: [], gangways: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   // The home batch is in from the start: one pickable for every house (pickedId turns a hit
   // on it back into the house's id).
@@ -4097,6 +4097,28 @@ function buildDocks(homeVillage) {
       state.pickables.push(mesh);
     }
   }
+  // And the Salty Kraken's gangway on every island whose Kraken stands in the sea
+  // (Plans/kraken-op-zee.md): the dock set's planks from the beach to the foot of its stair, with
+  // no head, since it ends at the landing in the bake. Built here because it is the same set, the
+  // same frame and the same floor, but kept apart from `state.docks`, which are harbours - a dock is
+  // a boat to take and a place on the chart, and a gangway is neither.
+  for (const g of state.gangways) g.dispose();
+  state.gangways = [];
+  for (const region of state.sea.regions()) {
+    for (const spec of gangwaysFor(region, region === state.region ? dockVillage : null)) {
+      const geo = buildPierGeometry(spec.cells, region.terrain, spec.from, { head: false });
+      if (!geo) continue;
+      const mesh = new THREE.Mesh(geo, buildingMat);
+      const parent = region === state.region
+        ? scene
+        : (state.guests.find((g) => g.region === region) || {}).group || scene;
+      mesh.position.set(spec.from[0], 0, spec.from[1]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      state.gangways.push({ ...spec, region, mesh, dispose: () => { parent.remove(mesh); geo.dispose(); } });
+    }
+  }
   // The planks are a floor, and the floor is worked out from these docks - so whoever
   // rebuilds them has rebuilt the floor too, whether or not they were thinking about it.
   // Paired here rather than left to each caller, because the one caller that forgot
@@ -4124,6 +4146,29 @@ function dockPrompt(d, moored) {
 }
 
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
+
+// The Kraken's gangway, if its Kraken stands in the sea (web/js/pirate-ground.js pirateGangway, the
+// layout's own sum): `cells` from the shore outwards, the order buildPierGeometry lays a pier in, so
+// its ramp comes down on the sand; `from` in the island's own frame, like a dock's; `lip` the
+// rectangle at deck height that carries a walker from the last plank onto the landing in the bake.
+function gangwaysFor(region, village) {
+  const v = village || region.village;
+  const t = region.terrain;
+  const out = [];
+  for (const b of (v && v.buildings) || []) {
+    if (!isPirateTavern(b) || !b.plot) continue;
+    const g = pirateGangway(b.plot, t);
+    if (!g) continue;
+    const [x, z] = t.cellWorld(g.cells[0][0], g.cells[0][1]);
+    const [dx, dz] = g.dir;
+    // The plank's own cell and 0.3 on towards the lot (which is behind `dir`), the deck's width across.
+    const ex = dx ? 0.5 + 0.3 : 0.45, ez = dz ? 0.5 + 0.3 : 0.45;
+    const lip = { x0: x - ex + (dx < 0 ? 0.3 : 0), x1: x + ex - (dx > 0 ? 0.3 : 0), z0: z - ez + (dz < 0 ? 0.3 : 0), z1: z + ez - (dz > 0 ? 0.3 : 0), y: QUAY_DECK };
+    out.push({ id: `gangway:${b.id}`, cells: [...g.cells].reverse(), from: t.cellWorld(g.shore[0], g.shore[1]), lip });
+  }
+  return out;
+}
+const pubSig = (v) => JSON.stringify(((v && v.buildings) || []).filter(isPirateTavern).map((b) => b.plot));
 const SIDE_WORD = { n: 'north', e: 'east', s: 'south', w: 'west' };
 const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) || []);
 
@@ -5379,7 +5424,7 @@ function poseOnPlot(spec, built) {
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
   const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt)
-    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt, built, state.terrain) : groundAt(x, z);
   return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {
@@ -5969,7 +6014,7 @@ function deckMapForHome() {
   if (state.props && state.terrain) {
     for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
@@ -6030,7 +6075,7 @@ function handOutDecks() {
   // plain cell key - and they need the planks for the same reason you do: without them a
   // settler on an outing wades out to the boat alongside the dock instead of walking out
   // along it. Only the home region's, because `flat` is this island's map.
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
@@ -6057,7 +6102,7 @@ function handOutDecks() {
   // you wade alongside your own dock instead of walking out along it, which is both wrong
   // and the difference between a dock and a decoration. Keyed per region, so a guest
   // island's quay is its own storey and not a deck in the air over ours.
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     const r = d.region;
     for (const [gx, gz] of d.cells) {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
@@ -6086,6 +6131,8 @@ function handOutDecks() {
       for (const p of list) planks.push({ ...p, x0: p.x0 + ox, x1: p.x1 + ox, z0: p.z0 + oz, z1: p.z1 + oz, lid: true });
     };
     for (const d of state.docks) put(d.region, pierSurfaces(d.cells, d.region.terrain, d.from));
+    // The Kraken's gangway: its ramp, and the lip onto the landing at the foot of the stair.
+    for (const g of state.gangways) put(g.region, [...pierSurfaces(g.cells, g.region.terrain, g.from, { head: false }), g.lip]);
     for (const r of state.sea ? state.sea.regions() : []) {
       if (r.village) put(r, kadeSurfaces(quayKade(r.village, r.terrain), r.terrain));
     }
@@ -6690,6 +6737,8 @@ function applyVillage(next, { animate }) {
   // as a changed count and nothing else - would not show until a reload. Docks and fleet
   // both, because a new count is a new hull at a new berth (shared/quay.mjs mooringsFor).
   if (prev && harbourSig(next) !== harbourSig(prev)) { buildDocks(next); launchBoats(); }
+  // And the Kraken's gangway, which comes and goes with where it stands.
+  else if (prev && pubSig(next) !== pubSig(prev)) buildDocks(next);
   // The ground itself, when the polders or the channel changed under it - a polder the
   // keeper dug or gave back. Before the buildings below, because a house set down on new
   // land is built at the height of the terrain it finds. `shownPolders` is a count and a

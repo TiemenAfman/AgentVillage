@@ -679,6 +679,11 @@ scans daarna zijn byte-identiek. Op de ladder van 128 (twaalf seeds) krijgt elk 
 Een nieuwe kavelmaat in `layout.json`: een **minor**. Niet gebouwd: een test voor het terugzetten als er nergens
 strand is (op de ladder vindt elke seed een kavel, dus dat pad is alleen met de hand nagelopen).
 
+### Op zee (3 oktober 2026)
+
+Op het strand las de kroeg als *"een gestrande boot in een weiland"*; hij staat nu op een rots een eindje uit de kust,
+met een loopplank van het zand naar de voet van de trap. Zie [kraken-op-zee.md](kraken-op-zee.md).
+
 ## Fasen
 
 Bewust in deze volgorde, want alleen de server-kant raakt de haven (zie "De plek"):
