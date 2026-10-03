@@ -7,9 +7,9 @@
 > `scripts/sign-bundle.mjs` allebei lezen - de pagina hoeft hem niet te kennen: Rust zegt `shell`),
 > `src-android/bundle-key.pub` (nog leeg), de stap *Page bundle* in release.yml, de Restart-kaart
 > (`updateGate`'s `ready`/`busy`) en `bundle_ok` na de boot. Getest: 9 Rust-tests (één met een echte bundel van
-> sign-bundle.mjs), Node en Rust houden elkaar aan één handtekening. Nog te doen: de keeper draait
+> sign-bundle.mjs), Node en Rust houden elkaar aan één handtekening. Nog te doen: Tiemen (eigenaar van de repo, de enige die een secret kan zetten) draait
 > `node scripts/bundle-key.mjs`, commit de publieke helft, zet `BUNDLE_SIGNING_KEY`; dan is de eerste release
-> met een sleutel de laatste APK die voor een pagina-wijziging nodig is.
+> met een sleutel de laatste APK die voor een pagina-wijziging nodig is. Stappen: "Voor Tiemen" hieronder.
 >
 > Gekozen bij het bouwen: een bundel krijgt **twee** starts om `bundle_ok` te halen (niet 30 s: wie de app
 > binnen een paar seconden dichtdoet, zou een goede bundel anders afkeuren), en wat er al binnen is wordt bij
@@ -21,6 +21,56 @@
 > `REQUEST_INSTALL_PACKAGES`; eruit in 0.8.2, de knop geeft de APK nu aan de browser). De keeper
 > (Martijn): *"Er zijn genoeg games die data apart ingame downloaden, de apk blijft dan klein. Kunnen wij
 > dat niet?"* en *"Dan hoeven we niet steeds de apk te releasen. Alleen maar data package klaar te zetten?"*
+
+## Voor Tiemen: de sleutel zetten (eenmalig, ~5 minuten)
+
+Repository-secrets kan alleen de eigenaar van de repo zetten, dus dit is jouw stap. Zolang hij niet gedaan
+is, werkt alles zoals vóór dit plan: een release krijgt geen paginabundel en telefoons hebben de APK nodig.
+
+Doe het **op je eigen machine**, niet in een cloud-sessie: de privésleutel mag die machine niet verlaten,
+behalve naar het secret en je wachtwoordmanager. Wie hem heeft, kan een pagina tekenen die elke telefoon
+draait.
+
+1. In een checkout van deze branch (of van `main` zodra hij gemerged is), met Node 22:
+
+   ```bash
+   node scripts/bundle-key.mjs
+   ```
+
+   Dat schrijft twee bestanden:
+   - `src-android/bundle-key.pub` - de publieke helft (64 hex-tekens). Die gaat de repo in.
+   - `bundle-signing-key.pem` - de privésleutel, in de root van de checkout. Staat in `.gitignore`, wordt
+     dus nooit gecommit.
+
+2. Commit en push de publieke helft:
+
+   ```bash
+   git add src-android/bundle-key.pub
+   git commit -m "Zet de sleutel waarmee telefoons paginabundels geloven"
+   git push
+   ```
+
+3. Zet de privésleutel als secret: GitHub -> `TiemenAfman/AgentVillage` -> **Settings** -> **Secrets and
+   variables** -> **Actions** -> **New repository secret**.
+   - Name: `BUNDLE_SIGNING_KEY`
+   - Secret: de **hele** inhoud van `bundle-signing-key.pem`, inclusief de regels
+     `-----BEGIN PRIVATE KEY-----` en `-----END PRIVATE KEY-----`.
+
+4. Bewaar dezelfde inhoud in je wachtwoordmanager (of een andere plek die je niet kwijtraakt), en
+   **verwijder daarna** `bundle-signing-key.pem` van je schijf.
+
+5. Laat het weten. Daarna: deze branch mergen, release 0.8.2 met de hand draaien (`publish` aan). Dat is de
+   laatste APK die telefoons voor een paginawijziging nodig hebben.
+
+**Controleren**: in de release-run, job `android`, stap *Page bundle* staat in de job summary een
+`promptholm-web.json`. Een waarschuwing "no BUNDLE_SIGNING_KEY secret" betekent dat het secret ontbreekt; een
+fout "the signing key's public half ... is not src-android/bundle-key.pub" betekent dat het secret en het
+gecommitte bestand niet bij elkaar horen (stap 2 en 3 met verschillende sleutels).
+
+**Kwijt?** Zonder de privésleutel neemt geen telefoon meer een bundel aan. Herstel: `node scripts/bundle-key.mjs
+--again`, nieuwe publieke helft committen, secret vervangen, en één nieuwe APK uitbrengen; telefoons hebben die
+ene keer weer de APK nodig. **Uitgelekt?** Hetzelfde, zo snel mogelijk: de oude sleutel kan anders een pagina
+tekenen die oudere apps geloven.
 
 ## Waarom
 
