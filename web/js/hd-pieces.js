@@ -91,8 +91,13 @@ function warmRoom() {
 
 // A piece with a metalness map: how strongly it mirrors the warm room, and how much of the room's
 // even light it takes on top of the lamps (see prepareHd).
-const ENV_GLOSS = 2.0;
-const ENV_FILL = 0.45;
+//
+// Both were set in /demo, which draws without tone mapping; the island draws through ACES, which
+// crushes the room's dark wood and keeps the mirrored lamps hot, so at these strengths every piece
+// read brighter than the bakes around it (issue #87). The gilt and the plain metal take METAL_ENV.
+const ENV_GLOSS = 1.3;
+const ENV_FILL = 0.3;
+const METAL_ENV = 0.9;
 
 const GOLD = [1.0, 0.76, 0.36];
 const FLAME = 0xffd23a, FLAME_GLOW = 0xffb040;
@@ -138,7 +143,7 @@ export function prepareHd(root, piece) {
         m.metalness = 1;
         m.roughness = piece.roughness ?? 0.38;
         m.envMap = warmRoom();
-        m.envMapIntensity = 1.4;
+        m.envMapIntensity = METAL_ENV;
       } else if (m.metalnessMap) {
         // Pixal3D's own metal, baked along since the 50k pieces (BlenderAI bake_texture.py --gloss):
         // coins, goblets and rivets the map says are metal. Without the room to mirror they read

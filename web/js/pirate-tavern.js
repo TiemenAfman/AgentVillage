@@ -389,9 +389,14 @@ export function buildPirateTavern({ FLOOR, rect }) {
     // dark instead of into soot, and a cool sky in the hemisphere as the moon's fill from above -
     // it lights what faces up (decks, beams, the tops of the rigging) and leaves the undersides and
     // the corners to the lamps, or to the dark.
+    //
+    // Not as dark as it was, though (issue #87): under the island's ACES tone mapping a fill of 0.7
+    // and 0.08 left the hull, the decks and the crew at a few percent of white, and every HD piece
+    // that mirrors the warm room (hd-pieces.js) stood out of the black like a lamp. A brighter moon
+    // and a warmer, stronger fill lift the wood without lifting the corners past the lamps.
     background: 0x0b0a0f,
     fog: [12, 40],
-    ambience: { sky: 0x44557a, ground: 0x1a0f0a, hemi: 0.7, hex: 0xffc898, amb: 0.08 },
+    ambience: { sky: 0x56688f, ground: 0x2a1a10, hemi: 1.0, hex: 0xffc898, amb: 0.24 },
     music: 'shanty',
     show: (opts) => createCrewShow({ ...opts, layout: { FLOOR, crew } }),
   };
