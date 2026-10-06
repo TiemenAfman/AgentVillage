@@ -62,11 +62,12 @@ Gevonden en **gerepareerd**:
 
 Nog open:
 - **Tab** door de HUD + camera naar de lucht: aparte sessie ("Repareer Tab").
-- De install- en fullscreen-knop (`fab`) staan in elke modus, ook te voet en in de planner. Voorstel: alleen in de
-  lucht en in het menu. ❓
-- "Vraag voor jou"/"nu bouwen" verdwijnen te voet en in de planner, de tijdlijn ook - dat is consequent; maar de
-  chips blijven allemaal zichtbaar te voet terwijl de helft (Plan, Overview, New settler) daar niets doet of uit
-  de loopmodus trekt. Voorstel: te voet alleen Inventory, Map, Quests, ☰. ❓
+- ✅ De ronde knoppen rechtsonder (installeren, volledig scherm) zijn weg: installeren is er niet meer (geen PWA) en
+  volledig scherm is Settings → Display of Alt+Enter.
+- ✅ **Chips per modus** (`body[data-mode]`, gezet in ui.js `syncSidebar`, regels onderaan ui.css): lucht alles;
+  te voet (en in een kamer) Fly up, Say, Map, Inventory, Quests + klok en ☰, en de eilandkaart linksboven weg;
+  planner alleen Done (geen inklap-pijl, geen eilandkaart, de Plan-tools schuiven naar boven). De toetsen blijven
+  werken waar ze iets betekenen.
 - ✅ **Fades**: zijpanelen schoven al in; nu faden ook het menu, de dialoogkaarten en popovers in, en de kaart en de
   inventaris komen 8 px omhoog (160-200 ms, alleen opacity/transform). Sluiten blijft direct. `prefers-reduced-motion` zet het uit.
 - ✅ **Volledig scherm** (`web/js/display.js`): Settings → This screen → *Display* (Windowed / Borderless fullscreen),

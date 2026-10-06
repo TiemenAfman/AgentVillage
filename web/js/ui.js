@@ -78,7 +78,7 @@ function setLabel(id, text, title) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
-  // Windowed or fullscreen (display.js): the button, Settings and Alt+Enter share it.
+  // Windowed or fullscreen (display.js): Settings and Alt+Enter share it.
   const display = createDisplay();
   const state = {
     filters: {
@@ -242,6 +242,9 @@ export function createUI(handlers) {
   function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
+    // Which chips and cards stand is the mode's (ui.css, body[data-mode]): from the sky all of them,
+    // on foot only what you use there, in the planner only Done (Plans/minder-browser-meer-spel.md).
+    document.body.dataset.mode = planning ? 'plan' : walking ? 'foot' : 'sky';
     const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
     el('building-now').hidden = walking || planning || panelOpen || !hasBuilders;
     const w = el('waiting-now');
@@ -1595,7 +1598,6 @@ export function createUI(handlers) {
   el('build-btn').addEventListener('click', () => handlers.onBuild());
   el('plan-btn').addEventListener('click', () => handlers.onTogglePlan && handlers.onTogglePlan());
 
-  setupShell(display);
   display.onChange(() => { if (!el('sysmenu').hidden) renderSettings(); });
 
   return {
@@ -1614,23 +1616,4 @@ export function createUI(handlers) {
 }
 
 // --- fullscreen and installing ------------------------------------------
-// Fullscreen itself, with Safari's prefixed calls, is display.js.
-function setupShell(display) {
-  const btn = el('fullscreen-btn');
-  if (!btn) return;
-
-  const expand = btn.querySelector('[data-icon="expand"]');
-  const collapse = btn.querySelector('[data-icon="collapse"]');
-  const sync = () => {
-    const on = display.isFull();
-    expand.hidden = on;
-    collapse.hidden = !on;
-    btn.title = on ? 'Leave fullscreen (Alt+Enter)' : 'Fullscreen (Alt+Enter)';
-    btn.setAttribute('aria-label', on ? 'Leave fullscreen' : 'Fullscreen');
-  };
-  btn.addEventListener('click', () => display.toggle());
-  display.onChange(sync);
-  sync();
-}
-
 function cssHex(hex) { return `#${hex.toString(16).padStart(6, '0')}`; }

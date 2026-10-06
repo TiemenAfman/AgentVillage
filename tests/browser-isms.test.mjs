@@ -79,3 +79,13 @@ test('no installable web app: no manifest, no service worker, no install button 
   assert.doesNotMatch(main, /serviceWorker\.register/);
   assert.match(main, /getRegistrations\(\)\.then\(\(all\) => all\.forEach\(\(r\) => r\.unregister\(\)\)\)/);
 });
+
+test('one set of chips per mode, and no round button at the bottom right', () => {
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /fullscreen-btn|id="fabs"/);
+  const ui = readFileSync(new URL('../web/js/ui.js', import.meta.url), 'utf8');
+  assert.match(ui, /document\.body\.dataset\.mode = planning \? 'plan' : walking \? 'foot' : 'sky';/);
+  const css = readFileSync(new URL('../web/css/ui.css', import.meta.url), 'utf8');
+  assert.match(css, /body\[data-mode="foot"\] :is\(#found-btn, #plan-btn, #build-btn, #animals-btn, #reset-btn\)/);
+  assert.match(css, /body\[data-mode="plan"\] #nav-chips > \.chip:not\(#plan-btn\)/);
+});
