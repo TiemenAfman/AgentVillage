@@ -698,7 +698,7 @@ let gift = null;   // { id, until } while a beer is going down
 function giveTarget() {
   if (!state.settlers || state.inside || state.mode !== 'walk' || !state.walk) return null;
   const w = state.walk.state;
-  if (state.walk.aboard() || w.bike || !w.grounded || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
+  if (state.walk.aboard() || w.bike || w.mount || !w.grounded || w.swimming || w.lying || w.paused || w.working || !state.walk.beerHand()) return null;
   let best = null, bestD = GIVE_R * GIVE_R;
   for (const f of state.settlers.figures().values()) {
     if (!f.visible || f.hidden || !f.to) continue;
@@ -2520,7 +2520,7 @@ function touchHud(near, walk) {
       : near.kind === 'board' || near.kind === 'issues' ? 'Read'
         : near.kind === 'bed' ? '' : 'Talk';
   state.touch.caption(word);
-  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater(), walk.riding && walk.riding());
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater(), walk.riding && walk.riding(), walk.rideKind ? walk.rideKind() : 'bike');
 }
 
 // A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
@@ -4110,6 +4110,7 @@ function wrapEye() {
   w.pos.x += dx; w.pos.z += dz;
   if (w.vehicle) { w.vehicle.x += dx; w.vehicle.z += dz; }
   if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
+  if (w.mount) { w.mount.x += dx; w.mount.z += dz; }
   state.ui.toast('Round the world - the far side of the chart');
 }
 

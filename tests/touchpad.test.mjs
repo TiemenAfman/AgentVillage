@@ -73,7 +73,7 @@ test('the phone keeps Y on screen while riding, the one way off the bike', async
   const { readFileSync } = await import('node:fs');
   const PAD = readFileSync(new URL('../web/js/touchpad.js', import.meta.url), 'utf8');
   const MAIN = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
-  assert.match(PAD, /function setHands\(what, swimming = false, riding = false\)/);
+  assert.match(PAD, /function setHands\(what, swimming = false, riding = false, ride = 'bike'\)/);
   assert.match(PAD, /riding && b\.dataset\.b === 'Y'/, 'setHands hides Y on the bike');
-  assert.match(MAIN, /setHands\([^\n]*walk\.riding\(\)\)/, 'touchHud does not tell the pad it is riding');
+  assert.match(MAIN, /setHands\([^\n]*walk\.riding\(\), walk\.rideKind/, 'touchHud does not tell the pad it is riding, or on what');
 });
