@@ -490,7 +490,7 @@ function snackGeometry() {
 // `onTalk(it)` is somebody in the room being spoken to (the Salty Kraken's crew, `kind: 'crew'`),
 // and `onOrder(room, what)` a drink ordered at a seat - which is the Kraken's first quest step,
 // and which walk mode's own onDrink cannot see, since that needs a glass already in the hand.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null }) {
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null, onAvatar = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -815,6 +815,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       // Esc (and the pad's Back) is the menu's key indoors as it is on the island, when the room's
       // owner says so (main.js); the way out is the door. /demo has no menu and still steps outside.
       onExit: onEscape || leave,
+      // I (the wardrobe) is a key of the walker's, so a room has to hand it on as the island does.
+      onAvatar,
     });
     // Indoors you look across the room, not over the treetops.
     walk.state.camPitch = back && back.pitch != null ? back.pitch : 0.05;

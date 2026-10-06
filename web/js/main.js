@@ -2566,6 +2566,8 @@ function roomFor(room) {
         onTalk: (it) => openCrewTalk(it),
         onOrder: (r) => questEvents.drank(r),
         hd: hdOn(),
+        // I opens the wardrobe, as it does on the island.
+        onAvatar: () => openStudio(),
         // Esc opens the menu here too, with the room paused under it; you leave through the door.
         onEscape: () => {
           if (!state.sysmenu || !state.inside) return;
@@ -2972,7 +2974,9 @@ function foundSettler() {
 // screen, and touches nothing that belongs to the island - so it is not behind keeperOnly.
 function openStudio() {
   if (!state.studio || state.studio.isOpen()) return;
-  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  // Indoors it is the room's walker that has the keys and the mouse, not the island's.
+  if (state.inside) state.inside.setPaused(true);
+  else if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.studio.open();
 }
 
@@ -8216,10 +8220,14 @@ Everything is copied and checked first; the island then starts again there. The 
     // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
     onApply: (spec) => {
       if (state.walk) state.walk.setAvatar(spec);
+      if (state.inside) state.inside.walk.setAvatar(spec);
       // Everybody else sees the new look too (Plans/DONE/andere-spelers-zoals-jij.md).
       if (state.net) state.net.setLook(spec);
     },
-    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
+    onClose: () => {
+      if (state.inside) state.inside.setPaused(false);
+      else if (state.walk && state.mode === 'walk') state.walk.setPaused(false);
+    },
   });
 
   state.townHall = createTownHall(document.body, {
