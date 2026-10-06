@@ -739,6 +739,58 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     view = zoomMapAt(view, lastFit, W, H, mx, my, Math.exp(-dy * 0.0015));
     zoomedAt = performance.now();
   }, { capture: true, passive: false });
+  // Two fingers on an open chart pinch it, the way the wheel turns it: the app on a phone has
+  // no wheel (issue #93). Caught on the window in the capture phase for the same reason - the
+  // panel lets every touch through, and the touch controls (touchpad.js) or the orbit controls
+  // underneath would pinch the camera behind the sheet instead. One finger is left alone, so a
+  // tap still asks what is there and a drag still looks about. The moment a second one lands
+  // the first is taken back from whoever had it - a pointercancel, which both read as the
+  // finger leaving the glass, so no stick is left pushed and no look jumps - and both are the
+  // chart's until they lift.
+  const touches = new Map();   // pointer id -> { x, y, target }, touch pointers down on the chart
+  const pinching = new Set();  // pointer ids that are the chart's until they lift
+  let apart = 0;
+  const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+  const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  window.addEventListener('pointerdown', (e) => {
+    if (!e.isTrusted || e.pointerType !== 'touch' || panel.hidden || touches.size >= 2) return;
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+    const r = panel.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientY < r.top || e.clientX > r.right || e.clientY > r.bottom) return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY, target: e.target });
+    if (touches.size < 2) return;
+    swallow(e);
+    for (const [id, t] of touches) {
+      if (id === e.pointerId || pinching.has(id)) continue;
+      t.target.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType: 'touch', bubbles: true }));
+    }
+    for (const id of touches.keys()) pinching.add(id);
+    apart = spread();
+  }, { capture: true, passive: false });
+  window.addEventListener('pointermove', (e) => {
+    const t = touches.get(e.pointerId);
+    if (t) { t.x = e.clientX; t.y = e.clientY; }
+    if (!pinching.has(e.pointerId)) return;
+    swallow(e);
+    if (touches.size < 2 || panel.hidden || !lastFit) return;
+    const now = spread();
+    if (apart > 0 && now > 0) {
+      const r = panel.getBoundingClientRect();
+      const [a, b] = [...touches.values()];
+      const mx = Math.min(W, Math.max(0, (a.x + b.x) / 2 - r.left));
+      const my = Math.min(H, Math.max(0, (a.y + b.y) / 2 - r.top));
+      view = zoomMapAt(view, lastFit, W, H, mx, my, now / apart);
+      zoomedAt = performance.now();
+    }
+    apart = now;
+  }, { capture: true, passive: false });
+  const lift = (e) => {
+    if (!e.isTrusted) return;
+    touches.delete(e.pointerId);
+    if (pinching.delete(e.pointerId)) swallow(e);
+  };
+  window.addEventListener('pointerup', lift, { capture: true });
+  window.addEventListener('pointercancel', lift, { capture: true });
   if (phone) {
     const close = document.createElement('button');
     close.className = 'x worldmap-close';
