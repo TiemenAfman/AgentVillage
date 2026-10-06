@@ -4866,6 +4866,41 @@ function syncWant(nowMs) {
   crowdWant = next;
 }
 
+// Being sent home (a guard, lava, drowning) is the one jump on foot: we land on an island this page
+// may have let go of, and its people come one round trip after we do. So the screen goes black
+// at once, stays black until every island we now follow has somebody placed on it (or
+// RESPAWN_HOLD_MS, whichever is first), and fades in over the CSS transition. While it is black
+// syncWant runs every frame rather than every WANT_MS, so the set it says is taken from where the
+// camera has landed and not from the frame before it moved; RESPAWN_MIN_MS is that landing.
+const RESPAWN_HOLD_MS = 600;
+const RESPAWN_MIN_MS = 120;
+let respawnUntil = 0;
+let respawnFrom = 0;
+function respawnFade() {
+  const el = document.getElementById('respawn');
+  if (!el) return;
+  el.classList.remove('out');
+  el.hidden = false;
+  respawnFrom = performance.now();
+  respawnUntil = respawnFrom + RESPAWN_HOLD_MS;
+  wantedAt = -Infinity;
+  // Never black for good: should the frame not get as far as stepRespawn (a hidden tab, a mode
+  // that returns early), a timer lifts it all the same.
+  setTimeout(() => stepRespawn(Infinity), RESPAWN_HOLD_MS + 100);
+}
+function stepRespawn(nowMs) {
+  if (!respawnUntil) return;
+  wantedAt = -Infinity;
+  if (nowMs < respawnFrom + RESPAWN_MIN_MS) return;
+  const placed = crowdViews().every((v) => !crowdWant || !crowdWant.has(v.id)
+    || [...v.crowd.figures().values()].some((f) => f.to));
+  if (!placed && nowMs < respawnUntil) return;
+  respawnUntil = 0;
+  const el = document.getElementById('respawn');
+  el.classList.add('out');
+  setTimeout(() => { if (!respawnUntil) el.hidden = true; }, 300);
+}
+
 // Somebody else's settlers. The wire format is shared/settlerwire.mjs and the drawing is
 // web/js/crowd-view.js; this only routes.
 function onCrowdMessage(m) {
@@ -7451,6 +7486,7 @@ function frame(nowMs) {
   // and a camera flying in may cover a pad's width in that time - so a palm must still be past
   // full fog when it comes back into the buffers.
   syncWant(nowMs);
+  stepRespawn(nowMs);
   if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: cullCeiling() + 3 * CULL_PAD });
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -8448,6 +8484,7 @@ Everything is copied and checked first; the island then starts again there. The 
       // `why` (lib/players.mjs evict) is only ever 'drown' so far; a sea from before it sends
       // none and gets the generic words, which name a place we were not sent home from.
       const drowned = m.why === 'drown';
+      respawnFade();
       exitWalk({ force: true });
       state.walk.setPaused(false);
       // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);

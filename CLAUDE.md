@@ -796,7 +796,8 @@ what keeps it a patch, no `SEA_V`. An islander (`as: 'islander'`) gets no crowd,
 NPC Distance of the **camera** (the eye `beyond` cuts at) plus `WANT_PAD`, with `WANT_HYST` to let go; letting go
 calls `crowd.forget()` (positions only, hulls stay) and `onCrowdMessage` takes only the rides of unwanted islands, so a body comes back hidden until the
 sea places it - never at a stale spot or the island's middle. A crowd view rebuilt under a wanted id is let go of
-and wanted again (two messages) to get its dump. `/health` carries `wire` (bytes and messages per type since start,
+and wanted again (two messages) to get its dump. Being sent home (`onEvicted`) is the one jump on foot: the screen goes black
+(`#respawn`, `respawnFade`) until every wanted island has somebody placed, at most 600 ms, then fades in. `/health` carries `wire` (bytes and messages per type since start,
 lib/wiremeter.mjs), `sockets` and `wanting`; `scripts/sea-listen.mjs` measures one viewer on any sea and
 `scripts/sea-load.mjs` a local sea with copies of a real bundle. A pose beat with nobody walking goes out once.
 

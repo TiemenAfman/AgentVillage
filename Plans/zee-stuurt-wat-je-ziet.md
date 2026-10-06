@@ -90,6 +90,12 @@ Twintig eilanden van 300 settlers is 36–72 kB/s per kijker; met 32 kijkers rui
 8. **Meter**: `lib/wiremeter.mjs` telt per berichttype berichten en bytes op elke `send` (gewikkeld in `onOpen`),
    in geheugen; `/health` geeft `wire` plus `sockets` en `wanting`. Twee metingen na elkaar zijn een tempo.
 
+9. **Teruggestuurd worden is de enige sprong te voet** (guard, lava, verdrinken): je landt op een eiland dat
+   misschien niet gevolgd werd. Het beeld gaat dan meteen zwart (`#respawn`, `respawnFade` in `main.js`), `syncWant`
+   draait elk frame zolang het zwart is, en het beeld vervaagt in 0,25 s zodra elk gevolgd eiland iemand op zijn
+   plek heeft (minimaal 120 ms, hooguit 600 ms, en een timer als vangnet). Gemeten bij een echte verdrinking ver
+   van Hoogezand: zwart, na 182 ms alle 600 bewoners geplaatst, na 488 ms weer helemaal beeld.
+
 ## Compatibiliteit: een patch
 
 Geen `SEA_V`-bump, niets in layout, config of bundle.
