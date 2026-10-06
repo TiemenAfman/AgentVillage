@@ -374,7 +374,10 @@ function buildRig(spec, material) {
     material.flatShading = false;
     material.userData = sourceMaterial.userData;
     material.onBeforeCompile = sourceMaterial.onBeforeCompile;
-    material.customProgramCacheKey = sourceMaterial.customProgramCacheKey.bind(sourceMaterial);
+    // Unbound: both read `this`, and a body is never seen through (see-through.js) - the
+    // walker is what the cone is cut to show, and a smith or a peer is a person, not a wall.
+    material.customProgramCacheKey = sourceMaterial.customProgramCacheKey;
+    material.seeThroughOff = true;
   }
   const object = new THREE.Group();
   // The bake names its hands the wrong way round: "Right hand" is at +x, and a figure facing

@@ -2589,15 +2589,16 @@ export function createWalkMode({
   }
   // Only what stands up out of the ground - the buildings' boxes and the blockers - asked along a
   // direction: armReach's first half, and all the boom's look to either side (see placeCamera).
-  function standingReach(ax, ay, az, dx, dy, dz, len) {
+  // `pad` is the lens's room by default; the see-through's silhouette rays ask with none.
+  function standingReach(ax, ay, az, dx, dy, dz, len, pad = CAM_R) {
     let best = len;
     const bx = ax + dx * len, bz = az + dz * len;
-    camBodies.along(ax, az, bx, bz, CAM_R, (b) => {
-      const t = camBodyEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R);
+    camBodies.along(ax, az, bx, bz, pad, (b) => {
+      const t = camBodyEntry(b, ax, ay, az, dx, dy, dz, best, pad);
       if (t != null && t < best) best = t;
       return false;
     });
-    blockerIndex.along(ax, az, bx, bz, CAM_R, (b) => {
+    blockerIndex.along(ax, az, bx, bz, pad, (b) => {
       // A rail, a fence, a post: looked past, not stopped at (solids.js camSeesPast).
       if (camSeesPastSolid(b)) return false;
       let y0 = b.y0, y1 = b.y1;
@@ -2605,7 +2606,7 @@ export function createWalkMode({
         if (camSolidTop == null) return false;
         y0 = -Infinity; y1 = camSolidTop;
       }
-      const t = segmentEntry(b, ax, ay, az, dx, dy, dz, best, CAM_R, y0, y1);
+      const t = segmentEntry(b, ax, ay, az, dx, dy, dz, best, pad, y0, y1);
       if (t != null && t >= 0 && t < best) best = t;
       return false;
     });
@@ -2873,6 +2874,16 @@ export function createWalkMode({
     bedAt: (x, z) => bedUnder(x, z),
     // How far back the camera sits against what it would for this mode: the wheel's or the pinch's.
     zoom: () => zoomPref,
+    // Whether a building's part box or a blocker with a height stands between two points - the
+    // boom's own test (standingReach), so what the camera looks past (a rail, a post, a crate)
+    // counts as nothing here either. main.js asks it whether the walker is hidden from the
+    // camera (see-through.js).
+    standsBetween(ax, ay, az, bx, by, bz) {
+      const dx = bx - ax, dy = by - ay, dz = bz - az;
+      const len = Math.hypot(dx, dy, dz);
+      if (len < 1e-6) return false;
+      return standingReach(ax, ay, az, dx / len, dy / len, dz / len, len, 0) < len - 1e-3;
+    },
     dispose, isActive: () => state.active };
 }
 

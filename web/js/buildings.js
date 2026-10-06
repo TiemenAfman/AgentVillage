@@ -14,6 +14,7 @@ export { PALETTE };
 import { SEA_LEVEL } from 'shared/terrain.mjs';
 import * as models from './models.js';
 import { textureUrl } from './assets.js';
+import { patchSeeThrough } from './see-through.js';
 import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
   FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_DECL, FADE_DEPTH_VERTEX_BODY } from './fade.js';
 import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
@@ -132,7 +133,10 @@ const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
 const FADE_EYE = { value: new THREE.Vector3() };
 export function setFadeEye(v) { FADE_EYE.value.copy(v); }
 
-export function createBuildingMaterial() {
+// `seeThrough`: what stands between the camera and the walker is stippled away
+// (see-through.js). Only for the island's own buildings and props (buildingMat in main.js),
+// never the crowd's material - a settler between you and the camera stays a settler.
+export function createBuildingMaterial({ seeThrough = false } = {}) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0.0 });
   mat.userData.uniforms = {
     uNight: { value: 0 },
@@ -151,7 +155,9 @@ export function createBuildingMaterial() {
   // sets, one program, and the same draw calls either way.
   mat.userData.fadeOn = false;
   sheetUsers.push(mat.userData.uniforms);
-  mat.onBeforeCompile = (shader) => {
+  // A function, not an arrow: a body's clone of this material (classic-avatar.js buildRig) runs
+  // the same hook and opts out of the see-through with `seeThroughOff`, read off `this`.
+  mat.onBeforeCompile = function (shader) {
     const u = mat.userData.uniforms;
     shader.uniforms[FADE_RANGE_UNIFORM] = u[FADE_RANGE_UNIFORM];
     shader.uniforms.uNight = u.uNight;
@@ -248,10 +254,12 @@ export function createBuildingMaterial() {
         .replace('#include <emissivemap_fragment>',
           `#include <emissivemap_fragment>\n${FADE_FRAGMENT_BODY}`);
     }
+    if (seeThrough && !this.seeThroughOff) patchSeeThrough(shader);
   };
-  mat.customProgramCacheKey = () => (mat.userData.fadeOn
-    ? 'settlers-emissive-ground-v1-fade'
-    : 'settlers-emissive-ground-v1');
+  mat.customProgramCacheKey = function () {
+    return (mat.userData.fadeOn ? 'settlers-emissive-ground-v1-fade' : 'settlers-emissive-ground-v1')
+      + (seeThrough && !this.seeThroughOff ? '-see' : '');
+  };
   // The shadow pass's twin (fade.js, "The shadow pass"): three's own depth material with the
   // same band spliced in, so a house stippled out of the picture takes its shadow with it.
   // Unpatched while the fade is off, and then it is the material three would have used

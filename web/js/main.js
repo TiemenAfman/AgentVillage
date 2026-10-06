@@ -30,6 +30,7 @@ import { quaysOf, mooringsFor, shipBerth, shipWater, BOATS_PER_HARBOUR } from 's
 import { clamp } from 'shared/rng.mjs';
 import { AIR_S, SWIMMING, submerged, stepAir } from 'shared/breath.mjs';
 import { createWorld } from './world.js';
+import { setSeeThrough, BODY_MID, SILHOUETTE, SEE_EASE } from './see-through.js';
 import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
@@ -72,7 +73,7 @@ import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership, edgeKey } from './hamlets.js';
-import { porchFloor, solidAt, camBodyOf } from './solids.js';
+import { porchFloor, solidAt, camBodyOf, createSolidIndex, segmentEntry } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -481,12 +482,11 @@ Object.assign(controls, {
 });
 controls.target.set(0, 1, 0);
 
-const buildingMat = createBuildingMaterial();
-// The crowd's own instance of the same material, and the only reason there is a second one.
-// Object Distance and NPC Distance are two numbers and a shared material has one uniform
-// slot, so the people get their own set. Same onBeforeCompile, same customProgramCacheKey,
-// so three hands both the same compiled program - this is a second uniform set, not a second
-// shader, and the crowd still costs one draw call per body part exactly as it did.
+const buildingMat = createBuildingMaterial({ seeThrough: true });
+// The crowd's own instance of the same material. Object Distance and NPC Distance are two
+// numbers and a shared material has one uniform slot, so the people get their own set - and
+// they are not seen through (see-through.js), so theirs is a program of its own, compiled
+// once; the crowd still costs one draw call per body part exactly as it did.
 const crowdMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 // Every building body on this island, one draw call a pass (web/js/record-batch.js,
@@ -7533,6 +7533,45 @@ function seaFloorFrame(dt, nowMs) {
   });
 }
 
+// Whether anything stands between the camera and the walker, and how open the hole through it
+// is (see-through.js). Five rays from the silhouette to the camera, against walk mode's boom
+// test and the crowns of our own wood; the hole eases open while one is cut and shut when none
+// is. On foot outdoors only, and not in first person, where the eye is the body.
+let seeOpen = 0, crownIndex = null, crownList = null;
+const seeFrom = new THREE.Vector3(), seeRight = new THREE.Vector3();
+function seeThroughFrame(dt) {
+  const w = state.walk;
+  const on = state.mode === 'walk' && w && !state.inside && !w.state.firstPerson;
+  let covered = false;
+  if (on) {
+    const p = w.state.pos, eye = camera.position;
+    const crowns = state.world && state.world.crowns ? state.world.crowns() : null;
+    if (crowns !== crownList) { crownList = crowns; crownIndex = crowns ? createSolidIndex(crowns) : null; }
+    // The camera's right in the ground plane, so the shoulders are the ones the camera sees.
+    seeRight.set(eye.z - p.z, 0, p.x - eye.x).normalize();
+    for (const [across, up] of SILHOUETTE) {
+      seeFrom.set(p.x + seeRight.x * across, p.y + up, p.z + seeRight.z * across);
+      if (w.standsBetween(seeFrom.x, seeFrom.y, seeFrom.z, eye.x, eye.y, eye.z)) { covered = true; break; }
+      if (crownIndex) {
+        const dx = eye.x - seeFrom.x, dy = eye.y - seeFrom.y, dz = eye.z - seeFrom.z;
+        const len = Math.hypot(dx, dy, dz);
+        crownIndex.along(seeFrom.x, seeFrom.z, eye.x, eye.z, 0, (c) => {
+          const t = segmentEntry(c, seeFrom.x, seeFrom.y, seeFrom.z, dx / len, dy / len, dz / len, len);
+          if (t != null && t >= 0 && t < len) covered = true;
+          return covered;
+        });
+        if (covered) break;
+      }
+    }
+  }
+  seeOpen += ((covered ? 1 : 0) - seeOpen) * (1 - Math.exp(-SEE_EASE * dt));
+  if (seeOpen < 0.002) seeOpen = 0;
+  if (on && seeOpen > 0) {
+    const p = w.state.pos;
+    setSeeThrough(seeOpen, p.x, p.y + BODY_MID, p.z);
+  } else setSeeThrough(0);
+}
+
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
@@ -7808,6 +7847,7 @@ function frame(nowMs) {
       : state.mode === 'noclip' ? camera.position : controls.target;
     state.world.setWaterFocus(w.x, w.z);
   }
+  seeThroughFrame(dt);
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.
