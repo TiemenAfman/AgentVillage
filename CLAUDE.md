@@ -450,9 +450,14 @@ district onto the next free lot (`moveToResort`; plot gets `lot: n`, `lobe: -1`)
 jetty east to x196, 20 lots. Top-level on purpose: not in `works` (`checkWorks`/`parseBundle` would make
 older seas refuse the island for a record that moves no ground), not on `districts.quay` (`migrateParcels`
 keeps a district only as its planks, and lib/plan.mjs moves districts by super-cell). **Option A: the
-district's `pier`/`shore` do not move** - they are the quay's harbour, so `standingQuay`, `kadehaven`,
-`waterfront`, moorings, boat 0 and the galleon are untouched; moving them took all of that out to sea. The
-resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
+district's `pier`/`shore` do not go to sea** - they are the quay's harbour, so `standingQuay`, `kadehaven`,
+`waterfront`, moorings, boat 0 and the galleon stay with them; moving them took all of that out to sea. They do
+move once onto the quay (`planKadePier`, issue #85, every pass after `planResort`, no gate: due while no harbour's
+shore is a kade cell): the kadehaven's record (harbour slot, and the district's planks when they are its) gets the
+wall cell as `shore` and `slip`, and the foot plus the nearest `fingers` finger's cells as `pier`; the old ramp
+and planks are one more `works.dig` (planKade had held them, an islet with the boats beside it mid-harbour), the
+slip path is the shore and the approach loses its boardwalk out there. A new hash, nothing older code misreads.
+The resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
 set's `DECK` is 1.44) and the district's `deck` (`resortCells(layout).drawn`: the shortest walk inside the
 deck from the jetty to every occupied lot's doorstep, grows with the district; `centre` is the jetty head).
 In the replay (placeAll and `replayGrid`, `markResort`) the drawn deck is PATH, the rest of the deck and
