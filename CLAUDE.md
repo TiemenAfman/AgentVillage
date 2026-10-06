@@ -19,6 +19,19 @@ A finished plan (✅ at the top) is moved to `Plans/DONE/` with `git mv`, and ev
 - `Plans/<name>.md` in code comments, tests and docs, and the relative links between plans - is
 rewritten to `Plans/DONE/<name>.md` in the same change.
 
+## Sessions and worktrees
+
+The keeper runs one **coordinator** session in this checkout; it alone merges to `main`, pushes,
+tags releases and redeploys the sea. Every other session works in `.claude/worktrees/<name>` and
+**commits on its own branch only** - never a merge into `main`, never a push, never a release - and
+when it is done (or stuck on the keeper's choice) reports to the coordinator with `SendMessage`:
+branch and last commit, what changed, the tests (passed/failed, which), what is still open, and
+whether it needs a redeploy, a restart or a release (patch or minor). If that message is held, the
+same report as its last answer. Needing newer code, it merges `main` into its own branch.
+On 6 October 2026 chips merged and pushed themselves and one shipped a regression to GitHub's `main`
+(the sea stopped noticing a departed islander); `~/.claude/hooks/worktree-guard.py` now refuses
+those commands from a worktree, and the `/chip` skill writes this into every task it hands out.
+
 ## Commands
 
 ```bash
