@@ -1179,12 +1179,31 @@ export function createWalkMode({
     if (wall != null && wall - from > STEP_UP) return true;
     const open = hopping && !placing;
     const astride = (b) => !placing && inside(b, state.pos.x, state.pos.z, BODY_R);
+    // A `dry` blocker (the low block under the Salty Kraken's stair: buildings.js pirateSolids) keeps
+    // feet from walking in under a flight; a swimmer goes under the planks as under a pier.
+    const walls = (b) => !passedThrough(b) && !(b.dry && state.swimming) && atHeight(b, from);
+    // Out of several at once, the way out of all of them together: the step has to lower the depth
+    // summed over every solid you stand in, not each one's. Overlapping boxes each have their own
+    // shortest way out, and a body that came down where they overlap (off the Salty Kraken's
+    // boarding plank, into its rocks and a kraken arm: issue #89) found every step deeper into one
+    // of them, and could not swim off. In a single solid this is the rule it always was.
+    let inNow = null, depthNow = 0;
     const leaving = (b) => {
       if (placing) return false;
-      const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
-      return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
+      if (!inNow) {
+        inNow = [];
+        blockerIndex.some(state.pos.x, state.pos.z, BODY_R, (c) => {
+          if (walls(c) && depthInSolid(c, state.pos.x, state.pos.z, BODY_R) > 0) inNow.push(c);
+          return false;
+        });
+        for (const c of inNow) depthNow += depthInSolid(c, state.pos.x, state.pos.z, BODY_R);
+      }
+      if (!inNow.includes(b)) return false;
+      let depth = 0;
+      for (const c of inNow) depth += Math.max(0, depthInSolid(c, x, z, BODY_R));
+      return depth < depthNow - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => !passedThrough(b) && inside(b, x, z, BODY_R) && atHeight(b, from)
+    if (blockerIndex.some(x, z, BODY_R, (b) => walls(b) && inside(b, x, z, BODY_R)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
