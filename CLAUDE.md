@@ -2209,8 +2209,12 @@ lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's gro
 `pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its deck is walked** ([Plans/kraken-dek.md](Plans/kraken-dek.md)): the waist, the castle's roof and the
 forecastle are `deck.*`/`stair.*` strips the bake works out through `world_of` (heel across, sheer along), what
 stands on them `solid.<letters>.lo|hi` blocks (footprint at their foot - a mast leans with the heel) read by
-`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs and
-one up the hull from the zigzag's landing; a rock under a stair floor is no wall (`under`). The low blocks under
+`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs (walked,
+steep `stair.*` ramps) and a **rope ladder** up the hull, hanging plumb from the boarding plank onto the zigzag's landing,
+that is *climbed* (issue #86): `anchor.climb.<name>.lo|hi` (foot stand, head step-off; `pirateClimbs` -> the build's
+`climbs` -> main.js `climbsOf` -> `walk.setClimbs`), taken and climbed like the galleon's (`fixedAhead`/`stepFixedClimb`
+beside the ship's `ladderUp`/`stepClimb`, in the world's frame, nothing on the wire), and the floor it reaches gets no
+dry block under it; a rock under a stair floor is no wall (`under`). The low blocks under
 the floors are `dry` (a wall to feet, not to a swimmer), and walk.js lets a body standing in several solids at
 once out by the depth summed over all of them (`leaving`): the part boxes overlap in the rocks, and a fall off the
 boarding plank used to land a swimmer where every step was deeper into one of them (#89). The castle front's door

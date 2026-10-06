@@ -844,13 +844,28 @@ function walkSurfaces() {
   return out;
 }
 
+// And the rope ladders a building hands walk mode to climb (the Salty Kraken's up its hull, issue #86:
+// buildings.js pirateClimbs), their two ends turned and placed the way surfacesOf turns a floor.
+function climbsOf(rec) {
+  const list = rec.built && rec.built.climbs;
+  if (!list) return [];
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+  const p = rec.group.position;
+  const at = (q) => ({ x: p.x + q.x * c + q.z * s, y: q.y + p.y, z: p.z - q.x * s + q.z * c });
+  return list.map((l) => ({ name: l.name, lo: at(l.lo), hi: at(l.hi) }));
+}
+
 // The island's planks that a cell cannot say (handOutDecks: docks' ramps and heads, the quays'
 // fingers and coping), kept apart from the buildings' floors above because the two change at
 // different moments - and walk.setSurfaces replaces the whole list, so whichever was handed over
 // last used to wipe the other. Both go through handSurfaces.
 let plankSurfaces = [];
 function handSurfaces() {
-  if (state.walk) state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
+  if (!state.walk) return;
+  state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
+  const climbs = [];
+  for (const rec of state.byId.values()) if (rec.group.visible) climbs.push(...climbsOf(rec));
+  state.walk.setClimbs(climbs);
 }
 
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------

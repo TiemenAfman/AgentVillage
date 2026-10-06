@@ -1416,13 +1416,111 @@ export function createWalkMode({
   // takes you onto a ladder and what moves you on it are the same reading, or approaching one
   // backwards (S, camera turned away) would start a climb that the next frame calls a descent.
   function pushOnHull(frame, ix, iz) {
+    const w = pushInWorld(ix, iz);
+    return w ? dirToLocal(frame, w[0], w[1])[0] : 0;
+  }
+  // The stick as a push in the world, no longer than 1, or null when it is not pushed at all.
+  function pushInWorld(ix, iz) {
     const len = Math.hypot(ix, iz);
-    if (len < 0.05) return 0;
+    if (len < 0.05) return null;
     const push = Math.min(1, len);
     // The same turn from the camera's frame to the world's that the step itself makes.
-    const wx = ((Math.sin(state.camYaw) * iz - Math.cos(state.camYaw) * ix) / len) * push;
-    const wz = ((Math.cos(state.camYaw) * iz + Math.sin(state.camYaw) * ix) / len) * push;
-    return dirToLocal(frame, wx, wz)[0];
+    return [((Math.sin(state.camYaw) * iz - Math.cos(state.camYaw) * ix) / len) * push,
+      ((Math.cos(state.camYaw) * iz + Math.sin(state.camYaw) * ix) / len) * push];
+  }
+  // How hard the stick pushes along a fixed ladder's `out` (away from what it hangs on), in the world.
+  function pushOut(l, ix, iz) {
+    const w = pushInWorld(ix, iz);
+    return w ? w[0] * l.out[0] + w[1] * l.out[1] : 0;
+  }
+
+  // ---- rope ladders that stand still (issue #86) -------------------------------------------------
+  // A building's (the Salty Kraken's, up its hull from the zigzag's landing: buildings.js
+  // pirateClimbs, turned and placed by main.js): two ends in the world, `lo` where a climber stands at
+  // the foot and `hi` where they step off at the head, the way from one to the other along the ground
+  // being the way they face it. Taken and climbed exactly as a ship's (above) - walk into the foot
+  // facing it, or out over the end at its head - with the hull's frame being the world's. The sea
+  // hears nothing of it: a climber is a walker at a height, which every pose already carries.
+  let fixedLadders = [];
+  const FIXED_HW = 0.3;            // how far either side of the ropes' middle you may stand and take it
+  function setClimbs(list) {
+    fixedLadders = (list || []).map((l) => {
+      const dx = l.lo.x - l.hi.x, dz = l.lo.z - l.hi.z;
+      const len = Math.hypot(dx, dz) || 1;
+      return { lo: l.lo, hi: l.hi, out: [dx / len, dz / len] };
+    });
+  }
+  // The fixed ladder a body standing here is at the foot of and pushing into (`dir` 1), or at the head
+  // of and pushing out over (`dir` -1), or null. Out over the head is the harder push, as on a deck.
+  function fixedAhead(ix, iz) {
+    if (!fixedLadders.length || Math.hypot(ix, iz) < CLIMB_DEAD) return null;
+    const { x, y, z } = state.pos;
+    for (const l of fixedLadders) {
+      for (const [end, dir] of [[l.lo, 1], [l.hi, -1]]) {
+        if (Math.abs(y - end.y) > 0.3) continue;
+        const dx = x - end.x, dz = z - end.z;
+        const along = dx * l.out[0] + dz * l.out[1];
+        const across = Math.abs(dx * l.out[1] - dz * l.out[0]);
+        if (across > FIXED_HW) continue;
+        // at the foot: in front of the rungs; at the head: on the plank, between where you step off
+        // and its end (0.36 beyond), so that walking out to the end takes the ladder and not the drop
+        if (dir > 0 ? along < -0.25 || along > 0.35 : along < -0.2 || along > 0.6) continue;
+        const push = pushOut(l, ix, iz);
+        // squarely, both ways: the foot stands on a landing people cross, and a diagonal across it
+        // in front of the rungs is not a reach for them
+        if (dir > 0 ? -push >= 0.7 : push >= 0.8) return { ladder: l, dir };
+      }
+    }
+    return null;
+  }
+  function startFixedClimb(l, dir) {
+    const at = { x: state.pos.x, y: state.pos.y, z: state.pos.z };
+    const top = { x: l.lo.x, y: l.hi.y + 0.06, z: l.lo.z };
+    const path = dir > 0 ? [at, l.lo, top, l.hi] : [l.lo, top, l.hi, at];
+    standUp();
+    lowerShields();
+    state.crouching = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.vy = 0;
+    drift = null;
+    const len = pathLength(path);
+    climb = { boat: null, fixed: l, path, len, d: dir > 0 ? 0 : len, letGo: false };
+  }
+  function stepFixedClimb(dt, ix, iz) {
+    const c = climb, l = c.fixed;
+    stepPool(state.stamina.body, false, dt);
+    state.turbo = false;
+    // Towards what it hangs on is up, whichever way you are looking.
+    const toward = -pushOut(l, ix, iz);
+    const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
+    c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
+    const p = pathAt(c.path, c.d, climbAt);
+    state.pos.set(p.x, p.y, p.z);
+    state.yaw = Math.atan2(-l.out[0], -l.out[1]);
+    state.moving = wish !== 0;
+    state.running = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.floor = state.pos.y;
+    state.vy = 0;
+    state.bob += dt * (wish !== 0 ? 7 : 1.5);
+    const end = (q) => {
+      climb = null;
+      state.pos.set(q.x, q.y, q.z);
+      state.floor = groundAt(q.x, q.z, q.y + 0.05);
+      state.moving = false;
+    };
+    if (wish > 0 && c.d >= c.len) end(c.path[c.path.length - 1]);
+    else if (wish < 0 && c.d <= 0) end(c.path[0]);
+    else if (c.letGo) {
+      // Let go where you hang: down onto whatever is under you.
+      climb = null;
+      state.grounded = false;
+      state.moving = false;
+      state.floor = groundAt(p.x, p.z, p.y);
+    }
+    return afterMove(dt);
   }
   // The ladder of any boat that a body pushing at the hull is standing at the foot of, or null.
   function ladderAhead(ix, iz) {
@@ -1461,6 +1559,7 @@ export function createWalkMode({
     climb = { boat: b, path, len, d: dir > 0 ? 0 : len, side: ladder.x < 0 ? -1 : 1, crew: dir < 0, letGo: false };
   }
   function stepClimb(dt, ix, iz) {
+    if (climb.fixed) return stepFixedClimb(dt, ix, iz);
     const c = climb, b = c.boat;
     const frame = frameOf(b);
     if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
@@ -2084,6 +2183,9 @@ export function createWalkMode({
       // A rope ladder wants both hands.
       if (at && state.carry) blockedBy('carry');
       else if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
+      const still = !at && !state.swimming && !state.dive && !state.bike ? fixedAhead(ix, iz) : null;
+      if (still && state.carry) blockedBy('carry');
+      else if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
     }
 
     const push = Math.min(1, Math.hypot(ix, iz));
@@ -2675,7 +2777,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

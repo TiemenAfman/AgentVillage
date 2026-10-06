@@ -34,7 +34,9 @@ const made = buildBuilding({ id: 'c:piratetavern', kind: 'civic', civicType: 'pi
 function standing(at) {
   const lift = at - made.anchors.door[1];
   const up = (o) => ({ ...o, ...(o.y != null ? { y: o.y + lift } : {}), ...(o.y0 != null ? { y0: o.y0 + lift } : {}), ...(o.y1 != null ? { y1: o.y1 + lift } : {}) });
-  return { surfaces: made.surfaces.map(up), solids: made.solids.map(up), anchors: { ...made.anchors, door: [made.anchors.door[0], at, made.anchors.door[2]] } };
+  const lifted = (q) => ({ ...q, y: q.y + lift });
+  return { surfaces: made.surfaces.map(up), solids: made.solids.map(up), climbs: made.climbs.map((l) => ({ ...l, lo: lifted(l.lo), hi: lifted(l.hi) })),
+    anchors: { ...made.anchors, door: [made.anchors.door[0], at, made.anchors.door[2]] } };
 }
 // On the beach: the foot on the flat ground of `fresh` below.
 const built = standing(0.1);
@@ -58,6 +60,7 @@ function fresh(at) {
   const walk = createWalkMode({ scene: new THREE.Scene(), camera, terrain, ground: sea, material: new THREE.MeshBasicMaterial(), dom });
   walk.enter({ at, facing: [at[0] - 1, at[1]], blockers: built.solids, interactables: [], onExit: noop });
   walk.setSurfaces(built.surfaces);
+  walk.setClimbs(built.climbs);
   return walk;
 }
 
@@ -84,11 +87,12 @@ test('up the stair to the door: lower flight, landing, upper flight, stoop', () 
   const walk = fresh([fx, fz]);
   const s = walk.state;
   // the lower flight, west to the landing
-  walkTo(walk, [S.land.x0 + 0.3, zmid(S.down)]);
+  walkTo(walk, [S.land.x1 - 0.3, zmid(S.down)]);
   assert.ok(s.pos.x < S.land.x1, `reached the landing (x ${s.pos.x.toFixed(2)}, landing from ${S.land.x1.toFixed(2)})`);
   assert.ok(Math.abs(s.pos.y - S.land.y) < 0.12, `on the landing's floor: ${s.pos.y.toFixed(2)} for ${S.land.y.toFixed(2)}`);
-  // across the landing to the upper flight's side
-  walkTo(walk, [S.land.x0 + 0.3, zmid(S.up)]);
+  // across the landing to the upper flight's side, at its east end: the rope ladder up the hull hangs
+  // onto its west end (issue #86), and walking into that is climbing it
+  walkTo(walk, [S.land.x1 - 0.3, zmid(S.up)]);
   assert.ok(Math.abs(s.pos.z - zmid(S.up)) < 0.12, `crossed the landing (z ${s.pos.z.toFixed(2)})`);
   // up the upper flight to the stoop
   const path = walkTo(walk, [(S.stoop.x0 + S.stoop.x1) / 2, zmid(S.up)]);
@@ -111,8 +115,8 @@ test('the rail stops you on the flight; you do not walk through it or fall off',
   assert.ok(Math.abs(s.pos.y - floorY('down', s.pos.x)) < 0.15, `still on the flight: ${s.pos.y.toFixed(2)}`);
   // and from the upper flight, towards the lower one below it: held too
   const w2 = fresh([built.anchors.door[0], built.anchors.door[2]]);
-  walkTo(w2, [S.land.x0 + 0.3, zmid(S.down)]);
-  walkTo(w2, [S.land.x0 + 0.3, zmid(S.up)]);
+  walkTo(w2, [S.land.x1 - 0.3, zmid(S.down)]);
+  walkTo(w2, [S.land.x1 - 0.3, zmid(S.up)]);
   const ux = (S.up.x0 + S.up.x1) / 2;
   walkTo(w2, [ux, zmid(S.up)]);
   walkTo(w2, [ux, S.up.z1 + 1.0], 3);
@@ -153,14 +157,15 @@ test('from the beach along the gangway, onto the landing and up the stair', () =
   walk.enter({ at: [gx, SHORE + 1], facing: [gx, 0], blockers: sea.solids, interactables: [], onExit: noop });
   const plank = { name: 'gangway', x0: gx - 0.45, x1: gx + 0.45, z0: 2.7, z1: SHORE + 0.2, y: DECK };
   walk.setSurfaces([...sea.surfaces, plank]);
+  walk.setClimbs(sea.climbs);
   const s = walk.state;
   const path = [
     ...walkTo(walk, [gx, 2.85]),
     // straight on from the planks onto the foot of the lower flight, where the gangway points
     ...walkTo(walk, [gx, zmid(T.down)]),
     ...walkTo(walk, [fx, fz]),
-    ...walkTo(walk, [T.land.x0 + 0.3, zmid(T.down)]),
-    ...walkTo(walk, [T.land.x0 + 0.3, zmid(T.up)]),
+    ...walkTo(walk, [T.land.x1 - 0.3, zmid(T.down)]),
+    ...walkTo(walk, [T.land.x1 - 0.3, zmid(T.up)]),
     ...walkTo(walk, [(T.stoop.x0 + T.stoop.x1) / 2, zmid(T.up)]),
   ];
   for (const [x, z, y] of path) if (z < SHORE) assert.ok(y > DECK - 0.1, `in the water at ${x.toFixed(2)},${z.toFixed(2)}: ${y.toFixed(2)}`);
@@ -168,7 +173,7 @@ test('from the beach along the gangway, onto the landing and up the stair', () =
   assert.ok(Math.abs(s.pos.y - T.stoop.y) < 0.12, `at the door's height: ${s.pos.y.toFixed(2)} for ${T.stoop.y.toFixed(2)}`);
 });
 
-// The deck (Plans/kraken-dek.md): from the zigzag's landing up the ladder on the hull, over the plank
+// The deck (Plans/kraken-dek.md): from the zigzag's landing up the rope ladder on the hull (climbed, issue #86), over the plank
 // onto the waist, round the hatch, the mast and the capstan to the step before the castle's door, up
 // the ladder onto the castle's roof - and from the waist up the other onto the forecastle. In the sea,
 // as the page stands it, and never dropped into the water or held short of a floor.
@@ -185,20 +190,26 @@ function seaWalk(at, y) {
   const walk = createWalkMode({ scene: new THREE.Scene(), camera, terrain, ground, material: new THREE.MeshBasicMaterial(), dom });
   const T = Object.fromEntries(sea.surfaces.map((f) => [f.name, f]));
   walk.setSurfaces(sea.surfaces);
+  walk.setClimbs(sea.climbs);
   walk.enter({ at: at(T), y: y(T), facing: [0, 0], blockers: sea.solids, interactables: [], onExit: noop });
-  return { walk, T };
+  return { walk, T, C: Object.fromEntries(sea.climbs.map((l) => [l.name, l])) };
 }
 const mid = (f, k) => (f[k + '0'] + f[k + '1']) / 2;
 const topOf = (f) => (f.y != null ? f.y : Math.max(f.y0, f.y1));
 
 test('up the ladder on the hull, onto the deck, to the castle door and up onto the roof', () => {
-  const { walk, T } = seaWalk((T) => [T.land.x0 + 0.25, T.land.z0 + 0.22], (T) => T.land.y);
+  const { walk, T, C } = seaWalk((T) => [T.land.x1 - 0.3, T.land.z1 - 0.2], (T) => T.land.y);
   const s = walk.state;
-  const L = T['side-ladder'], B = T.boarding, D = T['door-step'], R = T['roof-ladder'];
-  walkTo(walk, [L.x1 - 0.05, mid(L, 'z')]);
-  walkTo(walk, [L.x0 + 0.05, mid(L, 'z')]);
+  const L = C.side, B = T.boarding, D = T['door-step'], R = T['roof-ladder'];
+  // across the landing to in front of the rope ladder, then into it: a climb, never a ramp
+  walkTo(walk, [L.lo.x, L.lo.z + 0.2]);
+  const climbed = walkTo(walk, [L.hi.x, L.hi.z]);
+  const mids = climbed.filter(([x, z, y]) => y > L.lo.y + 0.5 && y < L.hi.y - 0.5);
+  assert.ok(mids.length > 10, 'went up the ropes');
+  for (const [x, z] of mids) assert.ok(Math.abs(x - L.lo.x) < 0.01 && Math.abs(z - L.lo.z) < 0.01, `straight up the ropes, not along a slope: ${x.toFixed(2)},${z.toFixed(2)}`);
+  assert.ok(Math.abs(s.pos.y - B.y) < 0.05, `up the ladder onto the plank: ${s.pos.y.toFixed(2)} for ${B.y.toFixed(2)}`);
   walkTo(walk, [mid(B, 'x'), B.z0 + 0.15]);
-  assert.ok(s.pos.y > topOf(L) - 0.45, `up the ladder and over onto the deck: ${s.pos.y.toFixed(2)} for ${topOf(L).toFixed(2)}`);
+  assert.ok(s.pos.y > B.y - 0.45, `over onto the deck: ${s.pos.y.toFixed(2)} for ${B.y.toFixed(2)}`);
   const deckY = topOf(T['waist-b-c']);
   const path = [
     ...walkTo(walk, [mid(B, 'x'), 0.0]),
@@ -219,6 +230,27 @@ test('up the ladder on the hull, onto the deck, to the castle door and up onto t
   assert.ok(Math.abs(s.pos.y - roof) < 0.1, `on the castle's roof: ${s.pos.y.toFixed(2)} for ${roof.toFixed(2)}`);
 });
 
+test('down the rope ladder from the plank, and letting go of it halfway, onto the landing', () => {
+  const { walk, T, C } = seaWalk((T) => [mid(T.boarding, 'x') - 0.3, T.boarding.z0 + 0.2], (T) => T.boarding.y);
+  const s = walk.state;
+  const L = C.side;
+  // out along the plank to its end, over the ropes: down them, not off the end
+  const down = walkTo(walk, [L.lo.x, L.lo.z + 0.6], 4);
+  const between = down.filter(([, , y]) => y > T.land.y + 0.3 && y < T.boarding.y - 0.3);
+  assert.ok(between.length > 20, `climbed down, not dropped (${between.length} frames on the way)`);
+  for (const [x, z] of between) assert.ok(Math.abs(x - L.lo.x) < 0.01 && Math.abs(z - L.lo.z) < 0.01, `on the ropes: ${x.toFixed(2)},${z.toFixed(2)}`);
+  assert.ok(down.every(([, , y]) => y > T.land.y - 0.05), 'never fell');
+  assert.ok(Math.abs(s.pos.y - T.land.y) < 0.05, `down on the landing: ${s.pos.y.toFixed(2)} for ${T.land.y.toFixed(2)}`);
+  // up again a while, and jump: let go, and down onto the landing, not into the sea
+  walkTo(walk, [L.hi.x, L.hi.z], 0.8);
+  assert.ok(s.pos.y > T.land.y + 0.6, `half way up: ${s.pos.y.toFixed(2)}`);
+  key(' ', true);
+  walk.update(FRAME);
+  key(' ', false);
+  for (let i = 0; i < 120; i++) walk.update(FRAME);
+  assert.ok(!s.swimming && Math.abs(s.pos.y - T.land.y) < 0.05, `let go onto the landing: ${s.pos.y.toFixed(2)} for ${T.land.y.toFixed(2)}`);
+});
+
 test('from the waist up onto the forecastle', () => {
   const { walk, T } = seaWalk((T) => [mid(T['waist-b-c'], 'x'), mid(T['waist-b-c'], 'z')], (T) => topOf(T['waist-b-c']));
   const s = walk.state;
@@ -230,17 +262,15 @@ test('from the waist up onto the forecastle', () => {
   assert.ok(Math.abs(s.pos.y - top) < 0.1, `on the forecastle: ${s.pos.y.toFixed(2)} for ${top.toFixed(2)}`);
 });
 
-// Off the boarding plank and the ladder up the hull into shallow water (the keeper, issue #89: "val je
-// van de bovenste steiger af, kom je vast te zitten in het water, kan niet wegzwemmen"). Two traps, both
-// measured: west off the plank where it crosses the bulwark, down into the rocks' and a kraken arm's
-// boxes where they overlap, every step deeper into one of them; and off the ladder into the pocket
-// between the rock and the low blocks under the ladder and the landing. From each, a swimmer gets out
-// past the rock by swimming, at most turning round a few times.
-test('fallen off the boarding plank or the side ladder, you swim away from the rock', () => {
+// Off the boarding plank into shallow water (the keeper, issue #89: "val je van de bovenste steiger af,
+// kom je vast te zitten in het water, kan niet wegzwemmen"): west off the plank where it crosses the
+// bulwark, down into the rocks' and a kraken arm's boxes where they overlap, every step deeper into one
+// of them. A swimmer gets out past the rock by swimming, at most turning round a few times. (The other
+// trap, off the steep side ladder into the pocket between the rock and the low blocks under it, went
+// with it: the rope ladder that replaced it hangs over the landing, issue #86.)
+test('fallen off the boarding plank, you swim away from the rock', () => {
   const falls = [
     [(T) => [T.boarding.x0 + 0.25, 1.39], (T) => T.boarding.y, -Math.PI / 2],
-    [(T) => [T['side-ladder'].x1 - 0.05, 1.89], (T) => T['side-ladder'].y1, 3 * Math.PI / 4],
-    [(T) => [T['side-ladder'].x1 - 0.05, 1.99], (T) => T['side-ladder'].y1, 5 * Math.PI / 4],
   ];
   for (const bed of [-0.6, -0.9]) {
     for (const [at, y, dir] of falls) {
