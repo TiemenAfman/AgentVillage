@@ -3,6 +3,8 @@
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
+- 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
+
 ## Besluiten die nog niet in een eigen plan zitten
 
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
@@ -37,6 +39,35 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [start-op-land.md](start-op-land.md) — wie geen eiland heeft (app en web) begint op land: op het
+  plein van een vrije starter, anders op een eilandje bij een spelerseiland, anders bij de vulkaan, met
+  de eigen skiff afgemeerd voor de kust; bij het claimen van de starter een vriendelijk bericht en de
+  skiff buiten het land van de nieuwkomer.
+- 🚧 [app-zonder-apk-bijwerken.md](app-zonder-apk-bijwerken.md) — de telefoon-app haalt een ondertekende
+  pagina-bundel op (web/ + shared/) en draait die vanaf de volgende start, met terugval op de ingebakken
+  kopie; een nieuwe APK alleen nog als de schil verandert.
+- 🚧 [spelen-in-de-browser.md](spelen-in-de-browser.md) — Promptholm spelen zonder app of installatie: de
+  telefoonpagina zonder islander als web-schap (`play/<id>/` + een deur + `version.json`) op de thuisserver
+  (nginx, git-stack op de branch `play`), met toetsen, controller én touch naast elkaar, de graphicstier
+  van de machine, en bijwerken = een banner met Reload. Gebouwd; de stack, NPM en het domein zijn nog
+  handwerk.
+- 🚧 [meer-geluiden.md](meer-geluiden.md) — plan van 2 oktober 2026, nog niet gebouwd: meer geluid op het
+  eiland, allemaal berekend zoals nu (eigen samples van de keeper hooguit als laatste, optionele fase).
+  Geroezemoes en klinkende glazen door de kroegdeur en de borrel op het plein, de ambachten op een
+  alleen-lezen cue van wat getekend wordt (smid, zaag, bakker, werkers in de crowd), ochtendkoor,
+  krekels, regen op daken en bos, dieren, rivier en vulkaan, en een mixer in Settings. Vaste pools per
+  tier, niets op de draad.
+- 🚧 [zeetijd-van-de-host.md](zeetijd-van-de-host.md) — de klokchip is geen lens meer: iedereen ziet de
+  tijd van de zee, en alleen wie de zee host (single of host, eigen islander) zet die tijd voor iedereen,
+  via een popover op de chip. In het geheugen van de zee; een herstart is weer echte tijd. Een patch.
+- 🚧 [zelf-bijwerken.md](zelf-bijwerken.md) — de Windows-app werkt zichzelf bij: een knop in de banner
+  haalt de release op, controleert de sha256, pakt hem uit over de map (data blijft in `~/.promptholm`)
+  en herstart het eiland; de nieuwe exes draaien vanaf de volgende start.
+- 🚧 [noclip-camera.md](noclip-camera.md) — een vrije debugcamera (`` ` ``, `?noclip`, `?cam=x,y,z,yaw,pitch&room=`)
+  die door alles heen vliegt, met `window.__noclip` (`go`, `lookAt`, `room`, `island`, bladwijzers) om
+  graphics snel te bekijken zonder het lijf te besturen; tekent meteen een frame voor een screenshot.
+- 🚧 [eiland-op-eigen-schijf.md](eiland-op-eigen-schijf.md) — het eiland en het HD-pakket op een schijf naar
+  keuze: een verwijzing `~/.promptholm/home.txt`, *Verplaatsen…* in Settings, en een eigen pad voor het pakket.
 - 🚧 [hitboxes-en-looppaden.md](hitboxes-en-looppaden.md) — buiten wordt walk mode preciezer: gedraaide en
   ronde vormen, dingen met een bovenkant om op te stappen of te springen (kei, krat, ton), een zoekrooster,
   en als bron de props, het bos en de keien, en de grenzen van wijkjes (rails spring je over, heggen en muren
@@ -81,6 +112,12 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   Pixal3D-kitstukken uit `~/.promptholm/hd/` naast de bake, met Forced SD / Auto / Forced HD onder Settings →
   Graphics (spelkant gebouwd op `claude/hd-pakket`), een eigen git voor het pakket (nog niet opgezet) en een
   skill voor de hele keten (gepland).
+- 🚧 [kraken-op-zee.md](kraken-op-zee.md) — de Salty Kraken gaat van het strand een eindje de zee in: op een rots
+  in ondiep water, met een loopplank van het zand naar de voet van de trap (afgeleid uit het plot, gelopen als
+  steiger), rotsen die uit het water oprijzen in plaats van op de grond te staan, en de tentakel in de rots.
+  Eénmalige verhuizing van de kroeg die al op het strand staat; een minor.
+- 🚧 [kraken-dek.md](kraken-dek.md) — het dek van de Salty Kraken beloopbaar: middendek en beide kasteeldaken met ladders,
+  een deur in het achterkasteel naar het luik in het kraaiennest binnen, en een ladder langs de romp vanaf de trap.
 - 🚧 [bloom-en-aa.md](bloom-en-aa.md) — bloom en anti-aliasing als instelling (Settings → Graphics): three's
   postprocessing gevendord, bloom eerst alleen in kamers, AA MSAA / SMAA / uit.
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de

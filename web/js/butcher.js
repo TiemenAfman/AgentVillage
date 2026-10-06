@@ -205,6 +205,8 @@ export function attachButcher(group, at, material, yaw = 0) {
     time: 0, rng: makeRng('butcher'),
     // 'work' at the block, 'in' walking to the door, 'inside', 'out' walking back.
     mode: 'work', walked: 0, blowAt: 0, blows: 0, struck: false, walkPhase: 0,
+    // Chops that have landed, ever: the cleaver's cue for web/js/sound.js, as the smith's `hits`.
+    hits: 0,
     swungAt: undefined, squashAt: -Infinity, sweepFrom: Infinity, rolled: 1,
     puffs: Array.from({ length: SMOKE }, () => ({ life: 0, max: 1, p: [0, 0, 0], v: [0, 0, 0] })),
     nextPuff: 0,
@@ -346,6 +348,7 @@ export function updateButcher(shop, dt) {
   }
   if (working && !shop.struck && shop.swungAt !== undefined && t - shop.swungAt >= IMPACT_S) {
     shop.struck = true;
+    shop.hits++;
     shop.squashAt = t;
     cutSlice(shop);
     if (shop.blows % BLOWS === 0) shop.sweepFrom = t + SWEEP_WAIT;

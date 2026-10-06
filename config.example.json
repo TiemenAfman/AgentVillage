@@ -14,6 +14,9 @@
     "enabled": true,
     "pace": 1
   },
+  "hd": {
+    "dir": null
+  },
   "rescanIntervalMs": 60000,
   "visitorGraceMs": 1800000,
   "tentGraceMs": 604800000,

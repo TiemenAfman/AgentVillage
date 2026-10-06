@@ -89,6 +89,7 @@ const { attachSawmill } = await import('../web/js/sawmill.js');
 const { attachBatavia } = await import('../web/js/batavia.js');
 const { attachSmithy } = await import('../web/js/smithy.js');
 const { attachPirateSign } = await import('../web/js/piratesign.js');
+const { attachKrakenMotion } = await import('../web/js/kraken-motion.js');
 const { attachStable } = await import('../web/js/stable.js');
 const { attachBakery } = await import('../web/js/countryside.js');
 const { attachBaker } = await import('../web/js/bakery-keeper.js');
@@ -161,7 +162,7 @@ const flameMat = new THREE.MeshBasicMaterial();
 // imported - and a mirror kept honest by the first test below, which fails the moment
 // attachExtras hangs something on a record that this list does not know about.
 const MIRRORED = new Set(['blades', 'beacon', 'clock', 'fountain', 'sawmill', 'smithy', 'ship', 'stable', 'bakery', 'baker',
-  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor', 'plaque', 'pirateSign']);
+  'butcher', 'quarry', 'steamAnchor', 'goldPile', 'orePile', 'furnace', 'resetClock', 'flame', 'fire', 'flagAnchor', 'smokeAnchor', 'plaque', 'pirateSign', 'krakenMotion']);
 // What attachExtras hangs only on our own island: the postbox flag and the fisherman are behind
 // `mail`, a yard sign behind `signs`, and both are off for a guest.
 const OURS_ONLY = new Set(['mailFlag', 'fisher', 'sign']);
@@ -175,6 +176,7 @@ function extras(rec) {
   if (a.sawmill) rec.sawmill = attachSawmill(group, a.sawmill.at, material);
   if (a.smithy) rec.smithy = attachSmithy(group, a.smithy.at, material);
   if (a.piratesign && built.anchors && built.anchors.sign) rec.pirateSign = attachPirateSign(group, material, { at: built.anchors.sign, yaw: a.piratesign.yaw });
+  if (a.krakenMotion) rec.krakenMotion = attachKrakenMotion(group, material);
   if (a.ship) rec.ship = attachBatavia(rec.mesh, spec.id, material);
   if (a.stable) rec.stable = attachStable(group, a.stable.at, material);
   if (a.bakery) { rec.bakery = attachBakery(group, a.bakery.at, material); rec.baker = attachBaker(group, a.bakery.at, material); }

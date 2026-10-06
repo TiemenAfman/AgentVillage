@@ -2,7 +2,7 @@
 //
 // Three promises. It is a way to get somewhere: faster than a run, slower than a boat, and it
 // brakes and freewheels like a bicycle rather than stopping like feet. It keeps to the feet's
-// world: the water's edge is a wall, a solid is a wall you slide along, and a ledge above a
+// world: deep water is a wall (a puddle is not), a solid is a wall you slide along, and a ledge above a
 // step is a wall too. And the baked model is a bicycle that can move: every part is on its
 // own axis, the tyres stand on the ground, and the rider has a saddle and a pair of grips.
 import test from 'node:test';
@@ -17,9 +17,10 @@ register('./support/shared-loader.mjs', import.meta.url);
 // the moment it loads - the stub tests/boat.test.mjs uses, for the same reason.
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const {
-  stepBike, bikeAt, createBicycle, GEOMETRY, RIDER,
-  BIKE_TOP, BIKE_TURBO, BIKE_REVERSE, BIKE_SHORE, BIKE_HOP, BIKE_GRAVITY,
+  stepBike, bikeAt, stickTurn, STICK_AXIS_DEAD, createBicycle, GEOMETRY, RIDER,
+  BIKE_TOP, BIKE_TURBO, BIKE_REVERSE, BIKE_SHORE, BIKE_WADE, BIKE_HOP, BIKE_GRAVITY,
 } = await import('../web/js/bicycle.js');
+const { CHANNEL_H } = await import('../shared/terrain.mjs');
 const { BOAT_TOP } = await import('../web/js/boat.js');
 const { BICYCLE } = await import('../web/js/bicycle-mesh.js');
 delete globalThis.document;
@@ -109,13 +110,46 @@ test('a hill pulls: downhill it freewheels faster than on the flat, uphill slowe
 
 // ---- the feet's world -----------------------------------------------------------------
 
-test('the water is a wall: the bike stops at the shore and never gets its wheels wet', () => {
+test('deep water is a wall: the bike stops at the shore of the sea', () => {
   // Land up to z = 3, the sea after it.
   const coast = (x, z) => (z < 3 ? 0.4 : -1.2);
   const b = ride(bike(), { pedal: 1, turbo: true }, 4, { ground: coast });
   assert.ok(b.z < 3, `the bike rode into the sea to z = ${b.z}`);
   assert.ok(coast(b.x, b.z) >= BIKE_SHORE);
   assert.equal(b.v, 0, 'it is still trying to go somewhere');
+});
+
+test('shallow water is no wall: a puddle is ridden through, a river and the fairway are not', () => {
+  // A puddle on the sand from z = 2 to 3, just under the sea, and then a deeper one: both
+  // ridden through on the bed and out the other side, at the pace of a ride.
+  for (const depth of [0.03, BIKE_WADE - 0.01]) {
+    const puddle = { ground: (x, z) => (z > 2 && z < 3 ? -depth : 0.05) };
+    const b = ride(bike(), { pedal: 1 }, 3, puddle);
+    assert.ok(b.z > 3 && !b.bumped && !b.splash, `stuck in a puddle ${depth} deep at z = ${b.z.toFixed(2)}`);
+  }
+  // On the bed while in it, not floating on the surface.
+  const pond = { ground: (x, z) => (z > 1 ? -0.2 : 0.05) };
+  const c = ride(bike(), { pedal: 1 }, 1, pond);
+  assert.ok(c.z > 1 && c.y === -0.2, `rode at y = ${c.y}`);
+  // A shelving shore: in it as far as the bed is shallow enough, and no further.
+  const shelf = { ground: (x, z) => 0.2 - 0.1 * z };
+  const d = ride(bike(), { pedal: 1, turbo: true }, 6, shelf);
+  assert.ok(shelf.ground(d.x, d.z) >= -BIKE_WADE && d.v === 0, `stopped at depth ${(-shelf.ground(d.x, d.z)).toFixed(2)}`);
+  assert.ok(d.z > 4.5, `stopped short of its depth, at z = ${d.z.toFixed(2)}`);
+  // The fairway's bed and the shallowest middle of a river (0.68 on Hoogezand) stay walls.
+  assert.ok(-CHANNEL_H > BIKE_WADE, "BIKE_WADE reaches the fairway's bed");
+  for (const depth of [-CHANNEL_H, 0.68]) {
+    const river = { ground: (x, z) => (z > 2 && z < 4 ? -depth : 0.5) };
+    const e = ride(bike(), { pedal: 1 }, 3, river);
+    assert.ok(e.z <= 2, `rode into water ${depth} deep`);
+  }
+  // And a hop that comes down in a puddle rides on out of it.
+  const hopper = bikeAt(0, 1.5, 0, 0.05);
+  hopper.v = BIKE_TOP;
+  const flat = { ground: (x, z) => (z > 2 && z < 6 ? -0.1 : 0.05) };
+  stepBike(hopper, { pedal: 1, hop: true }, FRAME, flat);
+  ride(hopper, { pedal: 1 }, 1, flat);
+  assert.ok(!hopper.splash && hopper.z > 6, `splashed in a puddle at z = ${hopper.z.toFixed(2)}`);
 });
 
 test('a solid is slid along, and a head-on one stops it', () => {
@@ -269,4 +303,34 @@ test('the mesh turns what it should and keeps its feet on the ground', () => {
   assert.ok(ahead.x < -0.2, `steering right pointed the wheel at x = ${ahead.x.toFixed(2)}`);
   b.dispose();
   assert.equal(scene.children.length, 0);
+});
+
+// On the phone a thumb pushing straight ahead is always a little off, and the round stick
+// handed that on as bars: a rider going straight weaved.
+test('a stick pushed nearly straight ahead keeps the bike straight', () => {
+  for (const deg of [0, 5, 10, 15, 19]) {
+    const a = deg * Math.PI / 180;
+    assert.equal(stickTurn(Math.sin(a), Math.cos(a)), 0, `${deg} degrees off ahead steered`);
+    assert.equal(stickTurn(-Math.sin(a), -Math.cos(a)), 0, `${deg} degrees off astern steered`);
+  }
+  assert.ok(STICK_AXIS_DEAD > 15 * Math.PI / 180);
+  // Straight sideways is full bars, either way, and half a push is half of it.
+  assert.ok(Math.abs(stickTurn(1, 0) - 1) < 1e-9);
+  assert.ok(Math.abs(stickTurn(-1, 0) + 1) < 1e-9);
+  assert.ok(Math.abs(stickTurn(0.5, 0) - 0.5) < 1e-9);
+  // A diagonal steers, gently, and more sideways steers more.
+  const d = stickTurn(Math.SQRT1_2, Math.SQRT1_2);
+  assert.ok(d > 0.1 && d < 0.4, `a diagonal gave ${d}`);
+  let last = 0;
+  for (let deg = 20; deg <= 90; deg += 5) {
+    const a = deg * Math.PI / 180, v = stickTurn(Math.sin(a), Math.cos(a));
+    assert.ok(v >= last, `steering went back down at ${deg} degrees`);
+    last = v;
+  }
+  assert.equal(stickTurn(0, 0), 0);
+});
+
+test('walk mode steers the bike from the stick through stickTurn, the keys at full bars', () => {
+  const WALK = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
+  assert.match(WALK, /keyX \+ stickTurn\(stickX, stickZ\)/);
 });

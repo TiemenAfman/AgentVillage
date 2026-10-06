@@ -113,6 +113,13 @@ const CLOUDS_PER_TILE = 30;
 // CLOUD_SIZE larger to stay the size they looked from the ground.
 export const CLOUD_Y = [54, 66];
 const CLOUD_SIZE = 1.4;
+// Where the clouds fade out of sight, in world units across the sea from the eye, less the eye's
+// own height. From the beach the layer runs to the horizon in hundreds of grey specks, a wall
+// of debris that reads as busy rather than as sky (issue #91), however far the haze itself has
+// been let out; so the clouds fade out on their own, sooner than the haze takes everything else.
+// The near three by three (cloudShown's 350) is left as it was, and a camera high over the sea
+// pushes the fade out with it, so a look down at the archipelago keeps its sky.
+export const CLOUD_FADE = [350, 1100];
 // A whole number of periods of every wave term in the water shader - see update().
 export const WAVE_LOOP = 20 * Math.PI;
 export const WAVE_RATES = [1.1, 0.9, 1.3];
@@ -1767,9 +1774,9 @@ export function createLandscape({
     const out = [];
     for (const it of trees) {
       if (it.felled) continue;
-      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s });
+      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s, tree: true });
     }
-    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc });
+    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc, tree: true });
     // flora_rock_a: 0.27 out at its foot and 0.35 high, stood in the ground by 0.04 and stretched
     // upright by the fourth number on a volcano's crags.
     for (const [x, z, sc, up] of rocks) {
@@ -1993,7 +2000,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
-        p.y += (0.05 * w1 + 0.04 * w2) * aWave;
+        float lift = (0.05 * w1 + 0.04 * w2) * aWave;
+        // Over ground above the sea the swell may sink the surface but never lift it out
+        // through the ground: the water mesh is a vertex per corner, triangulated like the
+        // ground, so a crest of 0.09 on a corner of a wide low beach broke through the sand
+        // as a dotted row of puddles - the troughs between them dry - wherever a grown ring
+        // left a plain within a wave's height of the sea (issue #95, measured on the live
+        // island: 539 corners under 0.09 more than three cells from any water). Capped at
+        // sea level, and a little clear of the ground where it is higher, so the still
+        // waterline - every coast - is where it always was; only the run-up past the first
+        // dry corner is gone.
+        if (aDepth >= 0.0) lift = min(lift, max(aDepth - 0.05, 0.0));
+        p.y += lift;
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
         vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -2403,7 +2421,23 @@ export function createWorld(scene, terrain, village, opts = {}) {
     for (let k = 0; k < parts * 5 + 4; k++) rng.next();
   }
   const cloudRng = makeRng('sea:clouds');
-  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1 });
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1, transparent: true });
+  // CLOUD_FADE: by the horizontal distance of each puff from the eye, out of sight rather than
+  // into the fog's colour - the haze is the horizon's colour and the far clouds hang above it,
+  // against a darker sky, so tinted they stayed a band of pale specks. Transparent for that, but
+  // depth is still written: a near puff is whole, and a faint far one behind it is not seen.
+  cloudMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying float vCloudFar;\n' + shader.vertexShader.replace('#include <fog_vertex>', `#include <fog_vertex>
+      vec4 cloudAt = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        cloudAt = instanceMatrix * cloudAt;
+      #endif
+      cloudAt = modelMatrix * cloudAt;
+      vCloudFar = length(cloudAt.xz - cameraPosition.xz) - max(0.0, cameraPosition.y);`);
+    shader.fragmentShader = 'varying float vCloudFar;\n' + shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>
+      gl_FragColor.a *= 1.0 - smoothstep(${CLOUD_FADE[0].toFixed(1)}, ${CLOUD_FADE[1].toFixed(1)}, vCloudFar);`);
+  };
+  cloudMat.customProgramCacheKey = () => 'sea-clouds-fade';
   const cloudGeo = new THREE.IcosahedronGeometry(1, 0);
   const cloudPuffs = []; // one per puff: which cloud it belongs to, its offset and its size
   const cloudDrift = []; // one per cloud: where it starts in the tile, and how fast it drifts

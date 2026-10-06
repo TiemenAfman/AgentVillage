@@ -255,6 +255,7 @@ pirate-tavern.js op `KIT` in de layout zet; stukken met een wisselende maat zijn
 | Tonkruk, kanonpoort, boegbeeld, schedellampen, jukebox | `_stool`, `_gunport`, `_figurehead`, `_skulllamp`, `_skullsconce`, `_jukebox` | gebouwd |
 | Kaarsensloep (kroonluchter) | `civic_kraken_sloop` | 12260; hangt twee keer boven de kuil |
 | Kaarsenton (`kaarsen-druipers`) | SD `civic_kraken_candlebarrel`, HD `HOME/hd/candlebarrel.glb` | SD met de hand, 17182, via `kit()` in de kuil tegen de barwand (`KIT.candlebarrel`); de plas loopt uit tot de omtrek van de HD (pascontrole `shared/hdfit.mjs`). HD: Pixal3D 48k met eigen textuur, gemaakt met `/kitstuk` (voorkant 90°, schedels goud, acht vlammen) |
+| Zeeboog-grot (`grot3`) | — | afgevallen: de Pixal3D-grot in de zeeboog was een boog in de boog, donker en rafelig, en een keienring met de hand voegde niets toe; de tunnel van de bake (shell.py `sea_arch`) blijft |
 | Gebroken boeg | `civic_kraken_bow` | 14124; op 0,8 uit de noordgevel, boegbeeld op de steven, schedellamp aan zijn voet |
 | Stuurwiel-kroon | `civic_kraken_wheel` | 14402; plat boven de kuil |
 | Roer als uithangbord | `civic_kraken_rudder` | 5602; boven de voorkant van de bar |
@@ -677,6 +678,11 @@ scans daarna zijn byte-identiek. Op de ladder van 128 (twaalf seeds) krijgt elk 
 
 Een nieuwe kavelmaat in `layout.json`: een **minor**. Niet gebouwd: een test voor het terugzetten als er nergens
 strand is (op de ladder vindt elke seed een kavel, dus dat pad is alleen met de hand nagelopen).
+
+### Op zee (3 oktober 2026)
+
+Op het strand las de kroeg als *"een gestrande boot in een weiland"*; hij staat nu op een rots een eindje uit de kust,
+met een loopplank van het zand naar de voet van de trap. Zie [kraken-op-zee.md](kraken-op-zee.md).
 
 ## Fasen
 

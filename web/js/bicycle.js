@@ -2,11 +2,12 @@
 //
 // Laid out like boat.js, and for the same reason: `stepBike` is a pure function of the bike,
 // the pedals and the ground - no THREE, no document, no clock - so tests/bicycle.test.mjs can
-// ride it under plain Node and check that it really stops at the water; `createBicycle` is
+// ride it under plain Node and check that it really stops at deep water; `createBicycle` is
 // the mesh, and knows nothing about how it moves. Plans/DONE/fiets.md has the decisions.
 //
-// The feet's world, not the hull's: land is where it goes, the water's edge is its wall, and
-// whatever walk.js's `blocked` calls solid (a wall, a stall, a person) is solid to it too.
+// The feet's world, not the hull's: land and shallow water are where it goes, the edge of deep
+// water is its wall, and whatever walk.js's `blocked` calls solid (a wall, a stall, a person)
+// is solid to it too.
 // It is handed that test rather than learning it, the way the boat is handed the height.
 //
 // Yaw is the island's convention (see boat.js): forward is (sin yaw, cos yaw), and turning
@@ -33,9 +34,35 @@ export const BIKE_TURN_MIN = 1.1;    // rad/s at rest: you shuffle it round with
 // by this much acceleration per unit of grade - a quarter of what gravity would, because
 // the island's slopes are steep and a real one would stop you dead on the first dune.
 const SLOPE_PULL = 2.5;
-// The water's edge, the same 0.06 walk.js calls the shore: a tyre will run on wet sand and
-// not into the sea. BOAT_FLOAT in boat.js is this same number pointed the other way.
+// The water's edge, the same 0.06 walk.js calls the shore: where walk.js lets you get on and
+// sets you down off it (a body standing in water is swimming). BOAT_FLOAT in boat.js is this
+// same number pointed the other way.
 export const BIKE_SHORE = 0.06;
+// How deep the water may be that a tyre still rolls through, on the bed. A puddle on a flat
+// beach is a corner a few centimetres under the sea, and it stopped the bike dead in the
+// middle of the sand; so did every gently shelving shore. Not a river: on Hoogezand the
+// shallowest middle of one is 0.68 down, the dredged fairway's bed is CHANNEL_H (0.55), and a
+// brook stays something to hop. At 0.3 the rider is in it to the hips, past the settlers' own
+// WADE_Y (0.22, crowd-view.js) - deeper than that and it is swimming.
+export const BIKE_WADE = 0.3;
+
+// The bars from an analog stick (the phone's touch stick, a pad's left stick). A thumb
+// pushing "straight ahead" on glass is always some degrees off, and the round stick handed
+// that on as x: sin(15 degrees) is a quarter of the bars, and at BIKE_TURN a rider going
+// straight weaved. So the steering is read off the push's *angle* from the pedal axis: within
+// STICK_AXIS_DEAD of straight ahead (or back) it is nothing, past it a soft curve up to full
+// bars straight sideways, times how hard the stick is pushed. Keys are not stick: A and D
+// stay full bars.
+export const STICK_AXIS_DEAD = 0.35;   // rad, ~20 degrees either side of ahead
+export const STICK_TURN_CURVE = 1.6;
+export function stickTurn(x, z) {
+  const m = Math.min(1, Math.hypot(x, z));
+  if (!(m > 0)) return 0;
+  const off = Math.atan2(Math.abs(x), Math.abs(z));   // 0 along the pedals, pi/2 sideways
+  const t = (off - STICK_AXIS_DEAD) / (Math.PI / 2 - STICK_AXIS_DEAD);
+  if (t <= 0) return 0;
+  return Math.sign(x) * Math.pow(Math.min(1, t), STICK_TURN_CURVE) * m;
+}
 // The highest ledge it rolls up without a jump: walk.js's STEP_UP, so a bridge you walk
 // onto is a bridge you ride onto and a storey is still a wall.
 const STEP_UP = 0.45;
@@ -43,7 +70,8 @@ const STEP_UP = 0.45;
 // of it), so the bike leaves the ground exactly as high as the feet do, about 0.38. In the air
 // the pedals push nothing, the bars still turn, and a ledge is measured from where the tyres
 // are rather than from the road - which is what lets a hop take you up a kerb a plain ride
-// would stop at, or over a brook. Coming down in the water ends the ride (`splash`).
+// would stop at, or over a brook. Coming down in water deeper than BIKE_WADE ends the ride
+// (`splash`); a puddle it just rides on out of.
 export const BIKE_HOP = 3.1;
 export const BIKE_GRAVITY = 12.5;
 // How far the frame tips nose up on the way up and nose down on the way down, per unit of
@@ -213,11 +241,12 @@ function slice(b, p, r, boost, step, ground, blocked, ceiling) {
     const run = b.v * step;
     const nx = b.x + fx * run, nz = b.z + fz * run;
     const here = b.y;
-    // Somewhere a tyre can be: dry, not solid, and not a wall of a ledge. In the air, water
-    // is no wall - it is what a hop clears - and the ledge is measured from the tyres.
+    // Somewhere a tyre can be: land or shallow water, not solid, and not a wall of a ledge. In
+    // the air, water is no wall - it is what a hop clears - and the ledge is measured from the
+    // tyres.
     const rideable = (x, z) => {
       const h = ground(x, z);
-      return (b.air || h >= BIKE_SHORE) && h - here <= STEP_UP && !blocked(x, z);
+      return (b.air || h >= -BIKE_WADE) && h - here <= STEP_UP && !blocked(x, z);
     };
     if (rideable(nx, nz)) {
       b.x = nx; b.z = nz;
@@ -249,9 +278,9 @@ function slice(b, p, r, boost, step, ground, blocked, ceiling) {
       b.vy = 0;
       b.air = false;
       b.floor = under;
-      // Landed in the water: there is no riding on from there. walk.js puts the bike away and
+      // Landed in deep water: there is no riding on from there. walk.js puts the bike away and
       // leaves a swimmer where it came down.
-      if (under < BIKE_SHORE) { b.splash = true; b.v = 0; }
+      if (under < -BIKE_WADE) { b.splash = true; b.v = 0; }
     }
   } else {
     b.floor = b.y;

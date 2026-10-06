@@ -10,7 +10,7 @@ void realWrite;
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA, ensureData } from '../lib/paths.mjs';
+import { DATA, ensureData, HOME_MISSING } from '../lib/paths.mjs';
 
 const LOG = path.join(DATA, 'hook.log');
 
@@ -40,6 +40,9 @@ function readStdin(timeoutMs = 2000) {
 }
 
 const main = async () => {
+  // ~/.promptholm/home.txt names a folder that is not there (a drive unplugged): there is no
+  // island to tell, and writing anything - even the log - would start an empty one in its place.
+  if (HOME_MISSING) process.exit(0);
   const raw = await readStdin();
   let payload = {};
   try { payload = raw ? JSON.parse(raw) : {}; } catch { log(`unparsable stdin (${raw.length} bytes)`); }

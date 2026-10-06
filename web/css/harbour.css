@@ -68,7 +68,7 @@ body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
   opacity: .65; pointer-events: none;
 }
 .chip[data-key]:hover::after, .chip[data-key]:focus-visible::after { opacity: 1; }
-body.standalone .chip[data-key]::after { display: none; }
+body.touch .chip[data-key]::after { display: none; }
 @media (pointer: coarse) { .chip[data-key]::after { display: none; } }
 /* The two boxes (what you do | the clock and the menu) are one system: same border, radius and
    padding, and the handle that folds the buttons away lives in the first, so a folded bar is

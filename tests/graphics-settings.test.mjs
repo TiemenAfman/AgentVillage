@@ -173,9 +173,10 @@ test('the haze is the far plane alone and never waits for Object Distance, which
   assert.doesNotMatch(fogC, /objectReach/);
   const ceil = main.slice(main.indexOf('function cullCeiling()'), main.indexOf('function cullCeiling()') + 200);
   assert.match(ceil, /fogCeilingOf\(camera\.far \* FOG_CAP, objectReach\(\), state\.mode === 'plan'\)/);
-  // Object Distance as the frame reads it: floored by the orbit target only from above.
+  // Object Distance as the frame reads it: floored by the orbit target from above, by the camera's
+  // height in noclip (Plans/noclip-camera.md), and on foot not at all.
   const reach = main.slice(main.indexOf('function objectReach()'), main.indexOf('function objectReach()') + 700);
-  assert.match(reach, /state\.mode === 'orbit' \? camera\.position\.distanceTo\(controls\.target\) : null/);
+  assert.match(reach, /state\.mode === 'orbit' \? camera\.position\.distanceTo\(controls\.target\)\s*: state\.mode === 'noclip' \? Math\.max\(0, camera\.position\.y\) : null/);
   assert.match(reach, /objectReachOf\(state\.graphics\.objectDistance, orbit\)/);
   const set = main.slice(main.indexOf('function setFogRange('), main.indexOf('function setFogRange(') + 3200);
   assert.match(set, /fogAt = fogCeiling\(\);\r?\n\s*scene\.fog\.far = Math\.min\(h\.far, fogAt\)/);
@@ -186,7 +187,7 @@ test('the haze is the far plane alone and never waits for Object Distance, which
   assert.match(view, /withObjectDistance\(state\.graphics\)/);
   assert.equal(GRAPHICS_LIMITS.objectDistance, undefined);
   // The page starts at its own machine's defaults.
-  assert.match(main, /graphics: withObjectDistance\(loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: !!STANDALONE \}\)\]\)\)/);
+  assert.match(main, /graphics: withObjectDistance\(loadGraphics\(GRAPHICS_TIERS\[graphicsTier\(\{ modest, phone: HANDHELD \}\)\]\)\)/);
 });
 
 test('the sky is drawn on the far plane, so a short view never shows the clear colour', () => {

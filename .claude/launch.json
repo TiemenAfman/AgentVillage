@@ -49,6 +49,28 @@
       ],
       "port": 4748,
       "autoPort": false
+    },
+    {
+      "name": "sea-local",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "sea.mjs",
+        "--port",
+        "4761"
+      ],
+      "port": 4761,
+      "autoPort": false
+    },
+    {
+      "name": "play-local",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve-play.mjs",
+        "--port",
+        "4760"
+      ],
+      "port": 4760,
+      "autoPort": false
     }
   ]
 }

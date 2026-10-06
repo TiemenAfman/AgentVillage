@@ -69,7 +69,7 @@ four tabs:
   **Graphics**: how far the view, the buildings, the people and the shadows reach, each on its
   own slider (*This machine's defaults* puts all four back), the **Timeline** bar, and *Names on
   the buttons*.
-- **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
+- **Controls**: the keys on foot and the planner's key, which you can change; on a phone, the touch controls.
 - **Island**: the house signs, how big the island may grow, and which sea it is in. Only the
   keeper sees this tab, because it writes the island's own config.json.
 - **Help**: the legend, the keys, and which build this is.
@@ -82,7 +82,8 @@ you up into the sky; the third opens the menu there. When one of the Show toggle
 row stays under the chips, so a village with its houses hidden says so.
 
 From the sky the chips have letters: **M** map, **I** inventory, **O** overview, **N** new
-settler, **L** legend and, for the keeper, **P** planner.
+settler, **L** legend and, for the keeper, **U** planner (P is sow, on foot; the planner's key can
+be changed under Settings > Controls).
 
 ## Walking the island
 
@@ -1116,7 +1117,10 @@ anything that stood: they are new plots and nothing else.
 | The school | 25 apprentices: it is where they are taught |
 | Flower beds, street lamps, benches, terraces on the square | one per 30, 45, 60 and 110 apprentices |
 
-The day and night follow the real clock; the season follows the month. Windows light up
+The day and night follow the sea's clock - the real time, unless whoever hosts the sea has
+set it to another hour from the clock at the top right, for everybody on it (the chip then
+says *set by host*). Nobody else can change it, and a sea that restarts is back on the real
+time. The season follows the month. Windows light up
 after dark, campfires flicker, fireflies come out, and the lighthouse throws a beam you can
 watch turn — including somebody else's, sweeping across the water from their island to
 yours, or flashing at the edge of sight from one too far away to make out.

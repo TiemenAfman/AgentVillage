@@ -1,6 +1,6 @@
 {
   "name": "promptholm",
-  "version": "0.7.0",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "description": "Promptholm - a 3D island where your Claude agents live. Every session builds a house.",
@@ -19,6 +19,7 @@
     "app:build": "tauri build --no-bundle",
     "app:pack": "node scripts/pack-release.mjs",
     "android:pack": "node scripts/pack-android.mjs",
+    "web:pack": "node scripts/pack-web.mjs",
     "android:apk": "node scripts/pack-android.mjs && cd src-android && tauri android build --apk --debug --target aarch64",
     "tauri": "tauri",
     "models": "node scripts/models.mjs",

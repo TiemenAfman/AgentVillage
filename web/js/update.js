@@ -15,9 +15,10 @@ export const SEA_PROTOCOL = 3;
 // the latest release (.github/workflows/release.yml).
 export const RELEASES = 'https://github.com/TiemenAfman/AgentVillage/releases/latest';
 // The APK itself, by the one URL GitHub keeps stable across releases: `latest/download/<asset>`
-// always answers with the newest release's file. In the app a tap on it is a navigation,
-// which src-android/src/lib.rs hands to the phone's browser, which downloads it and offers
-// to install - the closest thing to "update from inside the app" that needs no native code.
+// always answers with the newest release's file. In the app a tap on it hands it to the
+// phone's browser (web/js/ui.js), which downloads it; the phone installs it from there. The
+// app does not fetch and install it itself any more: 0.7.1 to 0.8.1 did, and Play Protect
+// blocked the app as harmful for asking to install other apps (REQUEST_INSTALL_PACKAGES).
 export const APK_URL = `${RELEASES}/download/promptholm-android.apk`;
 
 // -1 when a is older than b, 1 when newer, 0 when the same, null when either is unknown.
@@ -68,6 +69,34 @@ export function updateNotice({ mine, sea, phone = false }) {
   };
 }
 
+// The keeper's banner on a desktop island: what the sea says first (updateNotice above - a
+// newer line on the sea is the one that matters, since what is new will not reach anybody
+// there otherwise), and failing that a newer release on GitHub (`latest`, the islander's
+// /api/latest-release, lib/latest-release.mjs). That second one is by the whole version, patch
+// included, and says it is optional: the desktop window used to hear about a release only
+// through the sea's welcome, by the line, so a patch was never announced at all and a minor
+// only once the sea had moved. A checkout is told to pull, a release where to download.
+//
+// `canInstall` is the islander's word that it can put that release in place itself - an unpacked
+// release on Windows (lib/selfupdate.mjs, Plans/zelf-bijwerken.md): then the banner carries an
+// Install button (`data-update-install`, wired in main.js) instead of a download link, and the
+// same button serves a newer line on the sea, since that is the same zip.
+export function islandNotice({ mine = null, sea = null, latest = null, canInstall = false } = {}) {
+  const install = canInstall && compareVersions(mine && mine.version, latest) === -1
+    ? ` <button type="button" class="update-install" data-update-install>Install v${esc(latest)}</button>` : '';
+  const seaSays = updateNotice({ mine, sea });
+  if (seaSays) return install && seaSays.kind === 'behind' ? { ...seaSays, html: seaSays.html + install } : seaSays;
+  if (compareVersions(mine && mine.version, latest) !== -1) return null;
+  const patch = compareLines(mine.version, latest) === 0;
+  return {
+    kind: 'release',
+    html: `<b>Promptholm v${esc(latest)} is out${patch ? ' - an optional patch' : ''}.</b> This island runs `
+      + `v${esc(mine.version)}${patch ? ' and keeps working with everybody as it is' : ''}. `
+      + (install ? `${link('What is new', false)}.${install}`
+        : `${link(`Get v${latest}`, false)}, or pull and restart if you run from a checkout.`),
+  };
+}
+
 // The app's gate: a whole-screen card with one big button, or null. The banner above is
 // right for a desktop island, where "pull and restart" is somebody at a keyboard; on a phone
 // that banner was a small box under two others, and a refused app can do nothing else at
@@ -85,16 +114,35 @@ export function updateNotice({ mine, sea, phone = false }) {
 // version string. With it the card goes up as soon as there is a release, not only once the
 // sea has been updated to it: the sea is behind the releases whenever nobody has got round to
 // it yet, and that is no reason for the app to be.
-export function updateGate({ speaks = null, mine = null, sea = null, latest = null } = {}) {
+//
+// `ready` is a page bundle the app has already fetched (src-android/src/bundle.rs, `bundle_check`
+// in main.js) and `busy` says it is still fetching one (Plans/app-zonder-apk-bijwerken.md): a
+// ready bundle newer than this page is a Restart, not a download, and while one is on its way the
+// APK card waits - it would be telling somebody to install what is about to arrive by itself.
+export function updateGate({ speaks = null, mine = null, sea = null, latest = null, ready = null, busy = false } = {}) {
+  const refused = Number.isInteger(speaks) && speaks > SEA_PROTOCOL;
+  if (ready && compareVersions(mine && mine.version, ready) === -1) {
+    return {
+      restart: true,
+      blocking: refused,
+      download: '#',
+      notes: RELEASES,
+      steps: '',
+      title: `Promptholm v${ready} is ready`,
+      body: 'It came in by itself while you played. Restart to play on it; it takes a second.',
+    };
+  }
+  if (busy && !refused) return null;
   const common = {
     download: APK_URL,
     notes: RELEASES,
-    steps: 'Tap the button; the app fetches it and the phone asks to install it. The first time, '
-      + 'Android sends you to settings to allow this app to install others. '
+    steps: 'Tap the button: your browser downloads the new version. When it is done, tap '
+      + '"Open" in the browser (or open promptholm-android.apk from Downloads) and choose Install. '
+      + 'The first time, Android asks you to allow your browser to install apps. '
       + 'Coming from v0.3.1 or older, Android may say the app cannot be installed: uninstall this one '
       + 'once and tap the button again. After that, updates install over the top.',
   };
-  if (Number.isInteger(speaks) && speaks > SEA_PROTOCOL) {
+  if (refused) {
     return {
       ...common,
       blocking: true,
@@ -134,4 +182,48 @@ export function refusalNotice(speaks, { phone = false } = {}) {
   }
   return '<b>This sea is behind</b> and speaks an older protocol. It lets nobody on the current version in until '
     + 'whoever keeps it updates it.';
+}
+
+// The web page's banner (Plans/spelen-in-de-browser.md). A page there is a shelf, play/<id>/,
+// and updating it is a reload: the server's play/version.json (`served`, `{ version, commit,
+// path }`) names the shelf the door now leads to, and `shelf` is the one this page came off.
+// A different shelf that is not older is a newer page - by the shelf and not by the version, so
+// two builds of one version (a fix on the branch) are told apart too. `reload` is the button's
+// marker (main.js wires `data-update-reload`). Without a newer shelf, what the sea says: a refusal
+// over the protocol (`speaks`), or a sea on another line. The sea can be redeployed before the
+// web is, so "the sea has moved on" is "the page for it is on its way", never a download link -
+// there is nothing to download.
+export function webNotice({ mine = null, shelf = null, served = null, sea = null, speaks = null } = {}) {
+  const button = '<button type="button" class="update-install" data-update-reload>Reload</button>';
+  const newer = served && typeof served.path === 'string' && served.path && served.path !== shelf
+    && compareVersions(served.version, mine && mine.version) !== -1;
+  if (newer) {
+    return {
+      kind: 'reload',
+      html: `<b>A newer Promptholm is here${served.version ? ` - v${esc(served.version)}` : ''}.</b> `
+        + `Reload to play on it; this page keeps working until you do. ${button}`,
+    };
+  }
+  if (Number.isInteger(speaks) && speaks !== SEA_PROTOCOL) {
+    if (speaks < SEA_PROTOCOL) return { kind: 'sea-behind', html: refusalNotice(speaks) };
+    return {
+      kind: 'wait',
+      html: '<b>This sea has moved on</b> to a newer version and will not let this page in. The page for it '
+        + `is on its way: reload in a few minutes. ${button}`,
+    };
+  }
+  const order = compareLines(mine && mine.version, sea && sea.version);
+  if (order === null || order === 0) return null;
+  if (order < 0) {
+    return {
+      kind: 'behind',
+      html: `<b>A newer Promptholm is on the sea.</b> It runs v${esc(sea.version)} and this page v${esc(mine.version)}; `
+        + 'the page for it is on its way, and a banner here will say when to reload.',
+    };
+  }
+  return {
+    kind: 'sea-behind',
+    html: `<b>The sea is behind.</b> It runs v${esc(sea.version)} and this page v${esc(mine.version)}, so what is new `
+      + 'here may not reach anybody there until whoever keeps the sea updates it.',
+  };
 }

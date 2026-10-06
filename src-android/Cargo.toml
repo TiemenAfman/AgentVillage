@@ -1,6 +1,6 @@
 [package]
 name = "promptholm-android"
-version = "0.7.0"
+version = "0.9.2"
 description = "Promptholm on a phone: web/ carried inside the app, joining one sea - see Plans/eiland-op-android.md"
 authors = ["Martijn Jansen"]
 edition = "2021"
@@ -16,15 +16,18 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-# Links out of the island (a new release, a Jira ticket) go to the phone's browser, and
-# the new APK is handed to Android's installer through the same plugin.
+# Links out of the island (a new release and its APK, a Jira ticket) go to the phone's browser.
 tauri-plugin-opener = "2"
-# Fetching that APK (install_update below). rustls rather than the system OpenSSL: nothing
-# to cross-compile for aarch64-linux-android, and the page cannot fetch it itself - it sits
-# on tauri.localhost and GitHub sends no CORS header with a release asset. `json` for
-# latest_release, which reads the newest release's tag from the GitHub API.
+# latest_release, which reads the newest release's tag from the GitHub API. rustls rather than
+# the system OpenSSL: nothing to cross-compile for aarch64-linux-android, and the page cannot
+# ask itself - it sits on tauri.localhost and GitHub's API is not reached from there by fetch.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde_json = "1"
+# The page bundle (src/bundle.rs): its signature, its hash and unpacking it. Pure Rust, nothing
+# to cross-compile; verify-only ed25519, deflate only.
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [profile.release]
 codegen-units = 1

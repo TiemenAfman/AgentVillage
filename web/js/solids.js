@@ -109,6 +109,7 @@ export function solidAt(r, { x, z, y = 0, yaw = 0 }) {
   } else Object.assign(at, { hx: r.hx, hz: r.hz, yaw });
   if (r.hull != null) at.hull = r.hull;
   if (r.rail) at.rail = true;
+  if (r.dry) at.dry = true;
   if (r.y0 != null) { at.y0 = r.y0 + y; at.y1 = r.y1 + y; }
   return at;
 }

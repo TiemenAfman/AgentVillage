@@ -22,6 +22,7 @@ import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
 import { createHdPieces } from './hd-pieces.js';
+import { placeInRoom } from './room-spot.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -489,7 +490,7 @@ function snackGeometry() {
 // `onTalk(it)` is somebody in the room being spoken to (the Salty Kraken's crew, `kind: 'crew'`),
 // and `onOrder(room, what)` a drink ordered at a seat - which is the Kraken's first quest step,
 // and which walk mode's own onDrink cannot see, since that needs a glass already in the hand.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null }) {
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null, onAvatar = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
   const def = make();
@@ -519,7 +520,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // hang from the lid go with the lid.
   const roofPieces = new THREE.Group();
   scene.add(roofPieces);
-  const pieces = def.pieces?.length ? createHdPieces({ scene, roof: roofPieces, pieces: def.pieces, material, hd }) : null;
+  // The floors (the slab and every storey) tell an HD piece standing on one from one hung on a wall.
+  const floorAt = (x, z, y) => (def.surfaces || []).reduce((best, s) => (s.axis == null
+    && x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1 && s.y <= y + 0.03 && s.y > best ? s.y : best), FLOOR);
+  const pieces = def.pieces?.length ? createHdPieces({ scene, roof: roofPieces, pieces: def.pieces, material, hd, floorAt }) : null;
 
   // A room that asks for a `flame` burns the ray-marched fire (hearth-fire.js: flame, embers,
   // sparks and glow, all additive and none of them a light). The tavern still burns its two cones:
@@ -598,11 +602,15 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   };
 
   let left = true;
-  function leave() {
-    if (left) return;
+  // Looked round by the noclip camera (web/js/noclip.js, Plans/noclip-camera.md): the room drawn and
+  // its show running with nobody in it - its walk mode is never entered, so there is no door to walk
+  // out of and nothing to leave by; main.js takes it down with unpeek.
+  let peeking = false;
+  function leave(to = null) {
+    if (left || peeking) return;
     left = true;
     walk.exit();
-    if (onLeave) onLeave();
+    if (onLeave) onLeave(to);
   }
 
   // The camera lives in the room too. Rather than sliding it sideways off a wall -- which
@@ -768,6 +776,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // how you get off the stool, which walk mode already does on its own.
   function onInteract(it) {
     if (it.kind === 'crew') { if (onTalk) onTalk(it); return; }
+    // A second way out (the Salty Kraken's hatch to its deck, Plans/kraken-dek.md): `onLeave` is told where to.
+    if (it.kind === 'exit') { leave(it.to); return; }
     if (it.kind !== 'seat') return;
     if (!walk.state.sitting) { walk.sitOn({ x: it.x, z: it.z, y: it.y, yaw: it.yaw }); return; }
     const s = served[it.index];
@@ -781,7 +791,10 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // `guests` is whoever the room is to be full of, for a room that has a crowd (rave.js), and
   // `stable` whether the island's horse and hens came along. What the show puts on the floor
   // tonight that you cannot walk through - the horse - is the show's to say, after its enter.
-  function enter({ avatar, guests = null, stable = false } = {}) {
+  // `spot` is where you stood when the page was last closed in here (main.js's room recall,
+  // web/js/room-spot.js): taken if the room still has a floor there that will take you, and
+  // otherwise the room's own way in. Says which it was.
+  function enter({ avatar, guests = null, stable = false, spot = null } = {}) {
     left = false;
     lidOff = false;
     if (avatar) walk.setAvatar(avatar);
@@ -789,29 +802,55 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
+    // The room's solids first, so the spot is judged against them.
+    walk.setBlockers(blockers);
+    const back = spot ? placeInRoom(spot, { areas: AREAS, doorway: def.doorway, standFloor: walk.standFloor }) : null;
     walk.enter({
-      at: [def.spawn.x, def.spawn.z],
-      facing: [def.spawn.x, def.spawn.z - 1],
+      at: back ? back.at : [def.spawn.x, def.spawn.z],
+      y: back ? back.y : Infinity,
+      facing: back ? [back.at[0] + Math.sin(back.yaw), back.at[1] + Math.cos(back.yaw)] : [def.spawn.x, def.spawn.z - 1],
       blockers,
-      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || []),
+      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || [], def.exits || []),
       onInteract,
       // Esc (and the pad's Back) is the menu's key indoors as it is on the island, when the room's
       // owner says so (main.js); the way out is the door. /demo has no menu and still steps outside.
       onExit: onEscape || leave,
+      // I (the wardrobe) is a key of the walker's, so a room has to hand it on as the island does.
+      onAvatar,
     });
-    walk.state.camPitch = 0.05;      // indoors you look across the room, not over the treetops
+    // Indoors you look across the room, not over the treetops.
+    walk.state.camPitch = back && back.pitch != null ? back.pitch : 0.05;
+    return !!back;
+  }
+
+  function peek({ guests = null, stable = false } = {}) {
+    left = false;
+    peeking = true;
+    lidOff = false;
+    if (show) show.enter({ dancers: guests, stable });
+    for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
+    if (barman) barmanX = barman.home;
+  }
+  function unpeek() {
+    if (!peeking) return;
+    peeking = false;
+    left = true;
   }
 
   let t = 0;
   let roofWanted = true;
   // `extra` is what the room is told from outside each frame: for the castle, where the
-  // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear.
+  // music is (`clock`, sound.raveClock()), so the lights keep time with what you hear. `eye` is
+  // the noclip camera's position: then the camera is not walk mode's, the walk is not stepped
+  // (it is paused or was never entered) and the lid is judged on the eye in whichever area it is.
   let lastExtra = {};
   function update(dt, extra = {}) {
     if (left) return null;
     lastExtra = extra;
     roofWanted = true;
-    const w = walk.update(dt);
+    const eye = extra.eye || null;
+    const w = eye ? null : walk.update(dt);
+    if (eye) judgeLid(eye, AREAS.find((b) => inArea(b, eye.x, eye.z)) || areaAt(eye.x, eye.z));
     if (roofMesh) roofMesh.visible = roofWanted;
     roofPieces.visible = roofWanted;
     if (roofHalos) roofHalos.object.visible = roofWanted && (!halos || halos.object.visible);
@@ -819,7 +858,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
 
     // The doorway is a door: walk out through the gap and you are outside again.
     const p = walk.state.pos;
-    if (p.z > def.doorway.z && Math.abs(p.x) < def.doorway.hx) { leave(); return w; }
+    if (!eye && p.z > def.doorway.z && Math.abs(p.x) < def.doorway.hx) { leave(); return w; }
 
     t += dt;
     const flick = 0.86 + 0.14 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7);
@@ -844,6 +883,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   function promptFor(near) {
+    if (near.kind === 'exit') return near.prompt;
     if (near.kind === 'crew') {
       return lastExtra.business === near.who ? `${near.name} has something for you` : `speak to ${near.name}`;
     }
@@ -871,13 +911,19 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   }
 
   return {
-    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose,
+    name: def.name, room, scene, terrain, walk, enter, update, leave, dispose, peek, unpeek,
+    peeking: () => peeking,
+    // Where the noclip camera starts in here: a little inside the door, at a standing eye's
+    // height, looking in (the spawn faces -z, enter() above).
+    view: { x: def.spawn.x, y: FLOOR + 0.9, z: def.spawn.z + 0.6, yaw: Math.PI, pitch: -0.12 },
     // Which of sound.js's songs plays in here ('shanty'), or null: main.js asks sound.clockOf it.
     music: def.music || null,
     // Where the room's music is, in beats, for everybody dancing in here (main.js danceBeat);
     // null in a room with no show.
     beat: hallBeat,
     setPaused: (v) => walk.setPaused(v),
+    // A card of the desktop window (web/js/desktop.js) took the mouse and gave it back.
+    resumeLock: () => walk.syncLock(),
     // Real bloom is drawing (post.js): the halos that stand in for it step aside.
     setBloom(on) {
       if (halos) halos.object.visible = !on;

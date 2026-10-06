@@ -14,9 +14,9 @@ import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
-import { stepDive, canDive, headUnder, divePitch, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
+import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
-import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP } from './bicycle.js';
+import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
@@ -302,6 +302,7 @@ export function createWalkMode({
     // goes to the sea is the same either way - this is only where our own camera stands.
     firstPerson: false,
     bob: 0,
+    lie: 1,             // how far into the stroke a swimmer lies, 1 prone, 0 treading water upright (diving.js swimPose)
     vy: 0,           // vertical speed; zero whenever the feet are down
     grounded: true,
     // The surface you are standing on, held for the whole of a jump. Which floor you
@@ -570,7 +571,7 @@ export function createWalkMode({
     // ones a page is allowed to cancel are cancelled here, unless somebody is typing into
     // a field. Chrome reserves ctrl+W, ctrl+T, ctrl+N and ctrl+<digit> and ignores
     // preventDefault on them: those only come to the page under the keyboard lock that
-    // lockKeys() asks for, and only in fullscreen (the desktop window has no tab to lose).
+    // lockKeys() asks for, and only in fullscreen (the desktop window has no tab to lose and does not ask).
     //
     // Unless Ctrl is bound (keybinds.js): then it is somebody's crouch or swim-down, held
     // while the walking keys are pressed, and the press is a game key like any other. The
@@ -710,15 +711,48 @@ export function createWalkMode({
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
+    // Not while Escape is down: a panel closed with Escape asks for the lock inside that very
+    // keydown, the browser grants it - and then handles the same Escape as the user leaving a
+    // lock, which takes it straight back (measured in the desktop window: ok, then
+    // pointerlockchange twice, lock gone, and the cooldown below started for nothing). Asked
+    // after the key is up, it stays.
+    if (escDown) { lockAfterEsc = true; return; }
     // A request without a user gesture is refused, except straight after a lock the page
     // itself let go of - which is exactly the close-a-panel and walk-off-a-board case. The
     // refusal is a rejected promise in current Chrome; only NotSupportedError means never.
     try {
       dom.requestPointerLock()?.catch?.((err) => {
         if (err?.name === 'NotSupportedError') lockRefused = true;
+        else if (err?.name === 'SecurityError') lockAgainSoon();
         else if (fromClick) clickLockFailed = true;
       });
     } catch { lockRefused = true; }
+  }
+  // After the user's own Escape Chromium refuses a new lock for about 1.3 s ("cannot be
+  // acquired immediately after the user has exited the lock", a SecurityError; measured in the
+  // desktop window: refused at 0.3 s and 0.8 s, given at 1.5 s). So Escape and then a click
+  // - or a panel's close button - at once did nothing at all. The click's activation lasts
+  // five seconds, which outlasts the wait, so the request is simply made again when the
+  // cooldown is over. Not a failed click: it must not turn later clicks into swings.
+  let escDown = false, lockAfterEsc = false;
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') escDown = true; }, true);
+  addEventListener('keyup', (e) => {
+    if (e.key !== 'Escape') return;
+    escDown = false;
+    if (!lockAfterEsc) return;
+    lockAfterEsc = false;
+    setTimeout(() => { if (wantLock() && document.pointerLockElement !== dom) requestLock(); }, 60);
+  }, true);
+  addEventListener('blur', () => { escDown = false; lockAfterEsc = false; });
+  const LOCK_COOLDOWN_MS = 1300;
+  let lockAgain = null, lockAgainTries = 0;
+  function lockAgainSoon() {
+    if (lockAgain || lockAgainTries >= 4) return;
+    lockAgainTries++;
+    lockAgain = setTimeout(() => {
+      lockAgain = null;
+      if (wantLock() && document.pointerLockElement !== dom) requestLock();
+    }, Math.max(150, LOCK_COOLDOWN_MS - (performance.now() - unlockedAt)) + 50);
   }
   function syncLock() {
     if (wantLock()) requestLock();
@@ -727,8 +761,15 @@ export function createWalkMode({
   // When the lock went away, so the Escape that took it does not also leave walk mode: the
   // keydown can reach the page either side of the pointerlockchange that says it is gone.
   let unlockedAt = -Infinity;
+  // Chrome's first pointermove after a lock is taken (and now and then one after focus moved)
+  // carries the whole jump of the cursor since the last event as movementX/Y - hundreds of
+  // pixels, which put camPitch straight on its limit: the camera looking at the sky after the
+  // focus had been walked round the HUD (0.9.1). The first locked move is dropped, and so is any
+  // single move bigger than a hand can make in one event.
+  let freshLock = false;
+  const LOOK_JUMP = 250;
   const onLockChange = () => {
-    if (document.pointerLockElement === dom) clickLockFailed = false;
+    if (document.pointerLockElement === dom) { clickLockFailed = false; lockAgainTries = 0; freshLock = true; }
     else unlockedAt = performance.now();
   };
   document.addEventListener('pointerlockchange', onLockChange);
@@ -764,7 +805,10 @@ export function createWalkMode({
     if (!state.active) return;
     const locked = document.pointerLockElement === dom;
     let dx = 0, dy = 0;
-    if (locked) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    if (locked) {
+      dx = e.movementX; dy = e.movementY;
+      if (freshLock || Math.abs(dx) > LOOK_JUMP || Math.abs(dy) > LOOK_JUMP) { freshLock = false; dx = dy = 0; }
+    } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
     if (dragging && !pressMoved && Math.hypot(e.clientX - pressX, e.clientY - pressY) > CLICK_PX) pressMoved = true;
     if (!dx && !dy) return;
     if (dx) lookedAround();
@@ -843,6 +887,8 @@ export function createWalkMode({
   const LOCKED_CODES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((c) => 'Key' + c)
     .concat('Tab', ...Array.from({ length: 9 }, (_, i) => 'Digit' + (i + 1)));
   function lockKeys(on) {
+    // The desktop window has no tabs to lose and no HTML fullscreen for the lock to wait for.
+    if (globalThis.PROMPTHOLM_DESKTOP) return;
     const kb = navigator.keyboard;
     if (!kb || !kb.lock) return;
     if (on) kb.lock(LOCKED_CODES).catch(() => {}); else kb.unlock();
@@ -1162,6 +1208,12 @@ export function createWalkMode({
   // (`leaving`, Plans/muren-met-hitboxes.md): a scan, an Apply or a guest island putting a building
   // up round you, or a jump coming down on a crate's side, used to leave every step blocked and you
   // stood in it until you left walk mode.
+  // TEMPORARY: trees (world.js tags their trunks `tree`) and the low hamlet fences (hamlets.js
+  // tags them `fence`, below HOP_H) are walked and ridden through - on the phone, riding across
+  // the island ran into one every few metres. Rails and every other `hop` blocker stay walls.
+  // Set PASS_TREES_AND_FENCES false to have them back.
+  const PASS_TREES_AND_FENCES = true;
+  const passedThrough = (b) => PASS_TREES_AND_FENCES && (b.tree === true || b.fence === true);
   function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
@@ -1176,12 +1228,31 @@ export function createWalkMode({
     if (wall != null && wall - from > STEP_UP) return true;
     const open = hopping && !placing;
     const astride = (b) => !placing && inside(b, state.pos.x, state.pos.z, BODY_R);
+    // A `dry` blocker (the low block under the Salty Kraken's stair: buildings.js pirateSolids) keeps
+    // feet from walking in under a flight; a swimmer goes under the planks as under a pier.
+    const walls = (b) => !passedThrough(b) && !(b.dry && state.swimming) && atHeight(b, from);
+    // Out of several at once, the way out of all of them together: the step has to lower the depth
+    // summed over every solid you stand in, not each one's. Overlapping boxes each have their own
+    // shortest way out, and a body that came down where they overlap (off the Salty Kraken's
+    // boarding plank, into its rocks and a kraken arm: issue #89) found every step deeper into one
+    // of them, and could not swim off. In a single solid this is the rule it always was.
+    let inNow = null, depthNow = 0;
     const leaving = (b) => {
       if (placing) return false;
-      const now = depthInSolid(b, state.pos.x, state.pos.z, BODY_R);
-      return now > 0 && depthInSolid(b, x, z, BODY_R) < now - 1e-6;
+      if (!inNow) {
+        inNow = [];
+        blockerIndex.some(state.pos.x, state.pos.z, BODY_R, (c) => {
+          if (walls(c) && depthInSolid(c, state.pos.x, state.pos.z, BODY_R) > 0) inNow.push(c);
+          return false;
+        });
+        for (const c of inNow) depthNow += depthInSolid(c, state.pos.x, state.pos.z, BODY_R);
+      }
+      if (!inNow.includes(b)) return false;
+      let depth = 0;
+      for (const c of inNow) depth += Math.max(0, depthInSolid(c, x, z, BODY_R));
+      return depth < depthNow - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => inside(b, x, z, BODY_R) && atHeight(b, from)
+    if (blockerIndex.some(x, z, BODY_R, (b) => walls(b) && inside(b, x, z, BODY_R)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
@@ -1636,7 +1707,10 @@ export function createWalkMode({
     place(camBack);
   }
 
-  function enter({ at, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
+  // `y` is the height the feet were at, for a room with storeys (main.js's room recall, web/js/
+  // room-spot.js): the floor is found from there, as walking finds it, rather than the highest one
+  // over (x, z) - which put a body remembered under a gallery on top of it.
+  function enter({ at, y = Infinity, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive,
     onBoarded, onLeftDeck }) {
     takeBlockers(blockers);
@@ -1661,8 +1735,8 @@ export function createWalkMode({
     // step back until we are standing somewhere legal - judged from the height we would stand at
     // there, not from wherever the body last was: from the floor under it, a stair built solid is a
     // wall, and a spawn on its treads was walked off to the side of it.
-    for (let i = 0; i < 40 && blocked(x, z, groundAt(x, z), true); i++) { x += 0.4; z += 0.25; }
-    state.pos.set(x, groundAt(x, z), z);
+    for (let i = 0; i < 40 && blocked(x, z, groundAt(x, z, y), true); i++) { x += 0.4; z += 0.25; }
+    state.pos.set(x, groundAt(x, z, y), z);
     state.floor = state.pos.y;
     state.vy = 0;
     state.grounded = true;
@@ -1746,6 +1820,11 @@ export function createWalkMode({
   // Where an A* over cells may not go, for main.js to hand findPath: the same test the feet
   // make, asked at a cell's middle.
   const blockedAt = (x, z) => blocked(x, z, undefined, true);
+  // The floor a body standing at `from` finds at (x, z), or null when it could not be put there.
+  const standFloor = (x, z, from = Infinity) => {
+    const y = groundAt(x, z, from);
+    return blocked(x, z, y, true) ? null : y;
+  };
 
   function setBlockers(list) { takeBlockers(list); }
   function setPeerBlockers(list) { state.peerBlockers = list; }
@@ -1781,7 +1860,8 @@ export function createWalkMode({
     }
     stick.x = p.move.x;
     stick.z = -p.move.y;                       // pushing up on the stick walks forward
-    // A tap keeps you running until you stand still; holding it down works too.
+    // A tap keeps you running until you stand still; holding it down works too. Afloat a
+    // tap is one burst of turbo (update, aboard).
     if (!stick.x && !stick.z) stick.run = false;
     if (p.hit('sprint')) stick.run = !stick.run;
     if (p.down('sprint')) stick.run = true;
@@ -1898,6 +1978,9 @@ export function createWalkMode({
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
     if (keys.has('a') || keys.has('arrowleft')) ix -= 1;
     if (keys.has('d') || keys.has('arrowright')) ix += 1;
+    // The keys' share of the bars apart, for the bike: a stick's steering is read differently
+    // there (stickTurn in bicycle.js), or a thumb a few degrees off straight weaves the bike.
+    const keyX = ix, stickX = stick.x, stickZ = stick.z;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
     if (state.parked) [ix, iz] = routeInput(dt);
@@ -1914,6 +1997,12 @@ export function createWalkMode({
     if (state.vehicle) {
       // Only ahead: the turbo lifts the top speed, and astern has nothing for it to lift.
       const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
+      // The pad's tapped sprint is one burst afloat. On foot it lasts until the stick is let
+      // go, but at the helm the stick is the throttle and is never let go, so a tap held the
+      // turbo open for good: the pool ran dry, refilled, and opened again. It ends when the
+      // throttle comes off ahead or the pool runs dry - a held button (pad or touchpad) goes
+      // on working like Shift, as pad() sets it again every frame it is down.
+      if (iz <= 0.02 || state.stamina.boat.spent) stick.run = false;
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
       stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround);
@@ -1953,7 +2042,7 @@ export function createWalkMode({
     // ---- on the bike ------------------------------------------------------------
     // The boat's shape again - W and S are the pedals and the brakes, A and D the bars, the
     // camera trails the front wheel - but on the feet's ground: `blocked` is the same wall a
-    // walker meets, and the water's edge is where it stops. Shift is standing on the pedals,
+    // walker meets, and the edge of deep water (BIKE_WADE) is where it stops. Shift is standing on the pedals,
     // and it spends the body's pool the way a run does.
     if (state.bike) {
       const b = state.bike;
@@ -1962,7 +2051,8 @@ export function createWalkMode({
       state.turbo = turbo;
       // In the air the ground is asked from the floor the hop left, as a jump's is, so a hop
       // cannot change which storey you are on; the lid is a deck overhead, less a rider's head.
-      stepBike(b, { pedal: iz, turn: ix, turbo, hop: hopWanted }, dt, {
+      const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
+      stepBike(b, { pedal: iz, turn, turbo, hop: hopWanted }, dt, {
         ground: (x, z) => groundAt(x, z, b.air ? b.floor : b.y),
         blocked: (x, z) => blocked(x, z, b.y),
         ceiling: (x, z) => ceilingAt(x, z, b.floor) - HEAD - RIDE_HEAD,
@@ -2266,14 +2356,18 @@ export function createWalkMode({
       // what reads as swimming.
       // A turbo stroke is a quicker one, by the same ratio as the speed it buys.
       state.bob += dt * (state.moving ? 6.5 * (state.turbo ? SWIM_TURBO / SWIM_SPEED : 1) : 1.4);
-      avatar.position.set(state.pos.x, state.pos.y + Math.sin(state.bob) * 0.03, state.pos.z);
       // Positive pitch, so the head goes forward: rotating about local x maps +y (up,
       // towards the head) onto +z, which is the direction yaw points along. The other
       // sign swims feet first. A diver tips head-down on the way to the bottom and head-up on
       // the way to the top, off the vertical speed alone (diving.js divePitch) - which is
-      // also all a peer has to go on (peers.js), so both screens draw the same body.
-      const pitch = state.dive ? divePitch(state.vy) : 1.32;
-      avatar.rotation.set(pitch + Math.sin(state.bob) * 0.1, state.yaw, Math.sin(state.bob * 0.5) * 0.16);
+      // also all a peer has to go on (peers.js), so both screens draw the same body. At the
+      // surface a swimmer going nowhere treads water upright (swimPose); a diver stays in the
+      // stroke, so coming up from below rights the body from lying, as stopping does.
+      state.lie = state.dive ? 1 : stepLie(state.lie, state.moving, dt);
+      const swim = swimPose(state.lie, state.bob);
+      avatar.position.set(state.pos.x, state.pos.y + swim.dy, state.pos.z);
+      const pitch = state.dive ? divePitch(state.vy) + Math.sin(state.bob) * 0.1 : swim.pitch;
+      avatar.rotation.set(pitch, state.yaw, state.dive ? Math.sin(state.bob * 0.5) * 0.16 : swim.roll);
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(nod, state.yaw, roll);
@@ -2287,7 +2381,7 @@ export function createWalkMode({
     classicAvatar.update({
       moving: state.moving, running: state.running, sprinting: state.sprinting, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
-      swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
+      swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
       dancing: dancingNow(),
     }, dt);
@@ -2608,6 +2702,7 @@ export function createWalkMode({
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('wheel', onWheel);
     document.removeEventListener('pointerlockchange', onLockChange);
+    clearTimeout(lockAgain);
     scene.remove(avatar);
     classicAvatar.dispose();
   }
@@ -2625,7 +2720,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },

@@ -16,7 +16,7 @@ import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
 const { SEA_V, afloat, island, post, talk } = await import('./support/sea.mjs');
-const { parseParcel, packParcel } = await import('../lib/islandbundle.mjs');
+const { parseParcel, packParcel, CAPS } = await import('../lib/islandbundle.mjs');
 
 const TREE = { id: 'aabbccdd', kind: 'tree', x: 3, z: -4, rot: 0 };
 // A bed is a prop-shaped thing with a world position, and `crop` is which one it is
@@ -111,8 +111,8 @@ test('a parcel is rebuilt field by field, like everything else off a wire', () =
   // The caps are the bundle's own, so a parcel cannot be the way somebody gets round them.
   // Refused outright rather than quietly trimmed, which is what `strict` means here.
   assert.throws(
-    () => parseParcel({ props: Array.from({ length: 900 }, (_, i) => ({ ...TREE, id: String(i).padStart(8, '0') })) }, { gridSize: 64 }),
-    /more than the 500/,
+    () => parseParcel({ props: Array.from({ length: CAPS.props + 1 }, (_, i) => ({ ...TREE, id: String(i).padStart(8, '0') })) }, { gridSize: 64 }),
+    new RegExp(`more than the ${CAPS.props}`),
   );
 
   // Missing is empty, not a crash: an island with nothing on it patches to nothing on it.

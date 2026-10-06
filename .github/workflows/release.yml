@@ -10,20 +10,57 @@
 #   git tag v0.2.0 && git push origin v0.2.0
 # The tag has to match that version; the first step checks, because a zip called 0.2.0 whose
 # exes say 0.1.0 is a bug report waiting to be written. Run by hand (workflow_dispatch) it
-# builds the same zip as an artifact and publishes nothing.
+# builds the same zip as an artifact and publishes nothing - unless `publish` is ticked: then
+# the `tag` job tags the commit it runs on as v<version> and the build hangs on that release,
+# exactly as a pushed tag would. That is for whoever can start a run but not push a tag (a
+# Claude Code session in the cloud may push its own branch only). A tag pushed with the
+# workflow's own GITHUB_TOKEN starts no second run, so the release is built once.
 name: release
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Tag this commit as v<version> and publish the release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  # Only for a run by hand with `publish`. The version is the one both apps carry; a tag that
+  # already exists is refused rather than moved, since a release once out is somebody's download.
+  tag:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: |
+          desktop=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          phone=$(node -p "require('./src-android/tauri.conf.json').version")
+          [ "$desktop" = "$phone" ] || { echo "src-tauri says $desktop and src-android says $phone"; exit 1; }
+          tag="v$desktop"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+            echo "$tag already exists - bump the version first"; exit 1
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: tag
+    # `tag` is skipped on a pushed tag and on a plain run by hand; only its failure stops this.
+    if: ${{ !cancelled() && needs.tag.result != 'failure' }}
     runs-on: windows-latest
+    env:
+      RELEASE: ${{ needs.tag.outputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,15 +102,16 @@ jobs:
           [IO.File]::WriteAllText("$PWD/$name.zip.sha256", $line)
 
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.RELEASE != ''
         with:
+          tag_name: ${{ env.RELEASE }}
           files: |
             promptholm-windows-x64.zip
             promptholm-windows-x64.zip.sha256
           generate_release_notes: true
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: env.RELEASE == ''
         with:
           name: promptholm-windows-x64
           path: promptholm-windows-x64.zip
@@ -84,10 +122,16 @@ jobs:
   #
   # Signed with the keystore in the ANDROID_KEYSTORE secret (base64 of a .jks) and
   # ANDROID_KEYSTORE_PASSWORD, alias `promptholm`. Without them a throwaway key is made on
-  # the spot: it installs fine, but every release then has a different signature and a phone
-  # has to uninstall the old one before it will take the new one.
+  # the spot for a build by hand (an artifact, nothing published): it installs fine, but has a
+  # different signature from every other one. A publishing run without the secret stops. The
+  # Sign step checks the APK is not debuggable and is signed v2 + v3, and puts the
+  # certificate's SHA-256 in the job summary.
   android:
+    needs: tag
+    if: ${{ !cancelled() && needs.tag.result != 'failure' }}
     runs-on: ubuntu-latest
+    env:
+      RELEASE: ${{ needs.tag.outputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -149,6 +193,10 @@ jobs:
           if [ -n "$KEYSTORE" ]; then
             echo "$KEYSTORE" | base64 -d > release.jks
             pass="$KEYSTORE_PASSWORD"
+          elif [ -n "$RELEASE" ]; then
+            # A published APK on a throwaway key cannot update over the last one: Android says
+            # "App not installed" and the phone has to uninstall first, losing its settings.
+            echo "::error::no ANDROID_KEYSTORE secret - refusing to publish an APK on a throwaway key"; exit 1
           else
             echo "::warning::no ANDROID_KEYSTORE secret - signing with a throwaway key, so this APK will not update over an earlier one"
             pass=throwaway
@@ -158,19 +206,73 @@ jobs:
           "$bt/zipalign" -f -p 4 src-android/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk aligned.apk
           "$bt/apksigner" sign --ks release.jks --ks-key-alias promptholm --ks-pass "pass:$pass" --key-pass "pass:$pass" \
             --out promptholm-android.apk aligned.apk
-          "$bt/apksigner" verify promptholm-android.apk
+          # What a phone checks, said out loud: a release build (never debuggable - Play Protect
+          # warns about those), signed with v2 and v3 (minSdk 24, so v1 is left out on purpose and
+          # reads false), and the certificate's fingerprint in the job summary, so a release
+          # signed by another key than the last one is seen here rather than on a phone.
+          if "$bt/aapt2" dump badging promptholm-android.apk | grep -q "application-debuggable"; then
+            echo "::error::the APK is debuggable - that is a debug build, not a release"; exit 1
+          fi
+          "$bt/apksigner" verify --verbose --print-certs promptholm-android.apk | tee verify.txt
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" verify.txt || { echo "::error::not signed with v2"; exit 1; }
+          grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" verify.txt || { echo "::error::not signed with v3"; exit 1; }
+          {
+            echo "### promptholm-android.apk"
+            echo '```'
+            grep -E "^Verified using|certificate DN|certificate SHA-256" verify.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f verify.txt
           rm -f release.jks aligned.apk
           printf '%s  promptholm-android.apk\n' "$(sha256sum promptholm-android.apk | cut -d' ' -f1)" > promptholm-android.apk.sha256
 
+      # The page alone, for phones that already have the app (Plans/app-zonder-apk-bijwerken.md):
+      # src-android/dist/ as it went into this APK, zipped and signed. The app takes it only
+      # under the key it carries (src-android/bundle-key.pub) and only for a shell as new as
+      # src-android/shell-version, so a release whose page needs a newer shell is still the
+      # APK card. Without the secret there is no bundle and phones simply go on as before.
+      - name: Page bundle
+        env:
+          BUNDLE_SIGNING_KEY: ${{ secrets.BUNDLE_SIGNING_KEY }}
+        run: |
+          if [ -z "$BUNDLE_SIGNING_KEY" ]; then
+            echo "::warning::no BUNDLE_SIGNING_KEY secret - no page bundle, phones need the APK for this release"
+            exit 0
+          fi
+          (cd src-android/dist && zip -qrX ../../promptholm-web.zip .)
+          node scripts/sign-bundle.mjs promptholm-web.zip promptholm-web.json
+          { echo "### promptholm-web.zip"; echo '```'; cat promptholm-web.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.RELEASE != ''
         with:
+          tag_name: ${{ env.RELEASE }}
           files: |
             promptholm-android.apk
             promptholm-android.apk.sha256
+            promptholm-web.zip
+            promptholm-web.json
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: env.RELEASE == ''
         with:
           name: promptholm-android
-          path: promptholm-android.apk
+          path: |
+            promptholm-android.apk
+            promptholm-web.zip
+            promptholm-web.json
+
+  # The web version (Plans/spelen-in-de-browser.md): the keeper's home server serves it from a
+  # Portainer git stack that follows the branch `play` (docker-compose.play.yml), so a release
+  # moves that branch onto its own commit and the push is what redeploys it - that box's
+  # convention, a git stack and a push webhook. Not `main`: the web gets releases, not every
+  # commit. A push with this workflow's GITHUB_TOKEN starts no workflow, but it does fire the
+  # repository's webhooks. Only once both builds are out, so the page never runs ahead of the
+  # release it names.
+  play:
+    needs: [tag, windows, android]
+    if: ${{ !cancelled() && needs.windows.result == 'success' && needs.android.result == 'success' && (startsWith(github.ref, 'refs/tags/') || needs.tag.outputs.tag != '') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git push --force origin "${GITHUB_SHA}:refs/heads/play"

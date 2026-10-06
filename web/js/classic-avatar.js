@@ -878,6 +878,9 @@ function buildRig(spec, material) {
   // `carried` is a group so the finished model can replace the stand-in's geometry without
   // touching the rig; it hangs on the body's root, so it leans with it.
   const CARRY_ARM = -1.42, CARRY_Z = 0.5, CARRY_LEAN = -0.1;
+  // Treading water (update() below): how far the free arms are held out sideways, how far
+  // forward, how far they scull about that and how fast, and how far the legs kick.
+  const TREAD_OUT = -0.85, TREAD_ARM = -0.25, TREAD_SCULL = 0.3, TREAD_RATE = 2.4, TREAD_KICK = 0.35;
   const CARRIED_AT = [0, 0.29 * PLAYER_SCALE, 0.145];
   const carried = new THREE.Group();
   carried.name = 'carried';
@@ -1206,6 +1209,21 @@ function buildRig(spec, material) {
       armZ.leftArm = CARRY_Z;
       armZ.rightArm = -CARRY_Z;
       lean = CARRY_LEAN;
+    }
+    // Treading water (diving.js swimPose: walk.js and peers.js stand a swimmer going nowhere
+    // upright and hand in `treading`, 0..1 of the way there): free arms out to the sides,
+    // sculling a little forward and back, and the legs kicking slowly under the surface.
+    // A held item stays where the hand holds it.
+    const tread = pose.swimming && !fp ? (pose.treading || 0) : 0;
+    if (tread > 0) {
+      const s = Math.sin(time * TREAD_RATE);
+      for (const [side, out] of [['leftArm', TREAD_OUT], ['rightArm', -TREAD_OUT]]) {
+        if (holding[side]) continue;
+        targets[side] = (TREAD_ARM + TREAD_SCULL * (side === 'leftArm' ? s : -s)) * tread;
+        armZ[side] = out * tread;
+      }
+      targets.leftLeg = TREAD_KICK * s * tread;
+      targets.rightLeg = -TREAD_KICK * s * tread;
     }
     // Both hands on the bars, whatever they are holding.
     if (ride) targets.leftArm = targets.rightArm = RIDE_ARM;

@@ -468,6 +468,9 @@ export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
 // The sawmill's parts that move (scripts/build-sawmill.py): baked inside the yard asset so it
 // stands on the ground, left out of its merge, and hung on their own pivots by sawmill.js. A
 // part with several colours bakes as `name:0`, `name:1`, which the optional tail allows.
+// The Salty Kraken's parts that move in the wind (web/js/kraken-motion.js): its two Jolly Rogers, its
+// three set sails and the lanterns that hang on a hook. Out of the merged body; that file hangs them.
+export const isKrakenMoving = (n) => /^Salty ((great|fore) jolly roger( (crossbone|knuckle|skull|socket))?|(fore course|fore topsail|aft topsail)( (reef band|boltrope|patch))?|(stern|bow|fore top|door) lantern (ring|cap|rim|glass|stile|band|base|foot|finial))( \d+)?(:\d+)?$/.test(n);
 export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
 // The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
 export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
@@ -1663,8 +1666,10 @@ function civic(parts, spec, rng) {
       // The Salty Kraken, the pirates' pub (Plans/piratenkroeg.md), authored in
       // assets/piratetavern/ facing the water (+z). It bakes no anchor.flag on purpose: every
       // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
-      parts.push(...meshAsset('piratetavern'));
+      parts.push(...meshAsset('piratetavern', 0xffffff, { skip: isKrakenMoving }));
       for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
+      // Its flags, sails and hanging lanterns move (web/js/kraken-motion.js, hung by main.js).
+      animated.krakenMotion = true;
       // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on its
       // post at the foot of the stair; what swings is hung by main.js on `animated.piratesign`, at the
       // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
@@ -2426,11 +2431,27 @@ export function pirateSurfaces(anchors) {
 // and the hull is one solid from its keel to the castle's roof (`anchor.solid.hull.lo|hi`): no
 // vertex of it is a settler's height off the ground, so without it the stair's inner side was open
 // into the ship.
-const PIRATE_WALKED = /^Salty (stair|door)/;
+//
+// Measured from the foot of the stair (`anchor.door`, the landing's floor), not from the asset's
+// y = 0: the rock runs on SKIRT below it into the water or the sand (Plans/kraken-op-zee.md), and
+// what a walker - or a swimmer at the surface, half a unit under the landing - bumps into is what
+// stands round that level, not the skirt's widest reach at the bottom. The landing and its piles
+// are walked on, like the stair.
+const PIRATE_WALKED = /^Salty (stair|door|landing)/;
+const PIRATE_UNDER = 0.6;       // how far under the landing a part still counts as a wall
 const UNDER_STAIR = 0.75;       // a floor at least this high has room under it for somebody to walk
 const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in scripts/build-piratetavern.py)
 function pirateSolids(parts, anchors, surfaces) {
   const out = [];
+  const ground = (anchors.door && anchors.door[1]) || 0;
+  // A point of the rock under one of the stair's floors is walked over, not into: the stair stands on
+  // the rock (since the stair's foot went up the rock, Plans/kraken-op-zee.md, rocks reach under the
+  // flights at a walker's height, and their box stood across the treads).
+  const under = (x, y, z) => surfaces.some((f) => {
+    if (x < f.x0 || x > f.x1 || z < f.z0 || z > f.z1) return false;
+    const top = f.y != null ? f.y : f.y0 + (f.y1 - f.y0) * (x - f.x0) / ((f.x1 - f.x0) || 1);
+    return y <= top + 0.02;
+  });
   for (const g of parts) {
     const name = g.userData.part?.args?.[0] || '';
     if (PIRATE_WALKED.test(name)) continue;
@@ -2440,8 +2461,9 @@ function pirateSolids(parts, anchors, surfaces) {
       const y = p.getY(i);
       if (y < y0) y0 = y;
       if (y > y1) y1 = y;
-      if (y > WALK_CLEARANCE) continue;
+      if (y > ground + WALK_CLEARANCE || y < ground - PIRATE_UNDER) continue;
       const x = p.getX(i), z = p.getZ(i);
+      if (under(x, y, z)) continue;
       if (x < x0) x0 = x;
       if (x > x1) x1 = x;
       if (z < z0) z0 = z;
@@ -2467,22 +2489,29 @@ function pirateSolids(parts, anchors, surfaces) {
   // Under each floor high enough to walk under, a low block - inset by a body's width, because
   // walk.js grows every solid by one: at the floor's own size, anybody who landed beside the stair
   // was inside it, and every step from there was blocked (the keeper: "karakter zit vast").
+  // `dry`: a wall to feet, not to a swimmer. In the sea these blocks stand in the water under the
+  // landing and the ladder up the hull, and with the rocks' boxes they penned in whoever fell off
+  // the boarding plank between the ladder and the rock, with no way to swim out (issue #89).
   for (const s of surfaces) {
     let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
     const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
-    if (top < UNDER_STAIR) continue;
+    if (top - ground < UNDER_STAIR) continue;
     if (s.y == null) {
       // only where the ramp is high enough to be walked under
-      const t = (UNDER_STAIR - s.y0) / (s.y1 - s.y0);
+      const t = (ground + UNDER_STAIR - s.y0) / (s.y1 - s.y0);
       const at = s.x0 + (s.x1 - s.x0) * Math.min(Math.max(t, 0), 1);
       if (s.y1 > s.y0) a = Math.max(a, at); else b = Math.min(b, at);
     }
-    const y1 = (s.y != null ? s.y : UNDER_STAIR) - 0.3;
+    const y1 = (s.y != null ? s.y : ground + UNDER_STAIR) - 0.3;
     const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
-    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: 0, y1 });
+    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: ground - PIRATE_UNDER, y1, dry: true });
   }
-  const lo = anchors['solid.hull.lo'], hi = anchors['solid.hull.hi'];
-  if (lo && hi) {
+  // Every block the bake names (anchor.solid.<name>.lo|hi): the hull from its keel to under the deck, and on
+  // the deck the castles, masts, capstan, barrels and crates (Plans/kraken-dek.md).
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^solid\.([a-z]+)\.lo$/.exec(key);
+    const hi = m && anchors[`solid.${m[1]}.hi`];
+    if (!hi) continue;
     out.push({ x: (lo[0] + hi[0]) / 2, z: (lo[2] + hi[2]) / 2, hx: Math.abs(hi[0] - lo[0]) / 2, hz: Math.abs(hi[2] - lo[2]) / 2, y0: lo[1], y1: hi[1] });
   }
   return out;
@@ -2968,7 +2997,10 @@ const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside 
 // Which way a pier runs, which way is across it, and whether it ends in the wide head: the three
 // decisions buildPierGeometry lays the dock set out by, kept in one place because pierSurfaces
 // has to make them the same way - the planks you see and the planks you stand on.
-function pierFrame(cells, terrain, from) {
+// `head: false` is a pier that ends against something rather than in open water - the Salty Kraken's
+// gangway, whose last bay meets the landing at the foot of its stair (Plans/kraken-op-zee.md) - and
+// gets no wide head however much water is either side of it.
+function pierFrame(cells, terrain, from, head = true) {
   const n = cells.length;
   // Which way the run goes, as a unit step over the cell grid. A pier is a straight line
   // out from one shore cell along one of the four axes, so the first two cells say it -
@@ -2985,14 +3017,14 @@ function pierFrame(cells, terrain, from) {
   const across = [step[1], -step[0]];
   const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
     && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
-  return { step, across, head: wide(cells[n - 1]) };
+  return { step, across, head: head && wide(cells[n - 1]) };
 }
 
-export function buildPierGeometry(cells, terrain, from) {
+export function buildPierGeometry(cells, terrain, from, { head: wantHead = true } = {}) {
   if (!cells || !cells.length) return null;
   if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
   const n = cells.length;
-  const { step, across, head } = pierFrame(cells, terrain, from);
+  const { step, across, head } = pierFrame(cells, terrain, from, wantHead);
   // The set is modelled running along +z, like the fence and the bridge, so one rotation
   // turns the whole pier to face whichever way the sea is.
   const ry = Math.atan2(step[0], step[1]);
@@ -3063,9 +3095,9 @@ function dockTreads() {
   return dockTread;
 }
 
-export function pierSurfaces(cells, terrain, from) {
+export function pierSurfaces(cells, terrain, from, { head: wantHead = true } = {}) {
   if (!cells || !cells.length || !models.hasAsset('prop_dock_ramp')) return [];
-  const { step, across, head } = pierFrame(cells, terrain, from);
+  const { step, across, head } = pierFrame(cells, terrain, from, wantHead);
   const { ramp, head: wings } = dockTreads();
   const n = cells.length;
   // A rectangle round a cell's middle, `along` half its length down the run and `side` half its
