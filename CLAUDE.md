@@ -1114,6 +1114,11 @@ is read off the steer and front-axle origins - move a pivot in the builder, not 
 see a rider through `FLAG_RIDING` (128, within `POSE_MASK`); a sea still running the old
 `lib/players.mjs` masks it away, so a remote-hosted sea has to be redeployed before other
 players see bicycles.
+**A rider on a horse is a pose, not a vehicle yet** (`pose.horseback`, `HORSEBACK` in classic-avatar.js,
+step one of Plans/paard-in-plaats-van-fiets.md): the measured riding angles plus three of the rig's own
+(thighs and shins out over the saddle flap, arms in), seated on `saddleOf()` (web/js/fauna.js, off the bake)
+of the stable's horse drawn at `HORSEBACK.horse` (0.85) - at 1.0 no Traveller leg reaches the irons without
+going through the flap. In the rig the left leg is at -x (the mirror), so "out" is -z for it. /demo has three.
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island
