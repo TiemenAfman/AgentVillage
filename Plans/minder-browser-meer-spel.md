@@ -34,18 +34,57 @@ Open (smaak keeper):
 - **Cursor**: knoppen tonen de handcursor; voorstel: overal de pijl, of een eigen cursor. ❓
 - **Focusringen** na een muisklik: alleen `:focus-visible` tonen is nu al grotendeels zo; nalopen per paneel.
 
-## 2. Eén UI-model per modus — nog te doen
+## 2. Eén UI-model per modus
 
-Modi: lucht (orbit), te voet, kamer, planner, noclip, telefoon/web. Bekend en elders opgepakt: **Tab** loopt door
-de HUD en daarna springt de camera naar de lucht (aparte sessie, "Repareer Tab").
+Gemeten op een kopie van Hoogezand (441 bewoners), worktree-`serve.mjs` met `PROMPTHOLM_HOME` op de kopie,
+Chrome DevTools-venster voorop, 3440x1249. Toetsen met echte bubbling vanaf `body`. De kolommen kamer en noclip zijn uit de code afgeleid, niet geteld.
 
-Nog te inventariseren en te meten: welke chips/panelen per modus zichtbaar zijn, wat Escape per modus doet,
-panelen die openblijven bij een moduswissel, panelen die in een modus te openen zijn waar ze geen zin hebben.
-Voorgestelde regel (❓ keeper): Escape sluit altijd eerst het bovenste paneel, dan de muis los, dan het menu;
-een moduswissel sluit alle panelen behalve chat.
+| | lucht | te voet | kamer | planner | noclip |
+|---|---|---|---|---|---|
+| titelkaart, chips, klok, ☰ | ja | ja | ja | ja | (hud) |
+| "vraag voor jou" / "nu bouwen" | ja | nee | nee | nee | – |
+| tijdlijn (chronicle), Live | ja | nee | nee | nee | – |
+| walk-prompt, buidel | nee | ja | ja | nee | – |
+| plan-tools, ledger, plan-hud | nee | nee | nee | ja | – |
+| install- en fullscreen-knop | ja | ja | ja | ja | ja |
 
-## 3. Haperingen — nog te meten
+Escape, zoals gemeten:
+- **lucht**: sluit eerst wat open is (zijpaneel, kaart, inventaris), met niets open opent het het menu; nog eens = dicht. Klopt.
+- **te voet**: muis los, dan omhoog naar de lucht (zonder pointer lock meteen omhoog). Klopt met CLAUDE.md.
+- **kamer**: opent het menu met de kamer gepauzeerd; weg via de deur. Klopt.
+- **planner**: stapt terug door zijn niveaus, dan naar de lucht.
 
-Te meten met de Chrome DevTools-trace (venster voorop, zie CLAUDE.md) en `?stats` op een kopie van het echte eiland:
-paneel openen, walk in/uit, kamer in/uit, planner, een scan/republish, een gast-eiland dat gebouwd wordt, de
-regisseur, de gold run. Per hapering oorzaak + fix, geordend op kosten/baten. Niet gedaan in deze ronde.
+Gevonden en **gerepareerd**:
+- Met het menu open stapelden **M (kaart)**, een **chip** (Quests, Animals) en **P (planner)** zich *onder/boven*
+  het menu: twee lagen tegelijk op het scherm. Nu: het menu is een pauze, de letters uit de lucht doen niets
+  zolang het openstaat, en een geklikte chip laat het menu eerst wijken (`main.js`, `nav-chips`-capture).
+
+Nog open:
+- **Tab** door de HUD + camera naar de lucht: aparte sessie ("Repareer Tab").
+- De install- en fullscreen-knop (`fab`) staan in elke modus, ook te voet en in de planner. Voorstel: alleen in de
+  lucht en in het menu. ❓
+- "Vraag voor jou"/"nu bouwen" verdwijnen te voet en in de planner, de tijdlijn ook - dat is consequent; maar de
+  chips blijven allemaal zichtbaar te voet terwijl de helft (Plan, Overview, New settler) daar niets doet of uit
+  de loopmodus trekt. Voorstel: te voet alleen Inventory, Map, Quests, ☰. ❓
+- Overgangen: panelen *verschijnen* (hidden-toggle) i.p.v. in te faden; voorstel: 120 ms fade+schuif voor `.panel`
+  en `.sysmenu-card`, alleen opacity/transform zodat het niets kost. ❓ (smaak)
+
+## 3. Haperingen (gemeten)
+
+Basis: 20 ms per frame (50 fps), p95 20 ms, in de lucht en te voet. Gemeten met frame-tijden uit `requestAnimationFrame`
+en `long-animation-frame` (welke script). Volgorde = baten/kosten.
+
+| actie | langste frame | oorzaak | status |
+|---|---|---|---|
+| **eerste keer een kamer in** (Salty Kraken) | 1748 ms + 565 + 896 | lazy set parsen (`models.js` 1245 ms, `piratetavern_room-mesh.js` 474), daarna bouwen + shaders | open: set parsen in een worker / in `requestIdleCallback` zodra de deur in zicht is, en `renderer.compileAsync` vóór het tonen |
+| **daarna terug naar het eiland** | 391 / 480 / 629 ms | three.js compileert eilandprogramma's opnieuw (de kamer heeft 7 PointLights; het aantal lichten zit in elke programmasleutel) | open: lichtaantal gelijk houden (lichten op 0 i.p.v. weg, zoals CLAUDE.md al voor kampvuren doet) |
+| tweede keer kamer in | 39 ms | – | goed |
+| **kaart openen (M)** | 155–167 ms, elke keer | `resize()` gooide bij elke opening de grondkaart weg (~150 ms hoogtes opzoeken) | **gerepareerd**: alleen bij een echte maatwijziging; nu alleen de eerste opening (221 ms), daarna 0 |
+| inventaris openen | 119–124 ms, elke keer | twee nieuwe WebGL-contexten per bezoek (studio.js, bewust: contexten worden teruggegeven) + 70 ms in een setTimeout | open: één context houden voor de hele sessie en hergebruiken (blijft binnen het maximum van ~16) |
+| planner in | 47–90 ms (één frame) | eerste render van de orthocamera, overlay opbouwen | klein; laten |
+| lopen in | 120 ms (één frame, eerste keer) | avatar/walk-mode opbouwen | klein; laten |
+| menu, quests, dieren | ≤ 50 ms | – | goed |
+
+Niet gemeten in deze ronde (de kopie draait `--no-rescan` en zonder buren): een scan/republish die binnenkomt,
+een gast-eiland dat gebouwd wordt, de regisseur en de gold run. Volgende stap: een tweede islander op de lokale
+zee, en `/api/reload`-achtige rescan op de kopie.

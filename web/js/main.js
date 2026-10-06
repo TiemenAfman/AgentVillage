@@ -4272,6 +4272,9 @@ addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const k = e.key.toLowerCase();
+  // The menu is a pause: while it is up, the sky's letters do nothing behind it (the chart
+  // used to open under the menu and both stood on screen). Escape still closes it.
+  if (k !== 'escape' && state.sysmenu && state.sysmenu.isOpen()) return;
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
   // The chips' own letters, from the sky only (Plans/DONE/esc-menu-en-knoppenbalk.md) - on foot I
@@ -4331,6 +4334,11 @@ function escapeHasWork() {
 }
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape') escHadWork = escapeHasWork();
+}, true);
+// A chip clicked with the menu open is a choice to go there: the menu gives way first, rather
+// than staying on top of the panel or the planner it just opened (Plans/minder-browser-meer-spel.md).
+document.getElementById('nav-chips')?.addEventListener('click', (e) => {
+  if (e.target.closest('button') && state.sysmenu && state.sysmenu.isOpen()) state.sysmenu.close();
 }, true);
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.repeat || !state.sysmenu) return;

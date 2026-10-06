@@ -1583,6 +1583,9 @@ select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/pr
 (`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
 tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
 `#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
+**The menu is a pause.** While the Esc menu is open the sky's letters (M, the chips' keys) do nothing behind
+it, and a chip clicked closes it first (`nav-chips` capture listener in main.js) - before, the chart and the
+planner opened under or over it and two layers stood on screen.
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
 the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock

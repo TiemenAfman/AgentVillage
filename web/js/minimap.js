@@ -786,10 +786,13 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     return f;
   }
 
+  // Called on every open, and the ground sheet is ~150 ms of height lookups on a big world:
+  // throwing it away when nothing changed made every M a hitch (Plans/minder-browser-meer-spel.md).
   function resize() {
-    dpr = window.devicePixelRatio || 1;
-    W = Math.max(1, panel.clientWidth);
-    H = Math.max(1, panel.clientHeight);
+    const d = window.devicePixelRatio || 1;
+    const w = Math.max(1, panel.clientWidth), h = Math.max(1, panel.clientHeight);
+    if (d === dpr && w === W && h === H) return;
+    dpr = d; W = w; H = h;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     groundKey = '';

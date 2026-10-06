@@ -35,3 +35,11 @@ test('no pinch zoom, no tap flash, and the window paints night blue between docu
   assert.match(readFileSync(new URL('../web/index.html', import.meta.url), 'utf8'), /user-scalable=no/);
   assert.match(readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8'), /\.background_color\(/);
 });
+
+test('the chart keeps its painted ground when it opens at the same size, and the menu is a pause', () => {
+  const map = readFileSync(new URL('../web/js/minimap.js', import.meta.url), 'utf8');
+  assert.match(map, /if \(d === dpr && w === W && h === H\) return;/, 'every M repainted ~150 ms of ground');
+  const main = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /k !== 'escape' && state\.sysmenu && state\.sysmenu\.isOpen\(\)\) return;/);
+  assert.match(main, /getElementById\('nav-chips'\)\?\.addEventListener\('click'/);
+});
