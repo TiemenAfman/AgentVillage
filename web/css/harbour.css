@@ -147,7 +147,7 @@ body.touch .chip[data-key]::after { display: none; }
 .bind.off, .chip.off { pointer-events: none; cursor: default; }
 @media (max-width: 480px) { .bindtable { font-size: 12px; grid-template-columns: minmax(64px, 1.2fr) repeat(3, minmax(44px, 1fr)); } }
 #clock-chip { border-radius: 8px; padding-top: 7px; padding-bottom: 7px; letter-spacing: .05em; }
-.btn, .fab { box-shadow: inset 0 1px #ffffff08; }
+.btn { box-shadow: inset 0 1px #ffffff08; }
 .btn:hover { border-color: #e8c17c70; }
 button:focus-visible, select:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent-2);

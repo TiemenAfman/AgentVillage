@@ -78,7 +78,7 @@ function setLabel(id, text, title) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
-  // Windowed or fullscreen (display.js): the button, Settings and Alt+Enter share it.
+  // Windowed or fullscreen (display.js): Settings and Alt+Enter share it.
   const display = createDisplay();
   const state = {
     filters: {
@@ -222,7 +222,14 @@ export function createUI(handlers) {
       if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
       renderSettings();
       el('sysmenu-build').textContent = handlers.buildLabel ? handlers.buildLabel() : '';
+      // Respawn to town (issue #74) is for somebody on foot in the world - the sky has nothing
+      // to bring home, and a room has a door - so it is not a button anybody else ever sees.
+      el('sysmenu-respawn').hidden = !(handlers.canRespawn && handlers.canRespawn());
     },
+  });
+  el('sysmenu-respawn').addEventListener('click', () => {
+    menu.close();
+    if (handlers.onRespawn) handlers.onRespawn();
   });
   const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {
@@ -242,6 +249,9 @@ export function createUI(handlers) {
   function openLegend() { hideSide('legend'); el('legend').hidden = false; syncSidebar(); }
   // the right column holds one thing at a time, and on foot it holds nothing
   function syncSidebar() {
+    // Which chips and cards stand is the mode's (ui.css, body[data-mode]): from the sky all of them,
+    // on foot only what you use there, in the planner only Done (Plans/minder-browser-meer-spel.md).
+    document.body.dataset.mode = planning ? 'plan' : walking ? 'foot' : 'sky';
     const panelOpen = SIDE.some((id) => el(id) && !el(id).hidden);
     el('building-now').hidden = walking || planning || panelOpen || !hasBuilders;
     const w = el('waiting-now');
@@ -407,6 +417,7 @@ export function createUI(handlers) {
     }
     html += `<p class="dossier-actions">
       ${b.kind === 'civic' || !b.sessionId ? '' : `<button class="btn primary" id="talk-btn">${w ? 'Answer' : 'Talk to them'}</button>`}
+      ${w && b.sessionId ? '<button class="btn" id="dismiss-btn" title="Take them off the waiting list until they say something new">Archive</button>' : ''}
       ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
       <button class="btn" id="focus-btn">Focus camera</button>
       ${handlers.canWalkHere && handlers.canWalkHere() ? '<button class="btn" id="walkhere-btn">Walk here</button>' : ''}
@@ -484,6 +495,8 @@ export function createUI(handlers) {
     if (walkHere) walkHere.addEventListener('click', () => handlers.onWalkHere(b.id));
     const talk = body.querySelector('#talk-btn');
     if (talk) talk.addEventListener('click', () => handlers.onTalk(b.id));
+    const dismiss = body.querySelector('#dismiss-btn');
+    if (dismiss) dismiss.addEventListener('click', () => handlers.onDismissWait(b.id));
     const stall = body.querySelector('#stall-btn');
     if (stall) stall.addEventListener('click', () => handlers.onMarket());
     const exile = body.querySelector('#exile-btn');
@@ -572,6 +585,12 @@ export function createUI(handlers) {
   // The director (web/js/director.js, Plans/DONE/regisseur.md): the camera wandering off by itself
   // to watch something happen when nobody has touched the island for a while. On unless
   // switched off, per browser like the arrow.
+  // The island's card (settlers, districts) on foot: off by default, a view from above (ui.css
+  // body[data-mode]); somebody who wants the numbers while walking keeps them with this.
+  const FOOT_CARD_KEY = 'promptholm.footcard';
+  let footCard = false;
+  try { footCard = localStorage.getItem(FOOT_CARD_KEY) === '1'; } catch { /* private window: off */ }
+  document.body.classList.toggle('foot-card', footCard);
   const DIRECTOR_KEY = 'promptholm.director';
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
@@ -964,7 +983,11 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${fixedOn ? ' on' : ''}" data-camfixed="1" aria-pressed="${fixedOn}">Fixed camera distance</button></div>`
       + `<p class="muted" style="margin-top:9px">${fixedOn
         ? 'On: the camera always stays as far back as you scrolled it. A wall, a fountain or a board may hide you for a moment; the camera does not zoom in for it.'
-        : 'Off: the camera comes in towards you when something stands between it and you, and goes back out once it is clear. Rails, posts and crates it still looks past.'}</p>`;
+        : 'Off: the camera comes in towards you when something stands between it and you, and goes back out once it is clear. Rails, posts and crates it still looks past.'}</p>`
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${footCard ? ' on' : ''}" data-footcard="1" aria-pressed="${footCard}">Island card on foot</button></div>`
+      + `<p class="muted" style="margin-top:9px">${footCard
+        ? 'On: the island\'s card at the top left - settlers, apprentices, districts - stays while you walk.'
+        : 'Off: the card at the top left is for the view from above; on foot the screen is the island.'}</p>`;
     const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -1059,6 +1082,12 @@ export function createUI(handlers) {
     }));
     el('settings-body').querySelectorAll('[data-display]').forEach((b) => b.addEventListener('click', () => {
       display.set(b.dataset.display === 'full');
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-footcard]').forEach((b) => b.addEventListener('click', () => {
+      footCard = !footCard;
+      try { if (footCard) localStorage.setItem(FOOT_CARD_KEY, '1'); else localStorage.removeItem(FOOT_CARD_KEY); } catch { /* kept for this page only */ }
+      document.body.classList.toggle('foot-card', footCard);
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-camfixed]').forEach((b) => b.addEventListener('click', () => {
@@ -1606,7 +1635,6 @@ export function createUI(handlers) {
   el('build-btn').addEventListener('click', () => handlers.onBuild());
   el('plan-btn').addEventListener('click', () => handlers.onTogglePlan && handlers.onTogglePlan());
 
-  setupShell(display);
   display.onChange(() => { if (!el('sysmenu').hidden) renderSettings(); });
 
   return {
@@ -1625,23 +1653,4 @@ export function createUI(handlers) {
 }
 
 // --- fullscreen and installing ------------------------------------------
-// Fullscreen itself, with Safari's prefixed calls, is display.js.
-function setupShell(display) {
-  const btn = el('fullscreen-btn');
-  if (!btn) return;
-
-  const expand = btn.querySelector('[data-icon="expand"]');
-  const collapse = btn.querySelector('[data-icon="collapse"]');
-  const sync = () => {
-    const on = display.isFull();
-    expand.hidden = on;
-    collapse.hidden = !on;
-    btn.title = on ? 'Leave fullscreen (Alt+Enter)' : 'Fullscreen (Alt+Enter)';
-    btn.setAttribute('aria-label', on ? 'Leave fullscreen' : 'Fullscreen');
-  };
-  btn.addEventListener('click', () => display.toggle());
-  display.onChange(sync);
-  sync();
-}
-
 function cssHex(hex) { return `#${hex.toString(16).padStart(6, '0')}`; }

@@ -1,5 +1,6 @@
 // Windowed or fullscreen, the one switch (Plans/minder-browser-meer-spel.md): Settings -> This screen
-// -> Display, the button at the bottom right and Alt+Enter, as in every game, all go through here.
+// -> Display and Alt+Enter, as in every game, both go through here. (The round button at the bottom
+// right is gone: it was there for the phone, which has no fullscreen to ask for.)
 //
 // Two ways underneath, one choice on top. In promptholm.exe (PROMPTHOLM_DESKTOP) the window
 // itself goes fullscreen: borderless over the whole monitor, which is what Rust's set_fullscreen is on

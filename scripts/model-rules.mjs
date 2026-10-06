@@ -46,10 +46,13 @@ export const SHIP_ANCHOR = /^(?:(?:deck|stair)\.[a-z]+(?:-[a-z]+)*\.(?:lo|hi)|ma
 // A building walked on (the Salty Kraken's stair, web/js/buildings.js pirateSurfaces/pirateSolids)
 // uses the ship's deck and stair corners for its floors, and two more: `rail.<n>.a|b`, the two
 // ends of one straight run of rail on the floor under it, and `solid.<name>.lo|hi`, opposite
-// corners of a box walk mode may not enter. Both come in pairs like the rest.
-export const WALKED_ANCHOR = /^(?:rail\.[0-9]+\.(?:a|b)|solid\.[a-z]+\.(?:lo|hi))$/;
+// corners of a box walk mode may not enter, and `climb.<name>.lo|hi`, a rope ladder that is climbed
+// rather than walked: `lo` where a climber stands at its foot, `hi` where they step off at its head,
+// the way from one to the other along the ground being the way they face it (walk.js). All three come
+// in pairs like the rest.
+export const WALKED_ANCHOR = /^(?:rail\.[0-9]+\.(?:a|b)|(?:solid|climb)\.[a-z]+\.(?:lo|hi))$/;
 export const isAnchor = (name) => ANCHORS.includes(name) || SHIP_ANCHOR.test(name) || WALKED_ANCHOR.test(name);
-const PAIRED = /^((?:deck|stair|solid|rail)\..+)\.(lo|hi|a|b)$/;
+const PAIRED = /^((?:deck|stair|solid|climb|rail)\..+)\.(lo|hi|a|b)$/;
 const OTHER_END = { lo: 'hi', hi: 'lo', a: 'b', b: 'a' };
 
 // What an asset is for, taken from its name. A collection in a .blend has to start with
@@ -197,7 +200,7 @@ export function checkSet(set, data) {
     }
     const anchors = info.anchors || {};
     for (const name of Object.keys(anchors)) {
-      if (!isAnchor(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}, nor a ship's deck.<name>.lo|hi, stair.<name>.lo|hi or mast.<name>, nor a walked building's rail.<n>.a|b or solid.<name>.lo|hi`);
+      if (!isAnchor(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}, nor a ship's deck.<name>.lo|hi, stair.<name>.lo|hi or mast.<name>, nor a walked building's rail.<n>.a|b, solid.<name>.lo|hi or climb.<name>.lo|hi`);
       const pair = PAIRED.exec(name);
       if (pair && !(`${pair[1]}.${OTHER_END[pair[2]]}` in anchors)) bad.push(`${set}/${asset}: anchor.${name} is one corner of ${pair[1]} and the other is missing`);
     }

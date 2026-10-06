@@ -548,7 +548,7 @@ look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its
 is what a strict `parseBundle` accepts (the sea), `SENT` what `buildBundle` packs to (`ctx.caps`
 picks by `strict`); a list one past a sea's cap is refused *whole*, so `SENT` may never be above
 the `CAPS` of any sea still out there, and raising a cap is two steps: `CAPS` in a patch plus a
-redeploy of the open sea, `SENT` in the next minor. Past a sending cap `firstOf` orders civics,
+redeploy of the open sea, `SENT` in the next minor (0.9.2 raised `CAPS`, 0.10.0 set `SENT` equal to it). Past a sending cap `firstOf` orders civics,
 then houses, then sheds (roads before `path:house:` front paths) and only then cuts, and
 `out.cuts` / the `[sea] ... past the bundle's caps` log line say so - Hoogezand at 962
 buildings once sent its first 600 and no civic at all, so the sea stood no keeper anywhere.
@@ -1420,7 +1420,12 @@ A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per h
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
 then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
 faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
-Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
+Only the 0-hp hit evicts, then whole + 5 s immunity. **Respawn to town** (the Esc menu, under
+Back, only on foot outdoors; issue #74) is the same evict asked for: the page sends a bare
+`{t:'respawn'}`, `health.respawn` sends you to `refuge` with `why: 'respawn'` - no health taken
+or given, no immunity, at most once per `RESPAWN_EVERY_MS` - and a no is `{t:'respawn', ok:false}`.
+A sea from before it says nothing, so after `RESPAWN_WAIT_MS` main.js `respawnHere` puts you
+there itself (feet are the page's); the open sea needs a redeploy for the sea's own answer. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
 guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`, also
@@ -1645,6 +1650,10 @@ select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/pr
 (`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
 tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
 `#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
+**Which chips stand is the mode's** (`body[data-mode]` = sky / foot / plan, written by ui.js `syncSidebar`, rules at
+the end of ui.css): a new chip shows everywhere until it is listed there. On foot only Fly up, Say, Map, Inventory and
+Quests, and the island's card only with Settings → On foot → *Island card on foot* (`promptholm.footcard`, body
+`.foot-card`); in the planner only Done. There is no round button at the bottom right any more.
 **There is no installable web app.** The island is played in promptholm.exe, the Android app or the browser at
 `/play`; the manifest, `sw.js` and the install button are gone, and main.js `unregisterWorkers()` takes down the
 worker a browser kept from before. Do not add a manifest back: a browser offers to install any page that has one.
@@ -1990,6 +1999,12 @@ diving within 4 units; bubbles are one `Points` pool fed by every diver's mouth 
 and the walker's own). Caps by tier (`CAPS`: full / modest / phone) bound reach and instances, and
 the reach never goes past the mist. Cosmetic: no fish is on the wire.
 
+**Archiving a wait is "until when", not a flag** (issue #78). The dossier's Archive posts
+`/api/waiting/dismiss` (keeper-only), which keeps the wait's `since` (lib/waiting.mjs: the last
+turn's timestamp) in `data/waiting-dismissed.json`; `buildVillage` drops a wait not newer than
+that (`isDismissed`), so a new turn brings the flag back by itself. In code it is "dismissed":
+`b.archived` already means the desktop app's own archive.
+
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 
@@ -2234,8 +2249,12 @@ lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's gro
 `pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its deck is walked** ([Plans/kraken-dek.md](Plans/kraken-dek.md)): the waist, the castle's roof and the
 forecastle are `deck.*`/`stair.*` strips the bake works out through `world_of` (heel across, sheer along), what
 stands on them `solid.<letters>.lo|hi` blocks (footprint at their foot - a mast leans with the heel) read by
-`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs and
-one up the hull from the zigzag's landing; a rock under a stair floor is no wall (`under`). The low blocks under
+`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs (walked,
+steep `stair.*` ramps) and a **rope ladder** up the hull, hanging plumb from the boarding plank onto the zigzag's landing,
+that is *climbed* (issue #86): `anchor.climb.<name>.lo|hi` (foot stand, head step-off; `pirateClimbs` -> the build's
+`climbs` -> main.js `climbsOf` -> `walk.setClimbs`), taken and climbed like the galleon's (`fixedAhead`/`stepFixedClimb`
+beside the ship's `ladderUp`/`stepClimb`, in the world's frame, nothing on the wire), and the floor it reaches gets no
+dry block under it; a rock under a stair floor is no wall (`under`). The low blocks under
 the floors are `dry` (a wall to feet, not to a swimmer), and walk.js lets a body standing in several solids at
 once out by the depth summed over all of them (`leaving`): the part boxes overlap in the rocks, and a fall off the
 boarding plank used to land a swimmer where every step was deeper into one of them (#89). The castle front's door

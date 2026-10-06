@@ -12,6 +12,7 @@ import { buildVillage, readArrivals, civicIdOf, yardStage, reachedOf, nextMilest
 import { loadSprint, readAssignments } from './lib/sprint.mjs';
 import { loadIssues, githubConfig } from './lib/issues.mjs';
 import { readBanished } from './lib/banish.mjs';
+import { readDismissed } from './lib/waiting-dismissed.mjs';
 import {
   loadLayout, saveLayout, placeAll, clearRoads, plotDoor, kadehaven, YARD_ID, PIRATE_ID, TREASURE_ID, POLDER_AT, POLDER_EVERY, FAIRWAY_AT, BRIDGE_AT, SQUARE_STEPS, MIN_HAMLET, TOWN_CORE_R,
 } from './lib/layout.mjs';
@@ -218,7 +219,7 @@ async function runScan(o) {
   // (lib/plan.mjs) see the same word. The Codex scan has no statue.
   const survey = (rehomed) => Object.assign(buildVillage({
     sources, cache, arrivals, config, all: o.all, now: Date.now(), banished, dispatched, rehomed,
-    ladder: layout.ladder || null,
+    ladder: layout.ladder || null, dismissed: o.codex ? null : readDismissed(),
   }), o.codex ? {} : { treasure: treasureView(loadTreasure()) });
   let model = survey(layout.rehomed || null);
   // Written back straight away, and moved only when the village sets a new most-ever or on
