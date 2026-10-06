@@ -36,7 +36,7 @@ import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal, applyPose, saddleOf } from './fauna.js';
-import { createClassicAvatar, HORSEBACK } from './classic-avatar.js';
+import { createClassicAvatar, horsebackOf } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { attachButcher, updateButcher } from './butcher.js';
 import { attachQuarry, updateQuarry } from './quarry.js';
@@ -503,36 +503,34 @@ line(FURNITURE, ([type, name, note], x, z) => {
   row++;
 }
 
-// The Traveller in the saddle (HORSEBACK in web/js/classic-avatar.js, step one of
-// Plans/paard-in-plaats-van-fiets.md): the stable's horse standing still with the player's own
-// rig on its back, the hips on the seat saddleOf measures and the soles on the irons' treads, the
-// horse drawn at HORSEBACK.horse of its size (see there). Nobody rides it yet - three of them,
-// turned so the side, the front and the back are each in view.
+// The Adventurer in the saddle (horsebackOf in web/js/classic-avatar.js, step one of
+// Plans/paard-in-plaats-van-fiets.md): the stable's horse at its own size, standing still with the
+// player's rig on its back, the hips on the seat saddleOf measures. He is the one body that rides
+// (the Traveller keeps the bicycle). Three of them, turned so the side, the front and the back are
+// each in view. Nobody rides yet.
 {
   const z = row * ROW;
   heading('On horseback', z);
   const saddle = saddleOf();
+  const fit = horsebackOf('adventurer');
   [[-1, Math.PI / 2, 'from the side'], [0, 0, 'from the front'], [1, Math.PI, 'from behind']].forEach(([i, yaw, note]) => {
     const x = i * PITCH * 0.6;
     const horse = createAnimal('horse', material, { area: { x, z, r: 0 }, seed: `demo:mount:${i}`, ground: () => FIELD_Y, yaw });
     if (!horse || !saddle) return;
     horse.yaw = yaw;
     applyPose(horse, x, FIELD_Y, z);
-    horse.object.scale.setScalar(HORSEBACK.horse);
     scene.add(horse.object);
-    const rider = createClassicAvatar(normalizeAvatar({}), material);
-    // On the body's pivot, so whatever the body does the rider does with it - at his own size
-    // inside the smaller horse, so the hips' perch and height are in the horse's units.
+    const rider = createClassicAvatar(normalizeAvatar({ character: 'adventurer' }), material);
+    // On the body's pivot, so whatever the body does the rider does with it.
     const seat = new THREE.Group();
-    seat.scale.setScalar(1 / HORSEBACK.horse);
-    seat.position.set(0, saddle.seat + (HORSEBACK.perch - rider.hipY) / HORSEBACK.horse, 0).sub(horse.body.position);
+    seat.position.set(0, saddle.seat + fit.perch - rider.hipY, 0).sub(horse.body.position);
     seat.add(rider.object);
     horse.body.add(seat);
     rider.object.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     const pose = { moving: false, grounded: true, horseback: true };
     for (let k = 0; k < 60; k++) rider.update(pose, 1 / 30);
     lives.push((dt) => rider.update(pose, dt));
-    tag(x, z + 1.1, 'rider', note);
+    tag(x, z + 1.1, 'adventurer', note);
   });
   row++;
 }

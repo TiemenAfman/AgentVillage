@@ -73,6 +73,8 @@ island is itself, see HOME below), so `tests/layout-measure.test.mjs` founds the
 three times over every transcript on the machine with a cold cache, and
 `tests/plan-scan.test.mjs`, waiting on the same `data/scan.lock`, gives up after ~20 s -
 a failure of the sandbox, not of the planner; alone it passes.
+A preview started from the worktree (`island-worktree`) founds an island in that same `data/` and
+`config.json`, and `plan-scan`/`layout-measure` then fail on it: stop the preview and delete both first.
 
 `tests/layout-measure.test.mjs` (and `plan-scan.test.mjs`) scan a copy of whatever island
 `DATA` holds, so they fail or pass on the keeper's island as it stands, not on the last
@@ -1117,8 +1119,10 @@ players see bicycles.
 **A rider on a horse is a pose, not a vehicle yet** (`pose.horseback`, `HORSEBACK` in classic-avatar.js,
 step one of Plans/paard-in-plaats-van-fiets.md): the measured riding angles plus three of the rig's own
 (thighs and shins out over the saddle flap, arms in), seated on `saddleOf()` (web/js/fauna.js, off the bake)
-of the stable's horse drawn at `HORSEBACK.horse` (0.85) - at 1.0 no Traveller leg reaches the irons without
-going through the flap. In the rig the left leg is at -x (the mirror), so "out" is -z for it. /demo has three.
+of the stable's horse at its own size. Only the Adventurer rides (the keeper's choice, 6 Oct; the Traveller
+keeps the bicycle): `horsebackOf(character)` gives his numbers (knee opened to 40, thighs out 45), since at
+1.0 no Traveller leg reaches the irons without going through the flap; `HORSEBACK` is the Traveller's pose,
+kept as the base. In the rig the left leg is at -x (the mirror), so "out" is -z for it. /demo has three.
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island
