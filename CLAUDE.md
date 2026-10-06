@@ -544,6 +544,16 @@ flag and no path list that can spend any of them, and an `inviteCode` is back to
 look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
 `parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
 
+**A bundle has two sets of caps, and the sea's is raised first.** `CAPS` in `lib/islandbundle.mjs`
+is what a strict `parseBundle` accepts (the sea), `SENT` what `buildBundle` packs to (`ctx.caps`
+picks by `strict`); a list one past a sea's cap is refused *whole*, so `SENT` may never be above
+the `CAPS` of any sea still out there, and raising a cap is two steps: `CAPS` in a patch plus a
+redeploy of the open sea, `SENT` in the next minor. Past a sending cap `firstOf` orders civics,
+then houses, then sheds (roads before `path:house:` front paths) and only then cuts, and
+`out.cuts` / the `[sea] ... past the bundle's caps` log line say so - Hoogezand at 962
+buildings once sent its first 600 and no civic at all, so the sea stood no keeper anywhere.
+Hoogezand packs to 743 kB uncapped; `MAX_BUNDLE_BYTES` (lib/sea.mjs) is 8 MB for `CAPS`.
+
 **One material, one batch per island** ([Plans/DONE/gebouwen-in-een-batch.md](Plans/DONE/gebouwen-in-een-batch.md)).
 Which texture sheet a face uses is a number carried on the vertex, not a material of its own,
 and night glow is a per-vertex emissive mask - and every building body on an island is one

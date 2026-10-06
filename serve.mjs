@@ -1035,8 +1035,9 @@ if (req.url === '/api/command' && req.method === 'POST') {
     let body;
     // More than the default: since the work sites came along (the fields, the gardens and
     // five hundred trees) a big village's report is past 64 kB. The caps in
-    // lib/placements.mjs are what bound it; this only has to let them be reached.
-    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    // lib/placements.mjs are what bound it; this only has to let them be reached - five
+    // thousand buildings at ~45 bytes each are past 256 kB on their own.
+    try { body = await readBody(req, 1024 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     let saved;
     try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
     // Worth republishing at once rather than waiting for the next scan: until this arrives
@@ -1838,6 +1839,8 @@ function codexSettlers() {
 // Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
 // visitor would undo every bit of it in one request.
 let crowdIds = {};
+// What the last bundle had to leave out, as logged - see islandBundle.
+let toldCut = '';
 // And the other way round, for the animals' public card: which redacted id the bundle gave a
 // settler, or null when the bundle does not carry them. A linear walk, because it is asked
 // for at most four friends of at most six animals.
@@ -1910,6 +1913,10 @@ function islandBundle() {
       keeper: islanderName,
     }, named);
     crowdIds = named.ids || {};
+    // Said once per change, not once a scan: a village past the bundle's caps (SENT in
+    // lib/islandbundle.mjs) used to lose its whole town on the sea without a word.
+    const cut = (named.cuts || []).map((c) => `${c.what} ${c.had}/${c.cap}`).join(', ');
+    if (cut !== toldCut) { if (cut) log(`[sea] the island is past the bundle's caps, sending only the first: ${cut}`); toldCut = cut; }
     return bundle;
   } catch {
     // An island that has never been scanned has no terrain hash, and buildBundle says so

@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
-import { buildBundle, parseBundle, CAPS, beaconId } from '../lib/islandbundle.mjs';
+import { buildBundle, parseBundle, CAPS, SENT, beaconId } from '../lib/islandbundle.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
 
 const SIZE = 64;
@@ -409,8 +409,8 @@ test('parseBundle refuses more than an island holds', () => {
     const one = w.buildings[0];
     w.buildings = Array.from({ length: n }, (_, i) => ({ ...one, id: `house:s${i}` }));
   });
-  assert.equal(CAPS.buildings, 600);
-  assert.throws(() => parseBundle(houses(601)), /more than the 600/);
+  assert.equal(CAPS.buildings, 5000);
+  assert.throws(() => parseBundle(houses(CAPS.buildings + 1)), /more than the 5000/);
   // And the one from the brief, which is far enough over that it is refused whichever
   // guard gets there first.
   assert.throws(() => parseBundle(houses(10000)), Error);
@@ -419,6 +419,41 @@ test('parseBundle refuses more than an island holds', () => {
     const over = mutated((w) => { w[field] = Array.from({ length: cap + 1 }, () => w[field][0] || {}); });
     assert.throws(() => parseBundle(over), new RegExp(`more than the ${cap}`), `${field} was not capped`);
   }
+});
+
+// The sea is redeployed before an islander sends more (SENT, lib/islandbundle.mjs): a sea one
+// release behind refuses a whole island one building past its cap, so nothing may be sent that
+// the caps the sea accepts do not hold, and a village as big as Hoogezand (962 buildings, 408
+// paths in October 2026) has to be taken whole by the sea in this release.
+test('an islander never sends more than a sea accepts, and the sea takes a village past 600', () => {
+  for (const [k, cap] of Object.entries(SENT)) assert.ok(cap <= CAPS[k], `${k}: sends ${cap}, a sea takes ${CAPS[k]}`);
+  for (const k of Object.keys(CAPS)) assert.ok(k in SENT, `${k} has no sending cap`);
+  const big = mutated((w) => {
+    const one = w.buildings[0];
+    w.buildings = Array.from({ length: 1000 }, (_, i) => ({ ...one, id: `house:s${i}` }));
+    w.paths = Array.from({ length: 450 }, (_, i) => ({ ...w.paths[0], id: `path:house:s${i}` }));
+  });
+  const got = parseBundle(big);
+  assert.equal(got.buildings.length, 1000);
+  assert.equal(got.paths.length, 450);
+});
+
+test('a village past what it may send is cut, and buildBundle says what it cut', () => {
+  const v = village();
+  const one = v.buildings[0];
+  v.buildings = [...Array.from({ length: SENT.buildings + 10 }, (_, i) => ({ ...one, id: `house:fill-${i}` })), ...v.buildings];
+  const out = {};
+  const b = buildBundle({ config, village: v }, out);
+  assert.equal(b.buildings.length, SENT.buildings);
+  assert.deepEqual(out.cuts.find((c) => c.what === 'buildings'), { what: 'buildings', had: v.buildings.length, cap: SENT.buildings });
+  // Every civic of the village goes first - the cut is houses and sheds.
+  const civics = (list) => list.filter((x) => x.kind === 'civic').length;
+  assert.ok(civics(v.buildings) > 0);
+  assert.equal(civics(b.buildings), civics(v.buildings), 'a civic was cut');
+  // And a village inside every cap reports nothing.
+  const quiet = {};
+  buildBundle({ config, village: village() }, quiet);
+  assert.deepEqual(quiet.cuts, []);
 });
 
 test('parseBundle refuses an id that is trying to be a path', () => {

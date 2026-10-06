@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { emptyLayout, placeAll, outsideDoor, plotDoor, lotOf, PIRATE_ID, TREASURE_ID } from '../lib/layout.mjs';
 import { createCrowd } from '../lib/crowd.mjs';
-import { starterBundle } from '../lib/islandbundle.mjs';
+import { starterBundle, buildBundle, parseBundle, SENT } from '../lib/islandbundle.mjs';
 import { runPlan, parsePlan, civicSites } from '../lib/plan.mjs';
 import { MILESTONES } from '../lib/village.mjs';
 import { makeTerrain } from '../shared/terrain.mjs';
@@ -116,6 +116,35 @@ test('the sea\'s starter has a pirate at the tavern door too, on the cell the to
   const cell = [Math.floor(pirate.home[0] + terrain.half), Math.floor(pirate.home[1] + terrain.half)];
   assert.notEqual(key(cell), key(step), 'the pirate stands on the tavern\'s doorstep');
   assert.ok(paved.has(key(cell)), 'the pirate stands on grass');
+});
+
+// An island past the bundle's cap still sends its town. Hoogezand at 952 buildings (430 houses,
+// 426 sheds, then 96 civics) sent its first 600 - all houses and sheds - so the sea had no chest,
+// no tavern and no keeper at either (6 October 2026). The sheds are what the cap costs now, and the
+// pirate stands at his chest; the roads go before the houses' front paths for the same reason.
+test('a village past the bundle cap still sends the chest, and the sea stands the pirate at it', () => {
+  const town = starterBundle(0);
+  const crowded = [];
+  for (let i = 0; i < SENT.buildings + 50; i++) {
+    crowded.push({ id: `shed:s${i}`, kind: 'shed', shedType: 'tent', master: null, plot: { gx: 2 + (i % 8), gz: 2, w: 1, d: 1, rot: 0 } });
+  }
+  const paths = [];
+  for (let i = 0; i < SENT.paths + 5; i++) paths.push({ id: `path:house:s${i}`, cells: [[2, 3]] });
+  const village = {
+    island: town.island, grid: town.grid, districts: [],
+    buildings: [...crowded, ...town.buildings],
+    paths: [...paths, ...town.paths],
+  };
+  const bundle = parseBundle(JSON.parse(JSON.stringify(buildBundle({ village, id: town.island.id }))));
+  assert.equal(bundle.buildings.length, SENT.buildings, 'the cap no longer holds');
+  for (const b of town.buildings) assert.ok(bundle.buildings.some((x) => x.id === b.id), `${b.id} fell off the end of the bundle`);
+  for (const p of town.paths) assert.ok(bundle.paths.some((x) => x.id === p.id), `${p.id} fell off the end of the bundle`);
+  const terrain = makeTerrain(bundle.island.seed, { size: bundle.island.gridSize });
+  const crowd = createCrowd({ id: bundle.island.id, bundle, terrain });
+  const pirate = crowd.figures.get(PIRATE_ID);
+  assert.ok(pirate, 'nobody stands at the chest');
+  assert.equal(pirate.post, KEEPERS.pirate.post);
+  assert.ok(crowd.figures.get('civic:tavern'), 'nobody keeps the tavern either');
 });
 
 // ---- the layout -------------------------------------------------------------------------
