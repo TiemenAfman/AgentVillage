@@ -69,7 +69,7 @@ four tabs:
   **Graphics**: how far the view, the buildings, the people and the shadows reach, each on its
   own slider (*This machine's defaults* puts all four back), the **Timeline** bar, and *Names on
   the buttons*.
-- **Controls**: the keys on foot, which you can change; on a phone, the touch controls.
+- **Controls**: the keys on foot and the planner's key, which you can change; on a phone, the touch controls.
 - **Island**: the house signs, how big the island may grow, and which sea it is in. Only the
   keeper sees this tab, because it writes the island's own config.json.
 - **Help**: the legend, the keys, and which build this is.
@@ -82,7 +82,8 @@ you up into the sky; the third opens the menu there. When one of the Show toggle
 row stays under the chips, so a village with its houses hidden says so.
 
 From the sky the chips have letters: **M** map, **I** inventory, **O** overview, **N** new
-settler, **L** legend and, for the keeper, **P** planner.
+settler, **L** legend and, for the keeper, **U** planner (P is sow, on foot; the planner's key can
+be changed under Settings > Controls).
 
 ## Walking the island
 

@@ -3,7 +3,7 @@
 import { PALETTE, TIER_LABEL } from './buildings.js';
 import { CROPS, ripeIn } from 'shared/crops.mjs';
 import { padKey, suspendPad } from './input.js';
-import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, padOf, keyLabel, bindKey, bindPad, resetKeys, resetPad } from './keybinds.js';
+import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, keyOf, padOf, keyLabel, bindKey, bindPad, resetKeys, resetPad, onBindingsChange } from './keybinds.js';
 import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
@@ -834,7 +834,7 @@ export function createUI(handlers) {
     const head = `<div class="bindrow head"><span class="act">Action</span><span>Primary</span><span>Secondary</span>`
       + `<span class="${pad ? '' : 'off'}" title="${pad ? esc(pad.id) : 'No controller connected'}">${pad ? esc(padName(pad.id)) : 'Controller'}</span></div>`;
     return '<div><h3 class="sec">Controls</h3>'
-      + `<p class="muted" style="margin:0 0 9px">On foot. Click a cell and press the key (or the controller button) you want; <kbd>Del</kbd> empties it, <kbd>Esc</kbd> cancels. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand. In the water, look down and swim on to dive, look up to climb.</p>`
+      + `<p class="muted" style="margin:0 0 9px">On foot, and the planner from the sky. Click a cell and press the key (or the controller button) you want; <kbd>Del</kbd> empties it, <kbd>Esc</kbd> cancels. Mouse to look, <kbd>Esc</kbd> frees it, <kbd>Esc</kbd><kbd>Esc</kbd> back to the sky; the left and right buttons are your left and right hand. In the water, look down and swim on to dive, look up to climb.</p>`
       + `<div class="bindtable">${head}${rows}</div>`
       + (bindNote ? `<p class="muted" style="margin:6px 0 0">${esc(bindNote)}</p>` : '')
       + (pad ? '' : `<p class="muted" style="margin:6px 0 0">No controller found. Plug one in and press a button on it; its column comes alive.</p>`)
@@ -1450,14 +1450,25 @@ export function createUI(handlers) {
     el('labels').hidden = planning || walking;
     el('hover-label').hidden = true;
     el('plan-btn').classList.toggle('on', planning);
-    // P is a letter from the sky only (main.js ORBIT_KEYS), so Done names none.
-    setLabel('plan-btn', planning ? 'Done' : 'Plan',
-      planning ? 'Done: leave the planner' : 'The island from above: move hamlets, zone ground (P)');
-    el('plan-btn').dataset.key = planning ? '' : 'P';
-    if (planning) el('plan-btn').removeAttribute('aria-keyshortcuts'); else el('plan-btn').setAttribute('aria-keyshortcuts', 'P');
+    planKey();
     if (planning) hideSide();
     syncSidebar();
   }
+  // The planner's key is a binding (keybinds.js `plan`, default U), so the chip's badge, its
+  // tooltip and the menu's key line say whichever key it is now. It is a letter from the sky only
+  // (main.js ORBIT_KEYS), so Done names none.
+  function planKey() {
+    const k = keyOf('plan');
+    const label = k === '\u0000' ? '' : keyLabel(k);
+    setLabel('plan-btn', planning ? 'Done' : 'Plan',
+      planning ? 'Done: leave the planner' : `The island from above: move hamlets, zone ground${label ? ` (${label})` : ''}`);
+    el('plan-btn').dataset.key = planning ? '' : label;
+    if (planning || !label) el('plan-btn').removeAttribute('aria-keyshortcuts'); else el('plan-btn').setAttribute('aria-keyshortcuts', label);
+    const line = el('sysmenu-plan-key');
+    line.innerHTML = label ? ` · <kbd>${esc(label)}</kbd> planner` : '';
+  }
+  planKey();
+  onBindingsChange(planKey);
 
   // Both of these are called every frame while you walk, and both usually have nothing
   // new to say - a countdown changes once a minute, a purse only when you trade. So the

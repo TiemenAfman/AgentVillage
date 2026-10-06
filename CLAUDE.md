@@ -1613,7 +1613,9 @@ secondary key, controller button ([Plans/toetsen-en-bindings.md](Plans/toetsen-e
 `web/js/keybinds.js` keeps them per browser (`promptholm.bindings`, only what differs from the default;
 the old one-key `promptholm.keys` is read as primary keys and not written); walk.js still tests the
 *default* keys, because `canon()` turns a pressed key into the default key of the action bound to it in
-either slot - so a new action is a row in `ACTIONS`, not a handler change. The arrow keys are the default
+either slot - so a new action is a row in `ACTIONS`, not a handler change. One row is not on foot: `plan` (default U) is the
+planner's chip from the sky, read by main.js's orbit handler through `keysOf('plan')` and kept out of
+`ORBIT_KEYS`, so it can never again share a letter with sow (P, issue #92). The arrow keys are the default
 secondary keys of walking (`canon` sends them to W A S D; an unbound default key is `null`, dead). A key
 or a button is one action's alone and taking one **swaps** (the loser is handed what the winner let go
 of); Esc, Alt/AltGr/Meta and the pad's Back and Start cannot be bound. The controller column comes out

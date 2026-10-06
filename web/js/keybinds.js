@@ -27,6 +27,10 @@ export const ACTIONS = [
   ['give', 'g', 'give a beer', null, null], ['build', 'b', 'build (debug)', null, null],
   ['inventory', 'i', 'inventory', null, null], ['map', 'm', 'map', null, null],
   ['quests', 'k', 'quest log', null, null],
+  // From the sky, not on foot (main.js ORBIT_KEYS), but a letter all the same, and one that may
+  // not also be somebody's on foot: it was P, which is sow, so it is U - free in the sky, on foot
+  // and in the planner itself.
+  ['plan', 'u', 'plan (from the sky)', null, null],
 ];
 // A controller's own action, with no key: the previous seed. The sticks walk and look and are not
 // buttons; the settings list shows them as fixed text.
