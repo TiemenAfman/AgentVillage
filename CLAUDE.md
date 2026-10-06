@@ -22,7 +22,7 @@ rewritten to `Plans/DONE/<name>.md` in the same change.
 ## Sessions and worktrees
 
 The keeper runs one **coordinator** session in this checkout; it alone merges to `main`, pushes,
-tags releases and redeploys the sea. Every other session works in `.claude/worktrees/<name>` and
+tags releases and redeploys the sea. It takes up no issue, bug or feature itself - every one of those, a regression found while merging included, goes into a chip (`/chip`). Every other session works in `.claude/worktrees/<name>` and
 **commits on its own branch only** - never a merge into `main`, never a push, never a release - and
 when it is done (or stuck on the keeper's choice) reports to the coordinator with `SendMessage`:
 branch and last commit, what changed, the tests (passed/failed, which), what is still open, and
