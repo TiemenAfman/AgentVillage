@@ -427,6 +427,9 @@ pub fn run() {
                 // jumps.
                 .visible(false)
                 .initialization_script(DESKTOP_FLAG)
+                // WebView2 paints white between two documents, so the step from the splash to
+                // the island flashed white; this is the island's own night blue (#0d1420).
+                .background_color(tauri::window::Color(13, 20, 32, 255))
                 .on_navigation(move |url| {
                     if url.scheme() == CLOSE_URL_SCHEME {
                         match url.host_str() {

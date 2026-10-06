@@ -1670,10 +1670,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
     if (f) return sendFile(req, res, f, { noStore: true });   // our own code: never cached
   }
 
-  // The service worker wants revalidation rather than no-store: browsers refuse to
-  // register a worker they were told never to keep at all.
-  if (p === '/sw.js') return sendFile(req, res, path.join(WEB, 'sw.js'), { cache: 'no-cache' });
-
   const rel = p === '/' ? 'index.html'
     : p === '/demo' ? 'demo.html'          // the model sheet: every object on one field
       : p === '/editor' ? 'editor.html'    // the workbench: pick a model apart and nudge it

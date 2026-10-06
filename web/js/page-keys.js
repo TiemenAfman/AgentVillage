@@ -30,10 +30,25 @@ export function tabBelongsToPage(el) {
   return !!(el && typeof el.closest === 'function' && el.closest(TAB_ZONES));
 }
 
+// What the browser itself would do with a key, in every mode and outside every field: zoom the
+// page (ctrl with + - = 0), find (ctrl+F, ctrl+G, F3), print, save, view source, open, history,
+// downloads, bookmarks, caret browsing (F7), and Alt alone, which in a Chrome tab puts the focus
+// on the toolbar's menu. F5, F11 and F12 are left alone: a reload is desktop.js's to ask about,
+// fullscreen is wanted, and the developer tools are ours. A game never zooms its own HUD.
+const CTRL_BROWSER = new Set(['+', '-', '=', '_', '0', 'f', 'g', 'p', 's', 'u', 'o', 'h', 'j', 'd', 'e', 'l', 'k']);
+export function isBrowserKey(e) {
+  if (typeof e.key !== 'string') return false;
+  const k = e.key.toLowerCase();
+  if (k === 'f3' || k === 'f7') return true;
+  if (k === 'alt' && !e.ctrlKey) return true;
+  return !!(e.ctrlKey || e.metaKey) && !e.altKey && CTRL_BROWSER.has(k);
+}
+
 export function installPageKeys(target = globalThis) {
   target.addEventListener('keydown', (e) => {
-    if (isSelectAll(e) && !typingInto(e.target)) e.preventDefault();
     if (e.key === 'Tab' && !tabBelongsToPage(e.target)) e.preventDefault();
+    if (typingInto(e.target)) return;
+    if (isSelectAll(e) || isBrowserKey(e)) e.preventDefault();
   });
   // A HUD chip clicked with the mouse keeps the focus, and a focused button is clicked again by
   // Space (jump) and Enter (walk) - so a chip let go of outside a dialog gives the focus back.
@@ -42,6 +57,13 @@ export function installPageKeys(target = globalThis) {
     if (!el || tabBelongsToPage(el)) return;
     setTimeout(() => { if (globalThis.document?.activeElement === el) el.blur(); }, 0);
   }, true);
+  // ctrl+wheel is the page zoom, and a laptop's pinch on the touchpad arrives as exactly that.
+  // Never in a field either: nothing on the page is meant to grow. Not passive, or it cannot cancel.
+  target.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  // Safari's pinch; Chrome's goes through touch-action in ui.css and the viewport meta.
+  target.addEventListener('gesturestart', (e) => e.preventDefault());
+  // A picture or an icon dragged off the HUD as a ghost image, onto the desktop as a file.
+  target.addEventListener('dragstart', (e) => { if (!typingInto(e.target)) e.preventDefault(); });
   // The page menu (Copy / Select All) over the HUD, a card or the toolbar is as unwanted as the
   // selection it offers - text selection is off outside fields (ui.css), so the menu had nothing
   // to copy anyway. main.js already cancels it on the canvas; this is every other place. A field

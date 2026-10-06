@@ -1031,11 +1031,14 @@ the model squashed - so its blockers (`FOOT`) follow the model. `kit()` takes a 
 `/demo` shows the pack in its rooms (`?sd` for the bake). Under Node, GLTFLoader needs a `ProgressEvent`
 stub.
 
-**A room's own sets load at its door, never at boot** (the second exception): `models.js` `LAZY` holds the
+**A room's own sets are parsed off the main thread from the boot on, and the room built behind the boot screen** (the second exception): `models.js` `LAZY` holds the
 Salty Kraken's hall (`piratetavern_room`, 34 MB) and its ship's parts (`krakenkit`), imported on demand by
-`loadSet`; `interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which, main.js starts
-them as soon as that room's door is within reach and `enterInterior` waits for them ("The door sticks a
-moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
+`loadSet` - in a module worker (`offThread`, `lazy-set-worker.js`: positions and colours come back as transferred
+Float32Arrays, which every reader takes like a plain array; importing 34 MB on the page froze it ~1.7 s).
+`interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which. main.js starts them at the top of
+`boot()`, and `warmRooms` builds each room (`roomFor`) and `renderer.compile`s it before `ui.boot(true)` if they
+are in within 3 s (~0.8 s of boot; the first visit then costs one frame, not three seconds) - otherwise a door
+within reach still starts them and `enterInterior` waits ("The door sticks a moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
@@ -1607,6 +1610,23 @@ Space or Enter clicked one; a button let go of outside those zones gives its foc
 whole jump as `movementX/Y`: walk.js drops it (`freshLock`) and any single move over `LOOK_JUMP`,
 noclip.js the latter, or `camPitch` lands on its limit and the camera looks at the sky
 (`tests/tab-key.test.mjs`).
+**The page is a game, not a document** ([Plans/minder-browser-meer-spel.md](Plans/minder-browser-meer-spel.md)).
+`web/js/page-keys.js` (installed from main.js, every mode) cancels outside fields what the browser would do:
+select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/print/save/source/history
+(`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
+tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
+`#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
+**There is no installable web app.** The island is played in promptholm.exe, the Android app or the browser at
+`/play`; the manifest, `sw.js` and the install button are gone, and main.js `unregisterWorkers()` takes down the
+worker a browser kept from before. Do not add a manifest back: a browser offers to install any page that has one.
+**Fullscreen is one switch** (`web/js/display.js`): Settings → Display, the button and Alt+Enter (F11 in the
+window). In promptholm.exe the *window* goes borderless (`promptholm://fullscreen/on|off`, handled in lib.rs's
+`on_navigation` beside close) and the choice is remembered (`promptholm.display`); in a tab it is the Fullscreen API.
+**The island's tooltip is `web/js/tooltip.js`**: keep writing `title`; it is moved to `data-tip` on hover, before the
+browser's grey box shows, and a trailing `(Key)` is drawn as a key cap.
+**The menu is a pause.** While the Esc menu is open the sky's letters (M, the chips' keys) do nothing behind
+it, and a chip clicked closes it first (`nav-chips` capture listener in main.js) - before, the chart and the
+planner opened under or over it and two layers stood on screen.
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
 the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock

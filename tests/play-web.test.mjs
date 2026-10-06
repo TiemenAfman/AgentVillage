@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { handheldOf, firstInputMode, nextInputMode, padUsed } from '../web/js/device.js';
 import { webNotice, SEA_PROTOCOL } from '../web/js/update.js';
-import { shelfId, contentStamp, doorHtml, shelfJson, webManifest, withStandalone, copyPage, ROOM_ONLY } from '../scripts/pack-page.mjs';
+import { shelfId, contentStamp, doorHtml, shelfJson, withStandalone, copyPage, ROOM_ONLY } from '../scripts/pack-page.mjs';
 import { OPEN_SEA as PACKED_SEA } from '../scripts/pack-web.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -108,13 +108,6 @@ test('the door keeps the query, and the pointer names the shelf', () => {
   assert.match(html, /<a href="\.\/0\.8\.1-c633e4d\/"/, 'no way in without scripts');
   assert.deepEqual(JSON.parse(shelfJson({ version: '0.8.1', commit: 'c633e4d' }, '0.8.1-c633e4d')),
     { version: '0.8.1', commit: 'c633e4d', path: '0.8.1-c633e4d' });
-});
-
-test('an installed web page starts at the door, not on the shelf it came from', () => {
-  const m = JSON.parse(webManifest(read('web/manifest.webmanifest')));
-  assert.equal(m.start_url, '../');
-  assert.equal(m.scope, '../');
-  assert.equal(m.name, 'Promptholm');
 });
 
 test('the head says web, and nothing in it can close the tag', () => {

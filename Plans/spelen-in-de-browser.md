@@ -62,8 +62,8 @@ water. De webversie is diezelfde pagina, met drie verschillen:
 - Zelfde weglatingen als de APK: de kamersets (`krakenkit`, `piratetavern_room`, 47 MB) - wie geen eiland
   heeft, heeft geen kamers. Lazy blijven ze toch; meesturen zou alleen schijf kosten. De rest is identiek aan
   wat de app draagt.
-- `manifest.webmanifest` krijgt `start_url`/`scope` = `../`, zodat een geïnstalleerde PWA altijd via de
-  doorverwijzing op de nieuwste versie start in plaats van op de map van de dag van installeren.
+- ~~`manifest.webmanifest` met `start_url`/`scope` = `../`~~ - geen PWA meer sinds
+  [minder-browser-meer-spel.md](minder-browser-meer-spel.md): spelen is de exe, de APK of `/play`.
 - Alles boven 1 kB wordt **vooraf gezipt** (`.gz` ernaast, zlib niveau 9): nginx levert die met
   `gzip_static` zonder CPU op de thuisserver. Brotli zit niet in de officiële `nginx:alpine`; de winst
   (~15% extra op tekst) is een eigen image niet waard. Kan later.
