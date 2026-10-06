@@ -229,3 +229,47 @@ test('from the waist up onto the forecastle', () => {
   const top = topOf(T['fore-a-c']);
   assert.ok(Math.abs(s.pos.y - top) < 0.1, `on the forecastle: ${s.pos.y.toFixed(2)} for ${top.toFixed(2)}`);
 });
+
+// Off the boarding plank and the ladder up the hull into shallow water (the keeper, issue #89: "val je
+// van de bovenste steiger af, kom je vast te zitten in het water, kan niet wegzwemmen"). Two traps, both
+// measured: west off the plank where it crosses the bulwark, down into the rocks' and a kraken arm's
+// boxes where they overlap, every step deeper into one of them; and off the ladder into the pocket
+// between the rock and the low blocks under the ladder and the landing. From each, a swimmer gets out
+// past the rock by swimming, at most turning round a few times.
+test('fallen off the boarding plank or the side ladder, you swim away from the rock', () => {
+  const falls = [
+    [(T) => [T.boarding.x0 + 0.25, 1.39], (T) => T.boarding.y, -Math.PI / 2],
+    [(T) => [T['side-ladder'].x1 - 0.05, 1.89], (T) => T['side-ladder'].y1, 3 * Math.PI / 4],
+    [(T) => [T['side-ladder'].x1 - 0.05, 1.99], (T) => T['side-ladder'].y1, 5 * Math.PI / 4],
+  ];
+  for (const bed of [-0.6, -0.9]) {
+    for (const [at, y, dir] of falls) {
+      const sea = standing(0.44);
+      handlers.keydown.length = 0;
+      handlers.keyup.length = 0;
+      const height = () => bed;
+      const ground = { height, bedAt: height, regionAt: () => null, levelKey: () => null };
+      const terrain = { half: 64, size: 128, worldHeight: height };
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1000);
+      const dom = { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} };
+      const walk = createWalkMode({ scene: new THREE.Scene(), camera, terrain, ground, material: new THREE.MeshBasicMaterial(), dom });
+      const T = Object.fromEntries(sea.surfaces.map((f) => [f.name, f]));
+      walk.setSurfaces(sea.surfaces);
+      walk.enter({ at: at(T), y: y(T), facing: [0, 0], blockers: sea.solids, interactables: [], onExit: noop });
+      const s = walk.state;
+      const head = (a, seconds) => {
+        key('w', true);
+        for (let i = 0; i < seconds / FRAME; i++) { s.camYaw = a; walk.update(FRAME); }
+        key('w', false);
+        for (let i = 0; i < 30; i++) walk.update(FRAME);
+      };
+      head(dir, 1.5);
+      for (let i = 0; i < 120; i++) walk.update(FRAME);
+      assert.ok(s.swimming, `in the water (bed ${bed}, ${s.pos.x.toFixed(2)},${s.pos.z.toFixed(2)})`);
+      const fell = [s.pos.x, s.pos.z];
+      const out = () => Math.abs(s.pos.x) > 5.7 || Math.abs(s.pos.z) > 2.9;
+      for (let e = 0; e < 16 && !out(); e++) head(e * Math.PI / 8, 3);
+      assert.ok(out(), `swam away from ${fell.map((v) => v.toFixed(2))} (bed ${bed}): still at ${s.pos.x.toFixed(2)},${s.pos.z.toFixed(2)}`);
+    }
+  }
+});

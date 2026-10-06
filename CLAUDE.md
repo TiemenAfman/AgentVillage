@@ -2146,7 +2146,10 @@ lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's gro
 forecastle are `deck.*`/`stair.*` strips the bake works out through `world_of` (heel across, sheer along), what
 stands on them `solid.<letters>.lo|hi` blocks (footprint at their foot - a mast leans with the heel) read by
 `pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs and
-one up the hull from the zigzag's landing; a rock under a stair floor is no wall (`under`). The castle front's door
+one up the hull from the zigzag's landing; a rock under a stair floor is no wall (`under`). The low blocks under
+the floors are `dry` (a wall to feet, not to a swimmer), and walk.js lets a body standing in several solids at
+once out by the depth summed over all of them (`leaving`): the part boxes overlap in the rocks, and a fall off the
+boarding plank used to land a swimmer where every step was deeper into one of them (#89). The castle front's door
 (`deck.door-step`, `krakenDeckDoor` in main.js) is a second `kind: 'tavern'` interactable with a `spot` (the room
 opens at `HATCH` in the crow's nest) and a `front` (the room's doorway still leads to the stoop); the hatch is an
 interior `exits` entry (`kind: 'exit'`, `onLeave(to)` -> `leaveInterior('deck')`). **Its flags, set sails and hooked lanterns move**:

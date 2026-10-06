@@ -2489,6 +2489,9 @@ function pirateSolids(parts, anchors, surfaces) {
   // Under each floor high enough to walk under, a low block - inset by a body's width, because
   // walk.js grows every solid by one: at the floor's own size, anybody who landed beside the stair
   // was inside it, and every step from there was blocked (the keeper: "karakter zit vast").
+  // `dry`: a wall to feet, not to a swimmer. In the sea these blocks stand in the water under the
+  // landing and the ladder up the hull, and with the rocks' boxes they penned in whoever fell off
+  // the boarding plank between the ladder and the rock, with no way to swim out (issue #89).
   for (const s of surfaces) {
     let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
     const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
@@ -2501,7 +2504,7 @@ function pirateSolids(parts, anchors, surfaces) {
     }
     const y1 = (s.y != null ? s.y : ground + UNDER_STAIR) - 0.3;
     const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
-    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: ground - PIRATE_UNDER, y1 });
+    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: ground - PIRATE_UNDER, y1, dry: true });
   }
   // Every block the bake names (anchor.solid.<name>.lo|hi): the hull from its keel to under the deck, and on
   // the deck the castles, masts, capstan, barrels and crates (Plans/kraken-dek.md).
