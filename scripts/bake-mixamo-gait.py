@@ -30,6 +30,7 @@ A clip downloaded with In Place has no stride to read and is refused.
 """
 import bpy
 import json
+import math
 import sys
 from pathlib import Path
 from mathutils import Vector, Quaternion
@@ -165,18 +166,19 @@ def measure(clip, path):
             swing = mean.inverted() @ K
             local[k + 'Arm'] = swing.inverted() @ K @ local[k + 'Arm']
             local[k + 'Clavicle'] = swing
-    # A swimmer lies forward in the clip (71 degrees) and walk.js already tilts a swimming body
-    # itself (1.32 rad), so the swim keeps only how the pelvis moves about its mean.
+    # A swimmer lies forward in the clip (some 75 degrees) and walk.js already tilts a swimming
+    # body itself (1.32 rad), so the swim's pelvis loses that lean - its mean turn about the
+    # body's left (X), worked out from where its up points on average - and nothing else. Taking
+    # out the whole mean, as this first did, also took out the hips' own roll of a few degrees
+    # that Mixamo's spine turns back to keep the shoulders level, and our swimmer then swam with
+    # its shoulders twisted 12 degrees.
     if clip == 'swim':
-        mean = Quaternion((0, 0, 0, 0))
+        up = Vector((0, 0, 0))
         for local, _ in rows:
-            q = local['pelvis'].copy()
-            if q.dot(rows[0][0]['pelvis']) < 0:
-                q.negate()
-            mean = Quaternion((mean.w + q.w, mean.x + q.x, mean.y + q.y, mean.z + q.z))
-        mean.normalize()
+            up += local['pelvis'] @ Vector((0, 0, 1))
+        lean = Quaternion(Vector((1, 0, 0)), math.atan2(-up.y, up.z))
         for local, _ in rows:
-            local['pelvis'] = mean.inverted() @ local['pelvis']
+            local['pelvis'] = lean.inverted() @ local['pelvis']
     baked = []
     for local, drop in rows:
         row = []

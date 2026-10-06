@@ -1593,7 +1593,9 @@ from rest, so every pivot keeps its rest position and code reading one is unchan
 baked, never loaded: `assets/mixamo/clips.json` -> `scripts/bake-mixamo-gait.py` -> `web/js/gait-clips.js`
 (the FBX themselves stay out of git - Mixamo's terms, a public repo),
 played in `playClips`/`applyClip` (gaits by distance with the clips' stride, so no foot slides; idle,
-jumps, swim, treading water and dig by time) and set on the ground by `plantFeet`. Shift with breath is a sprint,
+jumps, swim, treading water and dig by time) and set on the ground by `plantFeet`. In the water such a body
+(`strokes`) gets walk.js's lean and none of the roll and nod the Traveller swims by (peers.js alike): over the
+clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill.
 

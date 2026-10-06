@@ -333,3 +333,27 @@ test('walk.js lifts the aim only upwards, and never in first person', () => {
   assert.match(src, /camera\.lookAt\(pivot\)/);
   assert.match(src, /const SWIM_PITCH_MIN = -1\.1;/);
 });
+// The Traveller swims by leaning its whole body into the stroke - a roll and a nod on walk.js's
+// own beat - because its limbs did not swim. The Adventurer plays Mixamo's breaststroke, which
+// heaves and rolls by itself, and with the beat over it as well it swam with a wiggle on a clock
+// of its own (classic-avatar.js `strokes`, Plans/tweede-avonturier.md).
+test('a body that swims its own stroke lies in the water without the roll and nod of the Traveller', async () => {
+  const { normalizeAvatar } = await import('../web/js/avatar.js');
+  for (const [character, beat] of [['traveller', true], ['adventurer', false]]) {
+    const { walk } = fresh();
+    walk.setAvatar(normalizeAvatar({ character }));
+    run(walk, 0.3);
+    press('w');
+    let roll = 0, lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 240; i++) {
+      walk.update(FRAME);
+      if (i < 150) continue;   // lying into the stroke first (stepLie)
+      roll = Math.max(roll, Math.abs(walk.avatar.rotation.z));
+      lo = Math.min(lo, walk.avatar.rotation.x); hi = Math.max(hi, walk.avatar.rotation.x);
+    }
+    globalThis.dispatchKey('w', false);
+    assert.equal(walk.state.swimming, true, character);
+    if (beat) assert.ok(roll > 0.1 && hi - lo > 0.05, `the ${character} no longer rolls (${roll}) or nods (${hi - lo})`);
+    else assert.ok(roll < 1e-9 && hi - lo < 0.005, `the ${character} still rolls ${roll} and nods ${hi - lo}`);
+  }
+});

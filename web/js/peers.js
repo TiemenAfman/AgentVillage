@@ -447,10 +447,12 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         // Upright when they are going nowhere, lying in the stroke when they swim - off the
         // same `moving` walk.js eases its own body by, so both screens tread water alike.
         p.lie = diving ? 1 : stepLie(p.lie, moving, dt);
-        const swim = swimPose(p.lie, p.bob);
+        // A body that swims its own stroke gets the lean without the beat, as walk.js draws it.
+        const beat = p.avatar.strokes ? 0 : 1;
+        const swim = swimPose(p.lie, p.bob * beat);
         p.mesh.position.set(x, base + swim.dy, z);
-        p.mesh.rotation.set(diving ? divePitch(p.vy) + Math.sin(p.bob) * 0.1 : swim.pitch, yaw,
-          diving ? Math.sin(p.bob * 0.5) * 0.16 : swim.roll);
+        p.mesh.rotation.set(diving ? divePitch(p.vy) + Math.sin(p.bob) * 0.1 * beat : swim.pitch, yaw,
+          diving ? Math.sin(p.bob * 0.5) * 0.16 * beat : swim.roll);
       } else if (lying) {
         p.mesh.position.set(x, base, z);
         p.mesh.rotation.set(LIE_PITCH, yaw, 0);

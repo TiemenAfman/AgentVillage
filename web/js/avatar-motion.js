@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
+import { swimPose, TREAD_SINK } from './diving.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -35,7 +36,7 @@ const camera=new THREE.PerspectiveCamera(32,1,.01,100);
 // walk.js's own numbers, for the Springen button.
 const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
 let jumpAt=null;
-let mode='walk', side=false, distance=0, last=performance.now(), time=0;
+let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
 document.querySelector('#motion-inventory').onclick=()=>inventory.open();
@@ -60,19 +61,24 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
+  // walk.js's swimming beat: quick in the stroke, slow treading water.
+  bob+=dt*(mode==='swim'?6.5:1.4);
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
   // the one looked at closely, else the two's middle.
   for(const f of figures){
     const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
-    // Swimming lies the body forward the way walk.js does (1.32 rad), at the surface.
-    // Treading water stands it up, as walk.js does (diving.js TREAD_PITCH, TREAD_SINK).
-    f.stand.rotation.x=mode==='swim'?1.32:mode==='tread'?.12:0;
+    // In the water each body lies as walk.js lays it (diving.js swimPose): forward in the stroke,
+    // upright treading water, and the Traveller rolling and nodding on walk.js's beat - a body
+    // that swims its own stroke (`strokes`) only leans, as on the island.
+    const wet=mode==='swim'||mode==='tread', lie=mode==='swim'?1:0, pose=swimPose(lie,f.rig.strokes?0:bob);
+    f.stand.rotation.set(wet?pose.pitch:0,0,wet?pose.roll:0);
     const step=speed*dt;f.distance+=step;f.stand.position.z=f.distance;
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
     const up=jumpAt===null?0:Math.max(0,JUMP_V*(time-jumpAt)-GRAVITY*(time-jumpAt)**2/2);
-    f.stand.position.y=mode==='swim'?.18:mode==='tread'?-.1:up;
+    // Above the floor where the island has it under the water, with walk.js's heave on top.
+    f.stand.position.y=wet?(mode==='swim'?.18:-.1)+pose.dy+TREAD_SINK*(1-lie):up;
     const grounded=jumpAt===null||time-jumpAt>2*JUMP_V/GRAVITY;
     f.rig.update({moving:speed>0,running:mode==='run'||mode==='sprint',sprinting:mode==='sprint',swimming:mode==='swim'||mode==='tread',treading:mode==='tread'?1:0,grounded,phase:time,distance:step},dt);
   }

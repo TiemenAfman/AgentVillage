@@ -91,7 +91,10 @@ Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
   de schep ligt tussen beide handen. **Zwemmen** is de schoolslag zonder de vaste kanteling
   (walk.js kantelt een zwemmer al), sneller naarmate je harder zwemt; stil in het water gaat hij over
   in Mixamo's **watertrappen** (op `pose.treading`, dezelfde overgang als walk.js tussen liggen en rechtop),
-  met de 31 graden voorover die de clip zelf heeft.
+  met de 31 graden voorover die de clip zelf heeft. walk.js en peers.js geven een lichaam met een eigen slag
+  (`strokes`) alleen de helling, niet de rol en het knikken van de Reiziger: die liepen op een eigen ritme
+  over de clip heen en gaven een wiebel. De bake haalt bij de schoolslag alleen de helling van het bekken
+  weg, niet zijn rol, zodat de schoudergordel net als bij Mixamo ligt.
 - **Voeten** worden na het poseren op de grond gezet (`plantFeet`): Mixamo's hoeken op onze
   verhoudingen lieten een voet een centimeter in de grond.
 - **Skill** `.claude/skills/mixamo-clips/`: hoe een nieuwe clip erbij komt.

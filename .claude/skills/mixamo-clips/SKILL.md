@@ -94,7 +94,11 @@ the head from `mounts.neck` - a mount is a group whose matrix is its bone's chan
   still drifts a few centimetres, and taking that drift as the heading turned a dig sideways.
 - Constant offsets are taken out where our rest already has them: the collarbones keep only
   their swing about their mean (Mixamo's shoulders drop 20 degrees from the T-pose), and the
-  swim's pelvis keeps only its swing (walk.js already lays a swimmer 1.32 rad forward).
+  swim's pelvis loses only its mean lean forward, about the body's left (walk.js already lays a
+  swimmer 1.32 rad forward) - not its roll: Mixamo's hips roll a few degrees that the spine turns
+  back, and taking the whole mean out left the shoulders twisted. A body that plays its own stroke
+  says so (`strokes` on the rig), and walk.js and peers.js then lay it in the water without the
+  roll and nod they give the Traveller, which on top of a clip were a wiggle on their own beat.
 
 To check a pose objectively, compare bone directions: a Blender script printing, at clip
 fraction `u`, the unit vectors hips->neck, shoulder->elbow, elbow->hand, hip->knee, knee->ankle

@@ -2364,10 +2364,15 @@ export function createWalkMode({
       // surface a swimmer going nowhere treads water upright (swimPose); a diver stays in the
       // stroke, so coming up from below rights the body from lying, as stopping does.
       state.lie = state.dive ? 1 : stepLie(state.lie, state.moving, dt);
-      const swim = swimPose(state.lie, state.bob);
+      // A body that swims its own stroke (classic-avatar.js `strokes`: the Adventurer's Mixamo
+      // breaststroke) already heaves and rolls with it, so it gets the lean and none of the beat:
+      // the roll and nod were made for the Traveller, whose limbs did not swim, and over the clip
+      // they were a wiggle on a clock of their own. A bob of 0 is swimPose without its beat.
+      const beat = classicAvatar.strokes ? 0 : 1;
+      const swim = swimPose(state.lie, state.bob * beat);
       avatar.position.set(state.pos.x, state.pos.y + swim.dy, state.pos.z);
-      const pitch = state.dive ? divePitch(state.vy) + Math.sin(state.bob) * 0.1 : swim.pitch;
-      avatar.rotation.set(pitch, state.yaw, state.dive ? Math.sin(state.bob * 0.5) * 0.16 : swim.roll);
+      const pitch = state.dive ? divePitch(state.vy) + Math.sin(state.bob) * 0.1 * beat : swim.pitch;
+      avatar.rotation.set(pitch, state.yaw, state.dive ? Math.sin(state.bob * 0.5) * 0.16 * beat : swim.roll);
     } else {
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
       avatar.rotation.set(nod, state.yaw, roll);

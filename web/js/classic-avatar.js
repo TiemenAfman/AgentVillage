@@ -1529,6 +1529,7 @@ function buildRig(spec, material) {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
     character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
+    strokes: !!(G.clips && GAIT_CLIPS.swim),
   };
 }
 
@@ -1558,6 +1559,9 @@ export function createClassicAvatar(spec, material) {
     get eye() { return rig.eye; },
     // How fast this body walks and runs (avatar-gait.js GAITS): walk.js asks every step.
     get speeds() { return rig.speeds; },
+    // Whether this body swims its own stroke (the Adventurer's Mixamo breaststroke): walk.js and
+    // peers.js then lay it in the water without the whole-body roll and nod the Traveller swims by.
+    get strokes() { return rig.strokes; },
     update: (pose, dt) => rig.update(pose, dt),
     set,
     dispose: () => rig.dispose(),
