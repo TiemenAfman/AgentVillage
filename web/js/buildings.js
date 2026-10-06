@@ -1679,8 +1679,10 @@ function civic(parts, spec, rng) {
       }
       // Its stair is walked (Plans/piratenkroeg.md, "Bijsturing"): floors and ramps for walk mode,
       // and solids with a height, so the rock under a flight is no wall to whoever is on it.
+      // And its rope ladder up the hull is climbed (issue #86): walk.js `climbs`.
       const surfaces = pirateSurfaces(anchors);
-      return { anchors, animated, height: models.heightOf('piratetavern'), surfaces, solids: pirateSolids(parts, anchors, surfaces) };
+      const climbs = pirateClimbs(anchors);
+      return { anchors, animated, height: models.heightOf('piratetavern'), surfaces, climbs, solids: pirateSolids(parts, anchors, surfaces, climbs) };
     }
     case 'chapel': {
       // A brick village church with a saddleback tower, modelled in
@@ -2423,6 +2425,20 @@ export function pirateSurfaces(anchors) {
   return out;
 }
 
+// Its rope ladders (scripts/build-piratetavern.py, issue #86): every `anchor.climb.<name>.lo|hi` pair,
+// `lo` where a climber stands at the foot in front of the rungs and `hi` where they step off at the head,
+// in the building's frame like the surfaces (main.js turns and places them). walk.js climbs them the way
+// it climbs a ship's ladder: no key, walk into the foot facing the hull, or out over the end at the top.
+export function pirateClimbs(anchors) {
+  const out = [];
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^climb\.(.+)\.lo$/.exec(key);
+    const hi = m && anchors[`climb.${m[1]}.hi`];
+    if (hi) out.push({ name: m[1], lo: { x: lo[0], y: lo[1], z: lo[2] }, hi: { x: hi[0], y: hi[1], z: hi[2] } });
+  }
+  return out;
+}
+
 // Its solids, with a height each (walk.js `atHeight`): a wall only to a body whose feet-to-head
 // span meets it. From every part as footprintOf takes them - the rectangle of what is low enough to
 // bump into - but standing from the part's foot to its top, so a walker on the landing passes over
@@ -2441,7 +2457,7 @@ const PIRATE_WALKED = /^Salty (stair|door|landing)/;
 const PIRATE_UNDER = 0.6;       // how far under the landing a part still counts as a wall
 const UNDER_STAIR = 0.75;       // a floor at least this high has room under it for somebody to walk
 const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in scripts/build-piratetavern.py)
-function pirateSolids(parts, anchors, surfaces) {
+function pirateSolids(parts, anchors, surfaces, climbs = []) {
   const out = [];
   const ground = (anchors.door && anchors.door[1]) || 0;
   // A point of the rock under one of the stair's floors is walked over, not into: the stair stands on
@@ -2492,10 +2508,14 @@ function pirateSolids(parts, anchors, surfaces) {
   // `dry`: a wall to feet, not to a swimmer. In the sea these blocks stand in the water under the
   // landing and the ladder up the hull, and with the rocks' boxes they penned in whoever fell off
   // the boarding plank between the ladder and the rock, with no way to swim out (issue #89).
+  // Not under a floor a rope ladder reaches (the boarding plank): what is under it is the landing the
+  // ladder hangs onto, walked by everybody going up the stair, and a block there stood across it.
+  const climbedTo = (s) => s.y != null && climbs.some(({ hi }) =>
+    Math.abs(hi.y - s.y) < 0.02 && hi.x >= s.x0 && hi.x <= s.x1 && hi.z >= s.z0 && hi.z <= s.z1);
   for (const s of surfaces) {
     let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
     const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
-    if (top - ground < UNDER_STAIR) continue;
+    if (top - ground < UNDER_STAIR || climbedTo(s)) continue;
     if (s.y == null) {
       // only where the ramp is high enough to be walked under
       const t = (ground + UNDER_STAIR - s.y0) / (s.y1 - s.y0);
@@ -2754,13 +2774,14 @@ export function buildBuilding(spec, ctx = {}) {
   // A building that says where it is solid itself (the ship, whose hull is measured off its
   // bake rather than off everything below head height), and one that floats: main.js and
   // guest-island.js set its origin on the sea instead of on the ground under the plot.
-  let ownSolids = null, floats = false, ownSurfaces = null;
+  let ownSolids = null, floats = false, ownSurfaces = null, ownClimbs = null;
 
   if (spec.kind === 'civic') {
     const r = civic(parts, spec, rng);
     anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
     ownSolids = r.solids || null;
     ownSurfaces = r.surfaces || null;
+    ownClimbs = r.climbs || null;
     floats = !!r.floats;
     if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
   } else if (spec.kind === 'shed') {
@@ -2874,6 +2895,7 @@ export function buildBuilding(spec, ctx = {}) {
     ...(floats ? { floats } : {}),
     // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
     ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),
+    ...(ownClimbs ? { climbs: ownClimbs } : {}),
     // Scaled with the rest: every house is 0.96 to 1.04 of itself, and a porch handed back only at
     // s === 1 was a porch no house had, so walk mode could not stand anybody on one (main.js porchOf).
     ...(deck ? { porch: s === 1 ? deck : Object.fromEntries(Object.entries(deck).map(([k, v]) => [k, v * s])) } : {}),
