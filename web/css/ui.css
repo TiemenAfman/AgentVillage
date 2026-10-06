@@ -231,20 +231,6 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .toast .act.ghost { background: transparent; border-color: var(--edge); color: var(--ink-dim); font-weight: 400; }
 .toast .act:hover { filter: brightness(1.08); }
 
-/* --- floating buttons ------------------------------------------------- */
-/* Bottom right, out of the way of everything: on a phone the browser's own
-   chrome eats a third of the island, and this is the way back to all of it. */
-.fabs { position: fixed; right: 14px; bottom: 16px; z-index: 13; display: flex; align-items: center; gap: 9px; }
-.fab {
-  width: 44px; height: 44px; border-radius: 50%; padding: 0; cursor: pointer;
-  display: grid; place-items: center; color: var(--ink-dim);
-  background: var(--panel); border: 1px solid var(--edge);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: .16s;
-}
-.fab:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
-.fab:active { transform: scale(.94); }
-/* The chronicle bar runs the full width of a narrow screen, so step over it. */
-@media (max-width: 760px) { .fabs { bottom: 74px; } }
 .toast { padding: 9px 12px; font-size: 12px; line-height: 1.4; animation: risein .3s ease; }
 .toast b { color: var(--accent); }
 .toast.fade { opacity: 0; transition: opacity .5s ease; }
@@ -256,9 +242,6 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   .titlecard { max-width: 190px; }
   .chronicle-meta select { display: none; }
   #chronicle-date { min-width: 0; }
-  /* The install/fullscreen buttons sat over the bottom of every open panel - its own
-     actions included. Nobody needs them while reading one. */
-  body:has(.panel:not([hidden])) .fabs { display: none; }
 }
 
 /* --- walking ---------------------------------------------------------- */
@@ -1304,7 +1287,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 /* The app on a phone (see setStandalone in web/js/ui.js and web/js/touchpad.js). */
 body.standalone #walk-btn, body.standalone #build-btn, body.standalone #plan-btn,
 body.standalone #reset-btn, body.standalone #found-btn,
-body.standalone #walk-keys, body.standalone #fabs, body.standalone #topright > .chips { display: none !important; }
+body.standalone #walk-keys, body.standalone #topright > .chips { display: none !important; }
 /* The chronicle replays *our* island's history, and on a phone there is no our: a thumb
    brushing its slider took the borrowed island back in time and its houses with it. The
    live dot and the counts belong to the same story. */
@@ -1477,3 +1460,16 @@ body.noclip-clean > :not(#stage):not(#panels):not(#underwater):not(script) { vis
 @media (prefers-reduced-motion: reduce) {
   .sysmenu, .update-gate, .worldmap, .inv-frame, .update-gate-card, .popover, .panel, .tip { animation: none !important; transition: none !important; }
 }
+
+/* One set of chips per mode (ui.js syncSidebar writes body[data-mode]). From the sky: everything. On foot
+   (and in a room): Fly up, Say, Map, Inventory, Quests - the rest either does nothing down there or
+   throws you back up, and its key still works where it means something. In the planner: Done alone,
+   its tools are its own panel. The island's card (settlers, districts) is a view from above. */
+body[data-mode="foot"] :is(#found-btn, #plan-btn, #build-btn, #animals-btn, #reset-btn),
+body[data-mode="plan"] #nav-chips > .chip:not(#plan-btn),
+body[data-mode="plan"] #nav-chips > .chips-sep,
+body[data-mode="plan"] #nav-collapse-btn,
+body[data-mode="foot"]:not(.foot-card) #titlecard,
+body[data-mode="plan"] #titlecard { display: none !important; }
+/* With the island's card gone the planner's tools take its place at the top left. */
+body[data-mode="plan"] .panel.left { top: 14px; max-height: calc(100vh - 28px); }
