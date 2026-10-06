@@ -222,7 +222,14 @@ export function createUI(handlers) {
       if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
       renderSettings();
       el('sysmenu-build').textContent = handlers.buildLabel ? handlers.buildLabel() : '';
+      // Respawn to town (issue #74) is for somebody on foot in the world - the sky has nothing
+      // to bring home, and a room has a door - so it is not a button anybody else ever sees.
+      el('sysmenu-respawn').hidden = !(handlers.canRespawn && handlers.canRespawn());
     },
+  });
+  el('sysmenu-respawn').addEventListener('click', () => {
+    menu.close();
+    if (handlers.onRespawn) handlers.onRespawn();
   });
   const hideSide = (except) => { for (const id of SIDE) if (id !== except && el(id)) el(id).hidden = true; };
   function close(which) {

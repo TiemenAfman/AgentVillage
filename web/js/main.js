@@ -853,6 +853,86 @@ function handSurfaces() {
   if (state.walk) state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
 }
 
+function sentHome(m) {
+  // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
+  // drowning says so in `breath` too, but a guard's capture says nothing about air).
+  air = AIR_S;
+  // Whatever brought us home answers a Respawn to town still waiting on the sea.
+  clearTimeout(respawnWait);
+  respawnWait = null;
+  // `why` (lib/players.mjs evict): 'drown', 'settled' or 'respawn'; a sea from before it sends
+  // none and gets the generic words, which name a place we were not sent home from.
+  const drowned = m.why === 'drown';
+  // The starter we stood on was taken by a newcomer (lib/sea.mjs retireStarter): nobody
+  // threw us off, and the sea laid our skiff out past the newcomer's coast, at m.x/m.z.
+  const settled = m.why === 'settled';
+  // Asked for (Respawn to town, issue #74), by the sea or by respawnHere: nobody sent us.
+  const asked = m.why === 'respawn';
+  exitWalk({ force: true });
+  state.walk.setPaused(false);
+  // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
+  // it is climbed into at once, so a respawn is back at the oars and not treading water.
+  const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
+  if (skiff && settled && Number.isFinite(m.x) && Number.isFinite(m.z)) {
+    skiff.x = m.x; skiff.z = m.z;
+    skiff.craft.place(skiff.x, skiff.z, skiff.yaw);
+  }
+  if (skiff) {
+    enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
+    takeBoat(skiff);
+    state.ui.toast(asked
+      ? 'You climb back into your boat.'
+      : drowned
+      ? 'You ran out of breath, and were hauled back into your boat.'
+      : settled
+        ? `${escapeHtml(m.island || "This island")} has just been settled${m.by ? ` by <b>${escapeHtml(m.by)}</b>` : ''}. Your boat was waiting for you - the sea is wide.`
+        : `The people of ${m.island || 'that island'} put you back in your boat.`);
+    return;
+  }
+  enterWalk({ at: [m.x, m.z] });
+  state.ui.toast(asked
+    ? `Back on the square of ${escapeHtml(m.island || state.village?.island?.name || 'your town')}.`
+    : drowned
+    ? 'You ran out of breath, and were pulled out of the water and taken home.'
+    : `The people of ${m.island || 'that island'} sent you home.`);
+}
+
+// ---- Respawn to town (issue #74) ---------------------------------------------------------
+// For somebody adrift with no boat and no way out of the water. The sea decides where home is
+// (lib/health.mjs respawn: the square of our island, or a wanderer's skiff - the refuge a
+// capture uses) and answers with the same `evicted`, `why: 'respawn'`, which sentHome above
+// takes like any other. A sea from before the message says nothing at all, so if nothing has
+// come back in RESPAWN_WAIT_MS we put ourselves there instead: our feet are ours to place (the
+// sea believes every pose), so on an old sea this is the same button, only decided here.
+const RESPAWN_WAIT_MS = 2500;
+let respawnWait = null;
+// On foot in the world: the sky has nothing to bring home and a room has a door.
+const canRespawn = () => state.mode === 'walk' && !state.inside && !!state.walk;
+function respawnToTown() {
+  if (!canRespawn()) return;
+  clearTimeout(respawnWait);
+  const asked = !!(state.net && state.net.respawn());
+  respawnWait = setTimeout(() => { respawnWait = null; respawnHere(); }, asked ? RESPAWN_WAIT_MS : 0);
+}
+// The same places the sea would pick, worked out from what this page has: our own skiff with
+// no island, else our square - in front of the board, as parkOnSquare stands us.
+function respawnHere() {
+  if (!canRespawn()) return;
+  if (STANDALONE) {
+    const b = state.boats.find((x) => x.own);
+    if (!b) { state.ui.toast('There is nowhere to take you back to.'); return; }
+    sentHome({ x: b.x, z: b.z, boat: b.id, why: 'respawn' });
+    return;
+  }
+  const board = state.byId.get('civic:board');
+  const town = state.village && state.village.island.town;
+  let at = null;
+  if (board) at = [board.group.position.x, board.group.position.z + 2.2];
+  else if (town && town.centre && state.terrain) at = state.terrain.cellWorld(town.centre[0], town.centre[1] + 2);
+  if (!at) { state.ui.toast('There is nowhere to take you back to.'); return; }
+  sentHome({ x: at[0], z: at[1], why: 'respawn' });
+}
+
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
 // Where the islander starts you: in front of the board on the square, as enterWalk's own
 // fallback does, facing it.
@@ -8026,6 +8106,9 @@ async function boot() {
     // it closes - a turn later, or the Escape that closed it reaches the room's walk mode unpaused
     // and opens the menu again.
     onMenuClose: () => setTimeout(() => { if (state.inside && !openPanel()) state.inside.setPaused(false); }, 0),
+    // Respawn to town under Back in the menu (issue #74), shown only while it can do something.
+    canRespawn,
+    onRespawn: () => respawnToTown(),
     // The HD pack under Settings -> Graphics: false on the phone (no islander, no rooms, no choice
     // to offer), else what HOME/hd holds (null for nothing).
     hdStatus: () => (STANDALONE ? false : hdStatus()),
@@ -8623,39 +8706,13 @@ Everything is copied and checked first; the island then starts again there. The 
     // What we look like to everybody else: our own wardrobe (web/js/avatar.js), said on
     // every connect and again from the studio's Apply.
     look: loadAvatar(),
-    onEvicted: (m) => {
-      // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
-      // drowning says so in `breath` too, but a guard's capture says nothing about air).
-      air = AIR_S;
-      // `why` (lib/players.mjs evict) is only ever 'drown' so far; a sea from before it sends
-      // none and gets the generic words, which name a place we were not sent home from.
-      const drowned = m.why === 'drown';
-      // The starter we stood on was taken by a newcomer (lib/sea.mjs retireStarter): nobody
-      // threw us off, and the sea laid our skiff out past the newcomer's coast, at m.x/m.z.
-      const settled = m.why === 'settled';
-      exitWalk({ force: true });
-      state.walk.setPaused(false);
-      // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
-      // it is climbed into at once, so a respawn is back at the oars and not treading water.
-      const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
-      if (skiff && settled && Number.isFinite(m.x) && Number.isFinite(m.z)) {
-        skiff.x = m.x; skiff.z = m.z;
-        skiff.craft.place(skiff.x, skiff.z, skiff.yaw);
-      }
-      if (skiff) {
-        enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
-        takeBoat(skiff);
-        state.ui.toast(drowned
-          ? 'You ran out of breath, and were hauled back into your boat.'
-          : settled
-            ? `${escapeHtml(m.island || "This island")} has just been settled${m.by ? ` by <b>${escapeHtml(m.by)}</b>` : ''}. Your boat was waiting for you - the sea is wide.`
-            : `The people of ${m.island || 'that island'} put you back in your boat.`);
-        return;
-      }
-      enterWalk({ at: [m.x, m.z] });
-      state.ui.toast(drowned
-        ? 'You ran out of breath, and were pulled out of the water and taken home.'
-        : `The people of ${m.island || 'that island'} sent you home.`);
+    onEvicted: (m) => sentHome(m),
+    // Respawn to town said no (nowhere to go, or asked again too soon): no local fallback then,
+    // that is for a sea that does not know the message (respawnToTown).
+    onRespawn: () => {
+      clearTimeout(respawnWait);
+      respawnWait = null;
+      state.ui.toast('The sea cannot take you home just now.');
     },
     // The sea's word on our air (lib/breath.mjs): where it stands as we go under or come up,
     // which is what the frame's own sum starts again from. A fraction of the lung the sea
