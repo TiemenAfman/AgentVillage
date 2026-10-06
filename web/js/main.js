@@ -4272,6 +4272,7 @@ addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const k = e.key.toLowerCase();
+  const chip = keysOf('plan').includes(k) ? 'plan-btn' : ORBIT_KEYS[k];
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
   // The chips' own letters, from the sky only (Plans/DONE/esc-menu-en-knoppenbalk.md) - on foot I
@@ -4280,11 +4281,11 @@ addEventListener('keydown', (e) => {
   // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
   // Nor while the boot screen is up: it covers the chips, so their keys wait for it too
   // (a failed boot leaves it up for good, and nothing behind it was ever made).
-  else if (ORBIT_KEYS[k] && !openPanel() && !booting()) {
+  else if (chip && !openPanel() && !booting()) {
     // Enter is also how a focused button is pressed: leave that to the browser, or the chip
     // would be clicked twice. Nor while the main menu (which has its own buttons) is up.
     if (k === 'enter' && (/^(BUTTON|A|SUMMARY)$/.test(t && t.tagName) || !document.getElementById('mainmenu').hidden)) return;
-    const b = document.getElementById(ORBIT_KEYS[k]);
+    const b = document.getElementById(chip);
     if (b && !b.hidden) { e.preventDefault(); b.click(); }
   }
 });
@@ -4299,8 +4300,9 @@ function booting() {
   const b = document.getElementById('boot');
   return !!b && !b.classList.contains('gone');
 }
+// Plan is not in it: its key is a binding (keybinds.js `plan`, default U), so P stays sow's alone.
 const ORBIT_KEYS = {
-  i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
+  i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn',
   b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn',
 };
 // On foot the quest log is a toast (side panels are closed while walking), on its own key

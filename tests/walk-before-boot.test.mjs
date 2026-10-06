@@ -35,7 +35,7 @@ test('the walk mode and the village are both made before the boot screen goes', 
 });
 
 test('the chips\' keys wait for the boot screen, which covers the chips themselves', () => {
-  assert.match(main, /else if \(ORBIT_KEYS\[k\] && !openPanel\(\) && !booting\(\)\)/);
+  assert.match(main, /else if \(chip && !openPanel\(\) && !booting\(\)\)/);
   assert.match(body('booting'), /classList\.contains\('gone'\)/);
   assert.match(read('web/js/ui.js'), /el\('boot'\)\.classList\.add\('gone'\)/,
     'and `gone` is what ui.js boot(true) puts on it');
