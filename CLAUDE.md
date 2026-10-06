@@ -1965,6 +1965,12 @@ diving within 4 units; bubbles are one `Points` pool fed by every diver's mouth 
 and the walker's own). Caps by tier (`CAPS`: full / modest / phone) bound reach and instances, and
 the reach never goes past the mist. Cosmetic: no fish is on the wire.
 
+**Archiving a wait is "until when", not a flag** (issue #78). The dossier's Archive posts
+`/api/waiting/dismiss` (keeper-only), which keeps the wait's `since` (lib/waiting.mjs: the last
+turn's timestamp) in `data/waiting-dismissed.json`; `buildVillage` drops a wait not newer than
+that (`isDismissed`), so a new turn brings the flag back by itself. In code it is "dismissed":
+`b.archived` already means the desktop app's own archive.
+
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
 

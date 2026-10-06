@@ -14,6 +14,7 @@ import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sp
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
+import { dismissWaiting, undismissWaiting } from './lib/waiting-dismissed.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
 import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
 import {
@@ -1321,6 +1322,29 @@ if (req.url === '/api/command' && req.method === 'POST') {
       log(`${(b && b.name) || buildingId} sent off the island`);
     }
     await rescan('banish');
+    return json(res, 200, { ok: true, buildingId, undo: !!undo });
+  }
+
+  // Takes a settler out of "waiting for you" until they say something new (issue #78,
+  // lib/waiting-dismissed.mjs), or puts them back. Keeper-only like every write here: not on
+  // PUBLIC_API. What is kept is the `since` of the wait as the island last showed it, so a
+  // turn written after that brings the flag back by itself.
+  if (p === '/api/waiting/dismiss' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { buildingId, undo } = body || {};
+    if (!buildingId) return json(res, 400, { error: 'buildingId is required' });
+    const village = readJson(VILLAGE_FILE, null);
+    const b = village && (village.buildings || []).find((x) => x.id === buildingId);
+    if (!b || !b.sessionId) return json(res, 404, { error: 'no such settler' });
+    if (undo) {
+      undismissWaiting(b.sessionId);
+      log(`${b.name} waiting again`);
+    } else {
+      dismissWaiting(b.sessionId, b.waiting && b.waiting.since);
+      log(`${b.name} archived out of waiting`);
+    }
+    await rescan('waiting');
     return json(res, 200, { ok: true, buildingId, undo: !!undo });
   }
 

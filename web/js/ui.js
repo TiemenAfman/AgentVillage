@@ -410,6 +410,7 @@ export function createUI(handlers) {
     }
     html += `<p class="dossier-actions">
       ${b.kind === 'civic' || !b.sessionId ? '' : `<button class="btn primary" id="talk-btn">${w ? 'Answer' : 'Talk to them'}</button>`}
+      ${w && b.sessionId ? '<button class="btn" id="dismiss-btn" title="Take them off the waiting list until they say something new">Archive</button>' : ''}
       ${b.civicType === 'market' ? '<button class="btn primary" id="stall-btn">The seed stall</button>' : ''}
       <button class="btn" id="focus-btn">Focus camera</button>
       ${handlers.canWalkHere && handlers.canWalkHere() ? '<button class="btn" id="walkhere-btn">Walk here</button>' : ''}
@@ -487,6 +488,8 @@ export function createUI(handlers) {
     if (walkHere) walkHere.addEventListener('click', () => handlers.onWalkHere(b.id));
     const talk = body.querySelector('#talk-btn');
     if (talk) talk.addEventListener('click', () => handlers.onTalk(b.id));
+    const dismiss = body.querySelector('#dismiss-btn');
+    if (dismiss) dismiss.addEventListener('click', () => handlers.onDismissWait(b.id));
     const stall = body.querySelector('#stall-btn');
     if (stall) stall.addEventListener('click', () => handlers.onMarket());
     const exile = body.querySelector('#exile-btn');
