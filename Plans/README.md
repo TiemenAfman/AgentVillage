@@ -156,6 +156,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   fase 2 (te veel single-eye-state in `main.js`). Ernaast: de chips rechtsboven tonen hun toets of
   padknop naar het laatst gebruikte apparaat.
 
+- 🚧 [open-world-pvp.md](open-world-pvp.md) — plan van 6 oktober 2026, nog niet gebouwd: spelers raken
+  elkaar alleen als ze allebei hun persoonlijke PvP-vlag aan hebben (WoW-stijl, uitzetten duurt 30 s, opnieuw
+  bij elke treffer), op elke zee. Alleen jij bent veilig op je eigen eiland; wie thuis slaat, is 10 s te raken.
+  `PVP_HIT` via `hurt()` en `blowOn`, windup, hoogstens twee aanvallers, afstijgen bij een treffer. Geen `SEA_V`-bump.
+
 ### Klaar
 
 - ✅ [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
