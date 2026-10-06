@@ -3535,6 +3535,32 @@ async function sendAway(id) {
   }
 }
 
+// The dossier's Archive (issue #78): off the waiting list and the flag off the roof, until
+// the session says something new. The island keeps that in data/waiting-dismissed.json.
+async function dismissWait(id, undo = false) {
+  const rec = state.byId.get(id);
+  const name = rec ? rec.spec.name : 'They';
+  try {
+    const r = await mine('/api/waiting/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buildingId: id, undo }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'that did not work');
+    applyVillage(await fetchVillage(), { animate: false });
+    if (undo) state.ui.toast(`<b>${escapeHtml(name)}</b> is waiting for you again.`);
+    else {
+      state.ui.toast(
+        `<b>${escapeHtml(name)}</b> archived - back on the list when they say something new. `
+        + `<button class="btn tiny" data-unarchive="${id}">Undo</button>`,
+        (el) => el.querySelectorAll('[data-unarchive]').forEach((b) => b.addEventListener('click', () => dismissWait(b.dataset.unarchive, true))),
+      );
+    }
+  } catch (e) {
+    state.ui.toast(`Could not archive ${escapeHtml(name)}: ${e.message}`);
+  }
+}
+
 async function bringBack(id) {
   try {
     await mine('/api/banish', {
@@ -8162,6 +8188,7 @@ Everything is copied and checked first; the island then starts again there. The 
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
     onToggleMap: () => toggleMap(),
     onTalk: (id) => talkTo(id),
+    onDismissWait: (id) => dismissWait(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
