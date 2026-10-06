@@ -35,6 +35,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [zee-stuurt-wat-je-ziet.md](zee-stuurt-wat-je-ziet.md) — de zee stuurt een eiland zijn mensen alleen naar wie
+  ze tekent: de pagina zegt welke eilanden (`want`), een islander krijgt niets, een lege pose-beat gaat één keer.
+  Gemeten: een kijker op de open zee kreeg 13,4 kB/s, 94% crowd-rijen; één eiland gewild is 3,5, geen 0,13.
+  Fase 1 gebouwd (patch, open zee nog redeployen); open: spelers (`s`) filteren, goedkopere rijen.
 - 🚧 [meer-geluiden.md](meer-geluiden.md) — plan van 2 oktober 2026, nog niet gebouwd: meer geluid op het
   eiland, allemaal berekend zoals nu (eigen samples van de keeper hooguit als laatste, optionele fase).
   Geroezemoes en klinkende glazen door de kroegdeur en de borrel op het plein, de ambachten op een

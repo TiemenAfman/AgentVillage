@@ -477,3 +477,24 @@ test('a crowd is culled on a sphere that holds its whole island', () => {
     }
   }
 });
+
+test('an island let go of is forgotten, and comes back where its people are, not where they were', () => {
+  // main.js stops wanting an island past NPC Distance and the sea stops sending its rows
+  // (Plans/zee-stuurt-wat-je-ziet.md). Whatever the view still held would be minutes old by the
+  // time the island was wanted again: drawn from there, a body stood where it once was and
+  // then slid across the island. Forgotten instead, nobody is drawn until the sea speaks.
+  const crowd = view();
+  place(crowd);
+  const f = crowd.figure('house:b');
+  crowd.draw(0.016, ground, 1001, true);
+  assert.equal(f.visible, true);
+  crowd.forget();
+  crowd.draw(0.016, ground, 1002, true);
+  assert.equal(f.visible, false, 'drawn from a position the sea is no longer keeping up');
+  // Back in range, and the word puts them there at once - no glide from the old spot.
+  const idx = [...crowd.figures()].find(([, g]) => g === f)[0];
+  crowd.apply(new Map([[idx, { x: 3, z: 3, anim: 'still' }]]), 60000);
+  crowd.draw(0.016, ground, 60000, true);
+  assert.equal(f.visible, true);
+  assert.deepEqual([f.pos[0], f.pos[1]], [3 + region.origin[0], 3 + region.origin[1]]);
+});

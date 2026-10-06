@@ -661,6 +661,22 @@ export function createCrowdView({
     view.draw(figures, dt);
   }
 
+  // The sea has stopped sending where these people are (main.js has said it no longer draws
+  // this island - `want`, Plans/zee-stuurt-wat-je-ziet.md), so what we hold is getting older by
+  // the second. Forgotten rather than kept: back in range, a body drawn from that would stand
+  // where it was minutes ago and then snap or glide across the island to where it is. With
+  // `to` cleared it is the "never heard of" state, which draw() keeps hidden until the next
+  // word - and the sea sends everybody's at once the moment the island is wanted again. The
+  // boats go too: a hull is drawn with no NPC cut, and one left at sea would hang there.
+  // Who they are (the roster) and who is held in a conversation are kept; the sea says the
+  // second again with the positions.
+  function forget() {
+    for (const f of figures.values()) { f.to = null; f.from = null; }
+    for (const hull of hulls.values()) hull.dispose();
+    hulls.clear();
+    rides.clear();
+  }
+
   function dispose() {
     for (const id of [...imps.keys()]) dropImp(id);
     for (const idx of [...figures.keys()]) retire(idx);
@@ -675,7 +691,7 @@ export function createCrowdView({
   }
 
   return {
-    roster, apply, applyRides, held, draw, dispose, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
+    roster, apply, applyRides, held, draw, dispose, forget, setVisible, setBuildings, hit, swing, bars, giveBeer, beersIn,
     // NPC Distance, live. Not remembered per figure: the next draw asks again, so a body that
     // has just come back inside the range is placed on that same frame and a body that has
     // just gone past it is handed back without waiting for the sea to say anything.

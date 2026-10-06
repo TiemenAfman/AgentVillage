@@ -173,6 +173,11 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   // sea has never hurt is, and what a new connection is: a new socket is a new player id on
   // the sea and so a fresh body (lib/health.mjs), so a dropped line forgets it too.
   let health = null;
+  // Which islands' people this page draws (`want`, Plans/zee-stuurt-wat-je-ziet.md), as main.js
+  // last said - or null, which is everything and what a page that never says is sent. Kept so
+  // it rides on every handshake: the sea then sends a joiner only those islands' positions,
+  // instead of the whole world once on every reconnect.
+  let wantList = null;
   // When the last swing went, on `clock`; see SWING_MS.
   let swungAt = -Infinity;
   // The sea not answering, said once: see QUIET_MS. Armed when the line drops or an attempt
@@ -211,7 +216,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       // remembering to. An island with no sea ignores it, which is what makes this safe
       // to send either way.
       const hand = joinWith();
-      if (hand) send({ t: 'join', ...hand });
+      if (hand) send({ t: 'join', ...hand, ...(wantList ? { want: wantList } : {}) });
       if (name) send({ t: 'hello', name });
       // What we look like, from our own wardrobe (web/js/avatar.js), on every connect: the
       // sea keeps it only as long as this socket, and a reconnect is a stranger until then.
@@ -485,6 +490,13 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       last.f = -1;                    // force the next pose through, wherever it is
     },
     setName(n) { if (n) send({ t: 'hello', name: n }); },
+    // Which islands' people we draw, by id. Only when it changes - main.js decides, with a
+    // hysteresis - and kept for the next handshake. A sea from before `want` ignores it, at the
+    // cost of one token from the bucket in lib/players.mjs, and goes on sending everything.
+    want(ids) {
+      wantList = [...ids];
+      send({ t: 'want', i: wantList });
+    },
     // One swing of whatever we are holding, the moment it starts (walk.js, the left button).
     // Nothing else goes with it: the sea already has our position and heading off the pose
     // beat, and it believes nothing about the swing but that it happened - what it reaches and
