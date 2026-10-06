@@ -191,7 +191,7 @@ export function createNoclip({ camera, dom, onExit = null, onChange = null }) {
   function onMove(e) {
     if (!on) return;
     let dx = 0, dy = 0;
-    if (locked()) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    if (locked()) { dx = e.movementX; dy = e.movementY; if (Math.abs(dx) > 250 || Math.abs(dy) > 250) dx = dy = 0; /* Chrome's jump on a lock, as walk.js LOOK_JUMP */ } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
     if (!dx && !dy) return;
     pose = turnBy(pose, dx, dy);
     applyPose(camera, pose);

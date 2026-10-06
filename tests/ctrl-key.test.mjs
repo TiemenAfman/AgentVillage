@@ -179,7 +179,7 @@ test('page-keys: ctrl+A and cmd+A are select all, AltGr+A and a bare A are not',
 test('page-keys: from the sky, with no walk mode at all, ctrl+A is cancelled - except in a field', () => {
   const seen = [];
   installPageKeys({ addEventListener: (t, fn) => seen.push([t, fn]) });
-  assert.deepEqual(seen.map(([t]) => t), ['keydown', 'contextmenu']);
+  assert.deepEqual(seen.map(([t]) => t), ['keydown', 'pointerup', 'contextmenu']);
   const press = (over) => { let p = false; seen[0][1]({ key: 'a', ctrlKey: true, altKey: false, target: {}, preventDefault: () => { p = true; }, ...over }); return p; };
   assert.equal(press({}), true);
   assert.equal(press({ target: { tagName: 'INPUT' } }), false);

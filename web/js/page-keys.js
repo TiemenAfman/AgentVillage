@@ -19,10 +19,29 @@ export function isSelectAll(e) {
   return !!(e.ctrlKey || e.metaKey) && !e.altKey && typeof e.key === 'string' && e.key.toLowerCase() === 'a';
 }
 
+// Where Tab is still the browser's: a field, and anything that is a dialog or a panel of its own
+// (the menu and Settings, the update card, a board's form), where walking the controls with the
+// keyboard is what Tab is for. Everywhere else - the canvas, the HUD's chips, the toolbar - Tab
+// is no key of the game's, and left alone it walked the focus round the chips (the keeper,
+// 0.9.1), leaving one of them focused, so the next Space or Enter clicked it.
+const TAB_ZONES = '[role="dialog"], dialog, aside.panel, form';
+export function tabBelongsToPage(el) {
+  if (typingInto(el)) return true;
+  return !!(el && typeof el.closest === 'function' && el.closest(TAB_ZONES));
+}
+
 export function installPageKeys(target = globalThis) {
   target.addEventListener('keydown', (e) => {
     if (isSelectAll(e) && !typingInto(e.target)) e.preventDefault();
+    if (e.key === 'Tab' && !tabBelongsToPage(e.target)) e.preventDefault();
   });
+  // A HUD chip clicked with the mouse keeps the focus, and a focused button is clicked again by
+  // Space (jump) and Enter (walk) - so a chip let go of outside a dialog gives the focus back.
+  target.addEventListener('pointerup', (e) => {
+    const el = e.target && typeof e.target.closest === 'function' ? e.target.closest('button, [tabindex]') : null;
+    if (!el || tabBelongsToPage(el)) return;
+    setTimeout(() => { if (globalThis.document?.activeElement === el) el.blur(); }, 0);
+  }, true);
   // The page menu (Copy / Select All) over the HUD, a card or the toolbar is as unwanted as the
   // selection it offers - text selection is off outside fields (ui.css), so the menu had nothing
   // to copy anyway. main.js already cancels it on the canvas; this is every other place. A field

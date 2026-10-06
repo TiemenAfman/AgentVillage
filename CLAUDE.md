@@ -1577,6 +1577,14 @@ into a free hand and gives the old item back; `digged()` counts flung shovelfuls
 turns the shovel with a quaternion (`unArm * Rx(tilt)`), not per-axis Euler undo: the arm is turned in about
 z while it digs and the two do not commute.
 
+**Tab is no key of the game's** (`web/js/page-keys.js`, every mode): outside a field and outside
+`TAB_ZONES` (a `[role="dialog"]` - the menu with Settings, the update card -, a `dialog`, an
+`aside.panel`, a `form`) it is cancelled, or it walked the focus round the HUD's chips and the next
+Space or Enter clicked one; a button let go of outside those zones gives its focus back
+(`pointerup`). Chrome's first `pointermove` after a pointer lock is taken can carry the cursor's
+whole jump as `movementX/Y`: walk.js drops it (`freshLock`) and any single move over `LOOK_JUMP`,
+noclip.js the latter, or `camPitch` lands on its limit and the camera looks at the sky
+(`tests/tab-key.test.mjs`).
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
 the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock
