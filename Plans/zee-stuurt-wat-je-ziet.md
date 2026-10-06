@@ -65,8 +65,7 @@ Twintig eilanden van 300 settlers is 36–72 kB/s per kijker; met 32 kijkers rui
    terwijl zijn eiland niet gewild is. Plus `NPC_PAD`, `WANT_PAD` 32 (bootjes tot 13 van de ligplaats, guards die
    uit de kust zwemmen) en `WANT_HYST` 48 om los te laten (geen flapperen langs de rand). NPC 0 (planner) = alles.
    Niet het focuspunt van `pickDetailed`: de cut die ertoe doet is die tegen de camera.
-3. **Loslaten = vergeten.** `crowd.forget()` wist `to`/`from` van elk lijf en haalt de rompen weg (een romp heeft
-   geen NPC-cut). Rijen die nog onderweg zijn worden in `onCrowdMessage` weggegooid. Een lijf zonder `to` tekent
+3. **Loslaten = vergeten.** `crowd.forget()` wist `to`/`from` van elk lijf; de rompen blijven (zie 5). Rijen die nog onderweg zijn worden in `onCrowdMessage` weggegooid. Een lijf zonder `to` tekent
    `draw()` niet (de bestaande regel tegen mensen op het plein), dus terug in bereik staat niemand op een oude plek.
 4. **Opnieuw willen = alles in één keer.** De zee stuurt bij elk nieuw gewild eiland meteen `f` met `slices: 1`,
    de rides en `fh` (`sendCrowd` in `lib/sea.mjs`), dus de mensen verschijnen waar ze staan, niet in het midden
@@ -75,6 +74,10 @@ Twintig eilanden van 300 settlers is 36–72 kB/s per kijker; met 32 kijkers rui
    voorheen tien seconden druppelen.
 5. **Per berichttype:**
    - `f`, `fh`: alleen naar wie het eiland wil (`toWatchers`).
+   - **uitzondering, de bootjes**: de rides (`b`) van een eiland gaan ook naar pagina's die het niet willen
+     (`toSailors`, een `f` met lege `a`/`k`), want een romp heeft geen NPC-cut en is te zien tot in de mist.
+     Een uitje is zeldzaam: ~1 kB/s per kijker zolang er een bootje uit is, anders niets. De pagina past van een
+     niet-gewild eiland alleen de rides toe.
    - `fr` (roster): naar elke pagina — klein, alleen bij een dorpswijziging, en nodig om rijen bij nadering te lezen.
    - `af`, `herd`: naar elke pagina — dieren hebben geen NPC-cut (`animal-view.js`) en zouden bevriezen; samen
      een paar honderd bytes per seconde.

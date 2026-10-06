@@ -498,3 +498,18 @@ test('an island let go of is forgotten, and comes back where its people are, not
   assert.equal(f.visible, true);
   assert.deepEqual([f.pos[0], f.pos[1]], [3 + region.origin[0], 3 + region.origin[1]]);
 });
+
+test('an island let go of keeps its boats: the sea goes on sending those', () => {
+  // A hull has no NPC cut and is seen as far as the fog, so lib/sea.mjs sends the dinghies of an
+  // island to a page that does not want it, and forget() must not take them out of the water.
+  const crowd = view();
+  place(crowd);
+  const f = crowd.figure('house:a');
+  const idx = [...crowd.figures()].find(([, g]) => g === f)[0];
+  crowd.forget();
+  crowd.applyRides(new Map([[idx, { x: 10, z: 10, yaw: 0, rx: 10, rz: 10, ry: 0.3, ryaw: 0 }]]), 2000);
+  crowd.forget();
+  crowd.draw(0.016, ground, 2001, true);
+  assert.equal(f.visible, true, 'the rider of a boat on an island let go of was not drawn');
+  assert.deepEqual([f.pos[0], f.pos[1]], [10 + region.origin[0], 10 + region.origin[1]]);
+});

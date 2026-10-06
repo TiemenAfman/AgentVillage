@@ -4897,7 +4897,19 @@ function onCrowdMessage(m) {
   // Rows of an island we have let go of (syncWant) that were already on their way: the view
   // has forgotten its positions, and these would only start going stale again. A sea from
   // before `want` sends every island for ever, and this is what keeps that page honest too.
-  if (crowdWant && !crowdWant.has(m.island)) return;
+  // Only its boats are taken: the sea sends those to everybody (toSailors in lib/sea.mjs),
+  // since a hull is seen as far as the fog and NPC Distance does not cut it.
+  if (crowdWant && !crowdWant.has(m.island)) {
+    const view = home ? state.settlers : g && g.crowd;
+    const r = home ? region : g && g.region;
+    if (view && r) {
+      view.applyRides(decodeRides(m.b, r.half), performance.now());
+      // Somebody stepping ashore is stood where the hull left them (applyRides); on an island
+      // we do not follow that is a position nobody will keep up, so it is forgotten again.
+      view.forget();
+    }
+    return;
+  }
   if (home) {
     // Held rather than dropped while the roster is being translated - see there. Only the
     // last one: they are absolute positions, so an older one has nothing to add.

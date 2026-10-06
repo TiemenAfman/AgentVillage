@@ -666,15 +666,12 @@ export function createCrowdView({
   // the second. Forgotten rather than kept: back in range, a body drawn from that would stand
   // where it was minutes ago and then snap or glide across the island to where it is. With
   // `to` cleared it is the "never heard of" state, which draw() keeps hidden until the next
-  // word - and the sea sends everybody's at once the moment the island is wanted again. The
-  // boats go too: a hull is drawn with no NPC cut, and one left at sea would hang there.
-  // Who they are (the roster) and who is held in a conversation are kept; the sea says the
-  // second again with the positions.
+  // word - and the sea sends everybody's at once the moment the island is wanted again.
+  // Who they are (the roster), who is held in a conversation and who is out in a boat are
+  // kept: the sea goes on sending the boats of an island nobody here wants (lib/sea.mjs
+  // toSailors), because a hull has no NPC cut and is seen as far as the fog.
   function forget() {
     for (const f of figures.values()) { f.to = null; f.from = null; }
-    for (const hull of hulls.values()) hull.dispose();
-    hulls.clear();
-    rides.clear();
   }
 
   function dispose() {
