@@ -186,3 +186,30 @@ test('the source model is credited beside the files made from it', () => {
     assert.ok(credits.includes(needle), needle);
   }
 });
+
+// Two jumps (Plans/tweede-avonturier.md): from standing Mixamo's Standing Jump, from a run its
+// running Jump - chosen at the take-off by the speed the body leaves the ground with. It was
+// once chosen off an eased value still at 0 on the first frame in the air, and every jump was
+// the standing one.
+test('a jump from standing is the standing jump, a jump from a run the running one', async () => {
+  const { GAIT_CLIPS, GAIT_JOINTS } = await import('../web/js/gait-clips.js');
+  const { Quaternion } = await import('three');
+  const hip = GAIT_JOINTS.indexOf('lHip'), AIR_S = 2 * 3.1 / 12.5, frames = 15;
+  const expected = (clip) => {
+    const [a, b] = clip.air, u = a + (b - a) * Math.min(1, frames / 60 / AIR_S);
+    const row = clip.rows[Math.round(u * clip.rows.length) % clip.rows.length];
+    return new Quaternion(row[hip * 4], row[hip * 4 + 1], row[hip * 4 + 2], row[hip * 4 + 3]);
+  };
+  const legInAir = (speed) => {
+    const rig = createClassicAvatar(ADVENTURER, new MeshBasicMaterial());
+    for (let i = 0; i < 90; i++) rig.update({ moving: speed > 0, running: speed > 1, grounded: true, distance: speed / 60 }, 1 / 60);
+    for (let i = 0; i < frames; i++) rig.update({ moving: false, running: speed > 1, grounded: false, distance: speed / 60 }, 1 / 60);
+    return rig.joints.leftLeg.root.parent.parent.quaternion.clone();
+  };
+  const standing = legInAir(0), running = legInAir(rigSpeeds().run);
+  const off = (q, clip) => q.angleTo(expected(clip));
+  assert.ok(off(standing, GAIT_CLIPS.standingJump) < off(standing, GAIT_CLIPS.jump), 'a standing jump drew the running one');
+  assert.ok(off(running, GAIT_CLIPS.jump) < off(running, GAIT_CLIPS.standingJump), 'a running jump drew the standing one');
+  assert.ok(off(running, GAIT_CLIPS.jump) < 0.3, `a running jump's thigh is ${off(running, GAIT_CLIPS.jump)} off the clip`);
+});
+const rigSpeeds = () => createClassicAvatar(ADVENTURER, new MeshBasicMaterial()).speeds;

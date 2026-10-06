@@ -1,0 +1,10 @@
+{
+  "walk": "walking.fbx",
+  "run": "running.fbx",
+  "sprint": "sprint.fbx",
+  "idle": "idle.fbx",
+  "jump": "jump.fbx",
+  "standingJump": "standing-jump.fbx",
+  "swim": "swimming.fbx",
+  "dig": "digging.fbx"
+}

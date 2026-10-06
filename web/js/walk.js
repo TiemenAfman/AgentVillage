@@ -33,7 +33,7 @@ const CAM_TILT = 0.25;
 // How far up a swimmer may look (camPitch, radians; negative is the camera below the head). About 63
 // degrees: enough to see the surface from the bed and the sky from the top of a stroke.
 const SWIM_PITCH_MIN = -1.1;
-import { WALK_SPEED, RUN_SPEED, CROUCH_SPEED } from './avatar-gait.js';
+import { CROUCH_SPEED } from './avatar-gait.js';
 const TURN_LERP = 0.18;
 const CAM_BACK = 2.7;
 // A finger's drag, turned the way the mouse turns: radians per px dragged (touchpad.js hands
@@ -54,6 +54,9 @@ const EYE = PLAYER_EYE;
 // island into a platform game. Gravity is tuned to that arc rather than to reality: it
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
+// How quickly the stick turns a jumper's way in the air, per second (walk mode's `airWay`): at
+// 2.5 a standing jump pushed forward covers about half the ground a running one does.
+const AIR_STEER = 2.5;
 const GRAVITY = 12.5;
 // Swimming goes anywhere, the open sea included. It used to be wading only - no step into
 // water with no shore within SWIM_REACH - and that rule made a swimmer who ended up at sea
@@ -359,6 +362,7 @@ export function createWalkMode({
     onRelease: null,
     moving: false,
     running: false,
+    sprinting: false, // Shift with breath left: a sprint; running without it is the jog
     // Shift answered this frame: a run, a swimmer's turbo or the boat's, whichever applies.
     turbo: false,
     // What Shift spends. Running and swimming share the body's; the boat has its own, and
@@ -1235,6 +1239,9 @@ export function createWalkMode({
   // just gone over the side carries the hull's speed into the air and the water (`drift`).
   let climb = null;
   let drift = null;
+  // The way a jumper took off with, in units a second (AIR_STEER); on the ground it is simply
+  // the way the feet went this frame.
+  const airWay = { x: 0, z: 0 };
   // Every boat there is, for the ladders at their sides: main.js hands it over (setBoats) and it
   // is read live, since boats come and go with the fleet.
   let boatsOf = () => [];
@@ -1409,6 +1416,7 @@ export function createWalkMode({
     state.yaw = Math.atan2(fx, fz);
     state.moving = wish !== 0;
     state.running = false;
+    state.sprinting = false;
     state.swimming = false;
     state.grounded = true;
     state.floor = state.pos.y;
@@ -1485,7 +1493,10 @@ export function createWalkMode({
     // A ship is walked on her own model (shared/hullwalk.mjs), whatever has no model on the plain
     // rectangles of its craft.
     const surface = b.craft && b.craft.walk;
-    const walking = { speed: turbo ? RUN_SPEED : WALK_SPEED, radius: BODY_R, jumpV: JUMP_V, gravity: GRAVITY };
+    // The body's own speeds (avatar-gait.js GAITS), and on a deck as on land: a sprint while the
+    // pool lasts, a run once it is spent.
+    const jog = boost && push > 0.02;
+    const walking = { speed: turbo ? classicAvatar.speeds.sprint : jog ? classicAvatar.speeds.run : classicAvatar.speeds.walk, radius: BODY_R, jumpV: JUMP_V, gravity: GRAVITY };
     if (surface) stepHull(d, { x: lx, z: lz, jump: deckJump }, surface, dt, walking);
     else stepDeck(d, { x: lx, z: lz, jump: deckJump }, spec, dt, walking);
     deckJump = false;
@@ -1505,7 +1516,8 @@ export function createWalkMode({
     state.floor = state.pos.y;
     state.grounded = d.grounded;
     state.vy = d.vy;
-    state.running = turbo && state.moving;
+    state.running = jog && state.moving;
+    state.sprinting = turbo && state.moving;
     state.swimming = false;
     state.bob += dt * (state.moving ? 6 : 1);
     // Off the planks: over the bulwark on a jump, or through a gap in the rail. Nothing is
@@ -1928,6 +1940,8 @@ export function createWalkMode({
       if (ease > 0) state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5 * ease));
       state.moving = Math.abs(state.vehicle.v) > 0.05;
       state.running = false;
+      state.sprinting = false;
+    state.sprinting = false;
       state.grounded = true;
       state.swimming = false;
       state.floor = state.pos.y;
@@ -1980,6 +1994,8 @@ export function createWalkMode({
         state.camYaw = lerpAngle(state.camYaw, b.yaw, Math.min(1, dt * pull));
       }
       state.running = false;
+      state.sprinting = false;
+    state.sprinting = false;
       state.grounded = !b.air;      // what net.js sends as AIRBORNE, so a peer's bike hops too
       state.swimming = false;
       state.vy = b.vy;
@@ -2015,14 +2031,29 @@ export function createWalkMode({
     const turbo = stepPool(state.stamina.body, wants, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = turbo;
-    const run = turbo && !state.swimming;
+    // On land Shift is a sprint while the pool lasts and a run once it is spent (Plans/
+    // tweede-avonturier.md): a body that is out of breath jogs, it does not drop to a walk - and
+    // a spent pool held on Shift fills like a resting one (stamina.js), so the sprint comes back.
+    // Steered from the sky (a route, walk.park), the body always sprints and spends no breath:
+    // the pool is a game on foot, and from above it would only make a click across the island slow.
+    const skyRoute = state.parked && !!state.route;
+    const sprint = (turbo || skyRoute) && !state.swimming && !state.dive && !state.carry;
+    const run = sprint || (wants && !state.swimming && !state.dive);
+    const speeds = classicAvatar.speeds;
     const speed = (state.lying || state.sitting ? 0
       : state.dive ? (state.onBed ? BOTTOM_SPEED : turbo ? DIVE_TURBO : DIVE_SPEED)
       : state.swimming ? (turbo ? SWIM_TURBO : SWIM_SPEED)
         : state.crouching ? CROUCH_SPEED
-          : run ? RUN_SPEED : WALK_SPEED) * push * dt * (state.carry ? CARRY_SPEED : 1);
+          : sprint ? speeds.sprint : run ? speeds.run : speeds.walk) * push * dt * (state.carry ? CARRY_SPEED : 1);
     state.moving = push > 0.02;
     state.running = run && state.moving;   // the others need to know which gait to draw
+    state.sprinting = sprint && state.moving;
+    // In the air the body keeps the way it took off with (Plans/tweede-avonturier.md): a jump
+    // from a sprint is a long leap, one from standing goes straight up, and the stick only
+    // steers it by AIR_STEER. Before this the stick moved a jumper at full speed in any
+    // direction, so a standing jump went as far as a running one.
+    const inAir = !state.grounded && !state.swimming && !state.dive;
+    let sx = 0, sz = 0;
     if (state.moving) {
       const len = Math.hypot(ix, iz);
       ix /= len; iz /= len;
@@ -2041,19 +2072,32 @@ export function createWalkMode({
         const c = Math.cos(a), sn = Math.sin(a);
         [vx, vz] = [vx * c + vz * sn, vz * c - vx * sn];
       }
+      sx = vx * speed; sz = vz * speed;
+      state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
+    }
+    if (dt > 0) {
+      if (inAir) {
+        const k = 1 - Math.exp(-AIR_STEER * dt);
+        airWay.x += (sx / dt - airWay.x) * k; airWay.z += (sz / dt - airWay.z) * k;
+        sx = airWay.x * dt; sz = airWay.z * dt;
+      } else { airWay.x = sx / dt; airWay.z = sz / dt; }
+    }
+    if (sx || sz) {
       // try the full step, then each axis on its own, so you slide along walls
       const beforeX = state.pos.x, beforeZ = state.pos.z;
-      const nx = beforeX + vx * speed, nz = beforeZ + vz * speed;
+      const nx = beforeX + sx, nz = beforeZ + sz;
       if (!blocked(nx, nz)) { state.pos.x = nx; state.pos.z = nz; }
-      else if (!blocked(nx, state.pos.z)) state.pos.x = nx;
-      else if (!blocked(state.pos.x, nz)) state.pos.z = nz;
-      state.yaw = lerpAngle(state.yaw, Math.atan2(vx, vz), TURN_LERP);
+      else if (!blocked(nx, state.pos.z)) { state.pos.x = nx; airWay.z = 0; }
+      else if (!blocked(state.pos.x, nz)) { state.pos.z = nz; airWay.x = 0; }
+      else { airWay.x = 0; airWay.z = 0; }
       frameDistance = Math.hypot(state.pos.x-beforeX, state.pos.z-beforeZ);
       // A parked body walking its route into a rail jumps it, as you would: held up (sliding along
       // it is not getting on), and the step open to somebody in the air.
-      if (state.route && state.grounded && frameDistance < speed * 0.5 && blocked(nx, nz)
+      if (state.moving && state.route && state.grounded && frameDistance < speed * 0.5 && blocked(nx, nz)
         && !blocked(nx, nz, undefined, false, true)) jump();
-      if (!state.swimming) { state.moving = frameDistance > 1e-6; state.running = run && state.moving; }
+      if (!state.swimming && state.moving) {
+        state.moving = frameDistance > 1e-6; state.running = run && state.moving; state.sprinting = sprint && state.moving;
+      }
       state.bob += frameDistance * Math.PI * 2 / (run ? .40 : .29);
     } else {
       state.bob += dt * 1.5;
@@ -2241,7 +2285,7 @@ export function createWalkMode({
     // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
     const stoop = state.crouching && !state.dive;
     classicAvatar.update({
-      moving: state.moving, running: state.running, grounded: state.grounded, distance: frameDistance,
+      moving: state.moving, running: state.running, sprinting: state.sprinting, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
-import { WALK_SPEED, RUN_SPEED } from './avatar-gait.js';
 import { createAvatarStudio } from './studio.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
@@ -22,7 +21,7 @@ const figures = CHARACTERS.map((c, i) => {
   const rig = createClassicAvatar(look, mat);
   const stand = new THREE.Group();stand.position.x = (i - (CHARACTERS.length - 1) / 2) * .34;
   stand.add(rig.object);carrier.add(stand);
-  return { id: c.id, rig, stand };
+  return { id: c.id, rig, stand, distance: 0 };
 });
 const traveller = figures[0].rig;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
@@ -33,6 +32,9 @@ for(let i=-60;i<=60;i++){
 }
 const helper=new THREE.SkeletonHelper(carrier);helper.visible=false;scene.add(helper);
 const camera=new THREE.PerspectiveCamera(32,1,.01,100);
+// walk.js's own numbers, for the Springen button.
+const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
+let jumpAt=null;
 let mode='walk', side=false, distance=0, last=performance.now(), time=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
@@ -41,29 +43,59 @@ document.querySelector('#motion-bones').onchange=e=>helper.visible=e.target.chec
 // Close up on one body at a time, to judge how a hat or a strap sits: off, then each in turn.
 let close=-1;
 document.querySelector('#motion-close').onclick=e=>{close=close+1<figures.length?close+1:-1;e.target.textContent=close<0?'Dichtbij':CHARACTERS[close].name;};
+document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time;};
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
   mode=button.dataset.gait;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · langere passen en meer kniebuiging':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='dig'?'Graven · met de schep':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
 function frame(now){
-  const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;
-  const speed=mode==='run'?RUN_SPEED:mode==='walk'?WALK_SPEED:0;
-  const step=speed*dt;distance+=step;
-  carrier.position.z=distance;
-  for(const f of figures)f.rig.update({moving:speed>0,running:mode==='run',grounded:true,phase:time,distance:step},dt);
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(!window.travellerPreview?.held)tick(dt);render();requestAnimationFrame(frame);
+}
+// One step of everything that moves, apart from drawing it - so a check can step it at a steady
+// rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
+function tick(dt){
+  time+=dt;
+  // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
+  // the one looked at closely, else the two's middle.
+  for(const f of figures){
+    const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
+    // A dig is switched on and off with the button, as walk.js does with E at a mark.
+    if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
+    // Swimming lies the body forward the way walk.js does (1.32 rad), at the surface.
+    f.stand.rotation.x=mode==='swim'?1.32:0;
+    const step=speed*dt;f.distance+=step;f.stand.position.z=f.distance;
+    // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
+    const up=jumpAt===null?0:Math.max(0,JUMP_V*(time-jumpAt)-GRAVITY*(time-jumpAt)**2/2);
+    f.stand.position.y=mode==='swim'?.18:up;
+    const grounded=jumpAt===null||time-jumpAt>2*JUMP_V/GRAVITY;
+    f.rig.update({moving:speed>0,running:mode==='run'||mode==='sprint',sprinting:mode==='sprint',swimming:mode==='swim',grounded,phase:time,distance:step},dt);
+  }
+  // Drawn too far apart to be compared, the one behind is set level again.
+  const lead=Math.max(...figures.map(f=>f.distance));
+  for(const f of figures)if(lead-f.distance>1.2){f.distance=lead;f.stand.position.z=lead;}
+  if(jumpAt!==null&&time-jumpAt>2*JUMP_V/GRAVITY)jumpAt=null;
+  distance=close<0?figures.reduce((a,f)=>a+f.distance,0)/figures.length:figures[close].distance;
+}
+function render(){
   // Camera and nearby scenery follow the actual moving body; the ground marks stay fixed.
   track.position.z=Math.floor(distance/2)*2;
-  const x=close<0?0:figures[close].stand.position.x, near=close<0?1:.62;
-  const target=new THREE.Vector3(x,close<0?.245:.31,distance);
-  camera.position.set(x+(side?1.6:1.05)*near,close<0?.5:.42,distance+(side?.03:1.45)*near);camera.lookAt(target);
+  const x=close<0?0:figures[close].stand.position.x, near=close<0?1:.72;
+  // Close up, the camera rises with a jump so the leap stays in the frame.
+  const lift=close<0?0:figures[close].stand.position.y*.8;
+  const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
+  camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
   camera.setViewOffset(innerWidth,innerHeight,close<0?-innerWidth*.13:-innerWidth*.2,0,innerWidth,innerHeight);
   sun.position.set(-2,4,distance+3);sun.target.position.copy(target);sun.target.updateMatrixWorld();
-  renderer.render(scene,camera);requestAnimationFrame(frame);
+  renderer.render(scene,camera);
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,get distance(){return distance;}};
+window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,get distance(){return distance;},
+  // held: true stops the clock, so a check can step to one moment and look at it.
+  held:false,
+  advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};

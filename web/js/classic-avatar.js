@@ -7,7 +7,8 @@ import { avatarPlayerComponentGeometry, PLAYER_SCALE, characterOf } from './avat
 import { box, cylinder, cone, sphere, meshAsset, mergeParts } from './buildings.js';
 import * as models from './models.js';
 import { dancePose } from './dance.js';
-import { createGait, WALK_SPEED, RUN_SPEED } from './avatar-gait.js';
+import { createGait, gaitOf, mixOf, sprintAt } from './avatar-gait.js';
+import { GAIT_CLIPS, GAIT_JOINTS } from './gait-clips.js';
 // Every gear-variant part. Its own piece so equip.backpack can hide it without touching
 // the torso it used to be merged into. The same names on every body: the Adventurer's gear is
 // the Traveller's refitted (scripts/build-adventurer.py).
@@ -54,6 +55,58 @@ const EQUIPPABLE = new Set([
 // body (web/js/player-bodies.js) - the Traveller and the Adventurer share every part *name* for
 // their gear, so the lists above hold for both, but not one joint position.
 const BODIES = new Map();
+// A gait that plays Mixamo's clips (web/js/gait-clips.js, scripts/bake-mixamo-gait.py) strides
+// as the clips do, scaled by this body's leg (hip to ankle), and is played by distance - so a
+// planted foot never slides, whatever the speed. The walk is the clip's own speed too; the run
+// and the sprint keep the profile's (avatar-gait.js), faster than Mixamo's 0.90 and 1.41 on this
+// leg, which only turns their cadence up. Its procedural numbers stay for what the clips do not
+// cover and for blending into them.
+function withClips(g, leg) {
+  if (!g.clips) return g;
+  const c = GAIT_CLIPS;
+  return {
+    ...g, leg,
+    walk: c.walk.speed * leg,
+    cycle: [c.walk.stride * leg, c.run.stride * leg, c.sprint.stride * leg],
+  };
+}
+// A pose seen in a mirror: left for right, and every turn reflected across the body's middle -
+// how a dig with the left hand is the clip's right-handed one.
+const MIRRORED = GAIT_JOINTS.map((name) => GAIT_JOINTS.indexOf(name.replace(/^l([A-Z])/, 'R$1').replace(/^r([A-Z])/, 'l$1').replace(/^R([A-Z])/, 'r$1')));
+function mirrorPose(out, a) {
+  for (let j = 0; j < out.q.length; j++) {
+    const q = a.q[MIRRORED[j]];
+    out.q[j].set(q.x, -q.y, -q.z, q.w);
+  }
+  out.drop = a.drop;
+  return out;
+}
+// One baked row of a clip at `u` (0..1 of its cycle), into `out` (a quaternion a joint).
+const qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
+function sampleClip(clip, u, out) {
+  const n = clip.rows.length, x = (((u % 1) + 1) % 1) * n, i0 = Math.floor(x) % n, i1 = (i0 + 1) % n, f = x - Math.floor(x);
+  const a = clip.rows[i0], b = clip.rows[i1];
+  for (let j = 0; j < GAIT_JOINTS.length; j++) {
+    qa.set(a[j * 4], a[j * 4 + 1], a[j * 4 + 2], a[j * 4 + 3]);
+    qb.set(b[j * 4], b[j * 4 + 1], b[j * 4 + 2], b[j * 4 + 3]);
+    out.q[j].slerpQuaternions(qa, qb, f);
+  }
+  const k = GAIT_JOINTS.length * 4;
+  out.drop = a[k] * (1 - f) + b[k] * f;
+  return out;
+}
+// A clip that plays once (a jump, its flight) is read without wrapping round to its start.
+function sampleOnce(clip, u, out) {
+  const n = clip.rows.length;
+  return sampleClip(clip, Math.max(0, Math.min(u, (n - 1) / n)), out);
+}
+const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop: 0 });
+function blendPose(out, a, b, t) {
+  for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
+  out.drop = a.drop + (b.drop - a.drop) * t;
+  return out;
+}
+const JOINT = Object.fromEntries(GAIT_JOINTS.map((name, j) => [name, j]));
 function bodyOf(character) {
   const c = characterOf(character);
   if (BODIES.has(c.id)) return BODIES.get(c.id);
@@ -81,6 +134,8 @@ function bodyOf(character) {
     // The hips' height over the soles: where a rider's legs turn, which is what walk.js puts
     // on the saddle.
     hipY: PIVOTS.leftLeg[1],
+    // How it walks and runs (avatar-gait.js GAITS): its speeds, its stride, its upper body.
+    gait: withClips(gaitOf(c.gait), PIVOTS.leftLeg[1] - c.joints.leftLeg.end[1] * PLAYER_SCALE),
     eye: c.eyeY * PLAYER_SCALE,
   };
   BODIES.set(c.id, body);
@@ -310,7 +365,7 @@ export function heldItemGeometry(item, spec) {
 // One body's rig. createClassicAvatar below is what everybody holds; it builds one of these
 // and builds a new one when the look changes body.
 function buildRig(spec, material) {
-  const { id: character, parts: PARTS, joints: JOINTS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye } = bodyOf(spec?.character);
+  const { id: character, parts: PARTS, joints: JOINTS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec?.character);
   // The island shares a flat building material. Give this rig smooth shading while
   // retaining its shader hooks and live night/fade uniforms; never mutate the world.
   const sourceMaterial = material;
@@ -332,7 +387,7 @@ function buildRig(spec, material) {
   const pieces = {};
   const chains = {};
   const gait = createGait(PIVOTS.leftLeg[1], JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
-    JOINTS.leftLeg.end[1]*PLAYER_SCALE);
+    JOINTS.leftLeg.end[1]*PLAYER_SCALE, G);
   let previousParent = null;
   const parentAt = new THREE.Vector3(), lastParentAt = new THREE.Vector3();
   function bindLimb(mesh, group) {
@@ -344,9 +399,24 @@ function buildRig(spec, material) {
       const ankle = new THREE.Vector3(...JOINTS[group].end).multiplyScalar(PLAYER_SCALE);
       bend.position.copy(knee).sub(origin); end.position.copy(ankle).sub(knee);
       root.add(bend); bend.add(end); mesh.add(root);
-      chains[group] = { root, bend, end, knee: knee.sub(origin), ankle: ankle.sub(origin),
-        skeleton: new THREE.Skeleton([root, bend, end]) };
+      // A fourth bone for the top of a sleeve (SHOULDER_CAP): at the shoulder, turned back by
+      // whatever the arm's pivot turned, so what is weighted to it stays with the torso.
+      const bones = [root, bend, end];
+      let cap = null, toe = null, ball = null;
+      if (G.leanAtHip && group.endsWith('Arm')) { cap = new THREE.Bone(); cap.name = group + ':cap'; root.add(cap); bones.push(cap); }
+      // A toe for the foot (Mixamo's ToeBase), at the ball: FOOT_BALL of the way from the ankle
+      // to the tip of the first mesh bound to this leg (its own body), on the ground.
+      if (group.endsWith('Leg')) {
+        const local = ankle.clone().sub(origin);
+        ball = ballOf(mesh.geometry, local);
+        toe = new THREE.Bone(); toe.name = group + ':toe';
+        toe.position.copy(ball).sub(local);
+        end.add(toe); bones.push(toe);
+      }
+      chains[group] = { root, bend, end, cap, toe, ball, knee: knee.sub(origin), ankle: ankle.sub(origin),
+        skeleton: new THREE.Skeleton(bones) };
     }
+    if (chains[group].toe) weightToes(mesh.geometry, chains[group]);
     object.updateMatrixWorld(true);
     mesh.bind(chains[group].skeleton);
     mesh.frustumCulled = false;
@@ -359,11 +429,135 @@ function buildRig(spec, material) {
   // limb's own pivot with no group offset of their own (it is already inside one), while
   // the geometry itself is still translated by that limb's pivot point - the same quantity,
   // used two different ways, which is why the two are separate options instead of one.
+  // The top of a sleeve, on a body that swings its arms far (the Adventurer): the arm turns
+  // whole about the shoulder, and at a sprint's swing the sleeve's edge stood out of the torso
+  // in jagged points. What lies above SHOULDER_CAP.to over the pivot goes with the torso
+  // (`cap`, up to SHOULDER_CAP.most of it), fading to the arm by SHOULDER_CAP.from below it,
+  // so the cloth stretches instead.
+  const SHOULDER_CAP = { from: -.05, to: .004, most: .85 };
+  function capShoulder(geometry, name) {
+    if (!G.leanAtHip || !name.endsWith('Arm')) return;
+    const p = geometry.attributes.position, ix = geometry.attributes.skinIndex, w = geometry.attributes.skinWeight;
+    for (let i = 0; i < p.count; i++) {
+      const u = Math.max(0, Math.min(1, (p.getY(i) - SHOULDER_CAP.from) / (SHOULDER_CAP.to - SHOULDER_CAP.from)));
+      const a = u * u * (3 - 2 * u) * SHOULDER_CAP.most;
+      if (!a) continue;
+      ix.setW(i, 3);
+      w.setXYZW(i, w.getX(i) * (1 - a), w.getY(i) * (1 - a), w.getZ(i) * (1 - a), a);
+    }
+  }
+  // Where the ball of a foot is in a leg's mesh: the furthest-forward point within a hand of the
+  // sole, FOOT_BALL of the way out from the ankle.
+  const FOOT_BALL = .6, TOE_FADE = .012;
+  function ballOf(geometry, ankle) {
+    const p = geometry.attributes.position;
+    let tip = ankle.z, sole = Infinity;
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) < ankle.y + .012) tip = Math.max(tip, p.getZ(i));
+      sole = Math.min(sole, p.getY(i));
+    }
+    const ball = new THREE.Vector3(ankle.x, Math.max(sole, ankle.y - .03), ankle.z + (tip - ankle.z) * FOOT_BALL);
+    ball.tip = tip - ball.z;   // how far the toe reaches past the ball
+    return ball;
+  }
+  // The toe takes the front of the foot, past the ball, faded in over TOE_FADE.
+  function weightToes(geometry, chain) {
+    const p = geometry.attributes.position, ix = geometry.attributes.skinIndex, w = geometry.attributes.skinWeight;
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) > chain.ankle.y + .02) continue;
+      const a = Math.max(0, Math.min(1, (p.getZ(i) - chain.ball.z) / TOE_FADE));
+      if (!a) continue;
+      ix.setW(i, 3);
+      w.setXYZW(i, w.getX(i) * (1 - a), w.getY(i) * (1 - a), w.getZ(i) * (1 - a), a);
+    }
+  }
+  // The torso is no longer one rigid piece (Plans/tweede-avonturier.md): it is skinned to a
+  // spine of four bones - the pelvis at the hips, the small of the back, the chest and the neck -
+  // whose rotations Mixamo's Hips, Spine, Spine2 and Neck give (gait-clips.js). Whatever hangs
+  // from one of them rigidly - the legs from the pelvis, the pack, the chestplate and the
+  // collarbones from the chest, the head from the neck - hangs from a *mount*: a group whose
+  // matrix is that bone's change from its rest, exactly what skinning does to a vertex wholly
+  // its own. So every pivot keeps its old position, in the rig's frame at rest, and the code
+  // that reads one (a drink, a held item) reads what it always did.
+  const SPINE = (() => {
+    const yH = PIVOTS.leftLeg[1], yS = PIVOTS.leftArm[1], yN = PIVOTS.head[1], L = yS - yH;
+    return { pelvis: yH, spine: yH + .3 * L, chest: yH + .7 * L, neck: yN, L, shoulder: yS };
+  })();
+  const torso = {};
+  {
+    let parent = object, below = 0;
+    for (const name of ['pelvis', 'spine', 'chest', 'neck']) {
+      const b = new THREE.Bone();
+      b.name = 'torso:' + name;
+      b.position.set(0, SPINE[name] - below, 0);
+      parent.add(b);
+      torso[name] = b;
+      parent = b; below = SPINE[name];
+    }
+    torso.skeleton = new THREE.Skeleton([torso.pelvis, torso.spine, torso.chest, torso.neck]);
+    torso.rest = { spine: torso.spine.position.y };
+  }
+  const mounts = {};
+  for (const name of ['pelvis', 'chest', 'neck']) {
+    const g = new THREE.Group();
+    g.name = 'mount:' + name;
+    g.matrixAutoUpdate = false;
+    object.add(g);
+    mounts[name] = g;
+  }
+  // The collarbones: a group per arm on the chest, turning about the inner end of the shoulder
+  // (a third of the way out from the middle), which the arm's own pivot hangs from.
+  const clavicles = {}, clavicleAt = {}, clavicleQ = {};
+  for (const side of ['leftArm', 'rightArm']) {
+    const g = new THREE.Group();
+    g.name = 'clavicle:' + side;
+    g.matrixAutoUpdate = false;
+    mounts.chest.add(g);
+    clavicles[side] = g;
+    clavicleAt[side] = new THREE.Vector3(PIVOTS[side][0] * .3, PIVOTS[side][1], PIVOTS[side][2]);
+    clavicleQ[side] = new THREE.Quaternion();
+  }
+  // Pelvis, small of the back, chest and neck: what the torso's vertices go with, by height,
+  // each band fading into the next.
+  function weightTorso(geometry) {
+    const p = geometry.attributes.position, ix = geometry.attributes.skinIndex, w = geometry.attributes.skinWeight;
+    const ramp = (y, from, span) => Math.max(0, Math.min(1, (y - from) / span));
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      const a = ramp(y, SPINE.pelvis + .1 * SPINE.L, .3 * SPINE.L);
+      const b = ramp(y, SPINE.spine + .1 * SPINE.L, .3 * SPINE.L);
+      const c = ramp(y, SPINE.shoulder + .3 * (SPINE.neck - SPINE.shoulder), .6 * (SPINE.neck - SPINE.shoulder));
+      ix.setXYZW(i, 0, 1, 2, 3);
+      w.setXYZW(i, 1 - a, a * (1 - b), a * b * (1 - c), a * b * c);
+    }
+  }
+  const restOf = { pelvis: SPINE.pelvis, chest: SPINE.chest, neck: SPINE.neck };
+  const chainTo = { pelvis: ['pelvis'], chest: ['pelvis', 'spine', 'chest'], neck: ['pelvis', 'spine', 'chest', 'neck'] };
+  const acc = new THREE.Matrix4(), restInv = new THREE.Matrix4(), around = new THREE.Matrix4(), turnM = new THREE.Matrix4();
+  // Every mount to its bone's change from rest, and every collarbone about its own inner end.
+  function placeMounts() {
+    for (const name of ['pelvis', 'spine', 'chest', 'neck']) torso[name].updateMatrix();
+    for (const [name, chain] of Object.entries(chainTo)) {
+      acc.identity();
+      for (const b of chain) acc.multiply(torso[b].matrix);
+      mounts[name].matrix.copy(acc).multiply(restInv.makeTranslation(0, -restOf[name], 0));
+      mounts[name].matrixWorldNeedsUpdate = true;
+    }
+    for (const side of ['leftArm', 'rightArm']) {
+      const c = clavicleAt[side];
+      clavicles[side].matrix.makeTranslation(c.x, c.y, c.z)
+        .multiply(turnM.makeRotationFromQuaternion(clavicleQ[side]))
+        .multiply(around.makeTranslation(-c.x, -c.y, -c.z));
+      clavicles[side].matrixWorldNeedsUpdate = true;
+    }
+  }
+  const capQ = new THREE.Quaternion();
   function makePiece(name, names, { parent = object, groupAt = PIVOTS[name] || [0, 0, 0], translateBy = groupAt } = {}) {
     const pivot = new THREE.Group();
     pivot.position.set(...groupAt);
     const geometry = avatarPlayerComponentGeometry(spec, names);
     geometry.translate(-translateBy[0], -translateBy[1], -translateBy[2]);
+    capShoulder(geometry, name);
     const group = PARTS.find((part) => names.includes(part.name) && part.skinGroup)?.skinGroup;
     const mesh = group ? new THREE.SkinnedMesh(geometry, material) : new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -374,10 +568,25 @@ function buildRig(spec, material) {
   }
 
   makePiece('core', CORE);
-  makePiece('head', HEAD, { parent: pieces.core.pivot });
-  for (const [name, names] of Object.entries(LIMBS)) makePiece(name, names);
-  makePiece('backpack', BACK);
-  makePiece('chestplate', CHESTPLATE);
+  {
+    // The torso, skinned to the spine (above) instead of standing whole.
+    const old = pieces.core.mesh, skinned = new THREE.SkinnedMesh(old.geometry, material);
+    weightTorso(skinned.geometry);
+    skinned.castShadow = true;
+    skinned.frustumCulled = false;
+    pieces.core.pivot.remove(old);
+    pieces.core.pivot.add(skinned);
+    pieces.core.mesh = skinned;
+    object.updateMatrixWorld(true);
+    skinned.bind(torso.skeleton);
+  }
+  makePiece('head', HEAD, { parent: mounts.neck });
+  for (const [name, names] of Object.entries(LIMBS)) {
+    makePiece(name, names, { parent: name.endsWith('Leg') ? mounts.pelvis : clavicles[name] });
+  }
+  makePiece('backpack', BACK, { parent: mounts.chest });
+  makePiece('chestplate', CHESTPLATE, { parent: mounts.chest });
+  placeMounts();
   makePiece('leftLegging', LEFT_LEGGING, { parent: pieces.leftLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.leftLeg });
   makePiece('rightLegging', RIGHT_LEGGING, { parent: pieces.rightLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.rightLeg });
   makePiece('leftBoot', LEFT_SABATON, { parent: pieces.leftLeg.pivot, groupAt: [0, 0, 0], translateBy: PIVOTS.leftLeg });
@@ -742,8 +951,137 @@ function buildRig(spec, material) {
     return pose;
   }
 
+  // Mixamo's clips over the procedural pose (Plans/tweede-avonturier.md): the walk, run and
+  // sprint by distance (the gait's own step counter, lined up so its left foot coming down is
+  // the clip's), the idle by time while standing, a jump over its time in the air. Every joint
+  // the clip has is turned towards it by `clipMix`, which eases in and out, so nothing snaps
+  // when a clip starts or a pose (a dance, a dig, a saddle) takes over; an arm with something to
+  // do (an item, a swing, a block) keeps its own pose.
+  const busy = { leftArm: false, rightArm: false };
+  // Mixamo's dig is one scoop in DIG_CLIP_S of its 4.8 s: bent down, the blade in, lifted, and
+  // the load flung at DIG_THROW of the clip. The swim is played at SWIM_RATE (none, all out) of
+  // its own pace by how fast the swimmer goes, SWIM_PACE (walk.js SWIM_SPEED) being all out.
+  const DIG_THROW = .52, SWIM_RATE = [.45, 1.25], SWIM_PACE = 1.9;
+  let digByClip = false, digT = 0, swimT = 0, speedOf = 0;
+  const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose();
+  const handA = new THREE.Vector3(), handB = new THREE.Vector3(), alongY = new THREE.Vector3(0, 1, 0), handInv = new THREE.Matrix4();
+  let clipFree = false, clipMix = 0, jumpMix = 0, airT = 0, leanNow = 0, jumpLeap = 0;
+  const poseWalk = clipPose(), poseRun = clipPose(), poseSprint = clipPose(), poseIdle = clipPose();
+  const poseJump = clipPose(), poseLeap = clipPose(), poseGait = clipPose(), poseOut = clipPose();
+  const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
+  function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back }) {
+    if (!G.clips) return;
+    // Which clip, if any: the swim in the water, the dig with a shovel, else the walk family.
+    const swim = !!pose.swimming && !ride;
+    const digging = !!dug && !fp && !swim;
+    const free = !dance && !dug && !carryOn && !ride && !fp && !pose.sitting && !pose.lying && !pose.swimming;
+    clipFree = free;
+    digByClip = digging;
+    clipMix = damp(clipMix, free || swim || digging ? 1 : 0, 10, dt);
+    if (digging) {
+      const C = GAIT_CLIPS.dig, was = digT;
+      digT += dt;
+      const at = C.seconds * DIG_THROW, k = Math.floor(was / C.seconds);
+      if (was - k * C.seconds < at && digT - k * C.seconds >= at) dirt++;
+    } else digT = 0;
+    swimT = swim ? swimT + dt * (SWIM_RATE[0] + (SWIM_RATE[1] - SWIM_RATE[0]) * Math.min(1, speedOf / SWIM_PACE)) : 0;
+    if (swim || digging) {
+      if (clipMix < 1e-3) return;
+      let p;
+      if (swim) p = sampleClip(GAIT_CLIPS.swim, swimT / GAIT_CLIPS.swim.seconds, poseSwim);
+      else {
+        p = sampleClip(GAIT_CLIPS.dig, digT / GAIT_CLIPS.dig.seconds, poseDig);
+        // The clip digs right-handed; with the shovel in the left hand it is its mirror.
+        if (dug.side === 'leftArm') p = mirrorPose(poseMirror, p);
+      }
+      applyClip(p, clipMix, { arms: true, drop: digging && pose.grounded });
+      return;
+    }
+    // Which jump, decided once, at the take-off, by the speed the body leaves the ground with: from
+    // standing the standing jump, from a run or a sprint the running one, a walk between. Not
+    // `leap`, which is eased and was still 0 on the first frame in the air - every jump was the
+    // standing one.
+    if (flying && !airT) jumpLeap = Math.max(0, Math.min(1, (speedOf - G.walk / 2) / (G.run - G.walk / 2)));
+    airT = flying ? airT + dt : 0;
+    jumpMix = damp(jumpMix, flying ? 1 : 0, 14, dt);
+    if (clipMix < 1e-3) return;
+    const C = GAIT_CLIPS, u = gaitPose.phase / (Math.PI * 2);
+    sampleClip(C.walk, u + C.walk.contact, poseWalk);
+    blendPose(poseGait, poseWalk, sampleClip(C.run, u + C.run.contact, poseRun), run);
+    if (dash > 0) blendPose(poseGait, poseGait, sampleClip(C.sprint, u + C.sprint.contact, poseSprint), dash);
+    // Standing still is the idle; walking off is the gait, by how far into a step the body is.
+    blendPose(poseOut, sampleClip(C.idle, time / C.idle.seconds, poseIdle), poseGait, gaitPose.blend);
+    if (jumpMix > 1e-3) {
+      // From standing the standing jump, at speed the running one: each over its own flight,
+      // stretched over the time walk.js keeps a jumper in the air.
+      const t = Math.min(1, airT / AIR_S);
+      const stand = C.standingJump || C.jump, go = C.jump;
+      sampleOnce(stand, stand.air[0] + (stand.air[1] - stand.air[0]) * t, poseJump);
+      sampleOnce(go, go.air[0] + (go.air[1] - go.air[0]) * t, poseLeap);
+      blendPose(poseJump, poseJump, poseLeap, jumpLeap);
+      blendPose(poseOut, poseOut, poseJump, jumpMix);
+    }
+    applyClip(poseOut, clipMix, { back, drop: pose.grounded });
+  }
+  // Every joint of the rig turned towards the clip's pose by `w`. The arms only when they are
+  // free, or when the clip is the one that owns them (`arms`: a dig holds the shovel with both).
+  function applyClip(p, w, { arms = false, back = 0, drop = false } = {}) {
+    const q = p.q;
+    torso.pelvis.quaternion.slerp(q[JOINT.pelvis], w);
+    torso.spine.quaternion.slerp(q[JOINT.spine], w);
+    torso.chest.quaternion.slerp(q[JOINT.chest], w);
+    torso.neck.quaternion.slerp(q[JOINT.neck], w);
+    if (!back) pieces.head.pivot.quaternion.slerp(q[JOINT.head], w);
+    for (const [side, k] of [['leftLeg', 'l'], ['rightLeg', 'r']]) {
+      const chain = chains[side];
+      pieces[side].pivot.quaternion.slerp(q[JOINT[k + 'Hip']], w);
+      chain.bend.quaternion.slerp(q[JOINT[k + 'Knee']], w);
+      chain.end.quaternion.slerp(q[JOINT[k + 'Ankle']], w);
+      if (chain.toe) chain.toe.quaternion.slerp(q[JOINT[k + 'Toe']], w);
+    }
+    for (const [side, k] of [['leftArm', 'l'], ['rightArm', 'r']]) {
+      if (busy[side] && !arms) continue;
+      const chain = chains[side];
+      clavicleQ[side].slerp(q[JOINT[k + 'Clavicle']], w);
+      pieces[side].pivot.quaternion.slerp(q[JOINT[k + 'Arm']], w);
+      chain.bend.quaternion.slerp(q[JOINT[k + 'Elbow']], w);
+      chain.end.quaternion.slerp(q[JOINT[k + 'Wrist']], w);
+    }
+    // The hips' height is the clip's on the ground; in the air it is the jump's own.
+    if (drop) object.position.y += (-p.drop * G.leg - object.position.y) * w;
+  }
+
+  // The clips' angles on this body's own proportions leave a foot a centimetre or so into the
+  // ground or over it. So, while a clip is playing on the ground, the body is lifted until no
+  // heel, ball or toe is below the ground - and at a walk or standing, where a foot is always
+  // down, let down onto the lowest of them too; a run and a sprint keep their flight.
+  const footPoint = new THREE.Vector3();
+  function lowestFoot() {
+    mounts.pelvis.updateWorldMatrix(true, true);
+    let low = Infinity;
+    for (const side of ['leftLeg', 'rightLeg']) {
+      const c = chains[side], heel = PIVOTS[side][1] + c.ankle.y;
+      for (const [bone, x, y, z] of [[c.end, 0, -heel, -.01], [c.toe, 0, 0, 0], [c.toe, 0, 0, c.ball.tip]]) {
+        footPoint.set(x, y, z).applyMatrix4(bone.matrixWorld);
+        if (object.parent) object.parent.worldToLocal(footPoint);
+        low = Math.min(low, footPoint.y);
+      }
+    }
+    return low;
+  }
+  function plantFeet(pose, run, gaitPose) {
+    if (!G.clips || !(clipFree || digByClip) || clipMix < 1e-3 || !pose.grounded || pose.swimming || pose.sitting || pose.lying) return;
+    const low = lowestFoot();
+    const lift = low < 0 ? -low : -low * (1 - run);
+    object.position.y += lift * clipMix;
+  }
+
   let time = 0;
   let danceMix = 0;   // how far into a dance the body is, 0..1, so starting and stopping ease
+  // The leap of a jump (Plans/tweede-avonturier.md): 0 for a jump from standing, 1 for one at a
+  // sprint, eased so a landing does not snap. `trail` is the leg that pushed off - the one that
+  // was planted, furthest back - which trails behind in the air while the other reaches ahead.
+  let leap = 0, trail = 0, bowNow = 0;
   function update(pose, dt) {
     time += dt;
     // A caller that has the state as a flag (peers.js decodes it from the pose bits) may hand
@@ -758,25 +1096,54 @@ function buildRig(spec, material) {
         parentAt.copy(object.parent.position);
         distance = previousParent === object.parent ? Math.hypot(parentAt.x-lastParentAt.x, parentAt.z-lastParentAt.z) : 0;
         lastParentAt.copy(parentAt); previousParent = object.parent;
-      } else distance = moving ? dt * (pose.running ? RUN_SPEED : WALK_SPEED) : 0;
+      } else distance = moving ? dt * (pose.running ? (pose.sprinting ? G.sprint : G.run) : G.walk) : 0;
     }
-    const gaitPose = gait.update(Math.max(0,distance), pose, dt);
+    // A peer is only said to be running (FLAG_RUNNING): whether it is a sprint is read off how
+    // fast the body goes, so no new bit has to cross the sea for it.
+    const speedNow = dt > 0 ? Math.max(0, distance) / dt : 0;
+    speedOf = speedNow;
+    const sprinting = pose.sprinting ?? (!!pose.running && sprintAt(G, speedNow) > 0);
+    const gaitPose = gait.update(Math.max(0,distance), { ...pose, sprinting }, dt);
+    const run = gaitPose.run, dash = gaitPose.sprint;
+    // In the air: how fast the jump is going, as a share of a sprint.
+    const flying = !pose.grounded && !pose.swimming && !ride && !pose.sitting && !pose.lying;
+    leap = damp(leap, flying ? Math.min(1, speedNow / G.sprint) : 0, flying ? 8 : 14, dt);
+    if (pose.grounded) {
+      const [a, b] = gaitPose.feet;
+      if (a.planted !== b.planted) trail = a.planted ? 0 : 1;
+      else if (a.planted) trail = a.z < b.z ? 0 : 1;
+    }
     const phase = gaitPose.phase;
     const stride = moving ? -gaitPose.feet[0].z * (6 + 2*gaitPose.run) : 0;
+    // A body with its own arm swing (the Adventurer) swings by where its foot is in the stride,
+    // -1 to 1, times an amplitude that grows into a run - not by the foot's distance, which on
+    // his longer stride swung the arms up to the shoulder at a walk.
+    const half = gaitPose.span / 2;
+    // Where the left arm is in its swing, -1 (in front) to 1 (behind); the right is the other way.
+    const swingAt = G.arm && moving && half > 1e-6 ? Math.max(-1, Math.min(1, gaitPose.feet[0].z / half)) : 0;
+    const reachOf = G.arm ? swingAt * mixOf(G.arm, run, dash) * gaitPose.blend : 0;
+    // Positive is back. In front of the body only `armForward` of the swing is taken.
+    const forward = G.armForward ? mixOf(G.armForward, run, dash) : 1, fore = (v) => (v < 0 ? v * forward : v);
+    const swingL = G.arm ? fore(reachOf) : -stride * 0.9, swingR = G.arm ? fore(-reachOf) : stride * 0.9;
     const idle = moving ? 0 : Math.sin(time * 1.8) * 0.035;
+    // Airborne the legs part: the old 0.32 either way from standing, a stride's split at speed -
+    // the pushing leg back, the other reaching ahead - and the free arms the other way round.
     const airborne = pose.grounded ? 0 : 0.32;
+    const trails = trail === 0 ? 1 : -1;
+    const split = { leftLeg: trails * (airborne + .5 * leap), rightLeg: -trails * (airborne + .5 * leap) };
+    const flung = { leftArm: -trails * .6 * leap, rightArm: trails * .55 * leap };
     const crouch = pose.crouching ? -0.28 : 0;
     const sit = pose.sitting ? -1.05 : 0;
     // The left crank arm starts up and the right one down (scripts/build-bicycle.py), and a
     // leg is furthest forward when its pedal is: -sin of the crank for the right, +sin left.
     const pedal = ride ? RIDE_SWING * Math.sin(ride.crank) : 0;
     const targets = {
-      leftLeg: ride ? RIDE_LEG - pedal : sit || (stride + airborne + crouch),
-      rightLeg: ride ? RIDE_LEG + pedal : sit || (-stride - airborne + crouch),
+      leftLeg: ride ? RIDE_LEG - pedal : sit || (stride + (pose.grounded ? 0 : split.leftLeg) + crouch),
+      rightLeg: ride ? RIDE_LEG + pedal : sit || (-stride + (pose.grounded ? 0 : split.rightLeg) + crouch),
       // Held out in front rather than swinging with the stride - an item on a walking arm
       // would sweep equipment through the body. Free arms counter the opposite foot.
-      leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? -stride * 0.9 : idle),
-      rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? stride * 0.9 : -idle),
+      leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? swingL : idle + flung.leftArm),
+      rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? swingR : -idle + flung.rightArm),
     };
     // First person (walk.js) draws what a shooter draws: the two arms and what is in them,
     // and nothing of the body the camera is standing in. The arms are carried higher and
@@ -822,8 +1189,9 @@ function buildRig(spec, material) {
     if (dug) {
       const was = dug.t;
       dug.t += dt;
-      // The throw is the moment the stroke passes THROW_AT.
-      if (was < THROW_AT && dug.t >= THROW_AT) dirt++;
+      // The throw is the moment the stroke passes THROW_AT - or, while Mixamo's dig plays,
+      // the clip's own throw (playClips).
+      if (!digByClip && was < THROW_AT && dug.t >= THROW_AT) dirt++;
       if (dug.t >= DIG_S) dug.t -= DIG_S;
       digPose = digKey(dug.t);
       const off = OTHER[dug.side], sign = dug.side === 'rightArm' ? -1 : 1;
@@ -832,7 +1200,7 @@ function buildRig(spec, material) {
       if (!holding[off]) { targets[off] = DIG_OFF_ARM; armZ[off] = -sign * DIG_OFF_Z; }
       targets.leftLeg = dug.side === 'rightArm' ? DIG_STANCE.front : DIG_STANCE.back;
       targets.rightLeg = dug.side === 'rightArm' ? DIG_STANCE.back : DIG_STANCE.front;
-      lean = digPose.lean * (fp ? 0.3 : 1);
+      lean = digByClip ? 0 : digPose.lean * (fp ? 0.3 : 1);
     } else if (carryOn) {
       targets.leftArm = targets.rightArm = CARRY_ARM;
       armZ.leftArm = CARRY_Z;
@@ -886,6 +1254,8 @@ function buildRig(spec, material) {
     }
     const mouth = ['leftArm', 'rightArm'].find((side) => drunk[side] && drinks[side].kind === 'relay');
     const back = mouth ? drunk[mouth].reach * THREE.MathUtils.lerp(HEAD_BACK[0], HEAD_BACK[1], drunk[mouth].g) : 0;
+    // The head takes back part of the run's lean, so the eyes stay on the way ahead (set again
+    // below, once the lean of this frame is known).
     pieces.head.pivot.rotation.x = -back;
     tiltQ.setFromEuler(turn.set(-back, 0, 0));
     // Where the relay's arms would have been with the head up: the glasses' poses were found
@@ -898,6 +1268,18 @@ function buildRig(spec, material) {
         drunk[side].x -= back * ARM_FOLLOW;
       }
     }
+    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
+    // The run's forward lean (Plans/tweede-avonturier.md), turned about the hips rather than the
+    // feet: the legs hang from the hips and stay under them, and everything above - the torso,
+    // the pack, the chestplate and the shoulders the arms hang from - tips forward round them.
+    // The arms hang from a leaning torso, so the lean is added to where each one points.
+    // In the air the lean is the leap's (a long jump goes forward over the front leg), and it is
+    // eased either way, so neither the take-off nor the landing snaps the torso upright.
+    const bowWant = !G.leanAtHip || dug || carryOn || fp ? 0
+      : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend
+        : flying ? mixOf(G.lean, 1, .5) * .8 * leap : 0;
+    bowNow = damp(bowNow, bowWant, 10, dt);
+    const bow = bowNow;
     for (const [name, target] of Object.entries(targets)) {
       if (swung && name === swing.side) pieces[name].pivot.rotation.x = swung.x;
       else if (drunk[name]) pieces[name].pivot.rotation.x = drunk[name].x;
@@ -907,11 +1289,13 @@ function buildRig(spec, material) {
       // when the next one comes.
       else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance || (dug && name === dug.side) ? 30 : 15, dt);
     }
+    pieces.leftArm.pivot.rotation.y = pieces.rightArm.pivot.rotation.y = 0;
     pieces.leftArm.pivot.rotation.z = drunk.leftArm ? drunk.leftArm.z
       : damp(pieces.leftArm.pivot.rotation.z, armZ.leftArm ?? (holding.leftArm ? 0 : (pose.running ? -0.12 : 0)), armZ.leftArm === null ? 12 : 20, dt);
     pieces.rightArm.pivot.rotation.z = drunk.rightArm ? drunk.rightArm.z
       : damp(pieces.rightArm.pivot.rotation.z, armZ.rightArm ?? (holding.rightArm ? 0 : (pose.running ? 0.12 : 0)), armZ.rightArm === null ? 12 : 20, dt);
-    pieces.core.pivot.position.y = Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
+    // The idle breath, in the small of the back: the chest, the arms and the head rise with it.
+    torso.spine.position.y = torso.rest.spine + Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
     // The body's share of the dance, eased in over a beat or so and back out when it stops.
     // Scaled by PLAYER_SCALE like every pivot here: dancePose's lifts are a settler's.
     danceMix = damp(danceMix, dance ? 1 : 0, 6, dt);
@@ -927,28 +1311,37 @@ function buildRig(spec, material) {
         object.rotation.set(lean, 0, 0);
       }
     }
-    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
     for (const [i, side] of ['leftLeg', 'rightLeg'].entries()) {
       const chain = chains[side];
       const foot = gaitPose.feet[i];
+      pieces[side].pivot.rotation.y = pieces[side].pivot.rotation.z = 0;
+      if (chain.toe) chain.toe.quaternion.identity();
       if (locomotion) {
         pieces[side].pivot.rotation.x = foot.hip;
-        chain.bend.rotation.x = foot.knee;
-        chain.end.rotation.x = foot.ankle;
+        chain.bend.rotation.set(foot.knee, 0, 0);
+        chain.end.rotation.set(foot.ankle, 0, 0);
       } else {
-        chain.bend.rotation.x = ride ? .65 : pose.sitting ? 1.2 : !pose.grounded ? .55 : .12;
-        chain.end.rotation.x = -chain.bend.rotation.x*.55;
+        // The pushing leg folds up behind in a leap, the reaching one straightens towards the landing.
+        const pushing = i === trail;
+        chain.bend.rotation.x = ride ? .65 : pose.sitting ? 1.2
+          : !pose.grounded ? .55 + (pushing ? .75 : -.2) * leap : .12;
+        chain.bend.rotation.y = chain.bend.rotation.z = 0;
+        chain.end.rotation.set(-chain.bend.rotation.x*.55, 0, 0);
       }
     }
-    if (locomotion) {
-      object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
-      pieces.core.pivot.rotation.y = Math.sin(phase)*.025*gaitPose.blend;
-      pieces.core.pivot.rotation.x = .035*gaitPose.run*gaitPose.blend;
-      pieces.backpack.pivot.rotation.copy(pieces.core.pivot.rotation);
-      pieces.backpack.pivot.rotation.x += Math.sin(phase*2)*.015*gaitPose.blend;
-    } else {
-      pieces.core.pivot.rotation.set(0,0,0); pieces.backpack.pivot.rotation.set(0,0,0);
-    }
+    // The torso's own pose when no clip is playing: the lean shared between the small of the
+    // back and the chest, the shoulders' turn against the hips in the chest, the pelvis and the
+    // neck still. A clip (playClips) is blended over this.
+    const twistNow = locomotion ? Math.sin(phase) * (G.twist ? mixOf(G.twist, run, dash) : .025) * gaitPose.blend : 0;
+    leanNow = G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
+    if (locomotion) object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
+    torso.pelvis.quaternion.identity();
+    torso.spine.rotation.set(leanNow / 2, 0, 0);
+    torso.chest.rotation.set(leanNow / 2, twistNow, 0);
+    torso.neck.quaternion.identity();
+    pieces.backpack.pivot.rotation.set(locomotion ? Math.sin(phase * 2) * .015 * gaitPose.blend : 0, 0, 0);
+    pieces.head.pivot.rotation.set(G.leanAtHip ? -back - bow * mixOf(G.head, run, dash) : -back, 0, 0);
+    for (const side of ['leftArm', 'rightArm']) clavicleQ[side].identity();
     for (const side of ['leftArm','rightArm']) {
       const chain = chains[side];
       // Action poses already have authored hand targets. Preserve those targets;
@@ -956,15 +1349,32 @@ function buildRig(spec, material) {
       const action = holding[side] || drunk[side] || (swung && swing.side === side)
         || ride || Number.isFinite(pose.pushing) || Number.isFinite(pose.reach)
         // A dig and a carry pose both arms themselves (the shovel stroke, the load held out).
-        || !!digging || carrying;
-      const elbow = action ? 0 : (.10 + (.20+.65*gaitPose.run)*gaitPose.blend);
-      chain.bend.rotation.x = -elbow;
-      chain.end.rotation.x = elbow*.22;
+        || !!digging || carrying || blocks.includes(side);
+      busy[side] = !!action;
+      // A body with its own elbows (the Adventurer) bends them to a runner's right angle and
+      // keeps them there while the arm pumps; the Traveller's formula is the old one.
+      const elbow = action ? 0 : G.elbow ? .10 * (1 - gaitPose.blend) + mixOf(G.elbow, run, dash) * Math.max(gaitPose.blend, leap)
+        : (.10 + (.20+.65*gaitPose.run)*gaitPose.blend);
+      // A runner's elbow closes as the arm comes forward - the fist up to the chin - and opens
+      // as it drives back: at one angle all the way, the forearm stood out level in front of him.
+      const armAt = side === 'leftArm' ? swingAt : -swingAt;
+      const pumped = action || !G.pump ? elbow : elbow + mixOf(G.pump, run, dash) * gaitPose.blend * (armAt < 0 ? -armAt : -.5 * armAt);
+      chain.bend.rotation.set(-pumped, 0, 0);
+      chain.end.rotation.set(pumped*.22, 0, 0);
+    }
+    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back });
+    for (const side of ['leftArm', 'rightArm']) {
+      const chain = chains[side];
+      // The hand where the elbow and wrist put it, so a held item follows them.
       const hand = handAttach[side];
       hand.position.set(...HAND_ATTACH[side]);
-      hand.position.sub(chain.ankle).applyAxisAngle(new THREE.Vector3(1,0,0), chain.end.rotation.x).add(chain.ankle)
-        .sub(chain.knee).applyAxisAngle(new THREE.Vector3(1,0,0), chain.bend.rotation.x).add(chain.knee);
+      hand.position.sub(chain.ankle).applyQuaternion(chain.end.quaternion).add(chain.ankle)
+        .sub(chain.knee).applyQuaternion(chain.bend.quaternion).add(chain.knee);
+      // The top of the sleeve with the collarbone, not the arm (SHOULDER_CAP).
+      if (chain.cap) chain.cap.quaternion.copy(capQ.copy(pieces[side].pivot.quaternion).invert());
     }
+    placeMounts();
+    plantFeet(pose, run, gaitPose);
     if (tiltSide) {
       tiltNow = damp(tiltNow, dug ? digPose.tilt : 0, 30, dt);
       if (!dug && Math.abs(tiltNow) <= 1e-3) { tiltNow = 0; tiltSide = null; }
@@ -1004,6 +1414,18 @@ function buildRig(spec, material) {
       const tilt = fp && !(swung && side === swing.side) ? FP_TILT[holding[side]] : null;
       // The shovel's own turn while digging, and its way back to upright once the dig is over:
       // a turn in the body's frame (0 blade up), so the arm's own is taken off it.
+      // Mixamo digs with both hands on the shaft: the blade (the shovel's +y, out of this fist)
+      // points from this hand past the other.
+      if (digByClip && holding[side] === 'shovel' && clipMix > .5) {
+        mounts.chest.updateWorldMatrix(true, true);
+        handAttach[side].getWorldPosition(handA);
+        handAttach[OTHER[side]].getWorldPosition(handB);
+        handInv.copy(handAttach[side].matrixWorld).invert();
+        handB.applyMatrix4(handInv);
+        mesh.quaternion.setFromUnitVectors(alongY, handB.normalize());
+        mesh.position.set(0, 0, 0);
+        continue;
+      }
       if (side === tiltSide && Math.abs(tiltNow) > 1e-3) {
         // Through the arm's whole inverse, not the per-axis undo below: the arm is turned in
         // about z as well while it digs, and the two turns do not commute.
@@ -1011,7 +1433,8 @@ function buildRig(spec, material) {
         mesh.quaternion.copy(unArm).multiply(tiltQ.setFromEuler(turn.set(tiltNow, 0, 0)));
         continue;
       }
-      mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x + (tilt?.x || 0);
+      // Upright against the arm's turn and the torso's lean both: the arm hangs from the chest now.
+      mesh.rotation.x = swung && side === swing.side ? swung.wrist : -pieces[side].pivot.rotation.x - leanNow + (tilt?.x || 0);
       mesh.rotation.z = -pieces[side].pivot.rotation.z + (side === 'rightArm' ? 1 : -1) * (tilt?.z || 0);
       // A shield turns to face forward while it blocks and back out to the side after;
       // the same mirrored sign setHeldItem gave it, so left and right both turn inward.
@@ -1048,6 +1471,11 @@ function buildRig(spec, material) {
     for (const piece of Object.values(pieces)) {
       const geometry = avatarPlayerComponentGeometry(next, piece.names);
       geometry.translate(-piece.at[0], -piece.at[1], -piece.at[2]);
+      const name = Object.keys(pieces).find((k) => pieces[k] === piece);
+      capShoulder(geometry, name);
+      if (name === 'core') weightTorso(geometry);
+      const leg = PARTS.find((part) => piece.names.includes(part.name) && part.skinGroup)?.skinGroup;
+      if (leg && chains[leg]?.toe) weightToes(geometry, chains[leg]);
       piece.mesh.geometry.dispose();
       piece.mesh.geometry = geometry;
     }
@@ -1068,13 +1496,14 @@ function buildRig(spec, material) {
     stream.geometry.dispose();
     carriedMesh.geometry.dispose();
     for (const chain of Object.values(chains)) chain.skeleton.dispose();
+    torso.skeleton.dispose();
     if (material !== sourceMaterial) material.dispose();
   }
 
   return {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
-    character, hipY, eye,
+    character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
   };
 }
 
@@ -1102,6 +1531,8 @@ export function createClassicAvatar(spec, material) {
     get character() { return rig.character; },
     get hipY() { return rig.hipY; },
     get eye() { return rig.eye; },
+    // How fast this body walks and runs (avatar-gait.js GAITS): walk.js asks every step.
+    get speeds() { return rig.speeds; },
     update: (pose, dt) => rig.update(pose, dt),
     set,
     dispose: () => rig.dispose(),

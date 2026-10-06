@@ -1498,6 +1498,16 @@ dyed, so the inventory hides Skin and Outfit for it - `dyeApplies`), ears and po
 through the source's own bones, and the Traveller's gear refitted by measurement under the same
 names; hand items stay the Traveller's own in either hand. The sea passes `character` as a slug
 (`lookOf`); a sea or page from before it draws the Traveller.
+**The Adventurer moves by Mixamo's clips; the rig has a spine for them.** The torso is skinned to
+pelvis/spine/chest/neck bones, the legs hang from the pelvis, the arms from collarbones on the chest,
+the head from the neck - through *mounts* (`placeMounts`), groups whose matrix is their bone's change
+from rest, so every pivot keeps its rest position and code reading one is unchanged. Clips are
+baked, never loaded: `assets/mixamo/clips.json` -> `scripts/bake-mixamo-gait.py` -> `web/js/gait-clips.js`
+(the FBX themselves stay out of git - Mixamo's terms, a public repo),
+played in `playClips`/`applyClip` (gaits by distance with the clips' stride, so no foot slides; idle,
+jumps, swim and dig by time) and set on the ground by `plantFeet`. Shift with breath is a sprint,
+without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
+clip is the `mixamo-clips` skill.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,

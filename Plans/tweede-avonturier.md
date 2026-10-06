@@ -69,6 +69,31 @@ Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
   beide lichamen, verf, de zee, credits); de hele suite slaagt op `plan-scan` na, die in de
   volle run op `scan.lock` wacht en los slaagt.
 
+### Beweging uit Mixamo (1 oktober 2026)
+
+- **Skelet.** Het rig heeft nu een bekken, onderrug, borst en nek (de romp is gevild op die vier
+  botten), sleutelbeenderen en tenen; benen, armen, hoofd, rugzak en borstplaat hangen aan
+  *mounts* die precies de verandering van hun bot volgen, zodat elk draaipunt zijn oude plek
+  houdt. Dat geldt voor beide lichamen; de Reiziger beweegt verder procedureel zoals voorheen.
+- **Clips.** `assets/mixamo/` (FBX, binair, zonder skin) + `clips.json` →
+  `scripts/bake-mixamo-gait.py` → `web/js/gait-clips.js`: per gewricht de rotatie t.o.v. de
+  ouder, armen en benen eerst van T-pose naar hangend gezet, de spiegeling van het rig
+  verrekend. Lopen, rennen en sprinten op afstand (de voet glijdt nooit), stilstaan, staande en
+  rennende sprong, schoolslag en graven op tijd. Nagemeten: botrichtingen van ons rig en Mixamo
+  op hetzelfde moment komen binnen 0,1 overeen.
+- **Snelheden.** Lopen is Mixamo's eigen 0,43; rennen 1,8 en sprinten 2,7 (twee keer op verzoek verhoogd, ruim sneller dan
+  Mixamo's 0,90 en 1,41 op dit been), met de paslengte van de clip en dus een hogere cadans.
+  Shift met stamina is sprinten, zonder stamina rennen; een route vanuit de lucht sprint altijd
+  en kost geen stamina.
+- **Sprong.** De snelheid bij het afzetten blijft in de lucht (stuur met `AIR_STEER`); uit
+  stilstand de staande sprong, op snelheid de rennende, elk over de eigen vluchttijd.
+- **Graven** speelt Mixamo's tweehandige schep (gespiegeld met links), de worp op `DIG_THROW`;
+  de schep ligt tussen beide handen. **Zwemmen** is de schoolslag zonder de vaste kanteling
+  (walk.js kantelt een zwemmer al), sneller naarmate je harder zwemt.
+- **Voeten** worden na het poseren op de grond gezet (`plantFeet`): Mixamo's hoeken op onze
+  verhoudingen lieten een voet een centimeter in de grond.
+- **Skill** `.claude/skills/mixamo-clips/`: hoe een nieuwe clip erbij komt.
+
 ### Nog open
 
 - Op het eiland zelf (walk.js: fiets, zwemmen, zitten, eerste persoon) is het nog niet in een
