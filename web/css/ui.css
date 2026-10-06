@@ -17,7 +17,11 @@
 /* Every list that scrolls sits on a dark panel; the native scrollbar is a white bar down the
    side of it. Inherited, so this one line covers the dossier, the legend, the town hall... */
 html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin; }
-html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; overscroll-behavior: none; }
+/* A game, not a page: no pinch zoom (lists still scroll with a finger), no blue flash under a tapped
+   button, no picture to drag off as a ghost. page-keys.js holds the keys and ctrl+wheel. */
+html { touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+img, svg, a { -webkit-user-drag: none; }
 body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
 /* Nothing on the island is text to copy, so a drag or double-click never paints a selection over it - except in
    a field, where the caret and a selection are how you type. */

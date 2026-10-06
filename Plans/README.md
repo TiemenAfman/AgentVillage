@@ -3,6 +3,8 @@
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
+- 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
+
 ## Besluiten die nog niet in een eigen plan zitten
 
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.

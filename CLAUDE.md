@@ -1577,6 +1577,12 @@ into a free hand and gives the old item back; `digged()` counts flung shovelfuls
 turns the shovel with a quaternion (`unArm * Rx(tilt)`), not per-axis Euler undo: the arm is turned in about
 z while it digs and the two do not commute.
 
+**The page is a game, not a document** ([Plans/minder-browser-meer-spel.md](Plans/minder-browser-meer-spel.md)).
+`web/js/page-keys.js` (installed from main.js, every mode) cancels outside fields what the browser would do:
+select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/print/save/source/history
+(`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
+tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
+`#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
 the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock
