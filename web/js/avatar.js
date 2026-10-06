@@ -122,6 +122,13 @@ export function saveAvatar(spec) {
   return s;
 }
 
+// Which body you are is kept the moment it is picked, not only on Wear it: the rest of the look
+// is a fitting that Never mind may undo, but the body you last played is the one you expect to
+// find after a restart. Only `character` changes; the saved outfit stays as it was.
+export function saveCharacter(id) {
+  return saveAvatar({ ...loadAvatar(), character: characterId(id) });
+}
+
 // The colour slots that light up at night - the torch's two flame cones, and nothing else.
 const GLOWING = new Set(['flame', 'ember']);
 

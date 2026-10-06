@@ -5,7 +5,7 @@
 // slot owns what is inventory.js's table. Nothing is committed until you wear it - "Never
 // mind" puts back what you had on.
 import * as THREE from 'three';
-import { SWATCHES, DEFAULT_AVATAR, CHARACTERS, loadAvatar, saveAvatar, normalizeAvatar } from './avatar.js';
+import { SWATCHES, DEFAULT_AVATAR, CHARACTERS, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, iconKey, iconGeometry } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
@@ -64,11 +64,16 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   // One delegated listener for the panel's lifetime: the markup below is rebuilt on every
   // open, and a listener added per open would stack.
   el.addEventListener('click', (e) => {
-    // Which body (Plans/tweede-avonturier.md): worn at once, like any other piece, and put
-    // back by Never mind with the rest. Everything else on the spec carries over - the hats,
-    // the armour and the pack are fitted to both bodies under the same names.
+    // Which body (Plans/tweede-avonturier.md): worn at once, like any other piece, and kept at
+    // once too (saveCharacter) - so it is still you after a restart, and Never mind puts back
+    // the rest of the look but not the body. Everything else on the spec carries over - the
+    // hats, the armour and the pack are fitted to both bodies under the same names.
     const charBtn = e.target.closest('[data-character]');
-    if (charBtn) { spec.character = charBtn.dataset.character; sync(); apply(); return; }
+    if (charBtn) {
+      spec.character = saveCharacter(charBtn.dataset.character).character;
+      if (snapshot) snapshot.character = spec.character;
+      sync(); apply(); return;
+    }
     const slotBtn = e.target.closest('[data-slot]');
     if (slotBtn && slotBtn.disabled) return;
     if (slotBtn) return onSlot(INVENTORY_SLOTS.find((s) => s.id === slotBtn.dataset.slot), slotBtn);

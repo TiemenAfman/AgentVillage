@@ -59,8 +59,9 @@ Gebouwd op `feat/tweede-avonturier` (30 september 2026), sinds **0.10.0** op mai
   heup- en ooghoogte van het rig. De zee geeft `character` door als slug (`lookOf`); geen
   protocolversie, geen eilanddata. **De open zee moet opnieuw uitgerold worden** voordat
   anderen iemand als Avonturier zien; tot dan tekent iedereen de Reiziger.
-- **Inventory.** Bovenaan twee portretten (Traveller, Adventurer); kiezen trekt direct aan,
-  Never mind zet ook het lichaam terug. Huid- en outfitverf verdwijnen bij de Avonturier, want
+- **Inventory.** Bovenaan twee portretten (Traveller, Adventurer); kiezen trekt direct aan en
+  bewaart het lichaam meteen (`saveCharacter`), zodat je na een herstart hetzelfde personage
+  bent; Never mind zet de rest van de look terug, het lichaam niet. Huid- en outfitverf verdwijnen bij de Avonturier, want
   zijn lijf is geschilderd, niet geverfd. Alle andere keuzes gaan mee naar het andere lichaam.
 - **Bewegingsstudio.** `/avatar-motion.html` laat beide naast elkaar lopen en rennen, met
   *Dichtbij* per personage; de inventory kleedt het gekozen lichaam aan.
