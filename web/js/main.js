@@ -7752,6 +7752,14 @@ function frame(nowMs) {
   // matrix is only rebuilt when the map is, so what stands still stays exactly where its
   // shadow is between two redraws; only what moves has a shadow a frame or two behind.
   if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
+  // three.js sends a skeleton's bones to the GPU once per `info.render.frame`, and the shadow pass
+  // runs after render() has moved that counter on: so the frame after one that drew the shadow map
+  // found every skeleton already done and drew each skinned body - the player's torso and limbs, a
+  // peer, an imp - in the pose of the frame before, while the head, which has no skin, was where it
+  // is. At shadowEvery 2 that is every other frame, and the Adventurer's torso trembled round a still
+  // head (measured on the island: the frame without the map drew the chest at rest a frame after it
+  // was bent). A number nothing has used yet is a fresh frame for the skeletons as well.
+  if (!renderer.shadowMap.autoUpdate && !renderer.shadowMap.needsUpdate) renderer.info.render.frame++;
   // The last word on the picture: after the weather and after applyFogRange, which set the
   // lights, the haze and the sky it multiplies and overrides, and after every branch above has
   // put the camera where it is drawn from - this is decided on the lens, not the body. Before

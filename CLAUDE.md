@@ -684,6 +684,11 @@ handlers; it was handed to `createNet` once and every slider moved its label and
 - **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
   islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
   pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
+  The quality governor (`web/js/quality.js`) may redraw the shadow map only every n-th frame, and then
+  main.js moves `renderer.info.render.frame` on before a frame without it: three r170 sends a
+  skeleton's bones once per that number and draws the shadow pass after it has moved, so every
+  skinned body (the player's torso and limbs, a peer, an imp) was drawn a frame late on the frame
+  after a shadow redraw - the Adventurer's torso trembled round its still head (`tests/quality.test.mjs`).
 - **Fog-free lights at the horizon fade before the far plane** (`horizon.js update`, reach
   0.9 of `camera.far`), and the sun and moon hang inside it (`world.setFar`).
 - **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is
