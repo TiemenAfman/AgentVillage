@@ -57,7 +57,7 @@ anders is dan een fiets, want daar zit het werk.
 | Vraag | Besluit | Waarom |
 |---|---|---|
 | Het model | **Geen nieuwe bake in fase 1.** Het rijpaard is `createAnimal('horse', material, { seed: 'mount:<id>' })` met het brein uit, aangestuurd met `applyPose`, precies als het paard van de houtkar. Zadelpunt en beugels worden uit de bake gemeten zoals `measure()` in `bicycle.js` dat voor de fiets doet (`MOUNT.seat` = hoogste punt van `body` bij |z| <= 0,07; `MOUNT.stirrup` uit de koperen gespen). | Het zadel is er al, en het meten uit de bake (in plaats van getallen in de code) is de reden dat een bijgestelde bake vanzelf goed blijft. Het zijn dezelfde zeven delen als de fiets: zeven draw calls per rijder. |
-| Maat | Eerst 1,0. De ruiter zit met zijn heup (`HIP_Y`, 0,157) op het zadel, dus zijn zolen komen op 0,50 - 0,157 = ~0,34: een paar centimeter boven de beugelijzers (0,30-0,32). Ziet dat eruit als een pony onder een reus, dan groeit **één** constante `MOUNT_SCALE` (hoogstens 1,25) het paard en het zadelpunt samen. **Gemeten in stap 1 (6 okt):** het moet juist kleiner. Met de ruiterhouding (`HORSEBACK` in `classic-avatar.js`) haalt geen been van de Traveller (heup 0,20, been 0,16) de beugels op 1,0 zonder door de zadelflap (0,11 opzij) te gaan; op **0,85** staan de zolen op de treden en zit er niets van een been in het paard (`HORSEBACK.horse`, `tests/horseback-pose.test.mjs`). | De spelerspop is 1,12 en groter dan de dorpelingen (0,72) voor wie het paard gebakken is. Dit is een getal dat je in `/demo` ziet, niet uitrekent; de fiets kreeg zijn `RIDE_LEG` ook op het oog. |
+| Maat | Eerst 1,0. De ruiter zit met zijn heup (`HIP_Y`, 0,157) op het zadel, dus zijn zolen komen op 0,50 - 0,157 = ~0,34: een paar centimeter boven de beugelijzers (0,30-0,32). Ziet dat eruit als een pony onder een reus, dan groeit **één** constante `MOUNT_SCALE` (hoogstens 1,25) het paard en het zadelpunt samen. **Besloten na stap 1: 1,0, met alleen de Avonturier als ruiter** (zie "Besluit: paardmaat en ruiter"). Geen `MOUNT_SCALE`. | De spelerspop is 1,12 en groter dan de dorpelingen (0,72) voor wie het paard gebakken is. Dit is een getal dat je in `/demo` ziet, niet uitrekent; de fiets kreeg zijn `RIDE_LEG` ook op het oog. |
 | De rit | `stepMount(m, { rein, turn, gallop, hop }, dt, { ground, blocked, ceiling })` in `web/js/mount.js`, puur. Tegenover `stepBike`: versnelling trager (`MOUNT_ACCEL` ~3,2 in plaats van 4,5: bijna drie seconden tot draf-en-galop), remmen trager (`MOUNT_BRAKE` ~9 tegen 14), en **een bocht is ruimer naarmate je harder gaat** (2,6 rad/s stapvoets, 1,1 in galop, tegen 2,4 bij de fiets: een paard draait niet om zijn as in galop). S bij stilstand loopt achteruit, langzamer dan de fiets (1,0). De helling trekt zoals bij de fiets. | Een paard heeft massa, een fiets is een fiets. De constanten zijn beginwaarden voor het oog; de verhoudingen staan in de test. |
 | Passen en botsen | `rideable` test het **midden én de borst** (`MOUNT_NOSE`, 0,32 vooruit; bij achteruit de kont). De fiets testte alleen het midden. | Een paard is 0,75 lang en de fiets 0,4. `stable.js` heeft dezelfde afstand al gemeten als `HORSE_CLEAR` ("half a horse, nose to rump, and a little"); anders steekt de kop door een muur of een hek. Drempel 0,45 (`STEP_UP` van `walk.js`) en waterkant 0,06 blijven. |
 | Springen | Spatie is een sprong, iets hoger dan te voet (`MOUNT_HOP` ~3,6 tegen `JUMP_V` 3,1), en in de lucht is water geen muur. Landen in het water zet het paard weg en laat je zwemmen, zoals `splash`. | Een paard springt; het verschil met de fiets is een getal. |
@@ -91,6 +91,30 @@ rechtop staan:
 Dat spoort met de besluiten bij "De ruiter": de benen gespreid, de voeten in de beugels, de armen naar
 voren en omlaag naar de teugels. Een rig met knieën en ellebogen kan het één-op-één nemen; de oude
 fietsbenen (stijf, geen knie) alleen de spreiding en de dijhoek.
+
+## Besluit: paardmaat en ruiter (6 oktober 2026)
+
+**Het paard op ware grootte (1,0), en alleen de Avonturier rijdt. De Reiziger houdt de fiets.** Martijns keuze, na
+screenshots van beide lichamen op het stalpaard op 0,85 en 1,0 in `/demo` (stap 1). Gemeten met de ruiterhouding
+(`pose.horseback`, `horsebackOf(character)` in `classic-avatar.js`, `tests/horseback-pose.test.mjs`); zitting 0,48,
+beugeltreden 0,30-0,33, zadelflap 0,11 opzij:
+
+| Lichaam, maat | Voeten in de beugels | Iets door het paard |
+|---|---|---|
+| Reiziger, 0,85 | ja (zool 0,279, beugel 0,254-0,280) | nee |
+| Reiziger, 1,0 | nee, 2 cm erboven | ja: dij en knie tot 5 cm in de flap |
+| Avonturier, 0,85 | ja, laars iets door het ijzer | licht (2,4 cm), en hij oogt te groot op het paard |
+| Avonturier, 1,0 | ja, op de bovenbeugel (7 mm erboven) | nee |
+
+De Reiziger (heup 0,20, been 0,16, heupen 0,09 breed) is te kort en te smal voor dit paard: op 1,0 haalt geen been
+de beugels zonder door de flap te gaan, en een kleiner paard maakt het voor de Avonturier slechter. De Avonturier
+(heup 0,25) neemt de clip voor romp, dij-voorwaarts en armen over; zijn dijen gaan 45 graden opzij, zijn knie staat op
+40 in plaats van 73 (bij 73 hingen de zolen 3 cm boven de beugels), en hij zit 4,5 cm boven de zitting.
+
+Gevolgen voor stap 2: geen `MOUNT_SCALE`; rijden kan alleen met `character === 'adventurer'` (de Reiziger krijgt op
+F de fiets, zoals nu), dus **de fiets gaat niet weg** - "Wat weggaat" geldt niet meer voor `bicycle.js` en de rest
+van de fiets. De houding van de Reiziger (`HORSEBACK`) blijft in de code als basis waartegen die van de Avonturier
+geschreven is; hij wordt niet getekend.
 
 ## De gangen van een referentiepaard, gemeten
 
@@ -126,6 +150,9 @@ Wat dit zegt voor `mountPose`:
 - **Draf en kanter** heeft deze referentie niet (alleen Walk en Run). Daarvoor Muybridge.
 
 ## Wat weggaat
+
+> **Vervallen voor de fiets** (zie "Besluit: paardmaat en ruiter"): de Reiziger houdt de fiets, dus die blijft
+> bestaan naast het paard. Wat hieronder over de toets en `walk.js` staat, wordt een keuze per lichaam.
 
 `web/js/bicycle.js`, `web/js/bicycle-mesh.js`, `assets/bicycle/`, `scripts/build-bicycle.py`,
 `tests/bicycle.test.mjs` (de belofte-tests gaan mee naar `tests/mount.test.mjs`), de set

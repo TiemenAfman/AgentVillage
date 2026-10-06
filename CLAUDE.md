@@ -1119,10 +1119,10 @@ players see bicycles.
 **A rider on a horse is a pose, not a vehicle yet** (`pose.horseback`, `HORSEBACK` in classic-avatar.js,
 step one of Plans/paard-in-plaats-van-fiets.md): the measured riding angles plus three of the rig's own
 (thighs and shins out over the saddle flap, arms in), seated on `saddleOf()` (web/js/fauna.js, off the bake)
-of the stable's horse drawn at `HORSEBACK.horse` (0.85) - at 1.0 no Traveller leg reaches the irons without
-going through the flap. Each body has its own numbers (`horsebackOf(character)`, `HORSEBACK_OF`): the
-Adventurer fits at 1.0 with his knee opened to 40. In the rig the left leg is at -x (the mirror), so "out" is
--z for it. /demo shows both bodies at 0.85 and 1.0; which size the horse gets is still the keeper's call.
+of the stable's horse at its own size. Only the Adventurer rides (the keeper's choice, 6 Oct; the Traveller
+keeps the bicycle): `horsebackOf(character)` gives his numbers (knee opened to 40, thighs out 45), since at
+1.0 no Traveller leg reaches the irons without going through the flap; `HORSEBACK` is the Traveller's pose,
+kept as the base. In the rig the left leg is at -x (the mirror), so "out" is -z for it. /demo has three.
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island

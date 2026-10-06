@@ -95,13 +95,15 @@ test('the ankles hang under the hips, three hip-widths apart, and the hands meet
   assert.ok(neck.z - spine.z > 0.015, `neck ${neck.z.toFixed(3)} ahead of the spine ${spine.z.toFixed(3)}`);
 });
 
-for (const character of ['traveller', 'adventurer']) test(`the ${character} on the stable's horse at his size: soles on the irons, no leg inside it`, () => {
+// The Adventurer is the one rider (Plans/paard-in-plaats-van-fiets.md "Besluit"): the horse at 1.0.
+test('the adventurer on the stable\'s horse at its own size: soles on the irons, no leg inside it', () => {
+  const character = 'adventurer';
   const saddle = saddleOf();
   assert.ok(saddle && saddle.stirrup, 'the horse has a seat and irons');
   // Plans/paard-in-plaats-van-fiets.md: the seat round y 0.50, the irons round 0.30-0.32.
   assert.ok(saddle.seat > 0.45 && saddle.seat < 0.53, `seat ${saddle.seat}`);
   assert.ok(saddle.stirrup.y > 0.28 && saddle.stirrup.y < 0.33, `irons ${saddle.stirrup.y}`);
-  const fit = horsebackOf(character), s = fit.horse;
+  const fit = horsebackOf(character), s = 1;
   const { avatar } = rider(SADDLE, character);
   assert.equal(avatar.character, character);
   // The rider's feet at y = 0 stand this high in the horse's frame, in the horse's units.
