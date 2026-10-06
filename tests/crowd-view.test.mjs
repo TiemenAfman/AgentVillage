@@ -477,3 +477,39 @@ test('a crowd is culled on a sphere that holds its whole island', () => {
     }
   }
 });
+
+test('an island let go of is forgotten, and comes back where its people are, not where they were', () => {
+  // main.js stops wanting an island past NPC Distance and the sea stops sending its rows
+  // (Plans/zee-stuurt-wat-je-ziet.md). Whatever the view still held would be minutes old by the
+  // time the island was wanted again: drawn from there, a body stood where it once was and
+  // then slid across the island. Forgotten instead, nobody is drawn until the sea speaks.
+  const crowd = view();
+  place(crowd);
+  const f = crowd.figure('house:b');
+  crowd.draw(0.016, ground, 1001, true);
+  assert.equal(f.visible, true);
+  crowd.forget();
+  crowd.draw(0.016, ground, 1002, true);
+  assert.equal(f.visible, false, 'drawn from a position the sea is no longer keeping up');
+  // Back in range, and the word puts them there at once - no glide from the old spot.
+  const idx = [...crowd.figures()].find(([, g]) => g === f)[0];
+  crowd.apply(new Map([[idx, { x: 3, z: 3, anim: 'still' }]]), 60000);
+  crowd.draw(0.016, ground, 60000, true);
+  assert.equal(f.visible, true);
+  assert.deepEqual([f.pos[0], f.pos[1]], [3 + region.origin[0], 3 + region.origin[1]]);
+});
+
+test('an island let go of keeps its boats: the sea goes on sending those', () => {
+  // A hull has no NPC cut and is seen as far as the fog, so lib/sea.mjs sends the dinghies of an
+  // island to a page that does not want it, and forget() must not take them out of the water.
+  const crowd = view();
+  place(crowd);
+  const f = crowd.figure('house:a');
+  const idx = [...crowd.figures()].find(([, g]) => g === f)[0];
+  crowd.forget();
+  crowd.applyRides(new Map([[idx, { x: 10, z: 10, yaw: 0, rx: 10, rz: 10, ry: 0.3, ryaw: 0 }]]), 2000);
+  crowd.forget();
+  crowd.draw(0.016, ground, 2001, true);
+  assert.equal(f.visible, true, 'the rider of a boat on an island let go of was not drawn');
+  assert.deepEqual([f.pos[0], f.pos[1]], [10 + region.origin[0], 10 + region.origin[1]]);
+});

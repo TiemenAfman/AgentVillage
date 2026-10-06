@@ -18,7 +18,7 @@ import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, next
 import { isletsNear } from 'shared/islets.mjs';
 import { startTarget, starterSpot, isletSpot } from 'shared/start.mjs';
 import { kindOf } from 'shared/crafts.mjs';
-import { createCrowdView } from './crowd-view.js';
+import { createCrowdView, NPC_PAD } from './crowd-view.js';
 import { nearestOnRay, guestLabel } from './guest-pick.js';
 import { loadLocalModels } from './local-models.js';
 import { allowImp, setImpNight, setImpBudget, IMP_CAP, IMP_LIMIT } from './imp.js';
@@ -30,6 +30,7 @@ import { quaysOf, mooringsFor, shipBerth, shipWater, BOATS_PER_HARBOUR } from 's
 import { clamp } from 'shared/rng.mjs';
 import { AIR_S, SWIMMING, submerged, stepAir } from 'shared/breath.mjs';
 import { createWorld } from './world.js';
+import { setSeeThrough, BODY_MID, SILHOUETTE, SEE_EASE } from './see-through.js';
 import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
@@ -72,7 +73,7 @@ import { createHorizon, RING } from './horizon.js';
 import { createIslets } from './islets.js';
 import { createMinimap, createWorldMap } from './minimap.js';
 import { decodeOwnership, edgeKey } from './hamlets.js';
-import { porchFloor, solidAt, camBodyOf } from './solids.js';
+import { porchFloor, solidAt, camBodyOf, createSolidIndex, segmentEntry } from './solids.js';
 import { createBoard } from './board.js';
 import { createChat } from './chat.js';
 import { createFaceToFace } from './facetoface.js';
@@ -481,12 +482,11 @@ Object.assign(controls, {
 });
 controls.target.set(0, 1, 0);
 
-const buildingMat = createBuildingMaterial();
-// The crowd's own instance of the same material, and the only reason there is a second one.
-// Object Distance and NPC Distance are two numbers and a shared material has one uniform
-// slot, so the people get their own set. Same onBeforeCompile, same customProgramCacheKey,
-// so three hands both the same compiled program - this is a second uniform set, not a second
-// shader, and the crowd still costs one draw call per body part exactly as it did.
+const buildingMat = createBuildingMaterial({ seeThrough: true });
+// The crowd's own instance of the same material. Object Distance and NPC Distance are two
+// numbers and a shared material has one uniform slot, so the people get their own set - and
+// they are not seen through (see-through.js), so theirs is a program of its own, compiled
+// once; the crowd still costs one draw call per body part exactly as it did.
 const crowdMat = createBuildingMaterial();
 const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb347, fog: false });
 // Every building body on this island, one draw call a pass (web/js/record-batch.js,
@@ -883,6 +883,9 @@ function sentHome(m) {
   const settled = m.why === 'settled';
   // Asked for (Respawn to town, issue #74), by the sea or by respawnHere: nobody sent us.
   const asked = m.why === 'respawn';
+  // Black until the island we land on has its people placed (respawnFade): it may not have been
+  // followed (`want`), and they come one round trip after we do.
+  respawnFade();
   exitWalk({ force: true });
   state.walk.setPaused(false);
   // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
@@ -5128,6 +5131,104 @@ function placeOurs(m) {
   state.settlers.applyRides(decodeRides(m.b, half), now);
 }
 
+// Which islands' people this page draws, said to the sea so it sends only those
+// (Plans/zee-stuurt-wat-je-ziet.md). Measured on the open sea: a page was sent every crowd in
+// the world, 13.4 kB/s, of which it drew one or two islands' worth - a phone at NPC Distance 200
+// on one island threw away nine bytes of every ten, on mobile data.
+//
+// An island is wanted while there is a crowd view for it (ours, or a guest drawn whole -
+// DETAILED) and its box is within NPC Distance of the camera - the same flat distance and the
+// same eye `beyond` in crowd-view.js cuts people at, so a body is never inside the range while
+// its island is not wanted. Past the box: NPC_PAD (the shoulders) and WANT_PAD, for whoever
+// is drawn off the island's own grid - a dinghy out on its circle (13 from the berth), a guard
+// swimming off the coast. And WANT_HYST more before letting go of an island already wanted, so
+// walking along the edge of the reach does not flap it in and out. A range of 0 (the planner)
+// draws everybody, so wants every view.
+//
+// Letting go forgets: the view clears every position it holds (crowd-view.js forget), and
+// rows still on their way are dropped in onCrowdMessage, so nothing stale is drawn on the way
+// back. Wanting again is answered by the sea with everybody at once (sendCrowd in
+// lib/sea.mjs) - the people appear where they are, not on the island's middle, which is where
+// a roster stands a body nobody has placed (and why draw() hides those).
+//
+// Checked every WANT_MS on the frame, against the eye of that frame. A camera that jumps -
+// the director's flight, noclip's go() - sees the island's people a round trip after it lands.
+const WANT_PAD = 32;
+const WANT_HYST = 48;
+const WANT_MS = 400;
+// What was last said: island id -> the crowd view it was said for, or null before the first
+// word (the sea is then sending everything, as to a page from before `want`).
+let crowdWant = null;
+let wantedAt = -Infinity;
+function crowdViews() {
+  const out = [];
+  if (state.settlers && state.region && state.islandId) out.push({ id: state.islandId, region: state.region, crowd: state.settlers });
+  for (const g of state.guests) if (g.crowd) out.push({ id: g.region.id, region: g.region, crowd: g.crowd });
+  return out;
+}
+function syncWant(nowMs) {
+  if (!state.net || nowMs - wantedAt < WANT_MS) return;
+  wantedAt = nowMs;
+  const range = npcRange();
+  const eye = camera.position;
+  const views = crowdViews();
+  const next = new Map();
+  for (const v of views) {
+    const [x, z] = v.region.origin;
+    const half = v.region.half;
+    const dx = Math.max(0, Math.abs(eye.x - x) - half);
+    const dz = Math.max(0, Math.abs(eye.z - z) - half);
+    const reach = range + NPC_PAD + WANT_PAD + (crowdWant && crowdWant.has(v.id) ? WANT_HYST : 0);
+    if (!range || dx * dx + dz * dz <= reach * reach) next.set(v.id, v.crowd);
+  }
+  // A view made again under an id already wanted - a reseed, a guest raised anew - holds no
+  // positions, so it is let go of and wanted again: two messages, and the sea sends that
+  // island whole. Rare, and otherwise its people stood undrawn until their slices came round.
+  const fresh = crowdWant ? [...next].filter(([id, crowd]) => crowdWant.has(id) && crowdWant.get(id) !== crowd).map(([id]) => id) : [];
+  const same = crowdWant && !fresh.length && next.size === crowdWant.size && [...next.keys()].every((id) => crowdWant.has(id));
+  if (same) return;
+  for (const v of views) if (!next.has(v.id) && (!crowdWant || crowdWant.has(v.id))) v.crowd.forget();
+  const ids = [...next.keys()].sort();
+  if (fresh.length) state.net.want(ids.filter((id) => !fresh.includes(id)));
+  state.net.want(ids);
+  crowdWant = next;
+}
+
+// Being sent home (a guard, lava, drowning) is the one jump on foot: we land on an island this page
+// may have let go of, and its people come one round trip after we do. So the screen goes black
+// at once, stays black until every island we now follow has somebody placed on it (or
+// RESPAWN_HOLD_MS, whichever is first), and fades in over the CSS transition. While it is black
+// syncWant runs every frame rather than every WANT_MS, so the set it says is taken from where the
+// camera has landed and not from the frame before it moved; RESPAWN_MIN_MS is that landing.
+const RESPAWN_HOLD_MS = 600;
+const RESPAWN_MIN_MS = 120;
+let respawnUntil = 0;
+let respawnFrom = 0;
+function respawnFade() {
+  const el = document.getElementById('respawn');
+  if (!el) return;
+  el.classList.remove('out');
+  el.hidden = false;
+  respawnFrom = performance.now();
+  respawnUntil = respawnFrom + RESPAWN_HOLD_MS;
+  wantedAt = -Infinity;
+  // Never black for good: should the frame not get as far as stepRespawn (a hidden tab, a mode
+  // that returns early), a timer lifts it all the same.
+  setTimeout(() => stepRespawn(Infinity), RESPAWN_HOLD_MS + 100);
+}
+function stepRespawn(nowMs) {
+  if (!respawnUntil) return;
+  wantedAt = -Infinity;
+  if (nowMs < respawnFrom + RESPAWN_MIN_MS) return;
+  const placed = crowdViews().every((v) => !crowdWant || !crowdWant.has(v.id)
+    || [...v.crowd.figures().values()].some((f) => f.to));
+  if (!placed && nowMs < respawnUntil) return;
+  respawnUntil = 0;
+  const el = document.getElementById('respawn');
+  el.classList.add('out');
+  setTimeout(() => { if (!respawnUntil) el.hidden = true; }, 300);
+}
+
 // Somebody else's settlers. The wire format is shared/settlerwire.mjs and the drawing is
 // web/js/crowd-view.js; this only routes.
 function onCrowdMessage(m) {
@@ -5154,6 +5255,22 @@ function onCrowdMessage(m) {
       if (state.settlers && state.region) state.settlers.held(decodeHeld(m.h, state.region.half));
     } else if (g && g.crowd) g.crowd.held(decodeHeld(m.h, g.region.half));
     else crowdHeld.set(m.island, m.h);
+    return;
+  }
+  // Rows of an island we have let go of (syncWant) that were already on their way: the view
+  // has forgotten its positions, and these would only start going stale again. A sea from
+  // before `want` sends every island for ever, and this is what keeps that page honest too.
+  // Only its boats are taken: the sea sends those to everybody (toSailors in lib/sea.mjs),
+  // since a hull is seen as far as the fog and NPC Distance does not cut it.
+  if (crowdWant && !crowdWant.has(m.island)) {
+    const view = home ? state.settlers : g && g.crowd;
+    const r = home ? region : g && g.region;
+    if (view && r) {
+      view.applyRides(decodeRides(m.b, r.half), performance.now());
+      // Somebody stepping ashore is stood where the hull left them (applyRides); on an island
+      // we do not follow that is a position nobody will keep up, so it is forgotten again.
+      view.forget();
+    }
     return;
   }
   if (home) {
@@ -7533,6 +7650,45 @@ function seaFloorFrame(dt, nowMs) {
   });
 }
 
+// Whether anything stands between the camera and the walker, and how open the hole through it
+// is (see-through.js). Five rays from the silhouette to the camera, against walk mode's boom
+// test and the crowns of our own wood; the hole eases open while one is cut and shut when none
+// is. On foot outdoors only, and not in first person, where the eye is the body.
+let seeOpen = 0, crownIndex = null, crownList = null;
+const seeFrom = new THREE.Vector3(), seeRight = new THREE.Vector3();
+function seeThroughFrame(dt) {
+  const w = state.walk;
+  const on = state.mode === 'walk' && w && !state.inside && !w.state.firstPerson;
+  let covered = false;
+  if (on) {
+    const p = w.state.pos, eye = camera.position;
+    const crowns = state.world && state.world.crowns ? state.world.crowns() : null;
+    if (crowns !== crownList) { crownList = crowns; crownIndex = crowns ? createSolidIndex(crowns) : null; }
+    // The camera's right in the ground plane, so the shoulders are the ones the camera sees.
+    seeRight.set(eye.z - p.z, 0, p.x - eye.x).normalize();
+    for (const [across, up] of SILHOUETTE) {
+      seeFrom.set(p.x + seeRight.x * across, p.y + up, p.z + seeRight.z * across);
+      if (w.standsBetween(seeFrom.x, seeFrom.y, seeFrom.z, eye.x, eye.y, eye.z)) { covered = true; break; }
+      if (crownIndex) {
+        const dx = eye.x - seeFrom.x, dy = eye.y - seeFrom.y, dz = eye.z - seeFrom.z;
+        const len = Math.hypot(dx, dy, dz);
+        crownIndex.along(seeFrom.x, seeFrom.z, eye.x, eye.z, 0, (c) => {
+          const t = segmentEntry(c, seeFrom.x, seeFrom.y, seeFrom.z, dx / len, dy / len, dz / len, len);
+          if (t != null && t >= 0 && t < len) covered = true;
+          return covered;
+        });
+        if (covered) break;
+      }
+    }
+  }
+  seeOpen += ((covered ? 1 : 0) - seeOpen) * (1 - Math.exp(-SEE_EASE * dt));
+  if (seeOpen < 0.002) seeOpen = 0;
+  if (on && seeOpen > 0) {
+    const p = w.state.pos;
+    setSeeThrough(seeOpen, p.x, p.y + BODY_MID, p.z);
+  } else setSeeThrough(0);
+}
+
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
@@ -7716,6 +7872,8 @@ function frame(nowMs) {
   // The pad is three CULL_PADs rather than one: the islets are only re-laid every two seconds,
   // and a camera flying in may cover a pad's width in that time - so a palm must still be past
   // full fog when it comes back into the buffers.
+  syncWant(nowMs);
+  stepRespawn(nowMs);
   if (state.islets) state.islets.update(dt, focusPoint(), state.mode === 'plan' ? null : { eye: camera.position, reach: cullCeiling() + 3 * CULL_PAD });
   if (state.particles) state.particles.update(dt);
   if (state.waitingFlags) state.waitingFlags.tick(nowMs / 1000, state.world ? state.world.state.night : 0);
@@ -7808,6 +7966,7 @@ function frame(nowMs) {
       : state.mode === 'noclip' ? camera.position : controls.target;
     state.world.setWaterFocus(w.x, w.z);
   }
+  seeThroughFrame(dt);
   // The haze reaches as far as the eye has pulled back, so it has to be told where the eye
   // is. Only once there is a second island: on our own it is the fixed ring it always was,
   // and this then costs one comparison a frame.

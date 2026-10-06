@@ -815,6 +815,22 @@ fill up over ten seconds is not a first impression worth having. The client hold
 message while it translates the roster — see below — or it would be dropped in full, which
 is exactly the ten seconds back again.
 
+**The sea sends an island's people only to a page that draws them** ([Plans/zee-stuurt-wat-je-ziet.md](Plans/zee-stuurt-wat-je-ziet.md)).
+A page says which islands with `{t:'want', i:[ids]}` (and `want` on its `join`, so the join dump is already
+cut); `f` and `fh` go only to those (`toWatchers` in lib/sea.mjs), and an island newly wanted is sent whole at
+once (`sendCrowd`: `slices: 1`, rides, `fh`). An island's dinghies (`b`) still reach every page (`toSailors`: an
+`f` with empty `a`/`k`), since a hull has no NPC cut. `fr`, `af` and `herd` still go to every page (rows must be readable
+on approach; animals have no NPC cut). A socket that never says `want` (`conn.want` null) gets everything - that is
+what keeps it a patch, no `SEA_V`. An islander (`as: 'islander'`) gets no crowd, no `s` and no `roster`
+(`watching: false` in lib/players.mjs). On the page `syncWant` in main.js wants every crowd view whose box is within
+NPC Distance of the **camera** (the eye `beyond` cuts at) plus `WANT_PAD`, with `WANT_HYST` to let go; letting go
+calls `crowd.forget()` (positions only, hulls stay) and `onCrowdMessage` takes only the rides of unwanted islands, so a body comes back hidden until the
+sea places it - never at a stale spot or the island's middle. A crowd view rebuilt under a wanted id is let go of
+and wanted again (two messages) to get its dump. Being sent home (`onEvicted`) is the one jump on foot: the screen goes black
+(`#respawn`, `respawnFade`) until every wanted island has somebody placed, at most 600 ms, then fades in. `/health` carries `wire` (bytes and messages per type since start,
+lib/wiremeter.mjs), `sockets` and `wanting`; `scripts/sea-listen.mjs` measures one viewer on any sea and
+`scripts/sea-load.mjs` a local sea with copies of a real bundle. A pose beat with nobody walking goes out once.
+
 **A settler held in a conversation turns on every screen through `fh`, not through a row.**
 A row has no heading and a held settler is `'still'`, so the page used to leave them facing
 the way they had been walking. The sea works the whole held set out of `f.attend` every beat
@@ -1897,6 +1913,20 @@ called again with `{ boomed: true }` only to judge its lid (`judgeLid`: hysteres
 person it does nothing but the lid. `tests/camera-boom.test.mjs` judges all of it by a raycast against the real
 geometry; a raycast at runtime was rejected (the Kraken's 80k triangles are 1.2 ms a ray, and the batch keeps
 the only copy of every building). The boom costs ~40 us a frame beside a street and the Kraken.
+
+**What hides the walker is seen through, and the trigger is not the hole** (`web/js/see-through.js`). On foot
+outdoors (not first person, not in a room) `seeThroughFrame` in main.js casts five rays from the silhouette
+(`SILHOUETTE`: feet, middle, head, shoulders) to the camera against `walk.standsBetween` (the boom's
+`standingReach` with **no** `CAM_R` pad - padded, a board beside the walker counted) and the trees' `crowns()`
+(world.js, cylinders off the bake); only while one is cut does a round, soft hole ease open (`uSeeOn` 0..1,
+`SEE_EASE`). The hole is a stippled discard in view space (`vViewPosition`, so instanced trees and the building
+batch alike), a cone from the eye to `BODY_MID`, nothing below a step over the feet (planks underfoot stay).
+Per-pixel triggering was tried and cannot work: a pixel does not know whether its object covers the body
+elsewhere, so the cone either reached past the body's sides or cut a body-shaped hole in a roof. The trees'
+`barkMat`/`foliageMat` and `buildingMat` (`createBuildingMaterial({ seeThrough: true })`) carry it; `crowdMat`
+does not, and every `createClassicAvatar` rig - the walker, peers, smith, baker - opts out of its clone with
+`seeThroughOff`, which is why the building material's `onBeforeCompile` and `customProgramCacheKey` are
+`function`s reading `this`, and why buildRig no longer binds the key.
 
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while

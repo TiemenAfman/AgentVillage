@@ -39,6 +39,11 @@ input, textarea, select, [contenteditable="true"] { user-select: text; -webkit-u
     linear-gradient(to bottom, rgba(96, 214, 220, .85), rgba(6, 74, 92, .9));
 }
 
+/* Sent home (main.js respawnFade): black at once, then the island fades in once its people stand
+   where they are. Same layer rules as #underwater. */
+#respawn { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 1; }
+#respawn.out { opacity: 0; transition: opacity .25s ease-out; }
+
 .card, .panel {
   background: var(--panel);
   backdrop-filter: blur(14px) saturate(1.2);
