@@ -725,6 +725,20 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   background: radial-gradient(ellipse, rgba(0,0,0,.75), transparent 70%); }
 .inv-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 
+/* The choice of body: two portraits in wells like the slots', side by side over the alcove,
+   the worn one lit the way a worn piece is. */
+.inv-chars { display: flex; justify-content: center; gap: 14px; margin: 0 0 12px; }
+.inv-char { display: flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border: 0; border-radius: 6px; cursor: pointer;
+  background: radial-gradient(circle at 30% 40%, #1d1c22, var(--inv-well) 85%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-rim), 0 0 0 2px var(--inv-bronze-dark); transition: box-shadow .15s; }
+.inv-char .inv-icon { width: 52px; height: 52px; }
+.inv-char:hover { box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-bronze), 0 0 0 2px var(--inv-bronze-dark); }
+.inv-char.on { box-shadow: inset 0 0 14px rgba(232,193,124,.2), inset 0 3px 9px rgba(0,0,0,.8),
+  0 0 0 1px var(--accent), 0 0 0 2px var(--inv-bronze-dark), 0 0 16px rgba(232,193,124,.45); }
+.inv-char.on .inv-label { color: var(--ink); }
+.inv-char:not(.on) .inv-icon { opacity: .55; filter: grayscale(.5); }
+.inv-slot:disabled { cursor: default; }
+
 .inv-note { margin: 12px 0 10px; text-align: center; font-size: 12px; font-style: italic; color: var(--inv-label); }
 .inv-actions { justify-content: center; }
 
