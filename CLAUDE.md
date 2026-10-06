@@ -1612,6 +1612,13 @@ dyed, so the inventory hides Skin and Outfit for it - `dyeApplies`), ears and po
 through the source's own bones, and the Traveller's gear refitted by measurement under the same
 names; hand items stay the Traveller's own in either hand. The sea passes `character` as a slug
 (`lookOf`); a sea or page from before it draws the Traveller.
+The Adventurer's arm bake also carries `skinIndices`/`skinWeights`: limb bones 0..2,
+shared torso/head bones 3..7 and fifteen finger bones 8..22. `ADVENTURER_FINGERS` gives
+their pivots, parents, curl axes and relaxed/grip angles. Preserve these source weights:
+renormalising away the torso influence opens the sleeve seam. Both the exposed neck and
+lower head use the same neck/head blend. Eye UVs repeat (one eye lives in tile 0,1);
+clamping them erases its pupil. Rebuild with `node scripts/blender.mjs --background
+--python-exit-code 1 --python scripts/build-adventurer.py`, the figure's dedicated exporter.
 **The Adventurer moves by Mixamo's clips; the rig has a spine for them.** The torso is skinned to
 pelvis/spine/chest/neck bones, the legs hang from the pelvis, the arms from collarbones on the chest,
 the head from the neck - through *mounts* (`placeMounts`), groups whose matrix is their bone's change

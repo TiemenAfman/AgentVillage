@@ -1,5 +1,7 @@
 # Plans
 
+- ✅ [avonturier-handen-en-aansluitingen.md](avonturier-handen-en-aansluitingen.md) — schouders, nek, twee ogen en beweeglijke ontspannen vingers.
+
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 

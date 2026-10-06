@@ -154,6 +154,8 @@ function buildFigure(spec, gear, include = null) {
       const bend = part.skin?.[i * 2] || 0, end = part.skin?.[i * 2 + 1] || 0;
       weights.set([Math.max(0, 1 - bend - end), bend, end, 0], i * 4);
     }
+    if (part.skinIndices) indices.set(part.skinIndices);
+    if (part.skinWeights) weights.set(part.skinWeights);
     g.setAttribute('skinIndex', new THREE.BufferAttribute(indices, 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(weights, 4));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));

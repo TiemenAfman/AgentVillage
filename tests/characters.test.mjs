@@ -23,6 +23,83 @@ else globalThis.document = previousDocument;
 
 const ADVENTURER = { ...DEFAULT_AVATAR, character: 'adventurer' };
 
+test('both eyes retain dark pupils and coloured irises after the repeating UV bake', () => {
+  const eyes = ADVENTURER_PARTS.filter((p) => p.name.includes('Eyeball'));
+  assert.equal(eyes.length, 2);
+  for (const eye of eyes) {
+    let dark = 0, white = 0, iris = 0;
+    for (let i = 0; i < eye.colors.length; i += 3) {
+      const [r, g, b] = eye.colors.slice(i, i + 3);
+      if (Math.max(r, g, b) < .15) dark++;
+      if (Math.min(r, g, b) > .6) white++;
+      if (g > b * 1.3 && g > .1) iris++;
+    }
+    assert.ok(dark > 10 && white > 10 && iris > 10, `${eye.name}: ${dark} pupil, ${white} white, ${iris} iris`);
+  }
+});
+
+test('both hands have weighted knuckles, relax, grip independently and survive redressing', () => {
+  const material = new MeshBasicMaterial();
+  const rig = createClassicAvatar(ADVENTURER, material);
+  for (const side of ['leftArm', 'rightArm']) {
+    const chain = rig.joints[side];
+    assert.equal(chain.fingers.length, 15);
+    assert.equal(chain.skeleton.bones.length, 23);
+    for (const f of chain.fingers) assert.ok(f.bone.quaternion.angleTo(chain.root.quaternion) > .05);
+    const weighted = new Set();
+    for (const part of ADVENTURER_PARTS.filter((p) => p.group === side && p.skinIndices)) {
+      for (let i = 0; i < part.skinIndices.length; i++) {
+        assert.ok(part.skinIndices[i] < 23);
+        if (part.skinWeights[i] > .01) weighted.add(part.skinIndices[i]);
+      }
+    }
+    for (let i = 8; i < 23; i++) assert.ok(weighted.has(i), `${side} knuckle ${i} has no vertices`);
+  }
+  const finger = rig.joints.rightArm.fingers[4];
+  const relaxed = finger.bone.quaternion.clone();
+  rig.set({ ...ADVENTURER, equip: { ...ADVENTURER.equip, rightHandItem: 'hammer' } });
+  for (let i = 0; i < 90; i++) rig.update({ grounded: true }, 1 / 60);
+  assert.ok(finger.bone.quaternion.angleTo(relaxed) > .5);
+  assert.ok(rig.joints.leftArm.grasp < .001);
+  rig.set(ADVENTURER);
+  for (let i = 0; i < 90; i++) rig.update({ grounded: true }, 1 / 60);
+  assert.ok(finger.bone.quaternion.angleTo(relaxed) < .001);
+  rig.dispose(); material.dispose();
+});
+
+test('sleeve boundary vertices stay joined to the torso through idle and sprint poses', () => {
+  const material = new MeshBasicMaterial();
+  const rig = createClassicAvatar(ADVENTURER, material);
+  const meshes = [];
+  rig.object.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
+  const core = meshes.find((o) => o.skeleton.bones[0].name === 'torso:pelvis' && o.parent.position.y === 0);
+  const key = (v) => v.toArray().map((x) => Math.round(x * 1e5)).join(',');
+  const vertices = new Map();
+  for (let i = 0; i < core.geometry.attributes.position.count; i++) {
+    vertices.set(key(new Vector3().fromBufferAttribute(core.geometry.attributes.position, i)), i);
+  }
+  const seams = [];
+  for (const arm of meshes.filter((o) => /Arm:root/.test(o.skeleton.bones[0].name))) {
+    const p = arm.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const at = new Vector3().fromBufferAttribute(p, i).add(arm.parent.position);
+      const index = vertices.get(key(at));
+      if (index !== undefined && at.y > .3) seams.push([arm, i, index]);
+    }
+  }
+  assert.ok(seams.length > 20, `only ${seams.length} shared sleeve vertices`);
+  const point = (mesh, i) => mesh.applyBoneTransform(i,
+    new Vector3().fromBufferAttribute(mesh.geometry.attributes.position, i)).applyMatrix4(mesh.matrixWorld);
+  for (let frame = 0; frame < 90; frame++) {
+    rig.update({ grounded: true, moving: frame > 20, running: frame > 20, sprinting: frame > 20,
+      distance: frame > 20 ? rig.speeds.sprint / 60 : 0 }, 1 / 60);
+    rig.object.updateMatrixWorld(true);
+    for (const [arm, i, j] of seams) assert.ok(point(arm, i).distanceTo(point(core, j)) < .00003,
+      `sleeve split at frame ${frame}: distance ${point(arm, i).distanceTo(point(core, j))}, at ${new Vector3().fromBufferAttribute(core.geometry.attributes.position, j).toArray()}, arm weights ${[0,1,2,3].map(k=>[arm.geometry.attributes.skinIndex.array[i*4+k],arm.geometry.attributes.skinWeight.array[i*4+k]])}`);
+  }
+  rig.dispose(); material.dispose();
+});
+
 test('exactly two bodies, the Traveller first and the default', () => {
   assert.deepEqual(CHARACTERS.map((c) => c.id), ['traveller', 'adventurer']);
   assert.equal(DEFAULT_AVATAR.character, 'traveller');
