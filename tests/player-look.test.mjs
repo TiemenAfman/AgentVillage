@@ -20,8 +20,9 @@ function room() {
   };
   return { roster, join };
 }
+// The Adventurer too (Plans/tweede-avonturier.md): which body is a slug the sea passes on.
 const LOOK = {
-  skin: 0xf1c9a5, tunic: 0x335577, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'helmet',
+  character: 'adventurer', skin: 0xf1c9a5, tunic: 0x335577, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'helmet',
   equip: { backpack: false, chestplate: true, leggings: false, boots: true, leftHandItem: 'shield', rightHandItem: 'sword' },
 };
 
@@ -44,7 +45,7 @@ test('a look is held to its shape: whatever else a socket hangs on it does not r
     equip: { backpack: 'yes', leftHandItem: 'x'.repeat(40), rightHandItem: 'sword', extra: 1 }, script: 'alert(1)',
   });
   assert.deepEqual(ann.p.look, {
-    skin: null, tunic: null, trim: null, hat: null, hatShape: null,
+    character: null, skin: null, tunic: null, trim: null, hat: null, hatShape: null,
     equip: { leftHandItem: null, rightHandItem: 'sword' },
   });
 });

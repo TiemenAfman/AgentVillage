@@ -14,6 +14,7 @@ import { refreshSprint, loadSprint, readAssignments, jiraConfig } from './lib/sp
 import { refreshIssues, loadIssues, issueByKey, githubConfig } from './lib/issues.mjs';
 import { dispatch, agentLogTail, newcomer, found, liveAgents, stopAllAgents } from './lib/dispatch.mjs';
 import { banish, unbanish } from './lib/banish.mjs';
+import { dismissWaiting, undismissWaiting } from './lib/waiting-dismissed.mjs';
 import { readTranscript, talk } from './lib/chat.mjs';
 import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
 import {
@@ -1051,8 +1052,9 @@ if (req.url === '/api/command' && req.method === 'POST') {
     let body;
     // More than the default: since the work sites came along (the fields, the gardens and
     // five hundred trees) a big village's report is past 64 kB. The caps in
-    // lib/placements.mjs are what bound it; this only has to let them be reached.
-    try { body = await readBody(req, 256 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    // lib/placements.mjs are what bound it; this only has to let them be reached - five
+    // thousand buildings at ~45 bytes each are past 256 kB on their own.
+    try { body = await readBody(req, 1024 * 1024); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
     let saved;
     try { saved = savePlacements(body); } catch (e) { return json(res, 500, { error: String(e.message || e) }); }
     // Worth republishing at once rather than waiting for the next scan: until this arrives
@@ -1336,6 +1338,29 @@ if (req.url === '/api/command' && req.method === 'POST') {
       log(`${(b && b.name) || buildingId} sent off the island`);
     }
     await rescan('banish');
+    return json(res, 200, { ok: true, buildingId, undo: !!undo });
+  }
+
+  // Takes a settler out of "waiting for you" until they say something new (issue #78,
+  // lib/waiting-dismissed.mjs), or puts them back. Keeper-only like every write here: not on
+  // PUBLIC_API. What is kept is the `since` of the wait as the island last showed it, so a
+  // turn written after that brings the flag back by itself.
+  if (p === '/api/waiting/dismiss' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    const { buildingId, undo } = body || {};
+    if (!buildingId) return json(res, 400, { error: 'buildingId is required' });
+    const village = readJson(VILLAGE_FILE, null);
+    const b = village && (village.buildings || []).find((x) => x.id === buildingId);
+    if (!b || !b.sessionId) return json(res, 404, { error: 'no such settler' });
+    if (undo) {
+      undismissWaiting(b.sessionId);
+      log(`${b.name} waiting again`);
+    } else {
+      dismissWaiting(b.sessionId, b.waiting && b.waiting.since);
+      log(`${b.name} archived out of waiting`);
+    }
+    await rescan('waiting');
     return json(res, 200, { ok: true, buildingId, undo: !!undo });
   }
 
@@ -1685,10 +1710,6 @@ if (req.url === '/api/command' && req.method === 'POST') {
     if (f) return sendFile(req, res, f, { noStore: true });   // our own code: never cached
   }
 
-  // The service worker wants revalidation rather than no-store: browsers refuse to
-  // register a worker they were told never to keep at all.
-  if (p === '/sw.js') return sendFile(req, res, path.join(WEB, 'sw.js'), { cache: 'no-cache' });
-
   const rel = p === '/' ? 'index.html'
     : p === '/demo' ? 'demo.html'          // the model sheet: every object on one field
       : p === '/editor' ? 'editor.html'    // the workbench: pick a model apart and nudge it
@@ -1854,6 +1875,8 @@ function codexSettlers() {
 // Deliberately NOT on PUBLIC_API. It is the inverse of the redaction, and handing it to a
 // visitor would undo every bit of it in one request.
 let crowdIds = {};
+// What the last bundle had to leave out, as logged - see islandBundle.
+let toldCut = '';
 // And the other way round, for the animals' public card: which redacted id the bundle gave a
 // settler, or null when the bundle does not carry them. A linear walk, because it is asked
 // for at most four friends of at most six animals.
@@ -1926,6 +1949,10 @@ function islandBundle() {
       keeper: islanderName,
     }, named);
     crowdIds = named.ids || {};
+    // Said once per change, not once a scan: a village past the bundle's caps (SENT in
+    // lib/islandbundle.mjs) used to lose its whole town on the sea without a word.
+    const cut = (named.cuts || []).map((c) => `${c.what} ${c.had}/${c.cap}`).join(', ');
+    if (cut !== toldCut) { if (cut) log(`[sea] the island is past the bundle's caps, sending only the first: ${cut}`); toldCut = cut; }
     return bundle;
   } catch {
     // An island that has never been scanned has no terrain hash, and buildBundle says so

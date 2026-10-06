@@ -264,3 +264,23 @@ test('Settings: three columns, the controller\'s dimmed and dead without a pad, 
   // the rows that cannot be rebound: the sticks
   assert.deepEqual(Object.keys(STICK_LABEL).sort(), ['back', 'forward', 'left', 'right']);
 });
+
+// ---- the planner (issue #92) -------------------------------------------------------------------
+
+test('the planner has a key of its own, and it is not P, which is sow', () => {
+  clean();
+  assert.deepEqual(keysOf('plan'), ['u', null]);
+  assert.equal(keyOf('plant'), 'p');
+  // U is nobody else's: no other action, no chip letter from the sky, nothing in the planner itself.
+  const main = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  const orbit = main.match(/const ORBIT_KEYS = \{([\s\S]*?)\};/)[1];
+  assert.doesNotMatch(orbit, /\bp:|plan-btn/, 'P no longer opens the planner from the sky');
+  assert.doesNotMatch(orbit, /\bu:/);
+  assert.match(main, /keysOf\('plan'\)\.includes\(k\) \? 'plan-btn'/, 'the sky asks the binding');
+  const plan = readFileSync(new URL('../web/js/plan-mode.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(plan, /'KeyU'|=== 'u'/);
+  // and it rebinds like any other key: P handed to the planner, sow gets U back
+  assert.equal(bindKey('plan', 0, 'p'), 'plant');
+  assert.equal(keyOf('plant'), 'u');
+  assert.equal(canon('u'), 'p', 'on foot U now sows');
+});

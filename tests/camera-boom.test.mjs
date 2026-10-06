@@ -132,7 +132,11 @@ test('a camera body is its boxes turned with it, and passes over a box its start
 
 // ---- outside -------------------------------------------------------------------------------------
 
-function island(built, at = [30, 30]) {
+// `lift` is how far the page sets the building down from its asset's y = 0: none for most, but the
+// Salty Kraken's rock runs on a skirt below the foot of its stair, which is what stands on the ground
+// (web/js/pirate-ground.js), so its floors, solids and boxes go down with it.
+const lifted = (list, lift) => (list || []).map((o) => ({ ...o, ...(o.y != null ? { y: o.y + lift } : {}), ...(o.y0 != null ? { y0: o.y0 + lift } : {}), ...(o.y1 != null ? { y1: o.y1 + lift } : {}) }));
+function island(built, at = [30, 30], lift = 0) {
   fresh();
   const flat = () => 0.1;
   const sea = { height: flat, bedAt: flat, regionAt: () => null, levelKey: () => null };
@@ -140,10 +144,10 @@ function island(built, at = [30, 30]) {
   const dom = { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} };
   const walk = createWalkMode({
     scene: new THREE.Scene(), camera, terrain: { half: 64, size: 128, worldHeight: flat }, ground: sea,
-    material: new THREE.MeshBasicMaterial(), dom, cameraBodies: () => [camBodyOf(built.camBoxes, { x: 0, z: 0 })],
+    material: new THREE.MeshBasicMaterial(), dom, cameraBodies: () => [camBodyOf(built.camBoxes, { x: 0, z: 0, y: lift })],
   });
-  walk.enter({ at, facing: [at[0], at[1] + 1], blockers: built.solids, interactables: [], onExit: noop });
-  if (built.surfaces) walk.setSurfaces(built.surfaces);
+  walk.enter({ at, facing: [at[0], at[1] + 1], blockers: lifted(built.solids, lift), interactables: [], onExit: noop });
+  if (built.surfaces) walk.setSurfaces(lifted(built.surfaces, lift));
   return { walk, camera };
 }
 function stand(walk, x, z, y) {
@@ -153,10 +157,11 @@ function stand(walk, x, z, y) {
 
 // Every spot within `out` of the building one can stand on, every `step`, each looked at from the
 // turns and pitches given: how many have the building between the camera and the eye.
-function views(built, { step = 0.4, out = 1.2, yaws = 12, pitches = [0.28, -0.4, 0.8] } = {}) {
+function views(built, { step = 0.4, out = 1.2, yaws = 12, pitches = [0.28, -0.4, 0.8], lift = 0 } = {}) {
   const mesh = new THREE.Mesh(built.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  mesh.position.y = lift;
   mesh.updateMatrixWorld(true);
-  const { walk, camera } = island(built);
+  const { walk, camera } = island(built, [30, 30], lift);
   const bb = built.bbox;
   let n = 0, hidden = 0;
   const worst = [];
@@ -191,7 +196,7 @@ for (const [name, spec, most] of [
 
 test('beside the Salty Kraken - its rock, its hull and its stair - neither', () => {
   const built = buildBuilding({ id: 'c:piratetavern', kind: 'civic', civicType: 'piratetavern', style: 'unknown' }, {});
-  const { n, hidden, worst } = views(built, { step: 0.8, yaws: 8 });
+  const { n, hidden, worst } = views(built, { step: 0.8, yaws: 8, lift: 0.1 - built.anchors.door[1] });
   assert.ok(n > 800, `only ${n} views`);
   // 17% before the boom
   assert.ok(hidden / n <= 0.01, `${hidden} of ${n} views look through the Kraken, e.g. ${JSON.stringify(worst)}`);
@@ -221,7 +226,8 @@ function sweep(walk, camera, slack) {
 test('looking round at the foot of the Kraken\'s stair, the camera does not jump onto the flight', () => {
   const built = buildBuilding({ id: 'c:piratetavern', kind: 'civic', civicType: 'piratetavern', style: 'unknown' }, {});
   for (const [x, z, y, pitch] of [[2.6, 3.0, 0.1, 0.28], [2.6, 3.0, 0.1, -0.4], [-0.9, 2.2, 1.6, -0.4], [2.45, 1.9, 3.21, -0.4]]) {
-    const { walk, camera } = island(built, [x, z]);
+    // the heights are over the foot of the stair, which the page stands on the ground
+    const { walk, camera } = island(built, [x, z], -built.anchors.door[1]);
     stand(walk, x, z, y);
     walk.state.camPitch = pitch;
     // 0.24 onto the flight and 0.78 round a corner before (2.16 beside a post a hand from the body,

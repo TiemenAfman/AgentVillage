@@ -105,7 +105,9 @@ test('the original avatar keeps every triangle while its limbs animate independe
   assert.equal(vertices, merged.attributes.position.count - hidden.attributes.position.count);
   animated.update({ moving: true, running: false, grounded: true, crouching: false,
     sitting: false, lying: false, phase: Math.PI / 2 }, 1);
-  const rotations = animated.object.children.slice(1).map((part) => part.rotation.x);
+  // The four limbs' own pivots: the legs hang from the pelvis and the arms from the collarbones
+  // now (classic-avatar.js mounts), so they are no longer the root's direct children.
+  const rotations = Object.values(animated.joints).map((chain) => chain.root.parent.parent.rotation.x);
   assert.ok(rotations.some((angle) => Math.abs(angle) > 0.2));
   assert.ok(rotations.some((angle) => angle < 0) && rotations.some((angle) => angle > 0));
   animated.dispose();
@@ -179,6 +181,9 @@ test('a beer is drunk from by its own hand, one swallow per drink', () => {
 
   // Only the hand with the glass in it drinks: not the sword beside it, not an empty fist.
   const lone = withHands('beer', null), armed = withHands('sword', 'beer');
+  // Both on one clock: the idle breath lifts the chest and the arms hanging from it, so two
+  // rigs a second apart hold their glasses a breath apart. `lone` is stood for a second below.
+  armed.update(still, 1);
   assert.equal(lone.held('rightArm'), 'beer');
   assert.equal(lone.drink('leftArm'), false, 'drank from an empty hand');
   assert.equal(armed.drink('rightArm'), false, 'drank from a sword');
@@ -427,7 +432,8 @@ test('Blender limb weights produce bending knees, ankles, elbows and wrists', ()
   for(let i=0;i<80;i++)rig.update(pose,1/60);
   assert.deepEqual(Object.keys(rig.joints).sort(),['leftArm','leftLeg','rightArm','rightLeg']);
   for(const chain of Object.values(rig.joints)){
-    assert.equal(chain.skeleton.bones.length,3);
+    // Root, bend and end, and a leg's toe at the ball of the foot.
+    assert.equal(chain.skeleton.bones.length, chain.toe ? 4 : 3);
     assert.ok(Math.abs(chain.bend.rotation.x)>.1);
     assert.ok(Math.abs(chain.end.rotation.x)>.01);
   }

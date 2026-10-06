@@ -3,6 +3,8 @@
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
+- 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
+
 ## Besluiten die nog niet in een eigen plan zitten
 
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
@@ -27,6 +29,8 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   herstart zet hem terug") — zonder dit kan het enige bootje van een eiland voorgoed aan de
   overkant blijven liggen door iemand die wegliep en niet terugkwam. Alleen een boot zonder
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
+
+- 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory.
 
 ## Plannen
 
@@ -108,6 +112,12 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   Pixal3D-kitstukken uit `~/.promptholm/hd/` naast de bake, met Forced SD / Auto / Forced HD onder Settings →
   Graphics (spelkant gebouwd op `claude/hd-pakket`), een eigen git voor het pakket (nog niet opgezet) en een
   skill voor de hele keten (gepland).
+- 🚧 [kraken-op-zee.md](kraken-op-zee.md) — de Salty Kraken gaat van het strand een eindje de zee in: op een rots
+  in ondiep water, met een loopplank van het zand naar de voet van de trap (afgeleid uit het plot, gelopen als
+  steiger), rotsen die uit het water oprijzen in plaats van op de grond te staan, en de tentakel in de rots.
+  Eénmalige verhuizing van de kroeg die al op het strand staat; een minor.
+- 🚧 [kraken-dek.md](kraken-dek.md) — het dek van de Salty Kraken beloopbaar: middendek en beide kasteeldaken met ladders,
+  een deur in het achterkasteel naar het luik in het kraaiennest binnen, en een ladder langs de romp vanaf de trap.
 - 🚧 [bloom-en-aa.md](bloom-en-aa.md) — bloom en anti-aliasing als instelling (Settings → Graphics): three's
   postprocessing gevendord, bloom eerst alleen in kamers, AA MSAA / SMAA / uit.
 - 🚧 [verdiepingen-binnen.md](verdiepingen-binnen.md) — beloopbare verdiepingen en trappen in kamers (voor de

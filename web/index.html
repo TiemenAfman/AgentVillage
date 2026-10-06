@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>html{background:#0d1420}</style>
 <title>Promptholm</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🏝️</text></svg>">
 <meta name="theme-color" content="#0d1420">
 <meta name="description" content="A 3D island where the Claude agents you work with live.">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icons/island-192.png">
 <script>
 // The page reports its own errors from js/main.js - which is exactly the file that does
 // not run when something in its import graph 404s. The import fails, main.js never gets
@@ -124,7 +123,7 @@
     <div class="nav-group" id="nav-chips" role="toolbar" aria-orientation="horizontal" aria-label="Island actions">
       <button class="chip nav" id="found-btn" aria-keyshortcuts="N" title="Start a new session on the island (N)" aria-label="New settler" data-key="N"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M19 6v6M16 9h6"/></svg><span class="lbl">New settler</span></button>
       <button class="chip nav" id="walk-btn" aria-keyshortcuts="Enter" title="Walk the island on foot (Enter)" aria-label="Walk" data-key="↵"><svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="4.5" r="2"/><path d="M9 21l3-7 3 3v4"/><path d="M7 12l2.5-4.5L13 7l3 4 3 1"/><path d="M12 14l-.5-5"/></svg><svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V6M6 12l6-6 6 6M6 3h12"/></svg><span class="lbl">Walk</span></button>
-      <button class="chip nav" id="plan-btn" aria-keyshortcuts="P" title="The island from above: move hamlets, zone ground (P)" aria-label="Plan" hidden data-key="P"><svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/></svg><svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="lbl">Plan</span></button>
+      <button class="chip nav" id="plan-btn" aria-keyshortcuts="U" title="The island from above: move hamlets, zone ground (U)" aria-label="Plan" hidden data-key="U"><svg class="ico ico-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/></svg><svg class="ico ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="lbl">Plan</span></button>
       <button class="chip nav" id="build-btn" aria-keyshortcuts="B" title="Put something on the island (B)" aria-label="Build" data-key="B"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5l5 5-2.5 2.5-5-5z"/><path d="M11.5 9.5L4 17l3 3 7.5-7.5"/><path d="M13 5l2.5-2 5 5-2 2.5"/></svg><span class="lbl">Build</span></button>
       <button class="chip nav" id="say-btn" aria-keyshortcuts="T" title="Say something to everybody on the island (T)" aria-label="Say" hidden data-key="T"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-5 4v-4H4z"/></svg><span class="lbl">Say</span></button>
       <span class="chips-sep" aria-hidden="true"></span>
@@ -173,6 +172,8 @@
         <button class="sysmenu-tab" role="tab" data-tabbtn="help">Help</button>
       </div>
       <button class="btn sysmenu-back" id="sysmenu-close">Back to the island <kbd>Esc</kbd></button>
+      <!-- Only on foot outdoors (ui.js, handlers.canRespawn): for whoever is adrift with no boat. -->
+      <button class="btn sysmenu-respawn" id="sysmenu-respawn" title="Back to your town square - or, with no island of your own, to your boat" hidden>Respawn to town</button>
       <p class="muted sysmenu-build" id="sysmenu-build"></p>
     </nav>
     <div class="sysmenu-body">
@@ -200,7 +201,7 @@
         <div class="chips wrap"><button class="chip" id="legend-btn" title="What everything on the island means (L)">Open the legend</button></div>
         <p class="muted">The legend stands beside the island rather than over it, so you can look from one to the other.</p>
         <h3 class="sec">Keys</h3>
-        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>K</kbd> quests · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>P</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
+        <p class="muted sysmenu-keys">From the sky: <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>O</kbd> overview · <kbd>N</kbd> new settler · <kbd>Enter</kbd> walk · <kbd>J</kbd> animals · <kbd>K</kbd> quests · <kbd>T</kbd> say · <kbd>L</kbd> legend<span id="sysmenu-plan-key"> · <kbd>U</kbd> planner</span> · <kbd>Esc</kbd> this menu.</p>
         <p class="muted sysmenu-keys">On foot: the first <kbd>Esc</kbd> frees the mouse, the second takes you up into the sky. The rest is under Controls.</p>
       </section>
     </div>
@@ -328,22 +329,6 @@
 <div class="plan-band" id="plan-band" hidden></div>
 
 <div id="veil"></div>
-
-<div class="fabs" id="fabs">
-  <button class="fab" id="install-btn" title="Install the island as an app" aria-label="Install the island as an app" hidden>
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>
-    </svg>
-  </button>
-  <button class="fab" id="fullscreen-btn" title="Fullscreen" aria-label="Fullscreen">
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="expand">
-      <path d="M8 3H3v5M16 3h5v5M16 21h5v-5M8 21H3v-5"/>
-    </svg>
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-icon="collapse" hidden>
-      <path d="M3 8h5V3M21 8h-5V3M21 16h-5v5M3 16h5v5"/>
-    </svg>
-  </button>
-</div>
 
 <div id="labels"></div>
 <div id="toasts"></div>

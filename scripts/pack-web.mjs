@@ -26,7 +26,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { readBuildInfo } from '../lib/buildinfo.mjs';
-import { copyPage, writeStandalone, shelfId, contentStamp, doorHtml, shelfJson, webManifest, GZIP_EXT, ROOM_ONLY } from './pack-page.mjs';
+import { copyPage, writeStandalone, shelfId, contentStamp, doorHtml, shelfJson, GZIP_EXT, ROOM_ONLY } from './pack-page.mjs';
 
 export const OPEN_SEA = 'https://agentvillage.xeroxmsj.freeddns.org/';
 
@@ -63,8 +63,6 @@ export async function packWeb({ sea = OPEN_SEA, out = path.join(ROOT, 'dist', 'p
   const shelf = path.join(out, id);
   copyPage({ web: WEB, shared: SHARED, out: shelf });
   writeStandalone(shelf, { sea, build, host: 'web', shelf: id });
-  const manifest = path.join(shelf, 'manifest.webmanifest');
-  fs.writeFileSync(manifest, webManifest(fs.readFileSync(manifest, 'utf8')));
 
   let raw = 0, packed = 0, boot = 0;
   for (const file of files(shelf)) {

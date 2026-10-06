@@ -108,7 +108,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
+  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, onRespawn = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
   quietMs = QUIET_MS } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
@@ -341,6 +341,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           onEvicted({ ...m, x: m.x - ox, z: m.z - oz });
           break;
         }
+        // Respawn to town refused (lib/players.mjs): nowhere to go, or too soon. A yes is the
+        // `evicted` above; a sea from before the message says neither (main.js respawnToTown).
+        case 'respawn': onRespawn({ ok: m.ok === true }); break;
         // Somebody talking. The server sends this to everybody including us, so our own
         // line comes back down this same wire and the page can show the conversation in
         // the order the island saw it instead of the order we typed it.
@@ -556,6 +559,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // Our look, when the wardrobe changes it - and kept for the next connect.
     setLook(spec) { look = spec || null; if (look) send({ t: 'look', ...look }); },
     leaveBoat(id) { send({ t: 'boat', a: 'leave', id }); },
+    // Respawn to town (issue #74): only the asking - where to is the sea's (lib/health.mjs
+    // respawn). False when the line is down, so the caller can put us back itself.
+    respawn() { return walking && send({ t: 'respawn' }); },
     letGoBoat(id) { sendHull(); send({ t: 'boat', a: 'letgo', id }); },
     // And where the hull has got to, on the pose beat rather than a beat of its own: the
     // pilot is already sending ten poses a second and the boat is under them, so this is

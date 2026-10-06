@@ -450,9 +450,18 @@ district onto the next free lot (`moveToResort`; plot gets `lot: n`, `lobe: -1`)
 jetty east to x196, 20 lots. Top-level on purpose: not in `works` (`checkWorks`/`parseBundle` would make
 older seas refuse the island for a record that moves no ground), not on `districts.quay` (`migrateParcels`
 keeps a district only as its planks, and lib/plan.mjs moves districts by super-cell). **Option A: the
-district's `pier`/`shore` do not move** - they are the quay's harbour, so `standingQuay`, `kadehaven`,
-`waterfront`, moorings, boat 0 and the galleon are untouched; moving them took all of that out to sea. The
-resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
+district's `pier`/`shore` do not go to sea** - they are the quay's harbour, so `standingQuay`, `kadehaven`,
+`waterfront`, moorings, boat 0 and the galleon stay with them; moving them took all of that out to sea. They do
+move once onto the quay (`planKadePier`, issue #85, every pass after `planResort`, no gate: due while no harbour's
+shore is a kade cell): the kadehaven's record (harbour slot, and the district's planks when they are its) gets the
+wall cell as `shore` and `slip`, and the foot plus the nearest `fingers` finger's cells as `pier`; the old ramp
+and planks are one more `works.dig` (planKade had held them, an islet with the boats beside it mid-harbour), the
+slip path is the shore and the approach loses its boardwalk out there. A new hash, nothing older code misreads.
+After it, once, `planHarbourFloor` (`layout.harbourFloor`, top-level) digs every funnel cell wholly under water,
+above `CHANNEL_H` and reached from the head, held off what stands: the digs before it each took their own mask
+(planHaven only *sand*, planKade basin/west rows/dock/anchorage) and the ring's bay between them showed from
+above as square, lighter shallows (Hoogezand: 197 cells, hash 76dc0053 -> 0d988d69, nothing moved).
+The resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
 set's `DECK` is 1.44) and the district's `deck` (`resortCells(layout).drawn`: the shortest walk inside the
 deck from the jetty to every occupied lot's doorstep, grows with the district; `centre` is the jetty head).
 In the replay (placeAll and `replayGrid`, `markResort`) the drawn deck is PATH, the rest of the deck and
@@ -534,6 +543,16 @@ is back to all three of a loopback socket, a known `Host` and a matching `Origin
 flag and no path list that can spend any of them, and an `inviteCode` is back to buying a
 look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its bundle, and
 `parseBundle` is the whitelisting rebuilder on the side that has to survive a lie.
+
+**A bundle has two sets of caps, and the sea's is raised first.** `CAPS` in `lib/islandbundle.mjs`
+is what a strict `parseBundle` accepts (the sea), `SENT` what `buildBundle` packs to (`ctx.caps`
+picks by `strict`); a list one past a sea's cap is refused *whole*, so `SENT` may never be above
+the `CAPS` of any sea still out there, and raising a cap is two steps: `CAPS` in a patch plus a
+redeploy of the open sea, `SENT` in the next minor (0.9.2 raised `CAPS`, 0.10.0 set `SENT` equal to it). Past a sending cap `firstOf` orders civics,
+then houses, then sheds (roads before `path:house:` front paths) and only then cuts, and
+`out.cuts` / the `[sea] ... past the bundle's caps` log line say so - Hoogezand at 962
+buildings once sent its first 600 and no civic at all, so the sea stood no keeper anywhere.
+Hoogezand packs to 743 kB uncapped; `MAX_BUNDLE_BYTES` (lib/sea.mjs) is 8 MB for `CAPS`.
 
 **One material, one batch per island** ([Plans/DONE/gebouwen-in-een-batch.md](Plans/DONE/gebouwen-in-een-batch.md)).
 Which texture sheet a face uses is a number carried on the vertex, not a material of its own,
@@ -651,6 +670,9 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   in the fade into the ocean, one quad per row of open sea - the same outline and fade as the
   old single plane over the archipelago's bounding box, which was 2.5M of 2.75M triangles on
   a full page. Swell (`aWave`) goes to zero before the dense/coarse join so the two meet flat.
+  Over ground at or above the sea (`aDepth >= 0`) the swell's lift is capped at
+  `max(aDepth - 0.05, 0)`: uncapped, its 0.09 crests broke through every low plain as rows of
+  puddles (#95, grown rings leave beaches of corners at 0.00-0.09); still water is unchanged.
   The water shader fogs by `distance(vWorld, cameraPosition)` per pixel: a radial fog
   interpolated across the ocean disc's huge triangles over-fogged it.
   And a small dense patch sails with you (`nearWaterPlan`, `setWaterFocus` from main.js each
@@ -662,6 +684,11 @@ handlers; it was handed to `createNet` once and every slider moved its label and
 - **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
   islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
   pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
+  The quality governor (`web/js/quality.js`) may redraw the shadow map only every n-th frame, and then
+  main.js moves `renderer.info.render.frame` on before a frame without it: three r170 sends a
+  skeleton's bones once per that number and draws the shadow pass after it has moved, so every
+  skinned body (the player's torso and limbs, a peer, an imp) was drawn a frame late on the frame
+  after a shadow redraw - the Adventurer's torso trembled round its still head (`tests/quality.test.mjs`).
 - **Fog-free lights at the horizon fade before the far plane** (`horizon.js update`, reach
   0.9 of `camera.far`), and the sun and moon hang inside it (`world.setFar`).
 - **`rec.group.visible` is not a rendering flag and must not be written per frame.** It is
@@ -1009,11 +1036,14 @@ the model squashed - so its blockers (`FOOT`) follow the model. `kit()` takes a 
 `/demo` shows the pack in its rooms (`?sd` for the bake). Under Node, GLTFLoader needs a `ProgressEvent`
 stub.
 
-**A room's own sets load at its door, never at boot** (the second exception): `models.js` `LAZY` holds the
+**A room's own sets are parsed off the main thread from the boot on, and the room built behind the boot screen** (the second exception): `models.js` `LAZY` holds the
 Salty Kraken's hall (`piratetavern_room`, 34 MB) and its ship's parts (`krakenkit`), imported on demand by
-`loadSet`; `interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which, main.js starts
-them as soon as that room's door is within reach and `enterInterior` waits for them ("The door sticks a
-moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
+`loadSet` - in a module worker (`offThread`, `lazy-set-worker.js`: positions and colours come back as transferred
+Float32Arrays, which every reader takes like a plain array; importing 34 MB on the page froze it ~1.7 s).
+`interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which. main.js starts them at the top of
+`boot()`, and `warmRooms` builds each room (`roomFor`) and `renderer.compile`s it before `ui.boot(true)` if they
+are in within 3 s (~0.8 s of boot; the first visit then costs one frame, not three seconds) - otherwise a door
+within reach still starts them and `enterInterior` waits ("The door sticks a moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
@@ -1041,9 +1071,12 @@ boat's stamina pool), so a second kind of vehicle in it would make them all lie.
 mounts and dismounts in any walk mode created with `bikes: true` (the island and `/demo`, not
 rooms); the bike comes out of the satchel and goes back in, so no server state exists for it.
 `stepBike` (`web/js/bicycle.js`) is pure like `stepBoat` and takes walk.js's own `groundAt` and
-`blocked`, so water, walls and ledges above `STEP_UP` stop it exactly as they stop feet. Space hops with
+`blocked`, so walls and ledges above `STEP_UP` stop it exactly as they stop feet. Water stops it
+only past `BIKE_WADE` (0.3) deep: a puddle on the beach and a shelving shore are ridden on the bed,
+a river's middle (0.68 at the shallowest on Hoogezand), the fairway (`CHANNEL_H`) and the sea are
+walls. Getting on and off still wants dry ground (`BIKE_SHORE`), since feet in water swim. Space hops with
 the feet's own `JUMP_V`/`GRAVITY` (copied into `BIKE_HOP`/`BIKE_GRAVITY`, the test reads walk.js);
-in the air water is no wall, and a landing in it sets `splash`, on which walk.js puts the bike
+in the air water is no wall, and a landing in deep water sets `splash`, on which walk.js puts the bike
 away and leaves a swimmer. The camera on a bike is free: any look input resets
 `riddenSinceLook`, and it only trails the bike again after `RECENTRE_AFTER` of riding (the boat
 still trails every frame). The mesh
@@ -1387,7 +1420,12 @@ A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per h
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
 then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
 faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
-Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
+Only the 0-hp hit evicts, then whole + 5 s immunity. **Respawn to town** (the Esc menu, under
+Back, only on foot outdoors; issue #74) is the same evict asked for: the page sends a bare
+`{t:'respawn'}`, `health.respawn` sends you to `refuge` with `why: 'respawn'` - no health taken
+or given, no immunity, at most once per `RESPAWN_EVERY_MS` - and a no is `{t:'respawn', ok:false}`.
+A sea from before it says nothing, so after `RESPAWN_WAIT_MS` main.js `respawnHere` puts you
+there itself (feet are the page's); the open sea needs a redeploy for the sea's own answer. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
 guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`, also
@@ -1546,6 +1584,30 @@ The `/avatar-motion.html` workbench shows walk/run/idle and the live inventory.
 The Outfit thumbnail includes the shirt, vest, belt and pouch.
 Resident rebuilds preserve faces from their own blend rather than copying the player.
 See [Plans/DONE/ambachtelijke-reiziger.md](Plans/DONE/ambachtelijke-reiziger.md).
+**A player has a second body to choose, the Adventurer** ([Plans/tweede-avonturier.md](Plans/tweede-avonturier.md)).
+`spec.character` (`'traveller' | 'adventurer'`, anything else the Traveller) picks it, and
+`web/js/player-bodies.js` is the one table of which parts, rig, joints and eye height belong to
+which: `avatar.js` builds from it, `classic-avatar.js` works each body's pivots out once
+(`bodyOf`), and `createClassicAvatar` swaps the whole rig into the same parent when a look
+changes body - read `rig.object`, `rig.handAttach`, `rig.hipY`, `rig.eye` off the rig, never
+keep them. `scripts/build-adventurer.py` rebuilds everything from the committed CC-BY GLB
+(`assets/adventurer/CREDITS.md`): texture sampled into per-corner `colors` (the body is not
+dyed, so the inventory hides Skin and Outfit for it - `dyeApplies`), ears and ponytail reshaped
+through the source's own bones, and the Traveller's gear refitted by measurement under the same
+names; hand items stay the Traveller's own in either hand. The sea passes `character` as a slug
+(`lookOf`); a sea or page from before it draws the Traveller.
+**The Adventurer moves by Mixamo's clips; the rig has a spine for them.** The torso is skinned to
+pelvis/spine/chest/neck bones, the legs hang from the pelvis, the arms from collarbones on the chest,
+the head from the neck - through *mounts* (`placeMounts`), groups whose matrix is their bone's change
+from rest, so every pivot keeps its rest position and code reading one is unchanged. Clips are
+baked, never loaded: `assets/mixamo/clips.json` -> `scripts/bake-mixamo-gait.py` -> `web/js/gait-clips.js`
+(the FBX themselves stay out of git - Mixamo's terms, a public repo),
+played in `playClips`/`applyClip` (gaits by distance with the clips' stride, so no foot slides; idle,
+jumps, swim, treading water and dig by time) and set on the ground by `plantFeet`. In the water such a body
+(`strokes`) gets walk.js's lean and none of the roll and nod the Traveller swims by (peers.js alike): over the
+clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
+without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
+clip is the `mixamo-clips` skill.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
@@ -1574,6 +1636,35 @@ into a free hand and gives the old item back; `digged()` counts flung shovelfuls
 turns the shovel with a quaternion (`unArm * Rx(tilt)`), not per-axis Euler undo: the arm is turned in about
 z while it digs and the two do not commute.
 
+**Tab is no key of the game's** (`web/js/page-keys.js`, every mode): outside a field and outside
+`TAB_ZONES` (a `[role="dialog"]` - the menu with Settings, the update card -, a `dialog`, an
+`aside.panel`, a `form`) it is cancelled, or it walked the focus round the HUD's chips and the next
+Space or Enter clicked one; a button let go of outside those zones gives its focus back
+(`pointerup`). Chrome's first `pointermove` after a pointer lock is taken can carry the cursor's
+whole jump as `movementX/Y`: walk.js drops it (`freshLock`) and any single move over `LOOK_JUMP`,
+noclip.js the latter, or `camPitch` lands on its limit and the camera looks at the sky
+(`tests/tab-key.test.mjs`).
+**The page is a game, not a document** ([Plans/minder-browser-meer-spel.md](Plans/minder-browser-meer-spel.md)).
+`web/js/page-keys.js` (installed from main.js, every mode) cancels outside fields what the browser would do:
+select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/print/save/source/history
+(`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
+tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
+`#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
+**Which chips stand is the mode's** (`body[data-mode]` = sky / foot / plan, written by ui.js `syncSidebar`, rules at
+the end of ui.css): a new chip shows everywhere until it is listed there. On foot only Fly up, Say, Map, Inventory and
+Quests, and the island's card only with Settings → On foot → *Island card on foot* (`promptholm.footcard`, body
+`.foot-card`); in the planner only Done. There is no round button at the bottom right any more.
+**There is no installable web app.** The island is played in promptholm.exe, the Android app or the browser at
+`/play`; the manifest, `sw.js` and the install button are gone, and main.js `unregisterWorkers()` takes down the
+worker a browser kept from before. Do not add a manifest back: a browser offers to install any page that has one.
+**Fullscreen is one switch** (`web/js/display.js`): Settings → Display, the button and Alt+Enter (F11 in the
+window). In promptholm.exe the *window* goes borderless (`promptholm://fullscreen/on|off`, handled in lib.rs's
+`on_navigation` beside close) and the choice is remembered (`promptholm.display`); in a tab it is the Fullscreen API.
+**The island's tooltip is `web/js/tooltip.js`**: keep writing `title`; it is moved to `data-tip` on hover, before the
+browser's grey box shows, and a trailing `(Key)` is drawn as a key cap.
+**The menu is a pause.** While the Esc menu is open the sky's letters (M, the chips' keys) do nothing behind
+it, and a chip clicked closes it first (`nav-chips` capture listener in main.js) - before, the chart and the
+planner opened under or over it and two layers stood on screen.
 **The browser keeps ctrl+W whatever the page says.** On foot, `walk.js` cancels every ctrl+letter and
 ctrl+digit shortcut a page is allowed to cancel (`BROWSER_KEYS`: all 26 letters, the digits and Tab - not
 the handful that once happened to hurt, which is how ctrl+A got through) and asks for a Keyboard Lock
@@ -1610,7 +1701,9 @@ secondary key, controller button ([Plans/toetsen-en-bindings.md](Plans/toetsen-e
 `web/js/keybinds.js` keeps them per browser (`promptholm.bindings`, only what differs from the default;
 the old one-key `promptholm.keys` is read as primary keys and not written); walk.js still tests the
 *default* keys, because `canon()` turns a pressed key into the default key of the action bound to it in
-either slot - so a new action is a row in `ACTIONS`, not a handler change. The arrow keys are the default
+either slot - so a new action is a row in `ACTIONS`, not a handler change. One row is not on foot: `plan` (default U) is the
+planner's chip from the sky, read by main.js's orbit handler through `keysOf('plan')` and kept out of
+`ORBIT_KEYS`, so it can never again share a letter with sow (P, issue #92). The arrow keys are the default
 secondary keys of walking (`canon` sends them to W A S D; an unbound default key is `null`, dead). A key
 or a button is one action's alone and taking one **swaps** (the loser is handed what the winner let go
 of); Esc, Alt/AltGr/Meta and the pad's Back and Start cannot be bound. The controller column comes out
@@ -1715,7 +1808,15 @@ beside it), else the room's spawn. Only while the door stands within `DOOR_SLACK
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only
 has to pause the walker, never touch the lock. A re-request without a gesture is allowed only
 after a lock the *page* released; after the user's Escape it needs a click, which is why a
-single click on the canvas takes it back and does not also swing. That first Escape only frees
+single click on the canvas takes it back and does not also swing - but not at once: Chromium
+refuses any new lock for ~1.3 s after the user's own Escape (`SecurityError`, "cannot be acquired
+immediately after the user has exited the lock"; measured in the desktop window), so `requestLock`
+asks again when that is over (`lockAgainSoon`, on the click's five seconds of activation; noclip.js
+likewise), and it never asks *while Escape is down* (`escDown`): a panel closed with Escape asked
+for the lock inside that keydown, got it, and the browser then took the same Escape as the user
+leaving it. The desktop window's confirm cards give the look back the same way (`resumeLock`, after
+the keyup when answered with Escape). Walk away from the window and the lock is gone for good: one
+click gets it back (the browser grants it to nothing else). That first Escape only frees
 the mouse (`unlockedAt` swallows it), the second leaves walk mode - except in a room, where it opens the
 menu with the room paused under it (interior.js `onEscape`, from main.js; `onMenuClose` hands the room back a
 turn later, or the closing Escape reopens it) and you leave by the door. Drag-to-look is the fallback
@@ -1897,6 +1998,12 @@ figure of eight over their chunk between the bed and just under the surface, and
 diving within 4 units; bubbles are one `Points` pool fed by every diver's mouth (`peers.divers()`,
 and the walker's own). Caps by tier (`CAPS`: full / modest / phone) bound reach and instances, and
 the reach never goes past the mist. Cosmetic: no fish is on the wire.
+
+**Archiving a wait is "until when", not a flag** (issue #78). The dossier's Archive posts
+`/api/waiting/dismiss` (keeper-only), which keeps the wait's `since` (lib/waiting.mjs: the last
+turn's timestamp) in `data/waiting-dismissed.json`; `buildVillage` drops a wait not newer than
+that (`isDismissed`), so a new turn brings the flag back by itself. In code it is "dismissed":
+`b.archived` already means the desktop app's own archive.
 
 **The hook must never disturb a session.** `hooks/on-session.mjs` silences stdout (a
 SessionStart hook's stdout is injected into the model's context) and always exits 0.
@@ -2097,12 +2204,33 @@ the back of the rock runs into the dune. A pub still on the three by three it ha
 road dropped and a pass re-run if pruning cut anything (`pubMoved`); with no lot it is put back where it stood
 (`putBackAt`, the chest too) and asked again next scan; scan.mjs keeps `layout.before-pub-<ts>.json`
 (`backUpBeforePub`). Measured on a copy of Hoogezand: from behind the quay to the beach at the funnel's head,
-(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor. Outside it is render 17 built literally: a galleon
+(148,253), and every other plot the same bytes. A new lot size in layout.json, so a minor.
+**Since then it stands in the sea, on a rock a little off the shore, reached by a gangway**
+([Plans/kraken-op-zee.md](Plans/kraken-op-zee.md); on the beach it read as "a beached boat in a meadow"):
+`pirateTavernSeaSite` is asked first and the beach site above only where the sea has nothing, then the ring. The lot
+all open water (`openWater`), no corner deeper than `PUB_SEA_FLOOR` -2.2, a ring of the same water round it, water
+being what a ship on the rede may take less the depth (`seaCell`'s rules) and not the funnel + 2, the quay's clearance,
+dug water or anything `fairwayHeld` holds; its front to the land, and the gangway is **`pubGangway` in
+shared/kraken.mjs** (the one copy, with `PUB_GATE`/`pubGate`): from the stair's step straight on over `PUB_PIER_MIN`
+3 to `PUB_PIER_MAX` 12 cells of that water to the first land, ranked nearest 5 long, then shallowest. The plot
+carries `sea: true` (and no town claim), its road `path:civic:piratetavern` **begins with the gangway's cells**
+(`civicRoad` -> `gangwayRoad`, then a strandpad from where it comes ashore), and those cells are also the path's
+`pier`, which the replay forces back to PATH over water (`replayPier`, placeAll and `replayGrid`; `growCanvas`
+shifts it) - in the bundle it is an ordinary path, so no sea needs redeploying. Its lot, ring and gangway are kept
+water (`pubWaterKeys` -> `keptWater`, `fairwayHeld`, and `growStep`'s lane like the resort's); the chest stands
+beside where the gangway comes ashore (`pubChestSpots` -> `seaChestSpots`). A pub already on the beach is lifted
+once like `liftedPub` and put back if the sea has nothing; `layout.pubSea` says the question was asked (set when a
+pub stands at rung 52+), so it is never asked again - Hoogezand's went from (148,253) to (115,308) rot 0 with a
+gangway of 7, the next two scans byte-identical. The page **derives the gangway** from the plot and its own terrain
+(`pirateGangway` in web/js/pirate-ground.js), draws it with the dock set without a head (`buildPierGeometry(…,
+{ head: false })`, `state.gangways` beside `state.docks` in `buildDocks`, rebuilt on `pubSig`), walks it as
+`levels` at `QUAY_DECK` plus the ramp and a `lip` into the lot, and puts its cells in the deck map the sea's crowd
+stands on. Pub moved, new layout fields: a minor (0.9.0). Outside it is render 17 built literally: a galleon
 standing whole on a rock, heeled 3 degrees, four kraken arms holding on (`scripts/build-piratetavern.py`, ~80k
 triangles, `HERO_BUDGETS.piratetavern` 95000 - every plank edge and bolt is geometry, since a building has no
 texture of its own; the mesh module is ~10 MB). The ship is modelled at 1x and scaled `SCALE` 2.5 at the end of
 the script; the stair, door, lanterns and sign are placed after that at a settler's scale. It is made for an
-**11 x 6 lot** (bbox held to 5.45 x 2.9 by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
+**11 x 6 lot** (bbox held to 5.45 x 2.9, the landing to the front edge at 3.0, by `tests/pirate-tavern-building.test.mjs`), which is `PUB_LOT` above
 ([Plans/piratenkroeg.md](Plans/piratenkroeg.md), "Bijsturing" and "Het kavel op het strand"). **No `anchor.flag`** - main.js hangs the district's flag on every one, and it flies its own Jolly
 Rogers - and no porch (`NO_PORCH`: the rock is its footing). **Its zigzag stair is walked**: the bake names every
 floor as an `anchor.deck.<name>.lo|hi` and every ramp as an `anchor.stair.<name>.lo|hi` corner pair, the ship's
@@ -2112,8 +2240,36 @@ a height (`pirateSolids`: each part from its foot to its top, the rails from `an
 blocks `PIRATE_RAIL_H` high, a low block under each high floor so nobody walks in under the stair, the hull
 from `anchor.solid.hull.lo|hi`; `WALKED_ANCHOR` in scripts/model-rules.mjs) - `tests/pirate-stair-walk.test.mjs` walks it with the real walk mode.
 `anchor.sign` is on its own post at the stair's foot (`PIRATE_SIGN_YAW` 0, board facing the water);
-`anchor.door` is on the ground at the foot of the stair, and E answers at the stoop by the door with the
-stoop's height as its `floor`. Rebuild with `node scripts/blender.mjs --background --python
+`anchor.door` is on the floor of the **landing** at the foot of the stair (planks on piles, `pier`/`jetty`
+surfaces, reaching the lot's front edge where the gangway arrives at model x 2.0), and E answers at the stoop by the
+door with the stoop's height as its `floor`. **The rock has a skirt**: below the landing every boulder is drawn on
+down `SKIRT` (2.7), widening, instead of being cut flat at y = 0 (a seam where rock met sand), and the whole model is
+lifted by `SKIRT` at the end so its lowest point stays y = 0; so the model's ground is `anchor.door[1]`, not 0 -
+`pirateTavernGround` returns `QUAY_DECK - door.y` in the sea and the lowest front ground `- door.y` on the beach, and
+`pirateSolids` measures its walls round that level (`PIRATE_UNDER`). **Its deck is walked** ([Plans/kraken-dek.md](Plans/kraken-dek.md)): the waist, the castle's roof and the
+forecastle are `deck.*`/`stair.*` strips the bake works out through `world_of` (heel across, sheer along), what
+stands on them `solid.<letters>.lo|hi` blocks (footprint at their foot - a mast leans with the heel) read by
+`pirateSolids`, bulwarks and balustrades rails; `solid.hull` stops under the deck; a ladder each up to the roofs (walked,
+steep `stair.*` ramps) and a **rope ladder** up the hull, hanging plumb from the boarding plank onto the zigzag's landing,
+that is *climbed* (issue #86): `anchor.climb.<name>.lo|hi` (foot stand, head step-off; `pirateClimbs` -> the build's
+`climbs` -> main.js `climbsOf` -> `walk.setClimbs`), taken and climbed like the galleon's (`fixedAhead`/`stepFixedClimb`
+beside the ship's `ladderUp`/`stepClimb`, in the world's frame, nothing on the wire), and the floor it reaches gets no
+dry block under it; a rock under a stair floor is no wall (`under`). The low blocks under
+the floors are `dry` (a wall to feet, not to a swimmer), and walk.js lets a body standing in several solids at
+once out by the depth summed over all of them (`leaving`): the part boxes overlap in the rocks, and a fall off the
+boarding plank used to land a swimmer where every step was deeper into one of them (#89). The castle front's door
+(`deck.door-step`, `krakenDeckDoor` in main.js) is a second `kind: 'tavern'` interactable with a `spot` (the room
+opens at `HATCH` in the crow's nest) and a `front` (the room's doorway still leads to the stoop); the hatch is an
+interior `exits` entry (`kind: 'exit'`, `onLeave(to)` -> `leaveInterior('deck')`). **Its flags, set sails and hooked lanterns move**:
+`isKrakenMoving` (buildings.js) keeps them out of the merge and `web/js/kraken-motion.js` hangs them as ONE geometry on the
+record's group, moved per vertex on the CPU like the Batavia's flags, measured off the bake by part name, on the sea's clock
+(`attachExtras` / `animateExtras` / record-extras.js); a new moving part means a name in both regexes
+(`tests/kraken-motion.test.mjs` holds them equal). With Detail on HD and the pack holding `civic_kraken_jollyroger`,
+both flags fly the hall's HD flag instead (`setKrakenDetail`, switched by main.js `applyDetail`, also once the
+manifest arrives): loaded by **`hdOutside`** in hd-pieces.js - a pack piece used outside, not fitted to its kit bake
+and without the room's light - fitted per axis to the bake cloth, waved in its vertex shader by the same sum (the
+phase reduced in JS: sea seconds lose all precision in a shader float), while the bake's flag groups are folded to
+one point (`m.hide`). Rebuild with `node scripts/blender.mjs --background --python
 scripts/build-piratetavern.py` (it exports with `DIGITS` 4) - `npm run models` only re-exports the committed
 .blend, and at six decimals, so it changes the module. **A build script that throws still exits 0** through
 `scripts/blender.mjs` and leaves the old module in place: grep its log for `Traceback` before trusting a bake. Inside is `ROOMS.piratetavern`
@@ -2470,6 +2626,28 @@ are not redirected either.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
 starts the islander exe (in `app\`, or next to it in a build folder; node directly when that
 exe is missing).
+**Three things make it a game window rather than a browser** ([Plans/DONE/eiland-als-desktop-app.md](Plans/DONE/eiland-als-desktop-app.md)
+has the base; the page's half is `web/js/desktop.js`, switched on by `PROMPTHOLM_DESKTOP`).
+*The pointer-lock bubble is hidden* (`src-tauri/src/bubble.rs`): WebView2 has no switch for Chromium's
+"press Esc to show your cursor" popup (WebView2Feedback#3511) and every walk-mode lock raises it for
+~4.7 s. It is a separate top-level popup of the WebView2 *browser* process (class `Chrome_WidgetWin_1`,
+TOPMOST|TOOLWINDOW|NOACTIVATE, ~525x58 centred at the top) that is **owned by our main window**, so a
+`SetWinEventHook` (out of context, own thread with a message loop) on CREATE..SHOW, filtered by owner +
+the pure `looks_like_bubble` (cargo test), finds it. Hiding it is not enough - Chromium shows it again
+every ~70 ms for as long as it lives (a 6 ms screen sampler caught 365 of 585 frames with only SW_HIDE) -
+so it is moved to -32000,-32000 first: 0 of 587. `PROMPTHOLM_KEEP_BUBBLE=1` turns it off. To re-measure:
+start the debug exe with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`, then CDP
+`Runtime.evaluate` reads `document.pointerLockElement` in the real window (the built-in preview pane cannot).
+*Fullscreen is the window's*: F11 and the Fullscreen chip navigate to `promptholm://fullscreen/<on|off|toggle|query>`
+(the close's door - cancelled in `on_navigation`, no IPC capability is opened to a remote page) and Rust
+answers `window.promptholmFullscreen(bool)` on every resize and on `query` (the page asks at boot, so a
+window that starts fullscreen is right), so the chip follows the real window. No HTML fullscreen, hence
+no Esc bubble, no Esc conflict and no Keyboard Lock (`lockKeys` returns in the window; Ctrl+W loses no tab).
+*The window is remembered*: position, windowed size, maximized and fullscreen go to `window.json` beside the
+WebView2 profile (throttled to 0.5 s, always on Destroyed; a position off every monitor is dropped), and the
+window is built hidden and shown once placed. Pitfall: started from a Claude desktop session these writes land
+in the MSIX LocalCache (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\com.promptholm.island\`), not the
+real AppData.
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
@@ -2541,7 +2719,9 @@ chat out of the stick's half, 44px targets, a tappable speech, no key letters on
 carries both always, the web only while somebody is touching (below). Edges from `--sl/--sr/--st/--sb`
 (`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
 the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
-The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name; two
+fingers on an open chart pinch it through the wheel's `zoomMapAt`, caught on the window in the capture
+phase - the first finger is taken back from the touch layer with a synthetic `pointercancel`)
 and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
 serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
@@ -2646,7 +2826,8 @@ environment variable (`PROMPTHOLM_*`; the old `SETTLERS_*` names are gone, with 
 "Settlers" survives only as what the island's inhabitants are called (`web/js/settlers.js`,
 `village.settlers`), which is the game's vocabulary rather than its name. The exceptions are
 deliberate: the GitHub repository and its URLs are still `AgentVillage` (renaming it is the
-owner's call), and `agentvillage.xeroxmsj.freeddns.org` is a real hostname.
+owner's call), and `agentvillage.xeroxmsj.freeddns.org` and `agentvillage.freeddns.org` are real
+hostnames (the same NPM proxy: `/` to the sea on :4750, `/play` to the web on :4760).
 
 Environment variables: `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` (the cork board),
 `PROMPTHOLM_GITHUB_REPO`, `PROMPTHOLM_MAX_AGENTS`, `PROMPTHOLM_PORT`, `PROMPTHOLM_CLAUDE_HOME`,

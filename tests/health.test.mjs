@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHealth, MAX_HEALTH, REGEN_AFTER_MS, REGEN_PER_S, IMMUNE_MS } from '../lib/health.mjs';
+import { createHealth, MAX_HEALTH, REGEN_AFTER_MS, REGEN_PER_S, IMMUNE_MS, RESPAWN_EVERY_MS } from '../lib/health.mjs';
 import { BLOCK_FRACTION } from '../lib/hostility.mjs';
 
 // A blow of a third of the bar and a bit, for what the bar does with blows. Not GUARD_HIT: how
@@ -17,8 +17,8 @@ function setup(opts = {}) {
   const p = { id: 'visitor', island: 'home', x: 0, y: 1, z: 0, conn: { send: m => messages.push(JSON.parse(m)) } };
   let players = [p], boats = [];
   const evictions = [];
-  const roster = { all: () => players, boats: { snapshot: () => boats }, evict(player, at, name, boat) {
-    evictions.push({ at, name, ...(boat ? { boat } : {}) }); [player.x, player.y, player.z] = at;
+  const roster = { all: () => players, boats: { snapshot: () => boats }, evict(player, at, name, boat, why) {
+    evictions.push({ at, name, ...(boat ? { boat } : {}), ...(why ? { why } : {}) }); [player.x, player.y, player.z] = at;
   } };
   const health = createHealth({ fleet: { get: id => islands.get(id) }, roster, now: () => time, ...opts });
   return { health, p, home, evictions, messages,
@@ -150,4 +150,42 @@ test('a second of lava is sixty, and while it keeps coming nothing grows back', 
   const s = setup();
   for (let i = 0; i < 10; i++) { s.health.hurt(s.p, 6, { kind: 'lava', island: 'De Vulkaan' }); s.wait(100); }
   assert.ok(Math.abs(s.health.health(s.p) - 40) < 1e-9, `after a second in lava ${s.health.health(s.p)} is left`);
+});
+
+// Respawn to town (issue #74): the same refuge as a capture, asked for.
+test('a respawn takes an islander to their own square, says why, and leaves the bar alone', () => {
+  const s = setup();
+  s.home.bundle.island.name = 'Hoogezand';
+  s.p.walking = true;
+  s.health.hurt(s.p, GUARD_HIT, guard);
+  const before = s.health.health(s.p);
+  assert.equal(s.health.respawn(s.p), true);
+  assert.deepEqual(s.evictions, [{ at: [150.5, 1.5, -39.5], name: 'Hoogezand', why: 'respawn' }]);
+  assert.equal(s.health.health(s.p), before, 'a respawn is no heal');
+  assert.equal(s.health.immune(s.p.id), false, 'and no shelter from the next blow');
+});
+
+test('a wanderer respawns in their skiff, and one with no skiff, or not walking, does not', () => {
+  const s = setup();
+  s.p.island = null;
+  s.p.walking = true;
+  assert.equal(s.health.respawn(s.p), false, 'nowhere to go');
+  s.boats([{ id: 'boat:w-visitor', x: -120, z: 60, yaw: 0, pilot: null }]);
+  s.p.walking = false;
+  assert.equal(s.health.respawn(s.p), false, 'a body nobody is steering is not asking');
+  s.p.walking = true;
+  assert.equal(s.health.respawn(s.p), true);
+  assert.deepEqual(s.evictions, [{ at: [-120, 0, 60], name: null, boat: 'boat:w-visitor', why: 'respawn' }]);
+});
+
+test('respawning again straight away is refused until RESPAWN_EVERY_MS has gone', () => {
+  const s = setup();
+  s.p.walking = true;
+  assert.equal(s.health.respawn(s.p), true);
+  s.wait(RESPAWN_EVERY_MS - 1);
+  assert.equal(s.health.respawn(s.p), false);
+  s.wait(1);
+  s.health.tick();
+  assert.equal(s.health.respawn(s.p), true);
+  assert.equal(s.evictions.length, 2);
 });

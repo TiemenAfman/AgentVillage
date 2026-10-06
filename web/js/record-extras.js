@@ -28,6 +28,7 @@ import { disposeBatavia } from './batavia.js';
 import { disposeClock } from './clock.js';
 import { disposePlaque } from './treasure-plaque.js';
 import { disposePirateSign } from './piratesign.js';
+import { disposeKrakenMotion } from './kraken-motion.js';
 
 export function disposeExtras(rec) {
   if (rec.nameplate) rec.nameplate.dispose();
@@ -52,4 +53,5 @@ export function disposeExtras(rec) {
   if (rec.quarry) disposeQuarry(rec.quarry);
   if (rec.ship) disposeBatavia(rec.ship);
   if (rec.pirateSign) disposePirateSign(rec.pirateSign);
+  if (rec.krakenMotion) disposeKrakenMotion(rec.krakenMotion);
 }

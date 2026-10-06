@@ -116,3 +116,18 @@ test('the rungs only ever get lighter, and every knob is one that costs no shade
   assert.doesNotMatch(src, /^import /m);
   assert.doesNotMatch(src, /\b(document|window|localStorage)\./);
 });
+// three.js (r170) sends a skeleton's bones once per info.render.frame and draws the shadow map after
+// that counter has moved on, so on the frame after a shadow redraw every skinned body was drawn a
+// frame late - the Adventurer's torso trembling round its still head at shadowEvery 2 (13 of 27
+// colour passes measured on the island). main.js gives such a frame a number of its own.
+test('a frame without the shadow map still draws skinned bodies in the pose of this frame', () => {
+  const src = fs.readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  const bump = src.indexOf('if (!renderer.shadowMap.autoUpdate && !renderer.shadowMap.needsUpdate) renderer.info.render.frame++;');
+  const ask = src.indexOf('renderer.shadowMap.needsUpdate = true; }');
+  const draw = src.indexOf('postFx.render(state.inside ? state.inside.scene : scene, eye');
+  assert.ok(bump > 0 && ask > 0 && draw > 0, 'the bump, the shadow request and the render are all there');
+  assert.ok(ask < bump && bump < draw, 'decided after the shadow request and before the render');
+  // The behaviour it works round, in the three.js this page is drawn with.
+  const three = fs.readFileSync(new URL('../web/vendor/three.module.js', import.meta.url), 'utf8');
+  assert.ok(three.includes('if ( updateMap.get( skeleton ) !== frame ) {'), 'three still sends bones once per render.frame');
+});

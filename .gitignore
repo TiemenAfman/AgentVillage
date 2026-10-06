@@ -48,3 +48,12 @@ tests/.tmp-*
 # Python bytecode from the Blender build scripts that import each other (scripts/krakenkit/).
 __pycache__/
 bundle-signing-key.pem
+
+# The keeper's reference sheets and Pixal3D tries (refs/krakenkit/...): photos of others among them and
+# models of tens of MB - they stay on this machine (CLAUDE.md, "The Salty Kraken's kit").
+/refs/
+
+# Mixamo's raw clips: Adobe allows them in a game, not handed out as files, and this repo is
+# public. What the game plays is baked into web/js/gait-clips.js; the FBX stay on the keeper's
+# machine (assets/mixamo/clips.json says which, the mixamo-clips skill how to get them again).
+assets/mixamo/*.fbx

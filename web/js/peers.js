@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
-import { createClassicAvatar, HIP_Y } from './classic-avatar.js';
+import { createClassicAvatar } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
@@ -447,10 +447,12 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         // Upright when they are going nowhere, lying in the stroke when they swim - off the
         // same `moving` walk.js eases its own body by, so both screens tread water alike.
         p.lie = diving ? 1 : stepLie(p.lie, moving, dt);
-        const swim = swimPose(p.lie, p.bob);
+        // A body that swims its own stroke gets the lean without the beat, as walk.js draws it.
+        const beat = p.avatar.strokes ? 0 : 1;
+        const swim = swimPose(p.lie, p.bob * beat);
         p.mesh.position.set(x, base + swim.dy, z);
-        p.mesh.rotation.set(diving ? divePitch(p.vy) + Math.sin(p.bob) * 0.1 : swim.pitch, yaw,
-          diving ? Math.sin(p.bob * 0.5) * 0.16 : swim.roll);
+        p.mesh.rotation.set(diving ? divePitch(p.vy) + Math.sin(p.bob) * 0.1 * beat : swim.pitch, yaw,
+          diving ? Math.sin(p.bob * 0.5) * 0.16 * beat : swim.roll);
       } else if (lying) {
         p.mesh.position.set(x, base, z);
         p.mesh.rotation.set(LIE_PITCH, yaw, 0);
@@ -544,7 +546,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.bike.place(x, y, z, yaw);
     p.bike.pose(r);
     p.bike.object.updateMatrixWorld(true);
-    seat.set(RIDER.saddle[0], RIDER.saddle[1] - HIP_Y, RIDER.saddle[2]);
+    seat.set(RIDER.saddle[0], RIDER.saddle[1] - p.avatar.hipY, RIDER.saddle[2]);
     p.bike.object.localToWorld(seat);
     p.mesh.position.copy(seat);
     p.mesh.rotation.set(RIDE_PITCH - r.pitch, yaw, r.lean);

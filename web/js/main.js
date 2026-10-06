@@ -36,7 +36,8 @@ import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
-import { isPirateTavern, pirateTavernGround } from './pirate-ground.js';
+import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
+import { HATCH as KRAKEN_HATCH } from './kraken-layout.js';
 import { projectVillage } from './history.js';
 import {
   createBuildingMaterial, buildBuilding, buildBoatGeometry,
@@ -64,7 +65,7 @@ import { createSfxLoader } from './sfx-loader.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
 import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
-import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, SPOTS_KEY } from './noclip.js';
+import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, onFootOutdoors, SPOTS_KEY } from './noclip.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -97,6 +98,7 @@ import { attachClock, updateClock, attachResetClock, updateResetClock } from './
 import { attachFountain, updateFountain } from './fountain.js';
 import { attachSawmill, updateSawmill } from './sawmill.js';
 import { attachPirateSign, updatePirateSign } from './piratesign.js';
+import { attachKrakenMotion, updateKrakenMotion, setKrakenDetail } from './kraken-motion.js';
 import { attachBatavia, updateBatavia, floatingPose } from './batavia.js';
 import { attachSmithy, updateSmithy } from './smithy.js';
 // The stable's horse and hens, the bakery's oven and its baker (Plans/DONE/stal-en-veld.md).
@@ -137,6 +139,7 @@ import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
 import { lavaLines } from './lava.js';
 import { installPageKeys } from './page-keys.js';
+import { installTooltips } from './tooltip.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
 import { createSeaLife } from './sea-life.js';
@@ -155,7 +158,13 @@ import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
 
 // In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
-installDesktopGuards();
+// When such a card is answered the mouse look comes back (a card lets go of the pointer lock).
+installDesktopGuards(window, {
+  resumeLock: () => {
+    if (state.inside) state.inside.resumeLock?.();
+    else if (state.mode === 'walk' && state.walk) state.walk.syncLock();
+  },
+});
 
 // Before any material compiles: the haze by distance, not depth (radial-fog.js), so a house
 // cut at Object Distance is in full fog at every corner of the screen and not only in the
@@ -504,7 +513,7 @@ const state = {
   // `sea` is every island there is, in world coordinates, and it is what the camera, the
   // haze and anything asking "is there ground here" read. For an island on its own the two
   // agree everywhere that matters; see shared/regions.mjs for why they are not one thing.
-  sea: createArchipelago(), region: null, guests: [], boats: [], docks: [],
+  sea: createArchipelago(), region: null, guests: [], boats: [], docks: [], gangways: [],
   bounds: { minX: -60, maxX: 60, minZ: -60, maxZ: 60 },
   // The home batch is in from the start: one pickable for every house (pickedId turns a hit
   // on it back into the house's id).
@@ -663,6 +672,7 @@ function endParley({ camera = true } = {}) {
 }
 // ctrl+A selects nothing on this page, in any mode (page-keys.js).
 installPageKeys();
+installTooltips();
 // Captured on the window, and stopped dead, for the same reason the chat and the town hall
 // stop theirs: walk.js listens on this window too, and the key that ends a conversation must
 // not also be read as "back to the sky" or as E at whatever is nearest.
@@ -835,13 +845,108 @@ function walkSurfaces() {
   return out;
 }
 
+// And the rope ladders a building hands walk mode to climb (the Salty Kraken's up its hull, issue #86:
+// buildings.js pirateClimbs), their two ends turned and placed the way surfacesOf turns a floor.
+function climbsOf(rec) {
+  const list = rec.built && rec.built.climbs;
+  if (!list) return [];
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+  const p = rec.group.position;
+  const at = (q) => ({ x: p.x + q.x * c + q.z * s, y: q.y + p.y, z: p.z - q.x * s + q.z * c });
+  return list.map((l) => ({ name: l.name, lo: at(l.lo), hi: at(l.hi) }));
+}
+
 // The island's planks that a cell cannot say (handOutDecks: docks' ramps and heads, the quays'
 // fingers and coping), kept apart from the buildings' floors above because the two change at
 // different moments - and walk.setSurfaces replaces the whole list, so whichever was handed over
 // last used to wipe the other. Both go through handSurfaces.
 let plankSurfaces = [];
 function handSurfaces() {
-  if (state.walk) state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
+  if (!state.walk) return;
+  state.walk.setSurfaces([...walkSurfaces(), ...plankSurfaces]);
+  const climbs = [];
+  for (const rec of state.byId.values()) if (rec.group.visible) climbs.push(...climbsOf(rec));
+  state.walk.setClimbs(climbs);
+}
+
+function sentHome(m) {
+  // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
+  // drowning says so in `breath` too, but a guard's capture says nothing about air).
+  air = AIR_S;
+  // Whatever brought us home answers a Respawn to town still waiting on the sea.
+  clearTimeout(respawnWait);
+  respawnWait = null;
+  // `why` (lib/players.mjs evict): 'drown', 'settled' or 'respawn'; a sea from before it sends
+  // none and gets the generic words, which name a place we were not sent home from.
+  const drowned = m.why === 'drown';
+  // The starter we stood on was taken by a newcomer (lib/sea.mjs retireStarter): nobody
+  // threw us off, and the sea laid our skiff out past the newcomer's coast, at m.x/m.z.
+  const settled = m.why === 'settled';
+  // Asked for (Respawn to town, issue #74), by the sea or by respawnHere: nobody sent us.
+  const asked = m.why === 'respawn';
+  exitWalk({ force: true });
+  state.walk.setPaused(false);
+  // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
+  // it is climbed into at once, so a respawn is back at the oars and not treading water.
+  const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
+  if (skiff && settled && Number.isFinite(m.x) && Number.isFinite(m.z)) {
+    skiff.x = m.x; skiff.z = m.z;
+    skiff.craft.place(skiff.x, skiff.z, skiff.yaw);
+  }
+  if (skiff) {
+    enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
+    takeBoat(skiff);
+    state.ui.toast(asked
+      ? 'You climb back into your boat.'
+      : drowned
+      ? 'You ran out of breath, and were hauled back into your boat.'
+      : settled
+        ? `${escapeHtml(m.island || "This island")} has just been settled${m.by ? ` by <b>${escapeHtml(m.by)}</b>` : ''}. Your boat was waiting for you - the sea is wide.`
+        : `The people of ${m.island || 'that island'} put you back in your boat.`);
+    return;
+  }
+  enterWalk({ at: [m.x, m.z] });
+  state.ui.toast(asked
+    ? `Back on the square of ${escapeHtml(m.island || state.village?.island?.name || 'your town')}.`
+    : drowned
+    ? 'You ran out of breath, and were pulled out of the water and taken home.'
+    : `The people of ${m.island || 'that island'} sent you home.`);
+}
+
+// ---- Respawn to town (issue #74) ---------------------------------------------------------
+// For somebody adrift with no boat and no way out of the water. The sea decides where home is
+// (lib/health.mjs respawn: the square of our island, or a wanderer's skiff - the refuge a
+// capture uses) and answers with the same `evicted`, `why: 'respawn'`, which sentHome above
+// takes like any other. A sea from before the message says nothing at all, so if nothing has
+// come back in RESPAWN_WAIT_MS we put ourselves there instead: our feet are ours to place (the
+// sea believes every pose), so on an old sea this is the same button, only decided here.
+const RESPAWN_WAIT_MS = 2500;
+let respawnWait = null;
+// On foot in the world: the sky has nothing to bring home and a room has a door.
+const canRespawn = () => state.mode === 'walk' && !state.inside && !!state.walk;
+function respawnToTown() {
+  if (!canRespawn()) return;
+  clearTimeout(respawnWait);
+  const asked = !!(state.net && state.net.respawn());
+  respawnWait = setTimeout(() => { respawnWait = null; respawnHere(); }, asked ? RESPAWN_WAIT_MS : 0);
+}
+// The same places the sea would pick, worked out from what this page has: our own skiff with
+// no island, else our square - in front of the board, as parkOnSquare stands us.
+function respawnHere() {
+  if (!canRespawn()) return;
+  if (STANDALONE) {
+    const b = state.boats.find((x) => x.own);
+    if (!b) { state.ui.toast('There is nowhere to take you back to.'); return; }
+    sentHome({ x: b.x, z: b.z, boat: b.id, why: 'respawn' });
+    return;
+  }
+  const board = state.byId.get('civic:board');
+  const town = state.village && state.village.island.town;
+  let at = null;
+  if (board) at = [board.group.position.x, board.group.position.z + 2.2];
+  else if (town && town.centre && state.terrain) at = state.terrain.cellWorld(town.centre[0], town.centre[1] + 2);
+  if (!at) { state.ui.toast('There is nowhere to take you back to.'); return; }
+  sentHome({ x: at[0], z: at[1], why: 'respawn' });
 }
 
 // ---- the body left standing (Plans/DONE/karakter-blijft-staan.md) ---------------------------
@@ -1182,6 +1287,17 @@ function interactables() {
         ...(stoop ? { floor: stoop.y + p.y } : {}),
         label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
       });
+      // And the door in the castle's front on its deck (Plans/kraken-dek.md): into the same room, but up
+      // through the hatch in the loft - and out of the room by its front door you are on the stoop, not here.
+      const deck = krakenDeckDoor(rec);
+      if (deck && stoop) {
+        out.push({
+          id: `${rec.id}:deck`, kind: 'tavern', room: 'piratetavern', x: deck.at[0], z: deck.at[1], r: 0.8, floor: deck.y,
+          label: 'the Salty Kraken', prompt: 'go below',
+          spot: { at: [KRAKEN_HATCH.x, KRAKEN_HATCH.y, KRAKEN_HATCH.z], yaw: -Math.PI / 2, pitch: 0.05 },
+          front: { at: [p.x + sx * c + sz * s, p.z - sx * s + sz * c], y: stoop.y + p.y },
+        });
+      }
     } else if (rec.spec.civicType === 'castle') {
       // At the gate, not the middle of the lot: a seven by seven castle measured from its
       // centre would answer E from behind its back wall. A getter for the prompt, because
@@ -2026,7 +2142,7 @@ function walkCallbacks() {
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
       else if (it.kind === 'goldmine') state.ui.toast(mineWords(state.gold));
       else if (it.kind === 'goldsmith') state.ui.toast(smithWords());
-      else if (it.kind === 'tavern') enterInterior(it.room, it);
+      else if (it.kind === 'tavern') enterInterior(it.room, it, it.spot || null);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'chronicle') openChronicle();
       else if (it.kind === 'keeper') speakToKeeper(it);
@@ -2570,13 +2686,15 @@ function roomFor(room) {
     try {
       inside = createInterior({
         room, camera, material: buildingMat, dom: renderer.domElement, tipsy: state.tipsy,
-        onLeave: () => leaveInterior(),
+        onLeave: (to) => leaveInterior(to),
         // A glass raised at the bar is seen by everybody else in the room (net.js drink).
         onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
         onTalk: (it) => openCrewTalk(it),
         onOrder: (r) => questEvents.drank(r),
         hd: hdOn(),
+        // I opens the wardrobe, as it does on the island.
+        onAvatar: () => openStudio(),
         // Esc opens the menu here too, with the room paused under it; you leave through the door.
         onEscape: () => {
           if (!state.sysmenu || !state.inside) return;
@@ -2617,6 +2735,9 @@ function enterInterior(room, at, spot = null) {
   // walked through.
   const w = state.walk.state;
   cameFrom = { at: [w.pos.x, w.pos.z], y: w.pos.y, facing: at ? [at.x, at.z] : null };
+  // In through the Salty Kraken's deck door: its front door is still the stoop (the room's doorway leads
+  // there), so that is where its way out puts you; the hatch is the way back to the deck.
+  if (at && at.front) cameFrom = { at: at.front.at, y: at.front.y, facing: null };
   state.walk.exit();
   state.inside = inside;
   const rave = room === 'rave';
@@ -2634,8 +2755,23 @@ function enterInterior(room, at, spot = null) {
   if (state.net) state.net.setRoom(inside.room, inside.walk);
 }
 
-function leaveInterior() {
+// The step before the door in the Salty Kraken's castle front (scripts/build-piratetavern.py, the
+// `deck.door-step` floor): where on the island, at what height, and a point to face - away from the
+// door, down the waist. Null for a bake from before the deck was walked.
+function krakenDeckDoor(rec) {
+  const f = rec && rec.built && (rec.built.surfaces || []).find((q) => q.name === 'door-step');
+  if (!f) return null;
+  const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y), p = rec.group.position;
+  const at = (x, z) => [p.x + x * c + z * s, p.z - x * s + z * c];
+  const mx = (f.x0 + f.x1) / 2, mz = (f.z0 + f.z1) / 2;
+  return { at: at(mx, mz), y: f.y + p.y, facing: at(mx - 2, mz) };
+}
+
+function leaveInterior(to = null) {
   if (!state.inside) return;
+  // Up the Salty Kraken's hatch: out onto its deck at the castle's door, not down at its front door.
+  const deck = to === 'deck' ? krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
+  if (deck) cameFrom = { at: deck.at, y: deck.y, facing: deck.facing };
   state.inside = null;
   forgetRoom();
   state.ui.setIndoors(false);
@@ -2644,6 +2780,9 @@ function leaveInterior() {
   // Still on foot: walk mode picks up again on the step outside the door.
   state.walk.enter({
     at: (cameFrom && cameFrom.at) || [0, 0],
+    // From the height you went in at (the Kraken's stoop is up its rock, its deck higher still): found
+    // from the top, the deck door's spot would take whatever floor is highest over it.
+    y: cameFrom && cameFrom.y != null ? cameFrom.y + 0.05 : Infinity,
     facing: cameFrom && cameFrom.facing,
     blockers: walkableBlockers(),
     interactables: interactables(),
@@ -2962,7 +3101,9 @@ function foundSettler() {
 // screen, and touches nothing that belongs to the island - so it is not behind keeperOnly.
 function openStudio() {
   if (!state.studio || state.studio.isOpen()) return;
-  if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
+  // Indoors it is the room's walker that has the keys and the mouse, not the island's.
+  if (state.inside) state.inside.setPaused(true);
+  else if (state.walk && state.mode === 'walk') state.walk.setPaused(true);
   state.studio.open();
 }
 
@@ -3513,6 +3654,32 @@ async function sendAway(id) {
   }
 }
 
+// The dossier's Archive (issue #78): off the waiting list and the flag off the roof, until
+// the session says something new. The island keeps that in data/waiting-dismissed.json.
+async function dismissWait(id, undo = false) {
+  const rec = state.byId.get(id);
+  const name = rec ? rec.spec.name : 'They';
+  try {
+    const r = await mine('/api/waiting/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buildingId: id, undo }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'that did not work');
+    applyVillage(await fetchVillage(), { animate: false });
+    if (undo) state.ui.toast(`<b>${escapeHtml(name)}</b> is waiting for you again.`);
+    else {
+      state.ui.toast(
+        `<b>${escapeHtml(name)}</b> archived - back on the list when they say something new. `
+        + `<button class="btn tiny" data-unarchive="${id}">Undo</button>`,
+        (el) => el.querySelectorAll('[data-unarchive]').forEach((b) => b.addEventListener('click', () => dismissWait(b.dataset.unarchive, true))),
+      );
+    }
+  } catch (e) {
+    state.ui.toast(`Could not archive ${escapeHtml(name)}: ${e.message}`);
+  }
+}
+
 async function bringBack(id) {
   try {
     await mine('/api/banish', {
@@ -3727,8 +3894,15 @@ function hdOn() {
   const tier = graphicsTier({ modest, phone: HANDHELD });
   return hdInstalled() && hdWanted(state.graphics.detail, tier, { deviceMemory: navigator.deviceMemory ?? null });
 }
+// Every Salty Kraken drawn on this page, ours and the neighbours', for what HD switches outside.
+function* krakenRecords() {
+  for (const rec of state.byId.values()) if (rec.krakenMotion) yield rec;
+  for (const g of state.guests) for (const rec of g.records || []) if (rec.krakenMotion) yield rec;
+}
 function applyDetail() {
   for (const r of rooms.values()) if (r.setDetail) r.setDetail(hdOn());
+  // And outside: the Salty Kraken's flags (web/js/kraken-motion.js), ours and every neighbour's.
+  for (const rec of krakenRecords()) setKrakenDetail(rec.krakenMotion, hdOn());
   if (state.graphics.detail === 'hd') hdMissingSaid();
 }
 let hdMissingTold = false;
@@ -4122,6 +4296,28 @@ function buildDocks(homeVillage) {
       state.pickables.push(mesh);
     }
   }
+  // And the Salty Kraken's gangway on every island whose Kraken stands in the sea
+  // (Plans/kraken-op-zee.md): the dock set's planks from the beach to the foot of its stair, with
+  // no head, since it ends at the landing in the bake. Built here because it is the same set, the
+  // same frame and the same floor, but kept apart from `state.docks`, which are harbours - a dock is
+  // a boat to take and a place on the chart, and a gangway is neither.
+  for (const g of state.gangways) g.dispose();
+  state.gangways = [];
+  for (const region of state.sea.regions()) {
+    for (const spec of gangwaysFor(region, region === state.region ? dockVillage : null)) {
+      const geo = buildPierGeometry(spec.cells, region.terrain, spec.from, { head: false });
+      if (!geo) continue;
+      const mesh = new THREE.Mesh(geo, buildingMat);
+      const parent = region === state.region
+        ? scene
+        : (state.guests.find((g) => g.region === region) || {}).group || scene;
+      mesh.position.set(spec.from[0], 0, spec.from[1]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      state.gangways.push({ ...spec, region, mesh, dispose: () => { parent.remove(mesh); geo.dispose(); } });
+    }
+  }
   // The planks are a floor, and the floor is worked out from these docks - so whoever
   // rebuilds them has rebuilt the floor too, whether or not they were thinking about it.
   // Paired here rather than left to each caller, because the one caller that forgot
@@ -4149,6 +4345,29 @@ function dockPrompt(d, moored) {
 }
 
 function dockAt(id) { return state.docks.find((d) => d.id === id) || null; }
+
+// The Kraken's gangway, if its Kraken stands in the sea (web/js/pirate-ground.js pirateGangway, the
+// layout's own sum): `cells` from the shore outwards, the order buildPierGeometry lays a pier in, so
+// its ramp comes down on the sand; `from` in the island's own frame, like a dock's; `lip` the
+// rectangle at deck height that carries a walker from the last plank onto the landing in the bake.
+function gangwaysFor(region, village) {
+  const v = village || region.village;
+  const t = region.terrain;
+  const out = [];
+  for (const b of (v && v.buildings) || []) {
+    if (!isPirateTavern(b) || !b.plot) continue;
+    const g = pirateGangway(b.plot, t);
+    if (!g) continue;
+    const [x, z] = t.cellWorld(g.cells[0][0], g.cells[0][1]);
+    const [dx, dz] = g.dir;
+    // The plank's own cell and 0.3 on towards the lot (which is behind `dir`), the deck's width across.
+    const ex = dx ? 0.5 + 0.3 : 0.45, ez = dz ? 0.5 + 0.3 : 0.45;
+    const lip = { x0: x - ex + (dx < 0 ? 0.3 : 0), x1: x + ex - (dx > 0 ? 0.3 : 0), z0: z - ez + (dz < 0 ? 0.3 : 0), z1: z + ez - (dz > 0 ? 0.3 : 0), y: QUAY_DECK };
+    out.push({ id: `gangway:${b.id}`, cells: [...g.cells].reverse(), from: t.cellWorld(g.shore[0], g.shore[1]), lip });
+  }
+  return out;
+}
+const pubSig = (v) => JSON.stringify(((v && v.buildings) || []).filter(isPirateTavern).map((b) => b.plot));
 const SIDE_WORD = { n: 'north', e: 'east', s: 'south', w: 'west' };
 const harbourSig = (v) => JSON.stringify((v && v.island && v.island.harbours) || []);
 
@@ -4210,6 +4429,10 @@ addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const k = e.key.toLowerCase();
+  const chip = keysOf('plan').includes(k) ? 'plan-btn' : ORBIT_KEYS[k];
+  // The menu is a pause: while it is up, the sky's letters do nothing behind it (the chart
+  // used to open under the menu and both stood on screen). Escape still closes it.
+  if (k !== 'escape' && state.sysmenu && state.sysmenu.isOpen()) return;
   if (k === 'm') { e.preventDefault(); skyMap = !skyMap; }
   else if (k === 'escape' && skyMap) skyMap = false;
   // The chips' own letters, from the sky only (Plans/DONE/esc-menu-en-knoppenbalk.md) - on foot I
@@ -4218,11 +4441,11 @@ addEventListener('keydown', (e) => {
   // that is hidden (Plan for a visitor, Animals before the first hen) has no key either.
   // Nor while the boot screen is up: it covers the chips, so their keys wait for it too
   // (a failed boot leaves it up for good, and nothing behind it was ever made).
-  else if (ORBIT_KEYS[k] && !openPanel() && !booting()) {
+  else if (chip && !openPanel() && !booting()) {
     // Enter is also how a focused button is pressed: leave that to the browser, or the chip
     // would be clicked twice. Nor while the main menu (which has its own buttons) is up.
     if (k === 'enter' && (/^(BUTTON|A|SUMMARY)$/.test(t && t.tagName) || !document.getElementById('mainmenu').hidden)) return;
-    const b = document.getElementById(ORBIT_KEYS[k]);
+    const b = document.getElementById(chip);
     if (b && !b.hidden) { e.preventDefault(); b.click(); }
   }
 });
@@ -4237,8 +4460,9 @@ function booting() {
   const b = document.getElementById('boot');
   return !!b && !b.classList.contains('gone');
 }
+// Plan is not in it: its key is a binding (keybinds.js `plan`, default U), so P stays sow's alone.
 const ORBIT_KEYS = {
-  i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn', p: 'plan-btn',
+  i: 'avatar-btn', o: 'reset-btn', n: 'found-btn', l: 'legend-btn',
   b: 'build-btn', j: 'animals-btn', k: 'quests-btn', enter: 'walk-btn',
 };
 // On foot the quest log is a toast (side panels are closed while walking), on its own key
@@ -4269,6 +4493,11 @@ function escapeHasWork() {
 }
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape') escHadWork = escapeHasWork();
+}, true);
+// A chip clicked with the menu open is a choice to go there: the menu gives way first, rather
+// than staying on top of the panel or the planner it just opened (Plans/minder-browser-meer-spel.md).
+document.getElementById('nav-chips')?.addEventListener('click', (e) => {
+  if (e.target.closest('button') && state.sysmenu && state.sysmenu.isOpen()) state.sysmenu.close();
 }, true);
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.repeat || !state.sysmenu) return;
@@ -5236,6 +5465,12 @@ function raiseGuestIslands() {
     syncBoards();
     state.guests.splice(i, 1);
   }
+  // And the walker told. Walk mode keeps the list it was handed, so an island raised while
+  // you are already walking - on the phone, every one of them: its home is open water and the
+  // fleet arrives after - had houses you walked straight through until walk mode was entered
+  // again (#70), and one that was taken down left its walls standing in the water. The
+  // fleet's drops (dropRegion) always come back through here.
+  if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
 }
 
 // --------------------------------------------------------------- particles
@@ -5404,7 +5639,7 @@ function poseOnPlot(spec, built) {
   const pose = housePlacement(spec, built.bbox, state.village.buildings);
   const [x, z] = cellCentre(spec.plot).map((v, i) => v + nudge[i] + (i ? pose.z : pose.x));
   const y = isShipyard(spec) ? shipyardGround(spec.plot, [x, z], groundAt)
-    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt) : groundAt(x, z);
+    : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], groundAt, built, state.terrain) : groundAt(x, z);
   return { x, y, z, yaw: pose.yaw };
 }
 function ghostPose(id, plot) {
@@ -5508,6 +5743,8 @@ function attachExtras(rec, { mail = true, signs = true, gold = mail, found = nul
   if (built.animated && built.animated.piratesign && built.anchors && built.anchors.sign) {
     rec.pirateSign = attachPirateSign(group, buildingMat, { at: built.anchors.sign, yaw: built.animated.piratesign.yaw });
   }
+  // And its flags, sails and hanging lanterns in the wind (web/js/kraken-motion.js), on the same clock.
+  if (built.animated && built.animated.krakenMotion) rec.krakenMotion = attachKrakenMotion(group, buildingMat, { hd: hdOn() });
   // The Batavia (web/js/batavia.js): her swell goes on her own mesh rather than on the group,
   // whose position and turn blockersOf reads, and her flags hang on that mesh and lean with her.
   if (built.animated && built.animated.ship) {
@@ -5994,7 +6231,7 @@ function deckMapForHome() {
   if (state.props && state.terrain) {
     for (const [cell, y] of state.props.deckCells(state.terrain)) flat.set(cell, y);
   }
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
@@ -6055,7 +6292,7 @@ function handOutDecks() {
   // plain cell key - and they need the planks for the same reason you do: without them a
   // settler on an outing wades out to the boat alongside the dock instead of walking out
   // along it. Only the home region's, because `flat` is this island's map.
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     if (state.region && d.region !== state.region) continue;
     for (const [gx, gz] of d.cells) flat.set(gx + gz * d.region.size, QUAY_DECK);
   }
@@ -6082,7 +6319,7 @@ function handOutDecks() {
   // you wade alongside your own dock instead of walking out along it, which is both wrong
   // and the difference between a dock and a decoration. Keyed per region, so a guest
   // island's quay is its own storey and not a deck in the air over ours.
-  for (const d of state.docks) {
+  for (const d of [...state.docks, ...state.gangways]) {
     const r = d.region;
     for (const [gx, gz] of d.cells) {
       stacked.set(r.levelBase + gx + gz * r.size, [QUAY_DECK]);
@@ -6111,6 +6348,8 @@ function handOutDecks() {
       for (const p of list) planks.push({ ...p, x0: p.x0 + ox, x1: p.x1 + ox, z0: p.z0 + oz, z1: p.z1 + oz, lid: true });
     };
     for (const d of state.docks) put(d.region, pierSurfaces(d.cells, d.region.terrain, d.from));
+    // The Kraken's gangway: its ramp, and the lip onto the landing at the foot of the stair.
+    for (const g of state.gangways) put(g.region, [...pierSurfaces(g.cells, g.region.terrain, g.from, { head: false }), g.lip]);
     for (const r of state.sea ? state.sea.regions() : []) {
       if (r.village) put(r, kadeSurfaces(quayKade(r.village, r.terrain), r.terrain));
     }
@@ -6715,6 +6954,8 @@ function applyVillage(next, { animate }) {
   // as a changed count and nothing else - would not show until a reload. Docks and fleet
   // both, because a new count is a new hull at a new berth (shared/quay.mjs mooringsFor).
   if (prev && harbourSig(next) !== harbourSig(prev)) { buildDocks(next); launchBoats(); }
+  // And the Kraken's gangway, which comes and goes with where it stands.
+  else if (prev && pubSig(next) !== pubSig(prev)) buildDocks(next);
   // The ground itself, when the polders or the channel changed under it - a polder the
   // keeper dug or gave back. Before the buildings below, because a house set down on new
   // land is built at the height of the terrain it finds. `shownPolders` is a count and a
@@ -7073,6 +7314,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   // A click on the board you are working is the board's, and never also picks whatever
   // building happens to stand behind it.
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
+  // Inside a room the camera stands in the room's own scene, but pick() casts it at the
+  // island's buildings, through a camera that is not looking at them: a swing of the fist in
+  // the Salty Kraken opened the dossier of whatever building of the town lay along that ray.
+  if (state.inside) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
     // An animal opens its own dossier: ours the keeper's, from our islander; a neighbour's
@@ -7266,7 +7511,8 @@ function stepBreath(nowMs) {
   // The same test the sea makes of the pose we send it (`afoot`, then `submerged`): on foot
   // outdoors and not at a tiller, with the swimming bit set and the head under the surface.
   // Today walk mode keeps a swimmer at the surface, so this stays false and the bar full.
-  const under = !!w && state.mode === 'walk' && !state.inside && !state.walk.aboard()
+  // In noclip it is the body left standing that breathes, not the camera (onFootOutdoors).
+  const under = !!w && onFootOutdoors(state.mode, state.inside, noclipFrom) && !state.walk.aboard()
     && submerged(w.swimming ? SWIMMING : 0, w.pos.y);
   air = stepAir(air, under, dt);
   state.vitals.setAir(air / AIR_S);
@@ -7651,6 +7897,14 @@ function frame(nowMs) {
   // matrix is only rebuilt when the map is, so what stands still stays exactly where its
   // shadow is between two redraws; only what moves has a shadow a frame or two behind.
   if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
+  // three.js sends a skeleton's bones to the GPU once per `info.render.frame`, and the shadow pass
+  // runs after render() has moved that counter on: so the frame after one that drew the shadow map
+  // found every skeleton already done and drew each skinned body - the player's torso and limbs, a
+  // peer, an imp - in the pose of the frame before, while the head, which has no skin, was where it
+  // is. At shadowEvery 2 that is every other frame, and the Adventurer's torso trembled round a still
+  // head (measured on the island: the frame without the map drew the chest at rest a frame after it
+  // was bent). A number nothing has used yet is a fresh frame for the skeletons as well.
+  if (!renderer.shadowMap.autoUpdate && !renderer.shadowMap.needsUpdate) renderer.info.render.frame++;
   // The last word on the picture: after the weather and after applyFogRange, which set the
   // lights, the haze and the sky it multiplies and overrides, and after every branch above has
   // put the camera where it is drawn from - this is decided on the lens, not the body. Before
@@ -7873,13 +8127,13 @@ function setLiveMode() {
 }
 
 // --------------------------------------------------------------- boot
-// The worker caches nothing; it exists so the browser will offer to install the island.
-// Browsers only allow one on a secure origin, which is localhost or https - a visitor on
-// http://msi:4747 can still add the page to their home screen by hand, and the manifest
-// makes it open without any browser chrome around it.
-function registerWorker() {
-  if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-  navigator.serviceWorker.register(mineUrl('/sw.js')).catch(() => { /* not installable, no matter */ });
+// There is no installable web app any more: the island is played in promptholm.exe, the Android app
+// or the browser at /play (Plans/minder-browser-meer-spel.md). A browser that installed it before still
+// has the old do-nothing service worker registered for this origin, and a worker outlives the file it
+// came from, so the page takes it down itself.
+function unregisterWorkers() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.getRegistrations().then((all) => all.forEach((r) => r.unregister())).catch(() => {});
 }
 
 function escapeHtml(s) {
@@ -7892,7 +8146,25 @@ function playerName() {
   try { return localStorage.getItem('promptholm.name') || null; } catch { return null; }
 }
 
+// The rooms' sets start parsing in a worker as soon as the boot does (models.js offThread), so that
+// they are usually in by the time the island is drawn; warmRooms then builds each room and compiles
+// its shaders while the boot screen still stands. Left to the door, the Salty Kraken's first visit
+// froze the page for ~1.7 s parsing and ~0.8 s building (Plans/minder-browser-meer-spel.md). The
+// phone and the web carry no rooms (pack-page.mjs ROOM_ONLY), and there is no islander to own one.
+let roomsLoading = null;
+async function warmRooms(waitMs) {
+  if (!roomsLoading) return;
+  const ready = await Promise.race([roomsLoading.then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), waitMs))]);
+  if (!ready) return;   // still parsing: the door builds it, the parse no longer blocks anything
+  for (const room of ROOM_KINDS) {
+    if (!roomReady(room) || rooms.has(room)) continue;
+    const inside = roomFor(room);
+    try { if (inside) renderer.compile(inside.scene, camera); } catch (e) { console.warn('room warm-up', e); }
+  }
+}
+
 async function boot() {
+  if (!STANDALONE) roomsLoading = Promise.all(ROOM_KINDS.filter((r) => !roomReady(r)).map(prepareRoom));
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
     // The four graphics sliders in Settings. The only way into state.graphics, which is what
@@ -7908,6 +8180,9 @@ async function boot() {
     // it closes - a turn later, or the Escape that closed it reaches the room's walk mode unpaused
     // and opens the menu again.
     onMenuClose: () => setTimeout(() => { if (state.inside && !openPanel()) state.inside.setPaused(false); }, 0),
+    // Respawn to town under Back in the menu (issue #74), shown only while it can do something.
+    canRespawn,
+    onRespawn: () => respawnToTown(),
     // The HD pack under Settings -> Graphics: false on the phone (no islander, no rooms, no choice
     // to offer), else what HOME/hd holds (null for nothing).
     hdStatus: () => (STANDALONE ? false : hdStatus()),
@@ -8044,6 +8319,7 @@ Everything is copied and checked first; the island then starts again there. The 
     onTogglePlan: () => (state.mode === 'plan' ? exitPlan() : enterPlan()),
     onToggleMap: () => toggleMap(),
     onTalk: (id) => talkTo(id),
+    onDismissWait: (id) => dismissWait(id),
     onSendAway: (id) => askToSendAway(id),
     onFoundSettler: () => openTownHall(),
     onMarket: () => openMarket(),
@@ -8149,10 +8425,14 @@ Everything is copied and checked first; the island then starts again there. The 
     // you watch yourself change; if you are up in the sky it waits, ready, for you to land.
     onApply: (spec) => {
       if (state.walk) state.walk.setAvatar(spec);
+      if (state.inside) state.inside.walk.setAvatar(spec);
       // Everybody else sees the new look too (Plans/DONE/andere-spelers-zoals-jij.md).
       if (state.net) state.net.setLook(spec);
     },
-    onClose: () => { if (state.walk && state.mode === 'walk') state.walk.setPaused(false); },
+    onClose: () => {
+      if (state.inside) state.inside.setPaused(false);
+      else if (state.walk && state.mode === 'walk') state.walk.setPaused(false);
+    },
   });
 
   state.townHall = createTownHall(document.body, {
@@ -8501,39 +8781,13 @@ Everything is copied and checked first; the island then starts again there. The 
     // What we look like to everybody else: our own wardrobe (web/js/avatar.js), said on
     // every connect and again from the studio's Apply.
     look: loadAvatar(),
-    onEvicted: (m) => {
-      // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
-      // drowning says so in `breath` too, but a guard's capture says nothing about air).
-      air = AIR_S;
-      // `why` (lib/players.mjs evict) is only ever 'drown' so far; a sea from before it sends
-      // none and gets the generic words, which name a place we were not sent home from.
-      const drowned = m.why === 'drown';
-      // The starter we stood on was taken by a newcomer (lib/sea.mjs retireStarter): nobody
-      // threw us off, and the sea laid our skiff out past the newcomer's coast, at m.x/m.z.
-      const settled = m.why === 'settled';
-      exitWalk({ force: true });
-      state.walk.setPaused(false);
-      // A wanderer is sent back to their own skiff rather than to a square (lib/hostility.mjs);
-      // it is climbed into at once, so a respawn is back at the oars and not treading water.
-      const skiff = m.boat ? state.boats.find((b) => b.id === m.boat) : null;
-      if (skiff && settled && Number.isFinite(m.x) && Number.isFinite(m.z)) {
-        skiff.x = m.x; skiff.z = m.z;
-        skiff.craft.place(skiff.x, skiff.z, skiff.yaw);
-      }
-      if (skiff) {
-        enterWalk({ at: [skiff.x, skiff.z], facing: [skiff.x + Math.sin(skiff.yaw) * 10, skiff.z + Math.cos(skiff.yaw) * 10], pitch: 0.12 });
-        takeBoat(skiff);
-        state.ui.toast(drowned
-          ? 'You ran out of breath, and were hauled back into your boat.'
-          : settled
-            ? `${escapeHtml(m.island || "This island")} has just been settled${m.by ? ` by <b>${escapeHtml(m.by)}</b>` : ''}. Your boat was waiting for you - the sea is wide.`
-            : `The people of ${m.island || 'that island'} put you back in your boat.`);
-        return;
-      }
-      enterWalk({ at: [m.x, m.z] });
-      state.ui.toast(drowned
-        ? 'You ran out of breath, and were pulled out of the water and taken home.'
-        : `The people of ${m.island || 'that island'} sent you home.`);
+    onEvicted: (m) => sentHome(m),
+    // Respawn to town said no (nowhere to go, or asked again too soon): no local fallback then,
+    // that is for a sea that does not know the message (respawnToTown).
+    onRespawn: () => {
+      clearTimeout(respawnWait);
+      respawnWait = null;
+      state.ui.toast('The sea cannot take you home just now.');
     },
     // The sea's word on our air (lib/breath.mjs): where it stands as we go under or come up,
     // which is what the frame's own sum starts again from. A fraction of the lung the sea
@@ -8656,6 +8910,7 @@ Everything is copied and checked first; the island then starts again there. The 
   // Somebody to steer from the first frame: the body stands on the square, asleep, until you
   // walk down into it or send it somewhere from the sky. Before the net exists, so the
   // net's own start says it is walking.
+  if (!STANDALONE) await warmRooms(3000);
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
@@ -8679,11 +8934,13 @@ Everything is copied and checked first; the island then starts again there. The 
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
   // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list here; a model is fetched
   // when a room that has its piece wants it. A room built before the list lands is all bake.
-  if (!STANDALONE) loadHdManifest().then(() => { if (state.graphics.detail === 'hd') hdMissingSaid(); });
-  // No islander to hear from and none to install from: /events and sw.js are both its own.
+  // The pack's answer comes after the island is drawn: what stands outside is switched then (rooms are
+  // built later and ask for themselves).
+  if (!STANDALONE) loadHdManifest().then(() => { applyDetail(); if (state.graphics.detail === 'hd') hdMissingSaid(); });
+  // No islander to hear from: /events is its own.
   if (STANDALONE) return;
   connect();
-  registerWorker();
+  unregisterWorkers();
   // Our own animals and what they did while we were away. After the island is up, so the
   // card lands on a picture rather than on the boot screen.
   if (state.animals) state.animals.boot().catch(() => { /* an islander without animals */ });
@@ -9211,6 +9468,7 @@ function animateExtras(rec, dt, hour, nightAmt, nowMs) {
   if (rec.sawmill) updateSawmill(rec.sawmill, dt);
   if (rec.smithy) updateSmithy(rec.smithy, dt);
   if (rec.pirateSign) updatePirateSign(rec.pirateSign, timeNow() / 1000, nightAmt);
+  if (rec.krakenMotion) updateKrakenMotion(rec.krakenMotion, timeNow() / 1000);
   if (rec.furnace) rec.furnace.update(dt);
   if (rec.orePile) rec.orePile.update(dt);
   if (rec.ship) updateBatavia(rec.ship, dt);

@@ -17,7 +17,11 @@
 /* Every list that scrolls sits on a dark panel; the native scrollbar is a white bar down the
    side of it. Inherited, so this one line covers the dossier, the legend, the town hall... */
 html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin; }
-html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; overscroll-behavior: none; }
+/* A game, not a page: no pinch zoom (lists still scroll with a finger), no blue flash under a tapped
+   button, no picture to drag off as a ghost. page-keys.js holds the keys and ctrl+wheel. */
+html { touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+img, svg, a { -webkit-user-drag: none; }
 body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
 /* Nothing on the island is text to copy, so a drag or double-click never paints a selection over it - except in
    a field, where the caret and a selection are how you type. */
@@ -227,20 +231,6 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .toast .act.ghost { background: transparent; border-color: var(--edge); color: var(--ink-dim); font-weight: 400; }
 .toast .act:hover { filter: brightness(1.08); }
 
-/* --- floating buttons ------------------------------------------------- */
-/* Bottom right, out of the way of everything: on a phone the browser's own
-   chrome eats a third of the island, and this is the way back to all of it. */
-.fabs { position: fixed; right: 14px; bottom: 16px; z-index: 13; display: flex; align-items: center; gap: 9px; }
-.fab {
-  width: 44px; height: 44px; border-radius: 50%; padding: 0; cursor: pointer;
-  display: grid; place-items: center; color: var(--ink-dim);
-  background: var(--panel); border: 1px solid var(--edge);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: .16s;
-}
-.fab:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
-.fab:active { transform: scale(.94); }
-/* The chronicle bar runs the full width of a narrow screen, so step over it. */
-@media (max-width: 760px) { .fabs { bottom: 74px; } }
 .toast { padding: 9px 12px; font-size: 12px; line-height: 1.4; animation: risein .3s ease; }
 .toast b { color: var(--accent); }
 .toast.fade { opacity: 0; transition: opacity .5s ease; }
@@ -252,9 +242,6 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
   .titlecard { max-width: 190px; }
   .chronicle-meta select { display: none; }
   #chronicle-date { min-width: 0; }
-  /* The install/fullscreen buttons sat over the bottom of every open panel - its own
-     actions included. Nobody needs them while reading one. */
-  body:has(.panel:not([hidden])) .fabs { display: none; }
 }
 
 /* --- walking ---------------------------------------------------------- */
@@ -738,6 +725,20 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   background: radial-gradient(ellipse, rgba(0,0,0,.75), transparent 70%); }
 .inv-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 
+/* The choice of body: two portraits in wells like the slots', side by side over the alcove,
+   the worn one lit the way a worn piece is. */
+.inv-chars { display: flex; justify-content: center; gap: 14px; margin: 0 0 12px; }
+.inv-char { display: flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border: 0; border-radius: 6px; cursor: pointer;
+  background: radial-gradient(circle at 30% 40%, #1d1c22, var(--inv-well) 85%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-rim), 0 0 0 2px var(--inv-bronze-dark); transition: box-shadow .15s; }
+.inv-char .inv-icon { width: 52px; height: 52px; }
+.inv-char:hover { box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-bronze), 0 0 0 2px var(--inv-bronze-dark); }
+.inv-char.on { box-shadow: inset 0 0 14px rgba(232,193,124,.2), inset 0 3px 9px rgba(0,0,0,.8),
+  0 0 0 1px var(--accent), 0 0 0 2px var(--inv-bronze-dark), 0 0 16px rgba(232,193,124,.45); }
+.inv-char.on .inv-label { color: var(--ink); }
+.inv-char:not(.on) .inv-icon { opacity: .55; filter: grayscale(.5); }
+.inv-slot:disabled { cursor: default; }
+
 .inv-note { margin: 12px 0 10px; text-align: center; font-size: 12px; font-style: italic; color: var(--inv-label); }
 .inv-actions { justify-content: center; }
 
@@ -1067,6 +1068,8 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .sysmenu-tab[hidden] { display: none; }
 .sysmenu-back { margin-top: auto; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 11px; font-size: 12.5px; }
 .sysmenu-build { margin: 8px 6px 0; font-size: 10.5px; min-height: 1em; }
+/* Under Back, only on foot (issue #74): the way home for somebody adrift with no boat. */
+.sysmenu-respawn { margin-top: 6px; white-space: nowrap; padding: 8px 11px; font-size: 12.5px; text-align: left; }
 .sysmenu-body { overflow: auto; padding: 16px 22px 20px; }
 .sysmenu-body section { display: none; }
 .sysmenu-body section > h3.sec:first-child { margin-top: 0; }
@@ -1090,6 +1093,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   .sysmenu-tabs { flex-direction: row; flex-wrap: wrap; flex: 1; }
   .sysmenu-tab { padding: 7px 10px; font-size: 12.5px; }
   .sysmenu-back { margin-top: 0; }
+  .sysmenu-respawn { margin-top: 0; }
   .sysmenu-back kbd, .sysmenu-build { display: none; }
   .sysmenu-body { padding: 14px 16px 18px; }
 }
@@ -1300,7 +1304,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 /* The app on a phone (see setStandalone in web/js/ui.js and web/js/touchpad.js). */
 body.standalone #walk-btn, body.standalone #build-btn, body.standalone #plan-btn,
 body.standalone #reset-btn, body.standalone #found-btn,
-body.standalone #walk-keys, body.standalone #fabs, body.standalone #topright > .chips { display: none !important; }
+body.standalone #walk-keys, body.standalone #topright > .chips { display: none !important; }
 /* The chronicle replays *our* island's history, and on a phone there is no our: a thumb
    brushing its slider took the borrowed island back in time and its houses with it. The
    live dot and the counts belong to the same story. */
@@ -1444,3 +1448,45 @@ body.noclip-clean > :not(#stage):not(#panels):not(#underwater):not(script) { vis
 .pi-earned { margin: 8px 0; padding-left: 18px; color: var(--accent-2); }
 .pi-hint { margin: 8px 0; }
 .pi-actions { display: flex; gap: 8px; justify-content: flex-end; margin: 14px 0 0; }
+
+/* Nothing that opens pops (Plans/minder-browser-meer-spel.md): the menus and full-screen sheets fade
+   in, what sits on them rises a few pixels. Only opacity and transform, so it costs no layout. The
+   side panels have their own slide (.panel above). Closing stays instant - a closed thing is gone. */
+@keyframes fadein { from { opacity: 0 } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.985) } }
+.sysmenu:not([hidden]), .update-gate { animation: fadein .16s ease-out; }
+.worldmap:not([hidden]), .inv-frame, .update-gate-card { animation: rise .2s cubic-bezier(.2, .8, .2, 1); }
+.popover:not([hidden]) { animation: fadein .1s ease-out; }
+
+/* Our own tooltip (web/js/tooltip.js) in place of the browser's grey box. */
+.tip {
+  position: fixed; z-index: 60; pointer-events: none; max-width: 280px;
+  padding: 6px 10px; border-radius: 8px;
+  background: var(--panel-solid); color: var(--ink); border: 1px solid rgba(232, 180, 92, .32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .45);
+  font: 500 12px/1.35 var(--ui); letter-spacing: .01em;
+  opacity: 0; transform: translateY(-3px); transition: opacity .12s ease, transform .12s ease;
+}
+.tip.show { opacity: 1; transform: none; }
+.tip kbd {
+  display: inline-block; margin-left: 6px; padding: 0 5px; min-width: 16px; text-align: center;
+  border: 1px solid rgba(232, 180, 92, .45); border-radius: 4px; color: var(--accent);
+  font: 600 10.5px/1.5 var(--ui);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sysmenu, .update-gate, .worldmap, .inv-frame, .update-gate-card, .popover, .panel, .tip { animation: none !important; transition: none !important; }
+}
+
+/* One set of chips per mode (ui.js syncSidebar writes body[data-mode]). From the sky: everything. On foot
+   (and in a room): Fly up, Say, Map, Inventory, Quests - the rest either does nothing down there or
+   throws you back up, and its key still works where it means something. In the planner: Done alone,
+   its tools are its own panel. The island's card (settlers, districts) is a view from above. */
+body[data-mode="foot"] :is(#found-btn, #plan-btn, #build-btn, #animals-btn, #reset-btn),
+body[data-mode="plan"] #nav-chips > .chip:not(#plan-btn),
+body[data-mode="plan"] #nav-chips > .chips-sep,
+body[data-mode="plan"] #nav-collapse-btn,
+body[data-mode="foot"]:not(.foot-card) #titlecard,
+body[data-mode="plan"] #titlecard { display: none !important; }
+/* With the island's card gone the planner's tools take its place at the top left. */
+body[data-mode="plan"] .panel.left { top: 14px; max-height: calc(100vh - 28px); }

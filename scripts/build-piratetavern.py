@@ -33,6 +33,14 @@ finds, and this ship flies its own. The sign (web/js/piratesign.js) is not baked
 swings - and hangs on anchor.sign on the stern castle's forward corner, its arm out towards the
 water (PIRATE_SIGN_YAW, -90 degrees, in web/js/buildings.js).
 
+It stands in the sea now (Plans/kraken-op-zee.md): a rock a little off the shore, reached by a
+gangway the island lays from the beach to a landing at the foot of the stair. So the rocks run on
+below the landing by SKIRT and widen as they go, instead of being cut flat at the ground (which
+was a seam where rock met sand), and the whole model is lifted by SKIRT at the end, so that its
+lowest point is y = 0 like every asset's. The landing's floor is at anchor.door's height: the page
+stands it at the docks' deck height in the sea and at the lowest ground of its front on the beach
+(web/js/pirate-ground.js).
+
 Axes as every set: island (x east, y up, z towards the water) in the helpers, Blender gets
 (x, -z, y). The bow points west, the stern east; the long flank faces the water (+Z).
 
@@ -614,11 +622,15 @@ for x in (-0.55, 0.35):
     box('hatch', (x, deck_y(x) + 0.035, 0), (0.34, 0.07, 0.32), OAK, round_=0.01)
     for k in range(5):
         box('hatch grating', (x - 0.13 + 0.065 * k, deck_y(x) + 0.072, 0), (0.014, 0.005, 0.27), DARK)
-for x, z in ((-1.05, -0.32), (-0.95, -0.36), (-1.0, -0.2), (0.62, 0.34), (0.55, 0.38)):
+# (Two more stood aft by the capstan until the deck was walked: they stood at the foot of the roof
+# ladder, Plans/kraken-dek.md.)
+for x, z in ((-1.05, -0.32), (-0.95, -0.36), (-1.0, -0.2)):
     rod('deck barrel', (x, deck_y(x), z), (x, deck_y(x) + 0.16, z), 0.06, OAK, top=0.054, sides=6)
     rod('deck barrel hoop', (x, deck_y(x) + 0.03, z), (x, deck_y(x) + 0.045, z), 0.062, IRON, sides=6, fill='NOTHING')
     rod('deck barrel hoop', (x, deck_y(x) + 0.115, z), (x, deck_y(x) + 0.13, z), 0.058, IRON, sides=6, fill='NOTHING')
-for x, z, t in ((0.1, -0.35, 0.3), (-0.3, 0.32, -0.4)):
+# The second crate forward of the hatch: aft of it, it stood just inside where the boarding plank comes
+# over the bulwark (issue #86), across the way onto the deck.
+for x, z, t in ((0.1, -0.35, 0.3), (-0.95, 0.32, -0.4)):
     box('deck crate', (x, deck_y(x) + 0.08, z), (0.16, 0.16, 0.16), OAK, turn=t, round_=0.008)
 for x, z in ((-0.2, -0.3), (0.55, -0.28)):
     rod('deck coil', (x, deck_y(x), z), (x, deck_y(x) + 0.04, z), 0.08, ROPE, sides=8)
@@ -747,9 +759,14 @@ for x, y, z, L in ((FORE_X - 0.35, 3.5, 0.78, 0.55), (FORE_X + 0.3, 4.3, -0.55, 
 
 def jolly_roger(name, at, fw, fh, direction=1, tails=False):
     """A flag flying from `at` (its luff at the staff) towards +x (direction 1) or -x, cloth and
-    skull on both faces; `tails` cuts a swallow-tail in the fly."""
+    skull on both faces; `tails` cuts a swallow-tail in the fly.
+
+    The flag waves on the island (web/js/kraken-motion.js), so the cloth is fine enough to bend
+    smoothly under the skull and bones, and they stand a little further off it: at seven columns a
+    wave bent the cloth more between two of its points than the skull stood off it, and the cloth
+    came through the skull."""
     x0, y0, z0 = at
-    cols, rows = 7, 5
+    cols, rows = 19, 9
     grid = []
     for j in range(rows):
         f = j / (rows - 1)
@@ -769,7 +786,7 @@ def jolly_roger(name, at, fw, fh, direction=1, tails=False):
     ex, ey = x0 + direction * fw * 0.45, y0 - fh * 0.48
     k = fh / 0.22
     for s in (1, -1):
-        zz = z0 + 0.035 * math.sin(0.45 * math.pi * 2.2 + 0.5) * 0.45 + s * 0.012
+        zz = z0 + 0.035 * math.sin(0.45 * math.pi * 2.2 + 0.5) * 0.45 + s * 0.016
         for sgn in (-1, 1):
             a = (ex - sgn * 0.085 * k, ey - 0.075 * k, zz)
             b = (ex + sgn * 0.085 * k, ey + 0.055 * k, zz)
@@ -778,10 +795,10 @@ def jolly_roger(name, at, fw, fh, direction=1, tails=False):
                 ball(name + ' knuckle', end, (0.013 * k, 0.013 * k, 0.005), BONE, seg=3, rings=2)
         half = [(0, .05), (.026, .045), (.041, .03), (.045, .01), (.038, -.01), (.033, -.02), (.031, -.035), (.016, -.042)]
         outline = [(x * k, (.012 + y) * k) for x, y in half] + [(-x * k, (.012 + y) * k) for x, y in reversed(half[1:])]
-        plate(name + ' skull', outline, ex, ey, zz + s * 0.004, 0.003, BONE)
+        plate(name + ' skull', outline, ex, ey, zz + s * 0.006, 0.003, BONE)
         for sx in (-1, 1):
             hexagon = [(.0125 * k * math.cos(i * math.tau / 6), .0125 * k * math.sin(i * math.tau / 6)) for i in range(6)]
-            plate(name + ' socket', hexagon, ex + sx * .017 * k, ey + .024 * k, zz + s * 0.0068, 0.002, FLAG)
+            plate(name + ' socket', hexagon, ex + sx * .017 * k, ey + .024 * k, zz + s * 0.0088, 0.002, FLAG)
 
 
 jolly_roger('great jolly roger', (JR1[0] + 0.03, JR1[1] - 0.08, JR1[2]), 0.62, 0.52, 1)
@@ -831,7 +848,9 @@ def through(ctrl, n):
 
 
 # Each arm comes up out of the rock, climbs the hull's side, hooks over the gunwale onto the deck
-# and ends in a curl; the first straight versions read as purple poles leant against the ship.
+# and ends in a curl; the first straight versions read as purple poles leant against the ship. Each
+# begins inside the rock, below the landing (`ROOT`, put in front of its first point): begun at its
+# first point, the lowest arm's thick end hung in the air beside the rock.
 ARMS = [
     ([(-1.62, 0.3, 0.62), (-1.78, 0.9, 0.98), (-1.66, 1.6, 0.9), (-1.52, 2.14, 0.66), (-1.42, 2.34, 0.4),
       (-1.3, 2.26, 0.2), (-1.22, 2.1, 0.26), (-1.28, 2.02, 0.36), (-1.36, 2.07, 0.33)], 0.12, 1),
@@ -843,13 +862,15 @@ ARMS = [
       (1.54, 2.22, -0.2), (1.6, 2.08, -0.14), (1.69, 2.12, -0.22), (1.64, 2.19, -0.26)], 0.09, 1),
 ]
 for ctrl, r0, side in ARMS:
-    tentacle('kraken arm', through(ctrl, 46), r0, side)
+    x0, _, z0 = ctrl[0]
+    root = (x0 * 0.97, -0.3, z0 * 0.72)
+    tentacle('kraken arm', through([root] + ctrl, 50), r0, side)
 
 # ---- the rock ---------------------------------------------------------------------------------------------
 # Heaped under the whole keel as the render has it: big jagged boulders carrying the hull, more
-# of them round the stern and under the stair, the pile running out in stones over the ground,
-# cut level at the ground (an asset's lowest point is y = 0), and low at the back of the lot
-# (the chest stands behind the pub, shared/treasure.mjs chestSpots).
+# of them round the stern and under the stair, and low at the back of the lot. Not cut at the
+# ground any more: below it each boulder is drawn down into the skirt (`skirt`, after the scale),
+# so the rock rises out of the water or the sand and has no foot to see.
 
 
 def boulder(name, p, s, mat=ROCK, jag=0.22, subdiv=2):
@@ -861,11 +882,6 @@ def boulder(name, p, s, mat=ROCK, jag=0.22, subdiv=2):
     for v in me.vertices:
         f = 1 + rng.uniform(-jag, jag * 0.6)
         v.co = Vector((v.co.x * s[0] * f, v.co.y * s[2] * f, v.co.z * s[1] * f))
-    bpy.context.view_layer.update()
-    for v in me.vertices:
-        w = o.matrix_world @ v.co
-        if w.z < 0:
-            v.co.z -= w.z
     me.update()
     return link(o, name, mat, False)
 
@@ -881,13 +897,7 @@ MEDIUM = [(-2.12, -0.35, .2, .24, .2), (-0.3, -0.72, .24, .22, .2), (0.9, -0.74,
           (2.16, -0.2, .16, .3, .2), (-2.18, 0.62, .16, .16, .14), (0.2, 0.98, .12, .1, .12)]   # none at the stair's foot
 for x, z, sx, sy, sz in MEDIUM:
     boulder('rock', (x, sy * 0.35, z), (sx, sy, sz), rng.choice((ROCK, ROCK_DARK)), subdiv=3)
-for i in range(26):
-    x = -2.15 + 4.3 * rng.random()
-    z = rng.choice((1, 1, -1)) * (0.85 + 0.35 * rng.random())
-    r = 0.03 + 0.05 * rng.random()
-    if -0.8 < x < 1.15 and z > 0.6:
-        continue                     # the ground along the stair stays clear
-    boulder('stone', (x, r * 0.4, max(min(z, 1.24), -1.1)), (r * 1.3, r, r), rng.choice((ROCK, ROCK_DARK)), jag=0.25, subdiv=1)
+# (The loose stones that ran out over the ground went with the ground: in the sea they floated.)
 for i in range(18):
     x = -1.9 + 3.8 * i / 17 + rng.uniform(-0.08, 0.08)
     zb, yb, mb = 0.9 + rng.uniform(-0.1, 0.12), rng.uniform(0.04, 0.16), rng.choice((BARNACLE, MOSS))
@@ -957,9 +967,19 @@ lantern('door lantern', (LX, DOOR_SILL + 0.55, DOOR_Z + 0.13), 1.05, ship=False)
 # with `lo` at its foot - the ship's own vocabulary, scripts/model-rules.mjs - read by
 # web/js/buildings.js as `surfaces`), and each is drawn
 # as treads a settler's step apart on two stringers, with a rail on its open side.
+#
+# The foot is not at the rock's foot but SINK up it (Plans/kraken-op-zee.md, "Dieper in het water"): the
+# page stands this landing on the docks' deck, just over the sea, so everything below it is under water -
+# a band of rock between the sea and the hull, not a plinth (the keeper's line, 3 October). The flights
+# are the shorter for it; the door stays where it is in the hull.
+SINK = 1.0
 Y = DOOR_SILL
-STAIR_W, GAP, LAND_L, STOOP_L = 0.42, 0.06, 0.62, 0.7
-RUN = (Y / 2) / math.tan(math.radians(31))
+F = SINK                           # the foot of the stair, the landing it comes down to
+MID = (F + Y) / 2                  # the landing between the flights
+# The landing is longer than the turn needs (LAND_L): the rope ladder up the hull hangs onto its west
+# end (the deck, below), out of the way of whoever crosses from the lower flight to the upper one.
+STAIR_W, GAP, LAND_L, STOOP_L = 0.42, 0.06, 1.1, 0.7
+RUN = ((Y - F) / 2) / math.tan(math.radians(31))
 UZ0 = HZ + 0.14                    # clear of the hull's own solid (web/js/buildings.js pirateSolids)
 UZ1 = UZ0 + STAIR_W
 WZ0, WZ1 = UZ1 + GAP, UZ1 + GAP + STAIR_W
@@ -968,17 +988,17 @@ XLE = XE - RUN                     # the landing's east edge
 XLW = XLE - LAND_L
 SURFACES = {
     'stoop': ((XE, Y, HZ + 0.02), (XE + STOOP_L, Y, UZ1)),
-    'up': ((XLE, Y / 2, UZ0), (XE, Y, UZ1)),
-    'land': ((XLW, Y / 2, UZ0), (XLE, Y / 2, WZ1)),
-    'down': ((XE, 0.0, WZ0), (XLE, Y / 2, WZ1)),
+    'up': ((XLE, MID, UZ0), (XE, Y, UZ1)),
+    'land': ((XLW, MID, UZ0), (XLE, MID, WZ1)),
+    'down': ((XE, F, WZ0), (XLE, MID, WZ1)),
 }
 RISE = 0.085
 
 
-def flight(name, lo, hi, z0, z1):
+def flight(name, lo, hi, z0, z1, rise=None):
     """Treads from the lo end (x, y) to the hi end, two planks a tread, on two stringers."""
     (x0, y0), (x1, y1) = lo, hi
-    n = max(2, round(abs(y1 - y0) / RISE))
+    n = max(2, round(abs(y1 - y0) / (rise or RISE)))
     run = (x1 - x0) / n
     for i in range(n):
         # each tread's top at the height the ramp has over its middle, so a foot on the drawing is
@@ -993,15 +1013,15 @@ def flight(name, lo, hi, z0, z1):
         sweep(name + ' stringer', [(x0, max(y0 - 0.06, 0.035), z), (x1, max(y1 - 0.06, 0.035), z)], [0.03, 0.03], POST, ship=False, sides=4)
 
 
-flight('stair lower', (XE, 0.0), (XLE, Y / 2), WZ0, WZ1)
-flight('stair upper', (XLE, Y / 2), (XE, Y), UZ0, UZ1)
-box('stair landing', ((XLW + XLE) / 2, Y / 2 - 0.02, (UZ0 + WZ1) / 2), (LAND_L, 0.04, WZ1 - UZ0), TREAD, ship=False, round_=0.006)
+flight('stair lower', (XE, F), (XLE, MID), WZ0, WZ1)
+flight('stair upper', (XLE, MID), (XE, Y), UZ0, UZ1)
+box('stair landing', ((XLW + XLE) / 2, MID - 0.02, (UZ0 + WZ1) / 2), (LAND_L, 0.04, WZ1 - UZ0), TREAD, ship=False, round_=0.006)
 box('stair stoop', (XE + STOOP_L / 2, Y - 0.02, (HZ + 0.02 + UZ1) / 2), (STOOP_L, 0.04, UZ1 - HZ - 0.02), TREAD, ship=False, round_=0.006)
 # What carries the landing and the stoop: posts down to the ground.
 for x, z in ((XLW + 0.05, WZ1 - 0.05), (XLE - 0.05, WZ1 - 0.05), (XLW + 0.05, UZ0 + 0.05)):
-    rod('stair landing post', (x, 0, z), (x, Y / 2 - 0.04, z), 0.03, POST, ship=False, sides=4)
+    rod('stair landing post', (x, F, z), (x, MID - 0.04, z), 0.03, POST, ship=False, sides=4)
 for x in (XE + 0.06, XE + STOOP_L - 0.06):
-    rod('stair stoop post', (x, 0, UZ1 - 0.04), (x, Y - 0.04, UZ1 - 0.04), 0.03, POST, ship=False, sides=4)
+    rod('stair stoop post', (x, F, UZ1 - 0.04), (x, Y - 0.04, UZ1 - 0.04), 0.03, POST, ship=False, sides=4)
 # Rails: on the lower flight's water side, round the landing's open sides, on the upper flight's
 # water side (the drop to the lower flight) and round the stoop.
 RAIL_H = 0.32
@@ -1027,10 +1047,17 @@ def rail(name, pts, posts_every=0.55):
     return posts
 
 
-lower_posts = rail('stair lower rail', [(XE, 0.0, WZ1 + 0.02), (XLE, Y / 2, WZ1 + 0.02), (XLW, Y / 2, WZ1 + 0.02), (XLW, Y / 2, UZ0)])
-rail('stair upper rail', [(XLE, Y / 2, UZ1 + 0.03), (XE, Y, UZ1 + 0.03), (XE + STOOP_L, Y, UZ1 + 0.03), (XE + STOOP_L, Y, HZ + 0.04)])
-post_lantern('stair foot lantern', (XE, RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
-post_lantern('stair landing lantern', (XLW, Y / 2 + RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
+# The lower flight's rail begins a pace up it (RAIL_FROM), not at its foot: the gangway comes in on the
+# landing in front of the foot (Plans/kraken-op-zee.md), and a rail down to the bottom tread stood
+# across the way from the planks to the stair.
+RAIL_FROM = 0.4
+_rf = (XE - RAIL_FROM, F + (MID - F) * RAIL_FROM / RUN, WZ1 + 0.02)
+# Across the landing's west end too, to the hull: the rope ladder up the hull hangs onto the landing
+# itself now (the deck, below), and no longer leaves from that edge.
+lower_posts = rail('stair lower rail', [_rf, (XLE, MID, WZ1 + 0.02), (XLW, MID, WZ1 + 0.02), (XLW, MID, UZ0 + 0.03)])
+rail('stair upper rail', [(XLE, MID, UZ1 + 0.03), (XE, Y, UZ1 + 0.03), (XE + STOOP_L, Y, UZ1 + 0.03), (XE + STOOP_L, Y, HZ + 0.04)])
+post_lantern('stair foot lantern', (_rf[0], _rf[1] + RAIL_H - 0.02, _rf[2]), 0.03, 1.0, ship=False)
+post_lantern('stair landing lantern', (XLW, MID + RAIL_H - 0.02, WZ1 + 0.02), 0.03, 1.0, ship=False)
 post_lantern('stair stoop lantern', (XE + STOOP_L, Y + RAIL_H - 0.02, UZ1 + 0.03), 0.03, 0.95, ship=False)
 
 # ---- the rock under the stair, and the rock kept inside the lot -------------------------------------------
@@ -1041,8 +1068,76 @@ post_lantern('stair stoop lantern', (XE + STOOP_L, Y + RAIL_H - 0.02, UZ1 + 0.03
 # anybody from walking underneath instead. Every rock is also kept inside the lot.
 for f, r in ((0.25, 0.32), (0.5, 0.42), (0.78, 0.46)):
     x = XE + (XLE - XE) * f
-    boulder('stair rock', (x, 0.0, (WZ0 + WZ1) / 2 - 0.05), (r * 1.2, Y / 2 * f + 0.1, r), ROCK_DARK, jag=0.15, subdiv=2)
-boulder('stair rock', ((XLW + XLE) / 2, 0.0, (UZ0 + WZ1) / 2), (0.55, Y / 2, 0.55), ROCK_DARK, jag=0.15, subdiv=2)
+    boulder('stair rock', (x, F, (WZ0 + WZ1) / 2 - 0.05), (r * 1.2, (MID - F) * f + 0.1, r), ROCK_DARK, jag=0.15, subdiv=2)
+boulder('stair rock', ((XLW + XLE) / 2, F, (UZ0 + WZ1) / 2), (0.55, MID - F, 0.55), ROCK_DARK, jag=0.15, subdiv=2)
+
+
+# ---- the landing at the foot of the stair, where the gangway comes in -----------------------------------
+# A plank deck on piles at the stair's foot (Plans/kraken-op-zee.md): in front of the foot out to the
+# lot's front edge, where the island's gangway arrives (its middle on the cell the stair's step is,
+# x = 2.0 in this frame: PUB_GATE in shared/kraken.mjs floors to that cell at every rot), and along the
+# foot to the east, where the barrels stand. Both are floors walk mode stands on (`SURFACES`), at the
+# foot's own height, which is anchor.door's: the page puts that at the docks' deck height in the sea.
+SKIRT = 2.7                         # how far the rock and the piles reach below the landing
+LOT_EDGE = 3.0                      # the lot's front edge, PUB_LOT.d / 2
+PX0, PX1 = 1.45, XE + 1.75
+PZ0 = WZ1 + 0.03
+# Each a hair into the flight and into the other, so there is no seam to fall through between them:
+# the gangway's walker comes in at x = 2.0, over the foot of the lower flight.
+SURFACES['pier'] = ((PX0, F, WZ1 - 0.03), (PX1, F, LOT_EDGE))
+SURFACES['jetty'] = ((XE - 0.05, F, WZ0 - 0.04), (PX1, F, PZ0 + 0.03))
+PLANK = 0.16
+_n = round((PX1 - PX0) / PLANK)
+for i in range(_n):
+    x = PX0 + (PX1 - PX0) * (i + 0.5) / _n
+    box('landing plank', (x, F - 0.03, (PZ0 + LOT_EDGE) / 2), ((PX1 - PX0) / _n - 0.012, 0.05, LOT_EDGE - PZ0), TREAD, ship=False)
+_n = round((PZ0 - WZ0 + 0.04) / PLANK)
+for i in range(_n):
+    z = WZ0 - 0.04 + (PZ0 - WZ0 + 0.04) * (i + 0.5) / _n
+    box('landing plank', ((XE + PX1) / 2, F - 0.03, z), (PX1 - XE, 0.05, (PZ0 - WZ0 + 0.04) / _n - 0.012), TREAD, ship=False)
+for x in (PX0 + 0.05, (PX0 + PX1) / 2, PX1 - 0.05):
+    box('landing beam', (x, F - 0.09, (WZ0 + LOT_EDGE) / 2), (0.08, 0.08, LOT_EDGE - WZ0), POST, ship=False)
+for x, z in ((PX0 + 0.05, LOT_EDGE - 0.06), ((PX0 + PX1) / 2, LOT_EDGE - 0.06), (PX1 - 0.05, LOT_EDGE - 0.06),
+             (PX1 - 0.05, WZ0), (PX0 + 0.05, PZ0 + 0.04)):
+    rod('landing pile', (x, -SKIRT, z), (x, F + 0.06, z), 0.045, POST, ship=False, sides=6)
+
+
+# The skirt: every rock below the ground is drawn on down to SKIRT, wider as it goes, so the rock
+# rises out of the water (or the sand) rather than standing on it, on a foot wider than itself. Its
+# top half is left as it was.
+FLARE = 0.35
+
+
+def skirt(o):
+    me = o.data
+    mw = o.matrix_world
+    inv = mw.inverted()
+    ws = [mw @ v.co for v in me.vertices]
+    lo = min(w.z for w in ws)
+    if lo >= -1e-6:
+        return
+    cx = sum(w.x for w in ws) / len(ws)
+    cy = sum(w.y for w in ws) / len(ws)
+    # Not the lower half of the ball drawn out, which ran to a point: an icicle under every boulder. Each
+    # vertex below the ground is pushed out to at least the boulder's own width, widening further
+    # (FLARE) the deeper it goes, so the rock stands on a broad foot on the bed like a hill in the sea.
+    R = max(math.hypot(w.x - cx, w.y - cy) for w in ws) or 1.0
+    for v, w in zip(me.vertices, ws):
+        if w.z >= 0:
+            continue
+        t = w.z / lo
+        dx, dy = w.x - cx, w.y - cy
+        r = math.hypot(dx, dy)
+        want = R * (1 + FLARE * t)
+        f = max(1.0, want / r) if r > 1e-6 else 1.0
+        v.co = inv @ Vector((cx + dx * f, cy + dy * f, -SKIRT * t))
+    me.update()
+
+
+bpy.context.view_layer.update()
+for o in list(bpy.context.scene.objects):
+    if o.type == 'MESH' and 'rock' in o.name:
+        skirt(o)
 
 
 def floor_under(x, z):
@@ -1071,7 +1166,7 @@ for o in list(bpy.context.scene.objects):
         x, y, z = w.x, w.z, -w.y
         cap = floor_under(x, z)
         if cap is not None and y > cap - 0.08:
-            y, cut = max(cap - 0.08, 0.0), True
+            y, cut = cap - 0.08, True
         x = min(max(x, -LOT_HALF_X), LOT_HALF_X)
         z = min(max(z, -LOT_HALF_Z), LOT_HALF_Z)
         v.co = inv @ Vector((x, -z, y))
@@ -1084,20 +1179,230 @@ for o in list(bpy.context.scene.objects):
 # ---- at the foot of the stair: the sign on its post, barrels, a crate, rope ---------------------------
 # The sign (web/js/piratesign.js) stands on its own post beside the stair's foot, its arm out east
 # over the way in and its board facing the water, where the island's camera reads it.
-FOOT = (XE + 0.3, 0.0, (WZ0 + WZ1) / 2)
-SIGN_POST = (XE + 0.12, 0.0, WZ1 + 0.16)
-box('sign post', (SIGN_POST[0], 0.56, SIGN_POST[2]), (0.075, 1.12, 0.075), POST, ship=False, round_=0.008)
-box('sign post cap', (SIGN_POST[0], 1.13, SIGN_POST[2]), (0.1, 0.03, 0.1), POST, ship=False, round_=0.006)
-rod('sign post brace', (SIGN_POST[0] + 0.035, 0.72, SIGN_POST[2]), (SIGN_POST[0] + 0.2, 0.975, SIGN_POST[2]), 0.012, POST, ship=False, sides=4)
-SIGN_AT = (SIGN_POST[0] + 0.04, 0.98, SIGN_POST[2])
+FOOT = (XE + 0.3, F, (WZ0 + WZ1) / 2)
+SIGN_POST = (XE + 0.6, F, WZ1 + 0.16)       # east of where the gangway comes in
+box('sign post', (SIGN_POST[0], F + 0.56, SIGN_POST[2]), (0.075, 1.12, 0.075), POST, ship=False, round_=0.008)
+box('sign post cap', (SIGN_POST[0], F + 1.13, SIGN_POST[2]), (0.1, 0.03, 0.1), POST, ship=False, round_=0.006)
+rod('sign post brace', (SIGN_POST[0] + 0.035, F + 0.72, SIGN_POST[2]), (SIGN_POST[0] + 0.2, F + 0.975, SIGN_POST[2]), 0.012, POST, ship=False, sides=4)
+SIGN_AT = (SIGN_POST[0] + 0.04, F + 0.98, SIGN_POST[2])
 box('sign wall plate', (SIGN_AT[0] - 0.003, SIGN_AT[1], SIGN_AT[2]), (0.008, 0.1, 0.07), IRON, ship=False)
 for x, z in ((XE + 0.95, WZ1 - 0.05), (XE + 1.17, WZ1 - 0.12)):
-    rod('barrel', (x, 0, z), (x, .27, z), .105, OAK, ship=False, top=.095, sides=8)
+    rod('barrel', (x, F, z), (x, F + .27, z), .105, OAK, ship=False, top=.095, sides=8)
     for y in (.05, .20):
-        rod('barrel hoop', (x, y, z), (x, y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
-    rod('barrel lid', (x, .268, z), (x, .28, z), .09, DARK, ship=False, sides=8)
-box('crate', (XE + 1.02, 0.1, WZ1 - 0.36), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
-rod('rope coil', (XE + 1.42, 0, WZ1 - 0.02), (XE + 1.42, .045, WZ1 - 0.02), .085, ROPE, ship=False, sides=8)
+        rod('barrel hoop', (x, F + y, z), (x, F + y + .022, z), .108, IRON, ship=False, sides=8, fill='NOTHING')
+    rod('barrel lid', (x, F + .268, z), (x, F + .28, z), .09, DARK, ship=False, sides=8)
+box('crate', (XE + 1.02, F + 0.1, WZ1 - 0.36), (.2, .2, .2), OAK, ship=False, turn=.3, round_=.01)
+rod('rope coil', (XE + 1.42, F, WZ1 - 0.02), (XE + 1.42, F + .045, WZ1 - 0.02), .085, ROPE, ship=False, sides=8)
+
+# ---- the deck, walked (Plans/kraken-dek.md) ---------------------------------------------------------
+# The waist between the forecastle and the stern castle, the castle's roof and the forecastle's top
+# are floors walk mode stands you on, given here as the stair's are (anchor.deck.<name>.lo|hi, a ramp as
+# anchor.stair.<name>.lo|hi with `lo` at the end it starts from): the waist in strips across the ship -
+# the three degrees of heel - each a ramp along it - the sheer -, every corner put where the heeled,
+# scaled ship has it (`world_of`). What stands on them is solid (anchor.solid.<name>.lo|hi, a box from
+# its foot to its top) and the bulwarks and balustrades are rails (anchor.rail.<n>.a|b, at the floor's
+# height), all read by web/js/buildings.js. Into the castle through a door in its front wall, which E
+# opens onto the hall's loft (main.js); up onto the castle's roof and the forecastle by a ladder each;
+# and onto the ship from outside by a rope ladder up the hull onto the zigzag stair's landing (climbed).
+_letters = 'abcdefghijklmnopqrstuvwxyz'
+
+
+def inner(x):
+    """The deck's half width inside the bulwark at x (in the ship's frame)."""
+    return beam(x) * RING[0][0] - BULWARK - 0.02
+
+
+def W(x, y, z):
+    return world_of((x, y, z))
+
+
+def floor_strips(name, x0, x1, y_of, half_of, nx, nz):
+    """A deck between x0 and x1 (ship's frame), `y_of(x)` its height, `half_of(x)` its half width:
+    nx ramps along x in each of nz strips across."""
+    for i in range(nx):
+        xa, xb = x0 + (x1 - x0) * i / nx, x0 + (x1 - x0) * (i + 1) / nx
+        h = min(half_of(xa), half_of(xb))
+        for j in range(nz):
+            za, zb = -h + 2 * h * j / nz, -h + 2 * h * (j + 1) / nz
+            zc = (za + zb) / 2
+            a, b = W(xa, y_of(xa), zc), W(xb, y_of(xb), zc)
+            e0, e1 = W((xa + xb) / 2, y_of((xa + xb) / 2), za), W((xa + xb) / 2, y_of((xa + xb) / 2), zb)
+            lo_z, hi_z = min(e0.z, e1.z), max(e0.z, e1.z)
+            key = f'{name}-{_letters[i]}-{_letters[j]}'
+            if abs(a.y - b.y) < 1e-4:
+                SURFACES[key] = ((a.x, a.y, lo_z), (b.x, a.y, hi_z))
+            else:
+                SURFACES[key] = ((a.x, a.y, lo_z), (b.x, b.y, hi_z))
+
+
+SOLIDS = {}
+
+
+def solid_box(name, lo, hi):
+    """A box of the ship's frame as the island has it: its footprint round its four foot corners, its
+    foot the lowest of them and its top the lowest top corner, so a floor laid on it is never under it."""
+    xs, zs, bottoms, tops = [], [], [], []
+    for x in (lo[0], hi[0]):
+        for z in (lo[2], hi[2]):
+            b, t = W(x, lo[1], z), W(x, hi[1], z)
+            xs.append(b.x)                  # the footprint at its foot: a mast leans with the heel
+            zs.append(b.z)
+            bottoms.append(b.y)
+            tops.append(t.y)
+    SOLIDS[name] = (Vector((min(xs), min(bottoms), min(zs))), Vector((max(xs), min(tops) - 0.02, max(zs))))
+
+
+def rail_line(pts):
+    """Bulwark or balustrade: a wall a rail's height over the floor along `pts` (island frame)."""
+    for a, b in zip(pts, pts[1:]):
+        RAILS.append((Vector(a), Vector(b)))
+
+
+# The waist, between the forecastle's back and the castle's front.
+WX0, WX1 = F1 + 0.01, C0 - 0.005
+floor_strips('waist', WX0, WX1, deck_y, inner, 8, 5)
+# The castle's roof and the forecastle's top: level in the ship's frame, so heeled in strips.
+# Each over its ladder's head by a hair: a gap of a few centimetres between them was a foot through it.
+floor_strips('roof', C0 - 0.01, C1 - 0.02, lambda x: RY + 0.05, lambda x: H1 - 0.09, 1, 5)
+FTOP = FY + 0.27
+floor_strips('fore', F0 + 0.03, F1 + 0.01, lambda x: FTOP, lambda x: FH - 0.06, 1, 5)
+# The two hatches are a step up, walked onto.
+for k, hx in enumerate((-0.55, 0.35)):
+    a, b = W(hx - 0.17, deck_y(hx) + 0.07, -0.16), W(hx + 0.17, deck_y(hx) + 0.07, 0.16)
+    SURFACES['hatch-' + _letters[k]] = ((a.x, max(a.y, b.y), min(a.z, b.z)), (b.x, max(a.y, b.y), max(a.z, b.z)))
+
+# What stands on them.
+solid_box('foremast', (FORE_X - 0.075, deck_y(FORE_X), -0.075), (FORE_X + 0.075, 3.6, 0.075))
+solid_box('aftmast', (AFT_X - 0.07, RY + 0.05, -0.07), (AFT_X + 0.07, RY + 2.0, 0.07))
+solid_box('cupola', (CU[0] - 0.2, RY + 0.05, CU[2] - 0.2), (CU[0] + 0.2, RY + 0.6, CU[2] + 0.2))
+solid_box('capstan', (0.45, deck_y(0.62), -0.22), (0.79, deck_y(0.62) + 0.16, 0.12))
+solid_box('barrelsfore', (-1.12, deck_y(-1.0), -0.43), (-0.89, deck_y(-1.0) + 0.16, -0.13))
+
+solid_box('cratefore', (-1.05, deck_y(-0.95), 0.22), (-0.85, deck_y(-0.95) + 0.16, 0.42))
+solid_box('crateaft', (0.0, deck_y(0.1), -0.45), (0.2, deck_y(0.1) + 0.16, -0.25))
+
+# ---- the ladders ----
+# Up onto the castle's roof, against its front wall on the water side of the door; up onto the
+# forecastle against its back. Drawn as the zigzag's flights are (`flight`), steep: a ship's ladder.
+LADDER_W = 0.45
+
+
+def ladder(name, foot, head, zc):
+    """A steep flight from `foot` to `head` ((x, y) on the island) centred on zc, walked as a ramp."""
+    z0, z1 = zc - LADDER_W / 2, zc + LADDER_W / 2
+    flight(name, foot, head, z0, z1, rise=0.22)        # rungs, not treads: a ladder is climbed
+    lo, hi = (foot[0], foot[1], z0), (head[0], head[1], z1)
+    SURFACES[name.replace(' ', '-')] = (lo, hi)
+
+
+_rz = 0.36                                  # the roof ladder's middle, in the ship's frame
+_cf = W(C0, deck_y(C0), _rz)                # the castle's front at the deck
+_ct = W(C0, RY + 0.05, _rz)                 # and at the roof
+ladder('roof ladder', (_cf.x - 0.75, _cf.y), (_ct.x, _ct.y), _cf.z)
+_ff = W(F1, deck_y(F1), 0.0)
+_ft = W(F1, FTOP, 0.0)
+ladder('fore ladder', (_ff.x + 0.6, _ff.y), (_ft.x, _ft.y), _ff.z)
+
+# Onto the ship from outside: a rope ladder (issue #86), hanging plumb from the outer end of a plank
+# over the bulwark down onto the west end of the zigzag's landing. It is climbed, not walked: walk.js
+# takes `anchor.climb.side.lo|hi` - `lo` where a climber stands at its foot, in front of the rungs,
+# `hi` where they step off on the plank - and carries them up the ropes the way it carries them up
+# a ship's ladder (shared/deck.mjs ladderPath), facing the hull. As a steep wooden flight it was walked
+# up like a stair, which read as a staircase stood against a ship. Outside the hull's widest (z 1.65
+# at its belly, heel and all), over the landing, and clear of the kraken's arms further west.
+SIDE_X = XLW + 0.3                          # the ladder's middle along the hull
+SIDE_Z = UZ0 + LADDER_W / 2                 # its ropes' plumb line, a hand out from the belly
+ROPE_HW = 0.2                               # half the rungs' width
+CLIMB_OUT = 0.16                            # the climber's feet in front of the ropes (shared/deck.mjs)
+_bx = SIDE_X / SCALE                        # where the plank comes over the bulwark, in the ship's frame
+_gw = W(_bx, sheer(_bx), inner(_bx) + BULWARK + 0.02)   # the gunwale there
+_in = W(_bx, deck_y(_bx), inner(_bx) - 0.05)
+# The plank: wider than it was (0.55) and as far out as the ropes, which are lashed to its end.
+BOARD = ((SIDE_X - 0.4, _gw.y, _in.z), (SIDE_X + 0.4, _gw.y, SIDE_Z + 0.06))
+SURFACES['boarding'] = BOARD
+box('boarding plank', ((BOARD[0][0] + BOARD[1][0]) / 2, _gw.y - 0.025, (BOARD[0][2] + BOARD[1][2]) / 2),
+    (BOARD[1][0] - BOARD[0][0], 0.05, BOARD[1][2] - BOARD[0][2]), TREAD, ship=False)
+# its two cleats across the end, and two knees under it back to the hull
+for dz in (0.12, 0.42):
+    box('boarding cleat', (SIDE_X, _gw.y + 0.008, BOARD[1][2] - dz), (0.78, 0.016, 0.04), TREAD, ship=False)
+for x in (SIDE_X - 0.32, SIDE_X + 0.32):
+    rod('boarding knee', (x, _gw.y - 0.05, BOARD[1][2] - 0.08), (x, _gw.y - 0.55, _gw.z + 0.02), 0.022, POST, ship=False, sides=4)
+
+
+def rope_ladder(name, x, z, top, foot, rise=0.24):
+    """Two ropes from the plank's end down to the floor at `foot`, sagging a little out from the hull,
+    and round rungs between them a rise apart."""
+    n = 8
+    sag = lambda t: 0.035 * 4 * t * (1 - t)  # most at the middle, none where it is lashed and where it lies
+    ys = [top - (top - foot) * k / n for k in range(n + 1)]
+    for sx in (-1, 1):
+        path = [(x + sx * ROPE_HW, y, z + sag(k / n)) for k, y in enumerate(ys)]
+        sweep(name + ' rope', path, [0.013] * len(path), ROPE, ship=False, sides=4)
+        # the lashing round the plank's end, and the slack lying on the landing
+        rod(name + ' lashing', (x + sx * ROPE_HW, top - 0.05, z - 0.02), (x + sx * ROPE_HW, top + 0.02, z - 0.02), 0.02, ROPE, ship=False, sides=4)
+    k = 1
+    while foot + rise * k < top - 0.12:
+        y = foot + rise * k
+        t = (top - y) / (top - foot)
+        rod(name + ' rung', (x - ROPE_HW - 0.01, y, z + sag(t)), (x + ROPE_HW + 0.01, y, z + sag(t)), 0.016, POST, ship=False, sides=4)
+        k += 1
+
+
+rope_ladder('side ladder', SIDE_X, SIDE_Z, _gw.y - 0.03, MID + 0.01)
+CLIMBS = {'side': ((SIDE_X, MID, SIDE_Z + CLIMB_OUT), (SIDE_X, _gw.y, SIDE_Z - 0.3))}
+
+# The two castles as blocks, each in three: either side of where its ladder comes up, and under the
+# ladder only to well below the top - or whoever climbs it is stopped by the wall a step short of it.
+_lw = LADDER_W / SCALE / 2 + 0.02
+for nm, x0, x1, base, top, half, zc in (('castle', C0, C1, deck_y(C0) - 0.05, RY + 0.05, H1, _rz),
+                                        ('forecastle', F0 - 0.1, F1, deck_y(F1) - 0.05, FTOP, FH, 0.0)):
+    solid_box(nm + 'land', (x0, base, -half), (x1, top, zc - _lw))
+    solid_box(nm + 'water', (x0, base, zc + _lw), (x1, top, half))
+    solid_box(nm + 'ladder', (x0, base, zc - _lw), (x1, top - 0.3, zc + _lw))
+
+# ---- the walls ----
+# The bulwarks along the waist, both sides; on the water side open where the boarding plank comes over.
+_xs = [WX0 + (WX1 - WX0) * k / 8 for k in range(9)]
+for side in (1, -1):
+    pts = [tuple(W(x, deck_y(x), side * inner(x))) for x in _xs]
+    if side == 1:
+        lo_x, hi_x = BOARD[0][0] - 0.05, BOARD[1][0] + 0.05
+        cut_at = [i for i, p in enumerate(pts) if lo_x <= p[0] <= hi_x]
+        before = [p for p in pts if p[0] < lo_x]
+        after = [p for p in pts if p[0] > hi_x]
+        rail_line(before)
+        rail_line(after)
+    else:
+        rail_line(pts)
+# The castle's roof, all round but where the ladder comes up; the forecastle's sides and bow, but not
+# its back, which has the ladder.
+_rc = lambda x, z: tuple(W(x, RY + 0.05, z))
+_e = H1 - 0.07
+# The gap a hand wider than the ladder each side: the heel puts the roof's edge a few centimetres
+# further to the water than the ladder's foot, and a climber met the rail's end at the top.
+_gap = LADDER_W / SCALE / 2 + 0.06
+rail_line([_rc(C0 + 0.02, _rz + _gap), _rc(C0 + 0.02, _e), _rc(C1 - 0.02, _e), _rc(C1 - 0.02, -_e), _rc(C0 + 0.02, -_e),
+           _rc(C0 + 0.02, _rz - _gap)])
+_fc = lambda x, z: tuple(W(x, FTOP, z))
+_fe = FH - 0.04
+rail_line([_fc(F1 - 0.01, _fe), _fc(F0 + 0.03, _fe), _fc(F0 + 0.03, -_fe), _fc(F1 - 0.01, -_fe)])
+rail_line([_fc(F1 - 0.01, _fe), _fc(F1 - 0.01, 0.1)])
+rail_line([_fc(F1 - 0.01, -0.1), _fc(F1 - 0.01, -_fe)])
+
+# ---- the door ----
+# In the castle's front wall on the land side of the roof ladder, at a settler's size like the one at
+# the top of the stair, and the step before it where E opens it and where you come out.
+_dz = -0.36                                 # in the ship's frame
+_df = W(C0, deck_y(C0), _dz)
+DFX, DFY, DFZ = _df.x - 0.02, _df.y, _df.z
+deck_door = [(-DOOR_W / 2, 0), (DOOR_W / 2, 0)] + [(DOOR_W / 2 * c, DOOR_H - DOOR_W / 2 + DOOR_W / 2 * s) for c, s in ARCH]
+plate('deck door recess', [(u * 1.3, v * 1.08 - 0.02) for u, v in deck_door], DFX, DFY, DFZ, 0.06, DARK, ship=False, turn=-math.pi / 2)
+plate('deck door', deck_door, DFX - 0.034, DFY, DFZ, 0.02, HULL, ship=False, turn=-math.pi / 2)
+for y in (0.12, 0.34):
+    box('deck door band', (DFX - 0.047, DFY + y, DFZ), (0.008, 0.024, DOOR_W * 0.94), IRON, ship=False)
+rod('deck door ring', (DFX - 0.046, DFY + 0.28, DFZ + 0.08), (DFX - 0.06, DFY + 0.28, DFZ + 0.08), 0.03, GOLD, ship=False, sides=6, fill='NOTHING')
+SURFACES['door-step'] = ((DFX - 0.6, DFY, DFZ - 0.3), (DFX - 0.05, DFY, DFZ + 0.3))
+
 
 # ---- anchors ----------------------------------------------------------------------------------------
 # anchor.door is where a settler stands to go in: on the ground at the foot of the stair. The
@@ -1109,13 +1414,27 @@ for name, (lo, hi) in SURFACES.items():
     kind = 'deck' if lo[1] == hi[1] else 'stair'
     anchors[f'{kind}.{name}.lo'] = Vector(lo)
     anchors[f'{kind}.{name}.hi'] = Vector(hi)
+for name, (lo, hi) in SOLIDS.items():
+    anchors[f'solid.{name}.lo'] = lo
+    anchors[f'solid.{name}.hi'] = hi
+for name, (lo, hi) in CLIMBS.items():
+    anchors[f'climb.{name}.lo'] = Vector(lo)
+    anchors[f'climb.{name}.hi'] = Vector(hi)
 for k, (a, b) in enumerate(RAILS):
     anchors[f'rail.{k}.a'] = a
     anchors[f'rail.{k}.b'] = b
 anchors['solid.hull.lo'] = Vector((world_of((BOW_X + 0.35, 0, 0)).x, world_of((0, KEEL_Y, 0)).y, -(HZ - 0.06)))
-anchors['solid.hull.hi'] = Vector((world_of((STERN_X, 0, 0)).x, world_of((0, RY + 0.2, 0)).y, HZ - 0.06))
+# Up to under the deck, not the castle's roof: the deck is walked now (Plans/kraken-dek.md), and the castle is its own solid.
+DECK_LOW = min(W(x, deck_y(x), z * inner(x)).y for x in _xs for z in (-1, 1))
+anchors['solid.hull.hi'] = Vector((world_of((STERN_X, 0, 0)).x, DECK_LOW - 0.1, HZ - 0.06))
+# And everything up by SKIRT, so that the bottom of the skirt is the asset's y = 0.
+bpy.context.view_layer.update()
+_lift = Matrix.Translation((0, 0, SKIRT))
+for o in list(bpy.context.scene.objects):
+    if o.type == 'MESH':
+        o.matrix_world = _lift @ o.matrix_world
 for name, q in anchors.items():
-    bpy.ops.object.empty_add(location=xyz(tuple(q)))
+    bpy.ops.object.empty_add(location=xyz((q[0], q[1] + SKIRT, q[2])))
     bpy.context.object.name = 'anchor.' + name
 
 bpy.context.view_layer.update()

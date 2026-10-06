@@ -2845,7 +2845,7 @@ dependencies = [
 
 [[package]]
 name = "promptholm-android"
-version = "0.8.2"
+version = "0.10.0"
 dependencies = [
  "ed25519-dalek",
  "reqwest 0.12.28",

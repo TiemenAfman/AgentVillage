@@ -190,7 +190,7 @@ export function createGuestIsland({
     // The shipyard on the land at its landward end, as main.js's poseOnPlot stands ours.
     let y = built.floats ? pose.y
       : isShipyard(spec) ? shipyardGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz))
-        : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz)) : local.worldHeight(x, z);
+        : isPirateTavern(spec) ? pirateTavernGround(spec.plot, [x, z], (px, pz) => local.worldHeight(px, pz), built, local) : local.worldHeight(x, z);
     if (spec.harbour && y <= HARBOUR_WATERLINE) y = Math.max(-0.35, Math.min(y, 0.05));
 
     const g = new THREE.Group();

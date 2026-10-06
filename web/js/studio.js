@@ -5,9 +5,9 @@
 // slot owns what is inventory.js's table. Nothing is committed until you wear it - "Never
 // mind" puts back what you had on.
 import * as THREE from 'three';
-import { SWATCHES, DEFAULT_AVATAR, loadAvatar, saveAvatar, normalizeAvatar } from './avatar.js';
+import { SWATCHES, DEFAULT_AVATAR, CHARACTERS, loadAvatar, saveAvatar, normalizeAvatar } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
-import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, iconKey, iconGeometry } from './inventory.js';
+import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, iconKey, iconGeometry } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
 import { WALK_SPEED } from './avatar-gait.js';
 import { keyOf } from './keybinds.js';
@@ -64,7 +64,13 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   // One delegated listener for the panel's lifetime: the markup below is rebuilt on every
   // open, and a listener added per open would stack.
   el.addEventListener('click', (e) => {
+    // Which body (Plans/tweede-avonturier.md): worn at once, like any other piece, and put
+    // back by Never mind with the rest. Everything else on the spec carries over - the hats,
+    // the armour and the pack are fitted to both bodies under the same names.
+    const charBtn = e.target.closest('[data-character]');
+    if (charBtn) { spec.character = charBtn.dataset.character; sync(); apply(); return; }
     const slotBtn = e.target.closest('[data-slot]');
+    if (slotBtn && slotBtn.disabled) return;
     if (slotBtn) return onSlot(INVENTORY_SLOTS.find((s) => s.id === slotBtn.dataset.slot), slotBtn);
     const dyeBtn = e.target.closest('[data-dye]');
     if (dyeBtn) return openDyes(dyeBtn.dataset.dye, dyeBtn);
@@ -92,6 +98,11 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     </div>`;
   const flaskHtml = (flask, i) =>
     `<div class="inv-flask ${i === 0 ? 'left' : 'right'}">${dyeHtml(flask.dye, flask.label)}<span class="inv-label">${flask.label}</span></div>`;
+  // The choice of body, over the alcove: a portrait of each, drawn by the same icon renderer
+  // as the slots, and a radio group because exactly one is worn.
+  const characterHtml = () => `<div class="inv-chars" role="radiogroup" aria-label="Character">${CHARACTERS.map((c) => `
+      <button class="inv-char" role="radio" data-character="${c.id}" aria-checked="false" title="${c.name}">
+        <canvas class="inv-icon"></canvas><span class="inv-label">${c.name}</span></button>`).join('')}</div>`;
   const column = (side) => INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
 
   function open() {
@@ -107,6 +118,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <h3 class="inv-title" id="inv-title">Inventory</h3>
         <button class="x" id="av-close" aria-label="Close">✕</button>
         <div class="inv-scroll">
+          ${characterHtml()}
           <div class="inv-body">
             <div class="inv-col left">${column('left')}</div>
             <div class="inv-stage">
@@ -184,7 +196,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       box.appendChild(tile);
     }
     pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
-    [...box.children].forEach((tile, i) => icons.paint(tile.firstElementChild, optionIcon(slot, slot.options[i].id), spec));
+    [...box.children].forEach((tile, i) => icons.paint(tile.firstElementChild, optionIcon(slot, slot.options[i].id, spec.character), spec));
   }
 
   // A palette stays up after a choice: colours are compared on the figure, one after another,
@@ -231,9 +243,23 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   // Light up what is worn, and repaint whichever icons the current spec makes stale - which
   // makeIcons decides per canvas, so a hat recolour touches the head slot and nothing else.
   function sync() {
+    for (const c of el.querySelectorAll('[data-character]')) {
+      const on = c.dataset.character === spec.character;
+      c.classList.toggle('on', on);
+      c.setAttribute('aria-checked', String(on));
+      icons.paint(c.firstElementChild, characterIcon(c.dataset.character), spec);
+    }
+    // A dye this body does not read (the Adventurer's own skin and cloth are painted, not
+    // dyed) is taken away rather than left to do nothing: its button, its flask, and the
+    // Outfit slot, which is nothing but that dye.
+    for (const d of el.querySelectorAll('.inv-dye')) {
+      const off = !dyeApplies(d.dataset.dye, spec.character);
+      (d.closest('.inv-flask') || d).hidden = off;
+    }
     for (const slot of INVENTORY_SLOTS) {
       const b = el.querySelector(`[data-slot="${slot.id}"]`);
-      const on = slot.kind === 'dye' ? true : slot.field ? spec[slot.field] !== 'none' : !!spec.equip?.[slot.equip];
+      b.disabled = slot.kind === 'dye' && !dyeApplies(slot.dye, spec.character);
+      const on = slot.kind === 'dye' ? !b.disabled : slot.field ? spec[slot.field] !== 'none' : !!spec.equip?.[slot.equip];
       b.classList.toggle('on', on);
       if (slot.kind === 'toggle') b.setAttribute('aria-pressed', String(on));
       icons.paint(b.firstElementChild, slotIcon(slot, spec), spec);
