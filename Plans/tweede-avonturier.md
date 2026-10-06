@@ -33,7 +33,7 @@ Voeg het door Tiemen gekozen Sketchfab-model als tweede personage toe naast de h
 
 ## Status
 
-Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
+Gebouwd op `feat/tweede-avonturier` (30 september 2026), sinds **0.10.0** op main en uitgebracht.
 
 - **Bron.** De download staat ongewijzigd in `assets/adventurer/source-link.glb`. De metadata in
   het bestand noemt **A_CAT564** als maker (CC BY 4.0), niet de uploader die hierboven staat;
@@ -99,9 +99,24 @@ Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
   verhoudingen lieten een voet een centimeter in de grond.
 - **Skill** `.claude/skills/mixamo-clips/`: hoe een nieuwe clip erbij komt.
 
+### Vallen en verdrinken (6 oktober 2026)
+
+Sterven en verdrinken laten het lichaam eerst neergaan en pas daarna naar huis springen, voor beide
+lichamen en bij de anderen ook: [vallen-en-verdrinken.md](vallen-en-verdrinken.md). De Avonturier
+speelt daar Mixamo's *Falling Forward Death* en *Floating In Air Flailing Arms* (Mixamo heeft geen
+verdrinkclip), de Reiziger een procedurele val.
+
+### Afgerond
+
+- Per lichaam aparte kledingkeuzes bewaren is niet nodig gebleken: alles past op beide.
+- **De maker** (6 oktober 2026): de modelpagina en Sketchfabs API noemen nog steeds 1_clicks_
+  (ZENTA-_-), CC BY 4.0, zonder beschrijving; het profiel A_CAT564 uit de metadata geeft een 404.
+  Waarschijnlijk hetzelfde account onder een oude naam, maar dat staat nergens; `CREDITS.md` noemt
+  daarom beide, met deze controle erbij.
+
 ### Nog open
 
-- Op het eiland zelf (walk.js: fiets, zwemmen, zitten, eerste persoon) is het nog niet in een
-  echte sessie bekeken; de bewegingsstudio en de tests wel.
-- Per lichaam aparte kledingkeuzes bewaren is niet nodig gebleken: alles past op beide.
-- De maker op de modelpagina nog eens naast de metadata leggen.
+- **Op het eiland zelf** in walk.js: fiets, zwemmen, zitten en eerste persoon zijn met de
+  Avonturier nog niet in een echte sessie bekeken (pointer lock werkt niet in het ingebouwde
+  browserpaneel; promptholm.exe of een gewone Chrome nodig). De bewegingsstudio en de tests wel.
+  Dit is het enige wat het plan nog open houdt.

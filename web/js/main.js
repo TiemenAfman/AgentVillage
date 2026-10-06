@@ -869,7 +869,29 @@ function handSurfaces() {
   state.walk.setClimbs(climbs);
 }
 
+// Captured (the bar emptied: a guard, lava) or drowned, the body goes down where it stands before
+// it is taken home (Plans/vallen-en-verdrinken.md): walk mode plays the death (walk.die, the rig's
+// clip or its procedural fall) for as long as the body takes and a moment of lying still, and
+// only then does sentHome jump. The sea moved us the moment it evicted us; every pose sent in
+// between still says where we fell, and it believes poses - so others see the body there too,
+// and the sea's own `fell` tells them to play it. A respawn asked for and a starter settled are
+// no death, and go at once; so does anything said while we are already going down.
+let dyingHome = null;
+function evictedHere(m) {
+  const captured = m.why == null || m.why === 'drown';
+  if (dyingHome) { clearTimeout(dyingHome); dyingHome = null; sentHome(m); return; }
+  const walk = state.mode === 'walk' && !state.inside && state.walk;
+  const s = captured && walk ? state.walk.die(m.why === 'drown' ? 'drown' : 'fall') : 0;
+  if (!(s > 0)) { sentHome(m); return; }
+  // Nothing more to do with the feet: what was asked of the sea is answered by this.
+  clearTimeout(respawnWait);
+  respawnWait = null;
+  dyingHome = setTimeout(() => { dyingHome = null; sentHome(m); }, s * 1000);
+}
+
 function sentHome(m) {
+  if (dyingHome) { clearTimeout(dyingHome); dyingHome = null; }
+  if (state.walk) state.walk.revive();
   // Sent home we come up with a full lung, whatever sent us: the sea does the same (a
   // drowning says so in `breath` too, but a guard's capture says nothing about air).
   air = AIR_S;
@@ -8940,7 +8962,7 @@ Everything is copied and checked first; the island then starts again there. The 
     // What we look like to everybody else: our own wardrobe (web/js/avatar.js), said on
     // every connect and again from the studio's Apply.
     look: loadAvatar(),
-    onEvicted: (m) => sentHome(m),
+    onEvicted: (m) => evictedHere(m),
     // Respawn to town said no (nowhere to go, or asked again too soon): no local fallback then,
     // that is for a sea that does not know the message (respawnToTown).
     onRespawn: () => {

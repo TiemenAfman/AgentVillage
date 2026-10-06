@@ -8,7 +8,7 @@ import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } fr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
-import { createClassicAvatar } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
@@ -320,6 +320,9 @@ export function createWalkMode({
     dive: false,
     diving: false,
     onBed: false,
+    // Dying (Plans/vallen-en-verdrinken.md): { kind: 'fall' | 'drown', t } between the sea's
+    // `evicted` and the jump home main.js makes when it is over - see die().
+    dying: null,
     crouching: false,
     lying: false,
     // Where you are sitting, or null. A seat carries its own height, so a bar stool holds
@@ -1858,6 +1861,7 @@ export function createWalkMode({
   }
 
   function exit() {
+    revive();
     setFirstPerson(false);
     // The camera is somebody else's from here (the sky's, a room's): its near plane as it was made.
     setNear(nearBase);
@@ -2044,6 +2048,54 @@ export function createWalkMode({
     return [-dx / d, dz / d];
   }
 
+  // Sent home by the sea (`evicted` after a capture or a drowning), the body first goes down
+  // where it stands: walk mode is held (paused, so no key or button does anything, while the
+  // mouse still looks round), the rig plays its death (classic-avatar.js dyingPose, or Mixamo's
+  // clip) and the poses we send keep it there, so everybody else sees it fall too (peers.js, on
+  // the sea's `fell`). Returns how long it takes, lying still after included (DEATH_REST), for
+  // main.js to jump home after; 0 when this
+  // body cannot (a hull, a saddle, a ladder, a seat) and the jump should be at once. In the
+  // water whatever did it, the body sinks: drowning or not, nobody falls over afloat.
+  function die(kind) {
+    if (!state.active || state.parked || state.vehicle || state.bike || state.deck || climb || state.sitting) return 0;
+    cancelDig('hit');
+    state.dancing = false;
+    state.crouching = state.lying = false;
+    state.guard.leftArm = state.guard.rightArm = false;
+    state.blocking = false;
+    keys.clear(); stick.x = 0; stick.z = 0; stick.run = false;
+    state.paused = true;
+    state.dying = { kind: state.swimming || kind === 'drown' ? 'drown' : 'fall', t: 0 };
+    if (state.dying.kind === 'fall' && state.vy > 0) state.vy = 0;
+    return (classicAvatar.dyingSeconds ? classicAvatar.dyingSeconds(state.dying.kind) : 0) + DEATH_REST;
+  }
+  function revive() {
+    if (!state.dying) return;
+    state.dying = null;
+    state.paused = false;
+  }
+  function stepDying(dt) {
+    const d = state.dying;
+    d.t += dt;
+    state.moving = state.running = state.sprinting = state.turbo = false;
+    stepPool(state.stamina.body, false, dt);
+    stepPool(state.stamina.boat, false, dt);
+    const x = state.pos.x, z = state.pos.z;
+    if (d.kind === 'drown') {
+      // Slowly, from a standstill, to the bed and never through it.
+      const sink = DROWN_SINK * dt * Math.min(1, d.t / 0.6);
+      state.pos.y = Math.max(Math.min(state.pos.y, bedUnder(x, z) + 0.05), state.pos.y - sink);
+      state.diving = headUnder(state.pos.y, WATER_Y);
+    } else if (!state.grounded) {
+      // Hit in the air: down onto whatever is under the feet first.
+      state.vy -= GRAVITY * dt;
+      state.pos.y += state.vy * dt;
+      const g = groundAt(x, z, state.pos.y + STEP_UP);
+      if (state.pos.y <= g) { state.pos.y = g; state.vy = 0; state.grounded = true; }
+    }
+    return afterMove(dt);
+  }
+
   let frameDistance = 0;
   function update(dt) {
     frameDistance = 0;
@@ -2055,6 +2107,7 @@ export function createWalkMode({
       state.camYaw = 0;
     }
     if (ownTipsy) stepTipsy(state.tipsy, dt);
+    if (state.dying) return stepDying(dt);
     // Quicker on the move and quicker still at a run, going by last frame's gait. A phase
     // that is added to rather than a time that is multiplied, or every change of gait would
     // jump the stagger to somewhere else in its swing.
@@ -2418,7 +2471,8 @@ export function createWalkMode({
     // A dance ends the way a nap does: the moment the feet do anything else, or the body is
     // somewhere it cannot dance (a hull, the saddle, the water).
     if (state.dancing && (state.moving || state.crouching || !canDance())) state.dancing = false;
-    const fp = state.firstPerson && !state.vehicle && !state.lying && !state.sitting;
+    // Dying is seen from behind, whatever the view: the fall is the point.
+    const fp = state.firstPerson && !state.vehicle && !state.lying && !state.sitting && !state.dying;
     if (fp && !state.bike) state.yaw = state.camYaw;
     avatar.scale.setScalar(1);
     lounge.visible = state.lying;
@@ -2428,7 +2482,11 @@ export function createWalkMode({
     const drunk = state.tipsy.level;
     const nod = drunk * SWAY_NOD * Math.sin(state.sway * 1.3 + 0.4);
     const roll = drunk * SWAY_ROLL * Math.sin(state.sway * 1.9 + 0.6);
-    if (state.lying) {
+    if (state.dying) {
+      // Upright and still: the rig does the falling (its root at the feet tips over them).
+      avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
+      avatar.rotation.set(0, state.yaw, 0);
+    } else if (state.lying) {
       // On the back with the head at -z, which is the end the parasol stands at. Negative
       // pitch turns the front face upwards; the positive one used for swimming is prone.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
@@ -2491,6 +2549,7 @@ export function createWalkMode({
       swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
       dancing: dancingNow(),
+      dying: state.dying,
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');
@@ -2838,6 +2897,9 @@ export function createWalkMode({
     // null. Aboard it is cargo: `putOnBoat(hull)` (board() does it for whoever boards carrying),
     // `takeOffBoat()` for a body already off the hull (unboard() does it on the way ashore), and
     // `cargo()` is { item, hull } or null.
+    // Going down before the jump home (main.js sentHome): die('fall' | 'drown') -> seconds, 0 when
+    // this body cannot; revive() ends it (exit() does too); dying() is { kind, t } or null.
+    die, revive, dying: () => state.dying,
     lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is

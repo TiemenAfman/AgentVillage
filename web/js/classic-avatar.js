@@ -1016,6 +1016,17 @@ function buildRig(spec, material) {
   const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
   function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back }) {
     if (!G.clips) return;
+    // Dying owns the whole body: its own clip, played once from the moment it began, or - with
+    // none baked - every clip eased out, and the procedural fall (dyingPose) does it.
+    if (pose.dying) {
+      clipFree = digByClip = false;
+      const C = deathClip(pose.dying.kind);
+      clipMix = damp(clipMix, C ? 1 : 0, 10, dt);
+      if (!C || clipMix < 1e-3) return;
+      // The fall's hips come down with the clip; a drowning body is sunk by walk.js / peers.js.
+      applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
+      return;
+    }
     // Which clip, if any: the swim in the water, the dig with a shovel, else the walk family.
     const swim = !!pose.swimming && !ride;
     const digging = !!dug && !fp && !swim;
@@ -1128,6 +1139,55 @@ function buildRig(spec, material) {
     object.position.y += lift * clipMix;
   }
 
+  // Dying (Plans/vallen-en-verdrinken.md): `pose.dying` is { kind, t }, seconds since the blow that
+  // emptied the bar ('fall') or since the air ran out ('drown'), which walk.js plays between the
+  // sea's `evicted` and the jump home, and peers.js on the sea's `fell`. A body with the clip baked
+  // plays Mixamo's (gait-clips.js `die` = Falling Forward Death, `drown` = Floating In Air Flailing
+  // Arms, sunk by its caller - Mixamo has no drowning); every other body - the Traveller - the
+  // procedural one here, which falls the same way: the knees give
+  // (FALL.buckle), the body topples forward round the feet (FALL.topple, an ease-in, like a fall)
+  // and lies; or, drowning, it hangs upright and tipped back, arms reaching for the surface,
+  // the struggle dying away as walk.js sinks it.
+  const DEATH_CLIPS = { fall: 'die', drown: 'drown' };
+  const FALL = { buckle: .32, topple: .62, tip: 1.45, lift: .05, reach: -1.15, legs: -.55, knee: 1.1 };
+  const SINK = { s: 2.6, lean: -.22, reach: -2.65, flail: .35, out: .35, rate: 3.1, kick: .25 };
+  const poseDie = clipPose();
+  function deathClip(kind) {
+    return (G.clips && GAIT_CLIPS[DEATH_CLIPS[kind]]) || null;
+  }
+  // How long the body takes to come to rest: how long walk.js holds the jump home back.
+  function dyingSeconds(kind) {
+    const C = deathClip(kind);
+    if (C) return Math.min(4, C.seconds);
+    return kind === 'drown' ? SINK.s : FALL.buckle + FALL.topple;
+  }
+  // The procedural death's limb targets and the whole body's turn, or null while a clip plays it.
+  function dyingPose(d) {
+    if (!d || deathClip(d.kind)) return null;
+    const t = Math.max(0, d.t || 0);
+    if (d.kind === 'drown') {
+      const k = Math.max(0, 1 - t / SINK.s), up = ease(Math.min(1, t / .5));
+      const s = Math.sin(time * SINK.rate);
+      return {
+        arms: { leftArm: SINK.reach * up + SINK.flail * s * k, rightArm: SINK.reach * up - SINK.flail * s * k },
+        armZ: { leftArm: SINK.out * up, rightArm: -SINK.out * up },
+        legs: { leftLeg: SINK.kick * s * k, rightLeg: -SINK.kick * s * k },
+        knee: .35 + .25 * k, tip: SINK.lean * up, lift: 0, head: -.35 * up,
+      };
+    }
+    const give = ease(Math.min(1, t / FALL.buckle));
+    const u = Math.max(0, Math.min(1, (t - FALL.buckle) / FALL.topple));
+    const tip = FALL.tip * u * u;   // under gravity: slow off the knees, fast at the end
+    // The legs straighten again as the body goes over, so it lies with them out behind.
+    const legs = FALL.legs * give * (1 - u);
+    return {
+      arms: { leftArm: FALL.reach * give, rightArm: FALL.reach * give * .9 },
+      armZ: { leftArm: .25 * give, rightArm: -.25 * give },
+      legs: { leftLeg: legs, rightLeg: legs * .8 },
+      knee: FALL.knee * give * (1 - u) + .12, tip, lift: FALL.lift * Math.sin(tip), head: 0,
+    };
+  }
+
   let time = 0;
   let danceMix = 0;   // how far into a dance the body is, 0..1, so starting and stopping ease
   // The leap of a jump (Plans/tweede-avonturier.md): 0 for a jump from standing, 1 for one at a
@@ -1136,6 +1196,13 @@ function buildRig(spec, material) {
   let leap = 0, trail = 0, bowNow = 0;
   function update(pose, dt) {
     time += dt;
+    // Dying is no gait, no swim, no seat and no dance: the rest of the pose is let go of.
+    if (pose.dying) {
+      pose = { ...pose, moving: false, running: false, sprinting: false, grounded: true, swimming: false, treading: 0,
+        sitting: false, lying: false, crouching: false, dancing: null, blocking: false, riding: null, firstPerson: false,
+        digging: false, carrying: false, pushing: undefined, reach: undefined };
+    }
+    const dead = dyingPose(pose.dying);
     // A caller that has the state as a flag (peers.js decodes it from the pose bits) may hand
     // it in here instead of calling dig()/setCarry() on the edge; left out, nothing changes.
     if (pose.digging !== undefined && !!pose.digging !== !!digging) dig(!!pose.digging);
@@ -1281,6 +1348,10 @@ function buildRig(spec, material) {
     if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
     // One arm held out, the fisherman's with his rod over the water (web/js/fisher.js).
     if (Number.isFinite(pose.reach)) targets.rightArm = pose.reach;
+    if (dead) {
+      Object.assign(targets, dead.arms, dead.legs);
+      Object.assign(armZ, dead.armZ);
+    }
     // A glass being handed over: reached out for the first half second, through the same
     // damping as any held pose, and not in the hand at all until the settler has drunk it.
     for (const side of ['leftArm', 'rightArm']) {
@@ -1335,7 +1406,7 @@ function buildRig(spec, material) {
         drunk[side].x -= back * ARM_FOLLOW;
       }
     }
-    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
+    const locomotion = !pose.dying && pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
     // The run's forward lean (Plans/tweede-avonturier.md), turned about the hips rather than the
     // feet: the legs hang from the hips and stay under them, and everything above - the torso,
     // the pack, the chestplate and the shoulders the arms hang from - tips forward round them.
@@ -1428,6 +1499,12 @@ function buildRig(spec, material) {
       const pumped = action || !G.pump ? elbow : elbow + mixOf(G.pump, run, dash) * gaitPose.blend * (armAt < 0 ? -armAt : -.5 * armAt);
       chain.bend.rotation.set(-pumped, 0, 0);
       chain.end.rotation.set(pumped*.22, 0, 0);
+    }
+    if (dead) {
+      for (const side of ['leftLeg', 'rightLeg']) chains[side].bend.rotation.x = dead.knee;
+      object.position.y = dead.lift;
+      object.rotation.set(dead.tip, 0, 0);
+      if (dead.head) pieces.head.pivot.rotation.x = dead.head;
     }
     playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back });
     for (const side of ['leftArm', 'rightArm']) {
@@ -1583,6 +1660,7 @@ function buildRig(spec, material) {
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
     character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
     strokes: !!(G.clips && GAIT_CLIPS.swim),
+    dyingSeconds,
   };
 }
 
@@ -1592,6 +1670,12 @@ function buildRig(spec, material) {
 // once, as walk.js and peers.js do, keeps drawing it without knowing. Read `object`,
 // `handAttach` and `joints` off the rig when you use them rather than keeping them: they are
 // the new body's after a swap.
+// Dying, for every screen that draws it (walk.js for our own body, peers.js for somebody
+// else's): how fast a drowning body sinks to the bed, and how long a dead one lies still after
+// its rig has come to rest (dyingSeconds) before it is taken home.
+export const DROWN_SINK = 0.55;
+export const DEATH_REST = 0.7;
+
 export function createClassicAvatar(spec, material) {
   let rig = buildRig(spec, material);
   function set(next) {
@@ -1615,6 +1699,9 @@ export function createClassicAvatar(spec, material) {
     // Whether this body swims its own stroke (the Adventurer's Mixamo breaststroke): walk.js and
     // peers.js then lay it in the water without the whole-body roll and nod the Traveller swims by.
     get strokes() { return rig.strokes; },
+    // How long dying takes on this body ('fall' | 'drown'), by clip or procedurally: walk.js holds
+    // the jump home back that long.
+    dyingSeconds: (kind) => rig.dyingSeconds(kind),
     update: (pose, dt) => rig.update(pose, dt),
     set,
     dispose: () => rig.dispose(),

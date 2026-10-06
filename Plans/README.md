@@ -1,7 +1,5 @@
 # Plans
 
-- ✅ [avonturier-handen-en-aansluitingen.md](avonturier-handen-en-aansluitingen.md) — schouders, nek, twee ogen en beweeglijke ontspannen vingers.
-
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
@@ -10,6 +8,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 ## Besluiten die nog niet in een eigen plan zitten
 
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
+- ✅ [avonturier-handen-en-aansluitingen.md](DONE/avonturier-handen-en-aansluitingen.md) — schouders, nek, twee ogen en beweeglijke ontspannen vingers.
 - ✅ [verfijnde-hoedjes.md](DONE/verfijnde-hoedjes.md) — zeven opnieuw gemodelleerde hoofddeksels.
 
 - ✅ [ambachtelijke-reiziger.md](DONE/ambachtelijke-reiziger.md) — concept 3 in het spel en de inventory, met gladde vormen en passende uitrusting.
@@ -32,7 +31,8 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   overkant blijven liggen door iemand die wegliep en niet terugkwam. Alleen een boot zonder
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
 
-- 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory.
+- 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory. Sinds 0.10.0 op main; open: nog niet in een echte sessie op het eiland nagelopen (fiets, zwemmen, zitten, eerste persoon).
+- 🚧 [vallen-en-verdrinken.md](vallen-en-verdrinken.md) — wie gevangen wordt of verdrinkt, valt of zinkt eerst en springt pas daarna naar huis; anderen zien het via de zee (`fell`). Gebouwd: de Reiziger procedureel, de Avonturier met Mixamo's *Falling Forward Death* en *Floating (Flailing Arms)*; open: de open zee uitrollen, op het eiland zelf nalopen.
 
 ## Plannen
 

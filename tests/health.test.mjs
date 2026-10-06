@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHealth, MAX_HEALTH, REGEN_AFTER_MS, REGEN_PER_S, IMMUNE_MS, RESPAWN_EVERY_MS } from '../lib/health.mjs';
+import { createHealth, MAX_HEALTH, REGEN_AFTER_MS, REGEN_PER_S, IMMUNE_MS, RESPAWN_EVERY_MS, ARRIVE_MAX_MS } from '../lib/health.mjs';
 import { BLOCK_FRACTION } from '../lib/hostility.mjs';
 
 // A blow of a third of the bar and a bit, for what the bar does with blows. Not GUARD_HIT: how
@@ -65,6 +65,46 @@ test('after being sent back, nothing lands for the immunity and then it does aga
   assert.equal(s.health.immune(s.p.id), false);
   assert.equal(s.health.hurt(s.p, MAX_HEALTH, guard), 'evicted');
   assert.equal(s.evictions.length, 2);
+});
+
+// A pose from the page, as lib/players.mjs takes it: where the body is, and one more counted.
+const pose = (p, x, z) => { p.x = x; p.z = z; p.poses = (p.poses | 0) + 1; };
+
+test('the immunity starts when the body is home, not at the blow: a 4.7 s fall first costs none of it', () => {
+  const s = setup();
+  pose(s.p, 30, 30);   // out on the volcano
+  s.health.hurt(s.p, MAX_HEALTH, guard);
+  const [hx, , hz] = s.evictions[0].at;
+  // The page lies where it fell (walk.die) and keeps saying so.
+  for (let ms = 0; ms < 4700; ms += 100) { s.wait(100); pose(s.p, 30, 30); s.health.tick(); }
+  assert.equal(s.health.immune(s.p.id), true, 'out of reach while it goes down');
+  assert.equal(s.health.hurt(s.p, 1, guard), false);
+  // Home: the jump (sentHome). Five whole seconds from here.
+  s.wait(100); pose(s.p, hx, hz); s.health.tick();
+  s.wait(IMMUNE_MS - 1);
+  assert.equal(s.health.immune(s.p.id), true, 'still covered just before five seconds at home');
+  s.wait(1);
+  assert.equal(s.health.immune(s.p.id), false);
+  assert.equal(s.health.hurt(s.p, 1, guard), 'hurt');
+});
+
+test('a page that jumps home at once has its five seconds from then, and one that never arrives is not covered for ever', () => {
+  const s = setup();
+  pose(s.p, 30, 30);
+  s.health.hurt(s.p, MAX_HEALTH, guard);
+  const [hx, , hz] = s.evictions[0].at;
+  s.wait(50); pose(s.p, hx + 1, hz); s.health.tick();
+  s.wait(IMMUNE_MS - 1);
+  assert.equal(s.health.immune(s.p.id), true);
+  s.wait(1);
+  assert.equal(s.health.immune(s.p.id), false);
+  // Caught again and never coming home: covered for ARRIVE_MAX_MS and the five, no longer.
+  s.health.hurt(s.p, MAX_HEALTH, guard);
+  s.wait(50); pose(s.p, 30, 30); s.health.tick();
+  s.wait(ARRIVE_MAX_MS + IMMUNE_MS - 51);
+  assert.equal(s.health.immune(s.p.id), true);
+  s.wait(1);
+  assert.equal(s.health.immune(s.p.id), false);
 });
 
 test('the bar counts by default: a hit costs health and it comes back after quiet', () => {

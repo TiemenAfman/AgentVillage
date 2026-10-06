@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
-import { createClassicAvatar } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
@@ -364,6 +364,27 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       if (p.room !== p.want) { p.mesh.visible = false; continue; }
       p.mesh.scale.setScalar(1);
       p.mesh.visible = true;
+      // Going down (act 'fall' | 'drown', the sea's `fell`): held where they fell, whatever the
+      // rows say - the sea moved them home when it evicted them, and its next beat says so -
+      // until the rig has played the death and lain still, as their own page does.
+      if (p.dying) {
+        const d = p.dying;
+        d.t += dt;
+        if (d.t < d.until) {
+          if (d.kind === 'drown') {
+            const floor = (places.get(p.room) || {}).terrain;
+            const bed = floor ? (floor.bedAt ? floor.bedAt(d.x, d.z) : floor.worldHeight(d.x, d.z)) : -Infinity;
+            d.y = Math.max(Math.min(d.y, bed + 0.05), d.y - DROWN_SINK * dt * Math.min(1, d.t / 0.6));
+          }
+          p.zzz.visible = false;
+          p.mesh.position.set(d.x, d.y, d.z);
+          p.mesh.rotation.set(0, d.yaw, 0);
+          p.avatar.update({ dying: d, distance: 0 }, dt);
+          p.walkAt = null;
+          continue;
+        }
+        p.dying = null;
+      }
 
       const a = p.from || p.to, b = p.to;
       const k = progress(a, b, render);
@@ -559,6 +580,15 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
   function act(id, kind, side) {
     const p = peers.get(id);
     if (!p || p.leaving) return;
+    if (kind === 'fall' || kind === 'drown') {
+      // Only somebody drawn here, and drawn where they stand: a body not on screen just comes
+      // home. Afloat, whatever did it, they sink - nobody falls over in the water.
+      if (!p.to || !p.mesh.visible || p.room !== p.want || p.aboard || p.deckTo || (p.to.f & FLAG_RIDING)) return;
+      const at = p.mesh.position, how = kind === 'drown' || (p.to.f & FLAG_SWIMMING) ? 'drown' : 'fall';
+      const s = p.avatar.dyingSeconds ? p.avatar.dyingSeconds(how) : 0;
+      p.dying = { kind: how, t: 0, until: s + DEATH_REST, x: at.x, y: at.y, z: at.z, yaw: p.mesh.rotation.y };
+      return;
+    }
     if (kind === 'attack') p.avatar.attack(side || undefined);
     else if (kind === 'drink' && side) p.avatar.drink(side);
   }
