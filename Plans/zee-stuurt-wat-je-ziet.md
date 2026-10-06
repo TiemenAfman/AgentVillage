@@ -1,7 +1,7 @@
 # 🚧 De zee stuurt wat je ziet
 
-Plan van 2 oktober 2026; fase 1 gebouwd op 6 oktober 2026 (branch `claude/elastic-stonebraker-df6e74`, nog niet
-gemerged, open zee nog niet geredeployd). Fase 2 is open.
+Plan van 2 oktober 2026; fase 1 gebouwd, gemerged en uitgerold op 6 oktober 2026 (open zee, stack 28, en `/play`,
+stack 29). Fase 2 is open en bewust uitgesteld.
 
 ## Waarom
 
@@ -125,9 +125,14 @@ kregen alle 67 bewoners van de vulkaan hun plek in één frame, niemand stond in
 Hoogezand losgelaten (0 posities), en terug in bereik kregen alle 600 in één keer hun plek, opnieuw niemand in
 het midden. `/health` toonde `wanting: 1`.
 
-## Fase 2 (open)
+## Fase 2 (open, bewust uitgesteld)
 
-Alleen als de cijfers het rechtvaardigen:
+Alleen als de cijfers het rechtvaardigen. Na de uitrol op 6 oktober 2026 (open zee, ~12 minuten, één speler,
+twee sockets) was de zee ~6,5 kB/s uit: `f` 5,2 (80%), `s` 0,46 (7%), `fr` 0,30, `af` 0,18. Fase 2 zou nu dus
+hooguit die 7% schelen.
+
+**Wanneer wel:** zodra in `/health` → `wire.types` de bytes van `s` die van `f` inhalen (grofweg vanaf ~10 spelers
+die tegelijk lopen), of telefoonspelers klagen over dataverbruik. Dan eerst de spelers, de rest hieronder pas daarna.
 
 - **Spelers** (`s`): elke loper gaat 15×/s naar elke socket, ~50 B per rij, dus O(spelers²): 32 lopende spelers is
   ~24 kB/s per socket en ~770 kB/s voor de zee. Voor `/play` met veel zwervers is dít de volgende kostenpost. Dat
