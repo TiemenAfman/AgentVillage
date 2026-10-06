@@ -156,7 +156,13 @@ import { installDesktopGuards } from './desktop.js';
 import { captionCell } from './captions.js';
 
 // In promptholm.exe, F5 and Alt+F4 ask first (web/js/desktop.js); a browser tab is untouched.
-installDesktopGuards();
+// When such a card is answered the mouse look comes back (a card lets go of the pointer lock).
+installDesktopGuards(window, {
+  resumeLock: () => {
+    if (state.inside) state.inside.resumeLock?.();
+    else if (state.mode === 'walk' && state.walk) state.walk.syncLock();
+  },
+});
 
 // Before any material compiles: the haze by distance, not depth (radial-fog.js), so a house
 // cut at Object Distance is in full fog at every corner of the screen and not only in the

@@ -922,6 +922,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     // null in a room with no show.
     beat: hallBeat,
     setPaused: (v) => walk.setPaused(v),
+    // A card of the desktop window (web/js/desktop.js) took the mouse and gave it back.
+    resumeLock: () => walk.syncLock(),
     // Real bloom is drawing (post.js): the halos that stand in for it step aside.
     setBloom(on) {
       if (halos) halos.object.visible = !on;

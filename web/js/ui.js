@@ -9,6 +9,7 @@ import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } 
 import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 import { NOCLIP_KEY } from './noclip.js';
+import { desktopFullscreen } from './desktop.js';
 import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
@@ -1615,20 +1616,24 @@ function fullscreenElement() {
 
 function setupShell() {
   const btn = el('fullscreen-btn');
+  // In the desktop window fullscreen is the window's (web/js/desktop.js), not HTML's.
+  const win = desktopFullscreen();
   const install = el('install-btn');
   if (!btn) return;
 
   const expand = btn.querySelector('[data-icon="expand"]');
   const collapse = btn.querySelector('[data-icon="collapse"]');
   const sync = () => {
-    const on = !!fullscreenElement();
+    const on = win ? win.on : !!fullscreenElement();
     expand.hidden = on;
     collapse.hidden = !on;
     btn.title = on ? 'Leave fullscreen' : 'Fullscreen';
     btn.setAttribute('aria-label', btn.title);
   };
   btn.addEventListener('click', () => {
-    if (fullscreenElement()) {
+    if (win) {
+      win.toggle();
+    } else if (fullscreenElement()) {
       (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
     } else {
       const root = document.documentElement;
@@ -1637,6 +1642,7 @@ function setupShell() {
   });
   // Follow the real state, not our own idea of it: Esc and the phone's back
   // gesture both leave fullscreen without ever touching the button.
+  if (win) win.onChange(sync);
   document.addEventListener('fullscreenchange', sync);
   document.addEventListener('webkitfullscreenchange', sync);
   sync();

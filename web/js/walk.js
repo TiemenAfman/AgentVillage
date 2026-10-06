@@ -567,7 +567,7 @@ export function createWalkMode({
     // ones a page is allowed to cancel are cancelled here, unless somebody is typing into
     // a field. Chrome reserves ctrl+W, ctrl+T, ctrl+N and ctrl+<digit> and ignores
     // preventDefault on them: those only come to the page under the keyboard lock that
-    // lockKeys() asks for, and only in fullscreen (the desktop window has no tab to lose).
+    // lockKeys() asks for, and only in fullscreen (the desktop window has no tab to lose and does not ask).
     //
     // Unless Ctrl is bound (keybinds.js): then it is somebody's crouch or swim-down, held
     // while the walking keys are pressed, and the press is a game key like any other. The
@@ -707,15 +707,48 @@ export function createWalkMode({
   const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
+    // Not while Escape is down: a panel closed with Escape asks for the lock inside that very
+    // keydown, the browser grants it - and then handles the same Escape as the user leaving a
+    // lock, which takes it straight back (measured in the desktop window: ok, then
+    // pointerlockchange twice, lock gone, and the cooldown below started for nothing). Asked
+    // after the key is up, it stays.
+    if (escDown) { lockAfterEsc = true; return; }
     // A request without a user gesture is refused, except straight after a lock the page
     // itself let go of - which is exactly the close-a-panel and walk-off-a-board case. The
     // refusal is a rejected promise in current Chrome; only NotSupportedError means never.
     try {
       dom.requestPointerLock()?.catch?.((err) => {
         if (err?.name === 'NotSupportedError') lockRefused = true;
+        else if (err?.name === 'SecurityError') lockAgainSoon();
         else if (fromClick) clickLockFailed = true;
       });
     } catch { lockRefused = true; }
+  }
+  // After the user's own Escape Chromium refuses a new lock for about 1.3 s ("cannot be
+  // acquired immediately after the user has exited the lock", a SecurityError; measured in the
+  // desktop window: refused at 0.3 s and 0.8 s, given at 1.5 s). So Escape and then a click
+  // - or a panel's close button - at once did nothing at all. The click's activation lasts
+  // five seconds, which outlasts the wait, so the request is simply made again when the
+  // cooldown is over. Not a failed click: it must not turn later clicks into swings.
+  let escDown = false, lockAfterEsc = false;
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') escDown = true; }, true);
+  addEventListener('keyup', (e) => {
+    if (e.key !== 'Escape') return;
+    escDown = false;
+    if (!lockAfterEsc) return;
+    lockAfterEsc = false;
+    setTimeout(() => { if (wantLock() && document.pointerLockElement !== dom) requestLock(); }, 60);
+  }, true);
+  addEventListener('blur', () => { escDown = false; lockAfterEsc = false; });
+  const LOCK_COOLDOWN_MS = 1300;
+  let lockAgain = null, lockAgainTries = 0;
+  function lockAgainSoon() {
+    if (lockAgain || lockAgainTries >= 4) return;
+    lockAgainTries++;
+    lockAgain = setTimeout(() => {
+      lockAgain = null;
+      if (wantLock() && document.pointerLockElement !== dom) requestLock();
+    }, Math.max(150, LOCK_COOLDOWN_MS - (performance.now() - unlockedAt)) + 50);
   }
   function syncLock() {
     if (wantLock()) requestLock();
@@ -725,7 +758,7 @@ export function createWalkMode({
   // keydown can reach the page either side of the pointerlockchange that says it is gone.
   let unlockedAt = -Infinity;
   const onLockChange = () => {
-    if (document.pointerLockElement === dom) clickLockFailed = false;
+    if (document.pointerLockElement === dom) { clickLockFailed = false; lockAgainTries = 0; }
     else unlockedAt = performance.now();
   };
   document.addEventListener('pointerlockchange', onLockChange);
@@ -840,6 +873,8 @@ export function createWalkMode({
   const LOCKED_CODES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((c) => 'Key' + c)
     .concat('Tab', ...Array.from({ length: 9 }, (_, i) => 'Digit' + (i + 1)));
   function lockKeys(on) {
+    // The desktop window has no tabs to lose and no HTML fullscreen for the lock to wait for.
+    if (globalThis.PROMPTHOLM_DESKTOP) return;
     const kb = navigator.keyboard;
     if (!kb || !kb.lock) return;
     if (on) kb.lock(LOCKED_CODES).catch(() => {}); else kb.unlock();
@@ -2612,6 +2647,7 @@ export function createWalkMode({
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('wheel', onWheel);
     document.removeEventListener('pointerlockchange', onLockChange);
+    clearTimeout(lockAgain);
     scene.remove(avatar);
     classicAvatar.dispose();
   }
@@ -2629,7 +2665,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },
