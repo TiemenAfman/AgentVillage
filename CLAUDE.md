@@ -788,12 +788,13 @@ is exactly the ten seconds back again.
 **The sea sends an island's people only to a page that draws them** ([Plans/zee-stuurt-wat-je-ziet.md](Plans/zee-stuurt-wat-je-ziet.md)).
 A page says which islands with `{t:'want', i:[ids]}` (and `want` on its `join`, so the join dump is already
 cut); `f` and `fh` go only to those (`toWatchers` in lib/sea.mjs), and an island newly wanted is sent whole at
-once (`sendCrowd`: `slices: 1`, rides, `fh`). `fr`, `af` and `herd` still go to every page (rows must be readable
+once (`sendCrowd`: `slices: 1`, rides, `fh`). An island's dinghies (`b`) still reach every page (`toSailors`: an
+`f` with empty `a`/`k`), since a hull has no NPC cut. `fr`, `af` and `herd` still go to every page (rows must be readable
 on approach; animals have no NPC cut). A socket that never says `want` (`conn.want` null) gets everything - that is
 what keeps it a patch, no `SEA_V`. An islander (`as: 'islander'`) gets no crowd, no `s` and no `roster`
 (`watching: false` in lib/players.mjs). On the page `syncWant` in main.js wants every crowd view whose box is within
 NPC Distance of the **camera** (the eye `beyond` cuts at) plus `WANT_PAD`, with `WANT_HYST` to let go; letting go
-calls `crowd.forget()` and `onCrowdMessage` drops rows of unwanted islands, so a body comes back hidden until the
+calls `crowd.forget()` (positions only, hulls stay) and `onCrowdMessage` takes only the rides of unwanted islands, so a body comes back hidden until the
 sea places it - never at a stale spot or the island's middle. A crowd view rebuilt under a wanted id is let go of
 and wanted again (two messages) to get its dump. `/health` carries `wire` (bytes and messages per type since start,
 lib/wiremeter.mjs), `sockets` and `wanting`; `scripts/sea-listen.mjs` measures one viewer on any sea and
