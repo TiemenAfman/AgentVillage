@@ -1993,7 +1993,18 @@ export function createWorld(scene, terrain, village, opts = {}) {
         vec3 p = position;
         float w1 = sin(p.x * 1.3 + uTime * 1.1);
         float w2 = sin(p.z * 1.7 - uTime * 0.9);
-        p.y += (0.05 * w1 + 0.04 * w2) * aWave;
+        float lift = (0.05 * w1 + 0.04 * w2) * aWave;
+        // Over ground above the sea the swell may sink the surface but never lift it out
+        // through the ground: the water mesh is a vertex per corner, triangulated like the
+        // ground, so a crest of 0.09 on a corner of a wide low beach broke through the sand
+        // as a dotted row of puddles - the troughs between them dry - wherever a grown ring
+        // left a plain within a wave's height of the sea (issue #95, measured on the live
+        // island: 539 corners under 0.09 more than three cells from any water). Capped at
+        // sea level, and a little clear of the ground where it is higher, so the still
+        // waterline - every coast - is where it always was; only the run-up past the first
+        // dry corner is gone.
+        if (aDepth >= 0.0) lift = min(lift, max(aDepth - 0.05, 0.0));
+        p.y += lift;
         vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
         vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;

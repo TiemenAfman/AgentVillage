@@ -651,6 +651,9 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   in the fade into the ocean, one quad per row of open sea - the same outline and fade as the
   old single plane over the archipelago's bounding box, which was 2.5M of 2.75M triangles on
   a full page. Swell (`aWave`) goes to zero before the dense/coarse join so the two meet flat.
+  Over ground at or above the sea (`aDepth >= 0`) the swell's lift is capped at
+  `max(aDepth - 0.05, 0)`: uncapped, its 0.09 crests broke through every low plain as rows of
+  puddles (#95, grown rings leave beaches of corners at 0.00-0.09); still water is unchanged.
   The water shader fogs by `distance(vWorld, cameraPosition)` per pixel: a radial fog
   interpolated across the ocean disc's huge triangles over-fogged it.
   And a small dense patch sails with you (`nearWaterPlan`, `setWaterFocus` from main.js each

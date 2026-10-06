@@ -367,7 +367,9 @@ test('swellAt is the water shader\'s vertex term, and never higher than SWELL_MA
   const shader = w.slice(w.indexOf('const waterMat'), w.indexOf('const water ='));
   assert.match(shader, /float w1 = sin\(p\.x \* 1\.3 \+ uTime \* 1\.1\);/);
   assert.match(shader, /float w2 = sin\(p\.z \* 1\.7 - uTime \* 0\.9\);/);
-  assert.match(shader, /p\.y \+= \(0\.05 \* w1 \+ 0\.04 \* w2\) \* aWave;/);
+  // The lift is capped over dry ground (issue #95, tests/swell-dry-ground.test.mjs); over
+  // water, which is all a surface reading asks about, it is this term unchanged.
+  assert.match(shader, /float lift = \(0\.05 \* w1 \+ 0\.04 \* w2\) \* aWave;/);
   // The twin, at points where the sines are known.
   assert.equal(Math.abs(swellAt(0, 0, 0)), 0);
   assert.ok(Math.abs(swellAt(Math.PI / 2 / 1.3, Math.PI / 2 / 1.7, 0) - 0.09) < 1e-12);
