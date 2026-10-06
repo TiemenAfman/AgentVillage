@@ -37,6 +37,7 @@ import { buildSurvey } from './lib/survey.mjs';
 import { buildBoat, harbourRoom, SIDES as BOAT_SIDES } from './lib/boatyard.mjs';
 import { loadTreasure, updateTreasure, viewOf as treasureView, TREASURE_ACTIONS } from './lib/treasure.mjs';
 import { ensureMusic, listMusic, musicFile, MUSIC_TYPES, MUSIC } from './lib/music.mjs';
+import { ensureSfx, listSfx, sfxFile, SFX } from './lib/sfx.mjs';
 import { createLatestRelease } from './lib/latest-release.mjs';
 import { install as installUpdate, installable, cleanup as clearUpdates, RESTART_CODE, TRAY_RESTARTS } from './lib/selfupdate.mjs';
 import { loadLayout } from './lib/layout.mjs';
@@ -656,6 +657,21 @@ async function handle(req, res) {
     const file = musicFile(dir, name);
     if (!file) return json(res, 404, { error: 'no such track' });
     return sendAudio(req, res, file);
+  }
+  // And the keeper's own sound samples (lib/sfx.mjs, HOME/audio/sfx, Plans/meer-geluiden.md phase
+  // 9), on the same terms: the families that have a file, and a file. Read in one synchronous call
+  // like sendFile, for the reason given there, and short enough to go in one piece - the page
+  // decodes it whole, so it never asks for a range.
+  if (p === '/api/sfx') return json(res, 200, listSfx());
+  if (p.startsWith('/api/sfx/') && req.method === 'GET') {
+    let name = '';
+    try { name = decodeURIComponent(p.slice('/api/sfx/'.length)); } catch { /* not a name */ }
+    const file = sfxFile(name);
+    let body = null;
+    try { if (file) body = fs.readFileSync(file); } catch { /* gone since the list */ }
+    if (!body) return json(res, 404, { error: 'no such sound' });
+    res.writeHead(200, { 'Content-Type': MUSIC_TYPES[path.extname(file).toLowerCase()], 'Content-Length': body.length, 'Cache-Control': 'no-cache' });
+    return res.end(body);
   }
 
   // Changes what the island shows. Not a public path, so only the keeper reaches it -
@@ -2025,6 +2041,7 @@ server.listen(PORT, access.open ? undefined : '127.0.0.1', async () => {
   }
   fs.mkdirSync(DATA, { recursive: true });
   if (ensureMusic()) log(`[music] drop your own tracks in ${MUSIC} (kroeg, rave, pirates)`);
+  if (ensureSfx()) log(`[sfx] drop your own recordings in ${SFX} (README.txt names them)`);
   watchData();
   watchGold();
   // The status line that reads the gold pit its number (hooks/statusline.mjs), put into

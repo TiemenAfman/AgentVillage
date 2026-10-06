@@ -43,6 +43,8 @@ import { nearestFirst } from 'shared/regions.mjs';
 import { makeRng, clamp } from 'shared/rng.mjs';
 import { MIX_BUSES, MIX_PARTS, busOf, clampMix, loadMix, saveMix } from './sound-mix.js';
 import { createGreeter, PHRASES } from './greetings.js';
+import { SFX_FAMILIES, sfxLoops } from 'shared/sfx.mjs';
+import { prepareShot, seamlessLoop } from './sound-samples.js';
 
 // Remembered per browser, like the avatar and the chat mode: which of them is a setting
 // of the *island* is decided by whether it lives in config.json, and how loud somebody
@@ -1504,6 +1506,51 @@ const SHANTY_LOUD = 0.5;
 const SHANTY_OUT = 0.22;
 const SHANTY_RANGE = 22;
 
+// --------------------------------------------------------------- every family, by name
+
+// Every buffer this module makes, by the name sound.js and the keeper's samples know it by
+// (shared/sfx.mjs): a generator per buffer, stepped once a frame by makeMore until it hands its
+// buffer back, and started only by the first thing that wants it - so a page that never goes near
+// the Kraken never makes its murmur. The first six are made whole at build(); they are here too so
+// that a family whose samples are taken away again can be made once more, and so that
+// tests/sound-samples.test.mjs can measure each one (`synthFamily`).
+const LAZY = {
+  surf: (c) => once(surfBuffer, c),
+  wind: (c) => once(windBuffer, c),
+  murmur: (c) => once(murmurBuffer, c),
+  hammer: (c) => once(hammerBuffer, c),
+  gull: (c) => once(gullBuffer, c),
+  clink: (c) => once(clinkBuffer, c),
+  kraken: (c) => murmurSong(c, 'kraken'),
+  borrel: (c) => murmurSong(c, 'borrel'),
+  bell: (c) => bellSong(c),
+  ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  saw: (c) => once(sawBuffer, c),
+  dawn: (c) => dawnSong(c),
+  crickets: (c) => cricketSong(c),
+  rain: (c) => rainSong(c, 'rain'),
+  roofs: (c) => rainSong(c, 'roofs'),
+  ...Object.fromEntries(Object.entries(HOUR_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  ...Object.fromEntries(Object.entries(ANIMAL_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  river: (c) => waterSong(c, 'river'),
+  rumble: (c) => waterSong(c, 'rumble', 6),
+  lava: (c) => waterSong(c, 'lava'),
+  under: (c) => waterSong(c, 'under', 6),
+  bubble: (c) => once(bubbleShot, c),
+  ...Object.fromEntries(Object.entries(ROUND_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  cart: (c) => once(cartBuffer, c),
+  ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
+};
+// A buffer that is quick to make, made in one step all the same, so every family goes through
+// need() and makeMore() and stats().making tells the truth.
+function* once(make, c) { yield; return make(c); }
+
+// One family made whole, at once: what tests/sound-samples.test.mjs measures SFX_LEVEL against.
+export function synthFamily(ctx, name) {
+  const gen = LAZY[name](ctx);
+  for (;;) { const step = gen.next(); if (step.done) return step.value; }
+}
+
 // --------------------------------------------------------------- the island's ears
 
 function remembered() {
@@ -1749,40 +1796,70 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     built.clinkRoom.audio.setBuffer(buffers.clink);
     built.clinkRoom.filter.frequency.value = 9000;
     for (const p of Object.values(built.pubs)) p.in.filter.frequency.value = 9000;
+    const early = waiting;
+    waiting = {};
+    for (const [name, list] of Object.entries(early)) setSamples(name, list);
   }
 
-  // The families that are not made at build(): a generator per buffer, stepped once a frame by
-  // makeMore until it hands its buffer back, and started only by the first thing that wants it -
-  // so a page that never goes near the Kraken never makes its murmur. `need` answers the buffer
-  // once it exists and null until then.
-  const LAZY = {
-    kraken: (c) => murmurSong(c, 'kraken'),
-    borrel: (c) => murmurSong(c, 'borrel'),
-    bell: (c) => bellSong(c),
-    ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
-    saw: (c) => once(sawBuffer, c),
-    dawn: (c) => dawnSong(c),
-    crickets: (c) => cricketSong(c),
-    rain: (c) => rainSong(c, 'rain'),
-    roofs: (c) => rainSong(c, 'roofs'),
-    ...Object.fromEntries(Object.entries(HOUR_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
-    ...Object.fromEntries(Object.entries(ANIMAL_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
-    river: (c) => waterSong(c, 'river'),
-    rumble: (c) => waterSong(c, 'rumble', 6),
-    lava: (c) => waterSong(c, 'lava'),
-    under: (c) => waterSong(c, 'under', 6),
-    bubble: (c) => once(bubbleShot, c),
-    ...Object.fromEntries(Object.entries(ROUND_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
-    cart: (c) => once(cartBuffer, c),
-    ...Object.fromEntries(Array.from({ length: PHRASES }, (_, k) => [`greet${k}`, (c) => greetSong(c, k)])),
-  };
-  // A buffer that is quick to make, made in one step all the same, so every family goes through
-  // need() and makeMore() and stats().making tells the truth.
-  function* once(make, c) { yield; return make(c); }
+  // A family with the keeper's own samples (setSamples) answers one of them instead: a one-shot a
+  // variant at random each time it is asked - never the same one twice running when it has more -
+  // and a loop the one buffer its variants were joined into, made a step a frame like any other
+  // family and with the computed loop playing until it is done. Every family asked for is
+  // remembered (`wanted`), which is how main.js knows which samples are within earshot.
   function need(name) {
+    if (Object.hasOwn(SFX_FAMILIES, name)) asked.add(name);
+    const own = samples[name];
+    if (own && own.shots) {
+      if (own.shots.length === 1) return own.shots[0];
+      let k = Math.floor(Math.random() * (own.shots.length - 1));
+      if (k >= own.last) k++;
+      own.last = k;
+      return own.shots[k];
+    }
     if (built.buffers[name]) return built.buffers[name];
     if (!built.making[name] && LAZY[name]) built.making[name] = LAZY[name](ctx);
     return null;
+  }
+
+  // The keeper's own recordings (Plans/meer-geluiden.md, phase 9; HOME/audio/sfx, named by
+  // shared/sfx.mjs): main.js fetches and decodes them (web/js/sfx-loader.js) and hands the ready
+  // AudioBuffers in here - this module still fetches and decodes nothing. Each is brought to the
+  // loudness of the computed buffer it replaces (sound-samples.js), so a file recorded loud does
+  // not upset the mix, and the voice, part and bus it plays through are the ones it always had.
+  // An empty list gives the family back to its computed voice. Handed in before there is a graph,
+  // they wait for build().
+  const samples = {};
+  const asked = new Set();
+  let waiting = {};
+  function setSamples(name, buffers) {
+    if (!Object.hasOwn(SFX_FAMILIES, name)) return false;
+    const list = (Array.isArray(buffers) ? buffers : []).filter((b) => b && b.length > 0 && b.numberOfChannels > 0);
+    if (!built) {
+      if (list.length) waiting[name] = list; else delete waiting[name];
+      return true;
+    }
+    const had = samples[name];
+    delete samples[name];
+    if (sfxLoops(name)) {
+      // A loop of our own made from them a step a frame; until it is done, the computed one (if
+      // there is one) carries on. Taken away, the next need() makes the computed one again.
+      if (had && had.loop && built.buffers[name] === had.loop) delete built.buffers[name];
+      delete built.making[name];
+      if (list.length) {
+        const own = { loop: null };
+        samples[name] = own;
+        const gen = seamlessLoop(ctx, list, name);
+        built.making[name] = (function* () {
+          const loop = yield* gen;
+          own.loop = loop;
+          if (!loop) { delete samples[name]; return built.buffers[name] || null; }
+          return loop;
+        })();
+      }
+    } else if (list.length) {
+      samples[name] = { shots: list.map((b) => prepareShot(ctx, b, name)), last: -1 };
+    }
+    return true;
   }
 
   // The songs, and how each is heard: loud and whole inside, a muffled tune through the walls
@@ -1880,7 +1957,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const step = gen.next();
       if (!step.done) continue;
       delete built.making[name];
-      built.buffers[name] = step.value;
+      if (step.value) built.buffers[name] = step.value;
+      else delete built.buffers[name];
     }
     for (const kind of Object.keys(SONGS)) {
       const r = built[kind];
@@ -1941,10 +2019,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
   // Re-trigger a one-shot. three.js refuses `play()` on a source that is already running
   // and says so in the console, which on a hammer would be several warnings a second.
-  function fire(voice, x, y, z, rate = 1) {
+  // `buf`, when given, is what to play this time (need() answers a sample's variants at random).
+  function fire(voice, x, y, z, rate = 1, buf = null) {
     voice.holder.position.set(x, y, z);
     const a = voice.audio;
     if (a.isPlaying) { try { a.stop(); } catch { /* it had already ended */ } }
+    if (buf && a.buffer !== buf) a.setBuffer(buf);
     a.setPlaybackRate(rate);
     try { a.play(); } catch { /* the context went out under us; the next blow will do */ }
     // After play(), never before: three.js's PositionalAudio.updateMatrixWorld returns on
@@ -2043,6 +2123,16 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // A loop with a place: given its buffer the moment there is one, glided to `want`, started on the
   // first moment it is wanted and stopped only once its gain has actually reached nothing - or
   // closing time would be a cut rather than a fade.
+  // A bed that is playing given another buffer (the keeper's samples arriving, or going): three's
+  // setBuffer only changes what the *next* play() starts, so a running bed is started again on it.
+  function keepBuffer(a, buf) {
+    if (!buf || a.buffer === buf) return;
+    const was = a.isPlaying;
+    if (was) a.stop();
+    a.setBuffer(buf);
+    if (was) a.play();
+  }
+
   function loopTo(v, buf, want) {
     const a = v.audio;
     if (buf && a.buffer !== buf) {
@@ -2180,8 +2270,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // Strike what is due, on this module's own seconds (`clock`), which the queue was laid out on.
   function strike() {
     if (!bell.queue.length) return;
-    const buf = built.buffers.bell;
     if (!live('bell')) { bell.queue.length = 0; return; }
+    const buf = need('bell');
     if (!buf) return;                 // still being made; the strokes wait for it
     // Strokes that waited for the buffer start from now, still BELL_EVERY apart - never all at once.
     const late = clock - bell.queue[0].t;
@@ -2189,6 +2279,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     while (bell.queue.length && clock >= bell.queue[0].t) {
       const q = bell.queue.shift();
       const rate = q.half ? 1.12 : 1;
+      const buf = need('bell');
       if (inside) {
         const a = built.bellRoom.audio;
         if (a.buffer !== buf) a.setBuffer(buf);
@@ -2239,7 +2330,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       b.at += (b.want - b.at) * k;
       const buf = built.buffers[name];
       const a = b.audio;
-      if (buf && a.buffer !== buf) a.setBuffer(buf);
+      keepBuffer(a, buf);
       a.setVolume(b.at * (b.below ? 1 : duckOver()));
       if (b.at > 0.0005 && a.buffer && !a.isPlaying) a.play();
       else if (b.want <= 0 && b.at < 0.0005 && a.isPlaying) a.stop();
@@ -2263,26 +2354,23 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       rare.owl = OWL_GAP[0] + Math.random() * (OWL_GAP[1] - OWL_GAP[0]);
       if (out && night > 0.6 && woods > 0.15 && live('night') && need('owl')) {
         const [x, z] = away(16, 32);
-        built.rare.audio.setBuffer(built.buffers.owl);
-        fire(built.rare, x, 6, z, 0.95 + Math.random() * 0.1);
+        fire(built.rare, x, 6, z, 0.95 + Math.random() * 0.1, need('owl'));
       }
     }
     if (rare.cuckoo <= 0) {
       rare.cuckoo = CUCKOO_GAP[0] + Math.random() * (CUCKOO_GAP[1] - CUCKOO_GAP[0]);
       if (out && night < 0.3 && hour > 7 && hour < 19 && woods > 0.2 && sky !== 'rain' && live('birds') && need('cuckoo')) {
         const [x, z] = away(14, 28);
-        built.rare.audio.setBuffer(built.buffers.cuckoo);
-        fire(built.rare, x, 7, z, 0.97 + Math.random() * 0.06);
+        fire(built.rare, x, 7, z, 0.97 + Math.random() * 0.06, need('cuckoo'));
       }
     }
     if (rare.horn <= 0) {
       rare.horn = FOGHORN_GAP[0] + Math.random() * (FOGHORN_GAP[1] - FOGHORN_GAP[0]);
       const at = look.lighthouse;
       if (sky === 'fog' && at && flat(at) < HORN_RANGE && live('weather') && need('foghorn')) {
-        built.horn.audio.setBuffer(built.buffers.foghorn);
         // Through a wall the horn is still the horn, only further off.
         built.horn.audio.setVolume(out ? 0.8 : 0.25);
-        fire(built.horn, at[0], at[1] + 6, at[2], 1);
+        fire(built.horn, at[0], at[1] + 6, at[2], 1, need('foghorn'));
       }
     }
     // Asked for while the sky or the hour is right, so the first call is not lost to its buffer.
@@ -2419,7 +2507,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const word = words[a.act];
       if (word) need(ACT_ALIAS[word] || word);
       if (was === undefined || was === a.act || !word) continue;
-      animalSay(built.buffers[ACT_ALIAS[word] || word], a.at, 0.6 * edge(flat(a.at), ANIMAL_RANGE), 0.92 + Math.random() * 0.16);
+      animalSay(need(ACT_ALIAS[word] || word), a.at, 0.6 * edge(flat(a.at), ANIMAL_RANGE), 0.92 + Math.random() * 0.16);
     }
     if (lastAct.size > 64) lastAct.clear();
     if ((look.night || 0) > 0.5) return;
@@ -2431,7 +2519,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (!nextCall.has(a.id)) nextCall.set(a.id, clock + Math.random() * c.every);
       if (clock < nextCall.get(a.id)) continue;
       nextCall.set(a.id, clock + c.every * (0.6 + Math.random() * 0.8));
-      animalSay(built.buffers[c.buf], a.at, 0.55 * edge(flat(a.at), ANIMAL_RANGE), 0.9 + Math.random() * 0.2);
+      animalSay(need(c.buf), a.at, 0.55 * edge(flat(a.at), ANIMAL_RANGE), 0.9 + Math.random() * 0.2);
     }
     if (nextCall.size > 256) nextCall.clear();
   }
@@ -2457,11 +2545,11 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (!was) continue;
       let buf = null, volume = 0.6, rate = 1;
       if ((c.kind === 'smith' || c.kind === 'butcher') && c.hits > was.hits) {
-        buf = built.buffers[c.kind === 'smith' ? 'anvil' : 'cleaver'];
+        buf = need(c.kind === 'smith' ? 'anvil' : 'cleaver');
         rate = 0.95 + Math.random() * 0.1;
       } else if (c.kind === 'baker' && c.phase !== was.phase) {
-        if (c.phase === 'bake') buf = built.buffers.oven;
-        else if (c.phase === 'rest') { buf = built.buffers.thud; volume = 0.4; }
+        if (c.phase === 'bake') buf = need('oven');
+        else if (c.phase === 'rest') { buf = need('thud'); volume = 0.4; }
       }
       if (!buf) continue;
       const v = built.crafts.find((s) => !s.audio.isPlaying) || built.crafts[0];
@@ -2516,7 +2604,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const f = slot.f, kind = WORK_SOUNDS[f.anim];
       if (!f.visible || f.hidden || !kind) continue;
       slot.next = clock + kind.every * (0.92 + Math.random() * 0.16);
-      const buf = built.buffers[kind.buf];
+      const buf = need(kind.buf);
       if (!buf) continue;
       if (slot.audio.buffer !== buf) { if (slot.audio.isPlaying) slot.audio.stop(); slot.audio.setBuffer(buf); }
       slot.audio.setVolume(kind.volume);
@@ -2566,6 +2654,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (pub.inside) {
         const a = built.clinkRoom.audio;
         if (a.isPlaying) { try { a.stop(); } catch { /* it had already ended */ } }
+        const glass = need('clink');
+        if (glass && a.buffer !== glass) a.setBuffer(glass);
         a.setVolume(0.25 + Math.random() * 0.25);
         a.setPlaybackRate(rate);
         try { a.play(); } catch { /* the next glass will do */ }
@@ -2573,7 +2663,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
         const v = built.clinks.find((c) => !c.audio.isPlaying) || built.clinks[0];
         v.audio.setVolume((0.3 + 0.5 * pub.full) * edge(pub.d, TAVERN_RANGE));
         v.filter.frequency.value = pub.out.filter.frequency.value * 2.5;
-        fire(v, pub.at[0] + (Math.random() - 0.5) * 1.2, pub.at[1] + 1, pub.at[2] + (Math.random() - 0.5) * 1.2, rate);
+        fire(v, pub.at[0] + (Math.random() - 0.5) * 1.2, pub.at[1] + 1, pub.at[2] + (Math.random() - 0.5) * 1.2, rate, need('clink'));
       }
     }
     const b = built.borrel;
@@ -2583,7 +2673,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
         b.clinkIn = gap(b.friday ? 1.6 : 0.8);
         const v = built.borrelClinks.find((c) => !c.audio.isPlaying) || built.borrelClinks[0];
         const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 5;
-        fire(v, b.at[0] + Math.cos(a) * r, b.at[1] + 1, b.at[2] + Math.sin(a) * r, 0.85 + Math.random() * 0.4);
+        fire(v, b.at[0] + Math.cos(a) * r, b.at[1] + 1, b.at[2] + Math.sin(a) * r, 0.85 + Math.random() * 0.4, need('clink'));
       }
     }
   }
@@ -2664,7 +2754,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     // the height of a fence post is a chicken.
     const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 16;
     fire(voice, best[0] + Math.cos(a) * r, 7 + Math.random() * 7, best[1] + Math.sin(a) * r,
-      0.9 + Math.random() * 0.3);
+      0.9 + Math.random() * 0.3, need('gull'));
   }
 
   function update(dt) {
@@ -2685,6 +2775,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     bed.duckAt += (bed.duckWant - bed.duckAt) * (1 - Math.exp(-dt / 0.8));
     // Under the sea the surf is a dull rush (the master's lowpass does the dulling) and the wind is
     // nearly gone: it is a bed from above the water.
+    keepBuffer(built.sea.audio, need('surf'));
+    keepBuffer(built.wind.audio, need('wind'));
     built.sea.audio.setVolume(bed.seaAt * bed.duckAt * (1 - 0.4 * underwater));
     built.wind.audio.setVolume(bed.windAt * bed.duckAt * duckOver());
     // And the master comes up over a second and a half, because a bed that arrives all at
@@ -2708,7 +2800,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // factory, and the settlers' own gait is jittered for exactly the same reason.
       slot.next = clock + 1 / HAMMER_HZ + (Math.random() - 0.5) * 0.09;
       if (!f.visible || f.hidden || f.anim !== 'hammer') continue;
-      fire(slot, f.pos[0], (f.y || 0) + 0.8, f.pos[1], 0.86 + Math.random() * 0.3);
+      fire(slot, f.pos[0], (f.y || 0) + 0.8, f.pos[1], 0.86 + Math.random() * 0.3, need('hammer'));
     }
   }
 
@@ -2848,6 +2940,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     clockOf: (kind) => (kind === 'rave' ? raveClock() : kind === 'shanty' ? shantyClock() : null),
     // Under the sea, 0..1: the master bus goes through water (see applyMuffle).
     setUnderwater,
+    // The keeper's own recordings (setSamples): ready AudioBuffers for a family, the families
+    // asked for so far (what is within earshot, so worth loading), and the context to decode in -
+    // null until there is a graph, which there is not before a gesture.
+    setSamples,
+    wanted: () => [...asked],
+    context: () => (built ? ctx : null),
     // Settings -> Audio (sound-mix.js): a slider or a part, kept per browser and heard at once.
     setMix,
     resetMix,
@@ -2902,6 +3000,9 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       crowd: seen,
       atWork: working,
       buffers: built ? Object.keys(built.buffers).length : 0,
+      // The families playing the keeper's own recordings, and how many variants each has (a loop
+      // still being joined counts 0 until it is done).
+      samples: Object.fromEntries(Object.entries(samples).map(([k, v]) => [k, v.shots ? v.shots.length : v.loop ? 1 : 0])),
       // The rave is a bed rather than a placed voice, and it exists only once somebody has
       // been near the castle on a Saturday night: null until then.
       rave: songStats('rave'),
