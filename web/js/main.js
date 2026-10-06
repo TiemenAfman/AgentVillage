@@ -7141,6 +7141,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   // A click on the board you are working is the board's, and never also picks whatever
   // building happens to stand behind it.
   if (moved < 5 && state.panels && state.panels.press(pointer)) { downAt = null; return; }
+  // Inside a room the camera stands in the room's own scene, but pick() casts it at the
+  // island's buildings, through a camera that is not looking at them: a swing of the fist in
+  // the Salty Kraken opened the dossier of whatever building of the town lay along that ray.
+  if (state.inside) { downAt = null; return; }
   if (moved < 5) {
     const hit = pick();
     // An animal opens its own dossier: ours the keeper's, from our islander; a neighbour's
