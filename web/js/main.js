@@ -5298,6 +5298,12 @@ function raiseGuestIslands() {
     syncBoards();
     state.guests.splice(i, 1);
   }
+  // And the walker told. Walk mode keeps the list it was handed, so an island raised while
+  // you are already walking - on the phone, every one of them: its home is open water and the
+  // fleet arrives after - had houses you walked straight through until walk mode was entered
+  // again (#70), and one that was taken down left its walls standing in the water. The
+  // fleet's drops (dropRegion) always come back through here.
+  if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
 }
 
 // --------------------------------------------------------------- particles
