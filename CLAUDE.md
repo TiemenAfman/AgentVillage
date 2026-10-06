@@ -1415,7 +1415,12 @@ A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per h
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
 then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
 faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
-Only the 0-hp hit evicts, then whole + 5 s immunity. Fighting back is
+Only the 0-hp hit evicts, then whole + 5 s immunity. **Respawn to town** (the Esc menu, under
+Back, only on foot outdoors; issue #74) is the same evict asked for: the page sends a bare
+`{t:'respawn'}`, `health.respawn` sends you to `refuge` with `why: 'respawn'` - no health taken
+or given, no immunity, at most once per `RESPAWN_EVERY_MS` - and a no is `{t:'respawn', ok:false}`.
+A sea from before it says nothing, so after `RESPAWN_WAIT_MS` main.js `respawnHere` puts you
+there itself (feet are the page's); the open sea needs a redeploy for the sea's own answer. Fighting back is
 `lib/combat.mjs`: the page sends a bare `{t:'swing'}` and the sea aims it from the last pose
 (`p.yaw`, facing `(sin, cos)` as walk.js sets it) - the one flat `PLAYER_HIT` off the nearest
 guard or Codex resident in the arc, broadcast as `{t:'agent', a:'hit', i, id, hp, max}`, also

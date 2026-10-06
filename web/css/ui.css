@@ -1054,6 +1054,8 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .sysmenu-tab[hidden] { display: none; }
 .sysmenu-back { margin-top: auto; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 11px; font-size: 12.5px; }
 .sysmenu-build { margin: 8px 6px 0; font-size: 10.5px; min-height: 1em; }
+/* Under Back, only on foot (issue #74): the way home for somebody adrift with no boat. */
+.sysmenu-respawn { margin-top: 6px; white-space: nowrap; padding: 8px 11px; font-size: 12.5px; text-align: left; }
 .sysmenu-body { overflow: auto; padding: 16px 22px 20px; }
 .sysmenu-body section { display: none; }
 .sysmenu-body section > h3.sec:first-child { margin-top: 0; }
@@ -1077,6 +1079,7 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
   .sysmenu-tabs { flex-direction: row; flex-wrap: wrap; flex: 1; }
   .sysmenu-tab { padding: 7px 10px; font-size: 12.5px; }
   .sysmenu-back { margin-top: 0; }
+  .sysmenu-respawn { margin-top: 0; }
   .sysmenu-back kbd, .sysmenu-build { display: none; }
   .sysmenu-body { padding: 14px 16px 18px; }
 }
