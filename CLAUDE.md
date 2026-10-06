@@ -1907,6 +1907,20 @@ person it does nothing but the lid. `tests/camera-boom.test.mjs` judges all of i
 geometry; a raycast at runtime was rejected (the Kraken's 80k triangles are 1.2 ms a ray, and the batch keeps
 the only copy of every building). The boom costs ~40 us a frame beside a street and the Kraken.
 
+**What hides the walker is seen through, and the trigger is not the hole** (`web/js/see-through.js`). On foot
+outdoors (not first person, not in a room) `seeThroughFrame` in main.js casts five rays from the silhouette
+(`SILHOUETTE`: feet, middle, head, shoulders) to the camera against `walk.standsBetween` (the boom's
+`standingReach` with **no** `CAM_R` pad - padded, a board beside the walker counted) and the trees' `crowns()`
+(world.js, cylinders off the bake); only while one is cut does a round, soft hole ease open (`uSeeOn` 0..1,
+`SEE_EASE`). The hole is a stippled discard in view space (`vViewPosition`, so instanced trees and the building
+batch alike), a cone from the eye to `BODY_MID`, nothing below a step over the feet (planks underfoot stay).
+Per-pixel triggering was tried and cannot work: a pixel does not know whether its object covers the body
+elsewhere, so the cone either reached past the body's sides or cut a body-shaped hole in a roof. The trees'
+`barkMat`/`foliageMat` and `buildingMat` (`createBuildingMaterial({ seeThrough: true })`) carry it; `crowdMat`
+does not, and every `createClassicAvatar` rig - the walker, peers, smith, baker - opts out of its clone with
+`seeThroughOff`, which is why the building material's `onBeforeCompile` and `customProgramCacheKey` are
+`function`s reading `this`, and why buildRig no longer binds the key.
+
 **Diving is the walker's third way in the water, and a diver is still a swimmer**
 ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)). C (pad B, touch B) held while
 swimming in water deep enough (`canDive`: a body's height of sea) sinks the body; Space (pad A)

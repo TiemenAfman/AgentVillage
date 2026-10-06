@@ -9,6 +9,7 @@ import { placeBuoys } from './buoy-placement.js';
 import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
 import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, FIELD_REACH, NONE, TOWN } from './hamlets.js';
 import { textureUrl } from './assets.js';
+import { patchSeeThrough } from './see-through.js';
 
 import { quayKade } from 'shared/quay-basin.mjs';
 import { buildQuayKade } from './quay-basin.js';
@@ -507,6 +508,12 @@ export function nearWaterPlan(plan, fx, fz) {
   };
 }
 
+// Trees between the camera and the walker are seen through (see-through.js).
+function seeThrough(mat) {
+  mat.onBeforeCompile = patchSeeThrough;
+  mat.customProgramCacheKey = () => 'tree-see-through';
+}
+
 
 // Everything an island is made of that stands still: its ground, the colour of that
 // ground, the wood on it, the fields, the walls between them, the paving worn into it and
@@ -973,6 +980,8 @@ export function createLandscape({
   // materials back in the same order, so the two can never be listed apart: handing an
   // InstancedMesh [bark, foliage] for a geometry grouped foliage-first is a tree with a
   // wooden canopy, and nothing in three will say so.
+  seeThrough(barkMat);
+  seeThrough(foliageMat);
   const SLOT_MAT = { bark: barkMat, foliage: foliageMat, plain: treeMat };
   const CANOPY = ['bark', 'foliage'];
 
@@ -1788,8 +1797,32 @@ export function createLandscape({
     return out;
   }
 
+  // Every crown as an upright cylinder, for the one question nothing else asks of a tree: does it
+  // stand between the camera and the walker (main.js seeThroughFrame, see-through.js). Measured off
+  // the bake: an oak's crown from 0.38 to 0.80 of its height and 0.38 out, a pine's lowest cone
+  // from 0.28 up to its 1.18 tip and 0.40 out - a little less, since a cone narrows as it rises.
+  // Rebuilt whenever solids() is, which already knows when a tree was felled or the orchard moved.
+  let crownsNow = null, crownsOf = null;
+  function crowns() {
+    const s = solids();
+    if (crownsOf === s) return crownsNow;
+    const out = [];
+    const crown = (x, z, sc, sy, lo, hi, r) => {
+      const g = terrain.worldHeight(x, z);
+      out.push({ x, z, r: r * sc, y0: g + lo * sc * sy, y1: g + hi * sc * sy });
+    };
+    for (const it of trees) {
+      if (it.felled) continue;
+      if (it.kind === 'pine') crown(it.x, it.z, it.s, 1, 0.28, 1.18, 0.34);
+      else crown(it.x, it.z, it.s, 1, 0.38, 0.8, 0.38);
+    }
+    for (const [x, z, sc] of orchardNow) crown(x, z, sc, 1.05, 0.38, 0.8, 0.38);
+    crownsNow = out; crownsOf = s;
+    return out;
+  }
+
   return {
-    group, ground, update, reshape, fellTrees, dispose, workSites, solids,
+    group, ground, update, reshape, fellTrees, dispose, workSites, solids, crowns,
     // The cell pairs a boundary closes to a route that cannot jump it (hamlets.js edgeKey).
     closedEdges: () => borderClosed,
     triangles: p / 3 + (volcanoDressing ? volcanoDressing.triangles : 0),
@@ -3032,7 +3065,7 @@ export function createWorld(scene, terrain, village, opts = {}) {
     setSeaHome: (origin) => { seaHome[0] = origin ? origin[0] : 0; seaHome[1] = origin ? origin[1] : 0; },
     // The landscape's own, forwarded rather than wrapped: main.js has always called these
     // on the world and there is no reason for it to learn a second object.
-    fellTrees: land.fellTrees, solids: land.solids, closedEdges: land.closedEdges, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
+    fellTrees: land.fellTrees, solids: land.solids, crowns: land.crowns, closedEdges: land.closedEdges, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
     setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages, setBridgeRoads: land.setBridgeRoads,
     ownership: land.ownership, season: land.season,
     followShadow, setShadowDistance, setFar, setCloudReach, recentre, reshapeWater, setWaterFocus, state, reshape,
