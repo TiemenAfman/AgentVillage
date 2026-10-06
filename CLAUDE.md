@@ -2353,6 +2353,25 @@ turn of the minute this page saw itself, less than `BELL_SKIP_MIN` forward. Gree
 sea for the bed is *wide* water (`seaAt`: water 5 units off on three sides) - depth cannot tell a
 river bed from the dredged harbour, both are -0.55.
 
+**The keeper's own recordings replace a computed voice by name, and only on the keeper's page**
+(Plans/meer-geluiden.md phase 9). `HOME/audio/sfx/<family>[-<anything>].<ext>` (ogg/opus/mp3/wav/m4a/aac/
+flac); a family is one of sound.js's own buffer names, listed once in `shared/sfx.mjs` (`SFX_FAMILIES`,
+loop or one-shot) - a new computed voice that should be replaceable gets a line there. `lib/sfx.mjs` writes
+the folder's README (from that list) and a `SOURCES.txt` it never writes over, and serves `/api/sfx` +
+`/api/sfx/<name>` (keeper-only, `readFileSync`). `web/js/sfx-loader.js` (main.js `startSfx`, after
+`state.ui.boot(true)`, never on STANDALONE, the list again at every door with `refreshMusic`) fetches and
+decodes a family only once `sound.wanted()` names it - every family `need()` has been asked for - and
+hands the buffers to `sound.setSamples(name, buffers)`; sound.js still fetches and decodes nothing.
+`web/js/sound-samples.js` brings each to the gated RMS (`loudness`) of the computed buffer it replaces
+(`SFX_LEVEL`, measured; `tests/sound-samples.test.mjs` fails when a synthesiser moves more than 1 dB off
+its number - measure again with `synthFamily` and `loudness`), folds placed voices to mono, and joins a
+loop's variants end to end with equal-power crossfades, the last into the first, so the loop point is
+just another join. With samples, `need()` answers a one-shot's variant at random (never the same twice
+running) and a loop's joined buffer, and the computed family is never made; every site that plays a
+one-shot asks `need()` (or passes its answer to `fire(..., buf)`) at the moment it plays, never a buffer
+kept from build(). A playing bed is restarted on its new buffer (`keepBuffer`): three's `setBuffer` only
+changes the next `play()`.
+
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is
 `hamletEntrances` in `web/js/hamlet-sign-placement.js`) finds where the road network crosses the edge of

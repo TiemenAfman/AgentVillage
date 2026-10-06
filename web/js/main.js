@@ -62,6 +62,7 @@ import { createAnimalBatch, createAnimalView } from './animal-view.js';
 import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
+import { createSfxLoader } from './sfx-loader.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
 import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
@@ -2596,6 +2597,7 @@ function raveHeard() {
 const MUSIC_SONGS = { kroeg: 'tavern', rave: 'rave', pirates: 'shanty' };
 async function refreshMusic() {
   if (!state.sound) return;
+  if (state.sfx) state.sfx.refresh();
   try {
     const r = await mine('/api/music');
     if (!r.ok) return;
@@ -2607,6 +2609,28 @@ async function refreshMusic() {
     }
     state.sound.setPlaylists(out);
   } catch { /* no islander, no tracks: the computed music plays */ }
+}
+
+// The keeper's own recordings (lib/sfx.mjs, HOME/audio/sfx, Plans/meer-geluiden.md phase 9):
+// web/js/sfx-loader.js fetches and decodes a family once sound.js has wanted it, and hands the
+// buffers in through setSamples. Only after the boot (`startSfx` follows `state.ui.boot(true)`),
+// only from our own islander - a visitor is refused /api/sfx, and the phone and the web have none
+// - and the list is asked again at every door, with the music's. Nothing waits on any of it.
+let sfxTickIn = 2;
+function startSfx() {
+  if (STANDALONE || !state.sound || state.sfx) return;
+  state.sfx = createSfxLoader({
+    sound: state.sound,
+    list: async () => { const r = await mine('/api/sfx'); return r.ok ? r.json() : null; },
+    bytes: async (name) => {
+      const r = await mine(`/api/sfx/${encodeURIComponent(name)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.arrayBuffer();
+    },
+    decode: (ctx, data) => ctx.decodeAudioData(data),
+    log: (line) => console.warn(line),
+  });
+  state.sfx.refresh();
 }
 
 // The village tavern, for the keeper's own tracks in HOME/audio/kroeg: the room when you are in
@@ -8063,6 +8087,7 @@ function frame(nowMs) {
   // the listener rides on it; one line, because everything sound needs it asks for itself
   // through the snapshot handed to createSound.
   if (state.sound) state.sound.update(dt);
+  if (state.sfx && (sfxTickIn -= dt) <= 0) { sfxTickIn = 2; state.sfx.tick(); }
 }
 
 function updateLabels() {
@@ -9050,6 +9075,7 @@ Everything is copied and checked first; the island then starts again there. The 
   else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
   else openMainMenu();
   state.ui.boot(true);
+  startSfx();
   // The noclip camera's console handle, and a spot given in the URL (Plans/noclip-camera.md).
   if (noclipAllowed()) window.__noclip = noclipApi;
   if (!STANDALONE && (params.has('cam') || params.has('room'))) noclipFromUrl();

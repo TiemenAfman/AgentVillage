@@ -1261,6 +1261,72 @@ test('nothing in here is fetched, loaded or decoded', () => {
   assert.ok(!/\bimport\s*\(/.test(SRC), 'and it loads no module of its own after boot');
 });
 
+// --- 3b. the keeper's own recordings (phase 9) ------------------------------
+
+// A recording as main.js would hand it over after decoding: noise at `amp`, `secs` long.
+function recording(secs, amp = 0.4, seed = 1) {
+  const b = ctx.createBuffer(1, Math.floor(secs * 22050), 22050);
+  const d = b.getChannelData(0);
+  let s = seed;
+  for (let i = 0; i < d.length; i++) { s = (s * 1103515245 + 12345) >>> 0; d[i] = amp * ((s / 2 ** 32) * 2 - 1); }
+  return b;
+}
+
+test('a one-shot with recordings plays one of them each time, never the same one twice running', () => {
+  store = {};
+  const sound = heardSound(village(3));
+  assert.ok(sound.context(), 'the context to decode in, once there is a graph');
+  const files = [recording(0.3, 0.9, 1), recording(0.3, 0.05, 2), recording(0.3, 0.3, 3)];
+  const mark = ctx.buffers.length;
+  sound.setSamples('hammer', files);
+  const takes = ctx.buffers.slice(mark);
+  assert.equal(takes.length, 3, 'each brought to the hammer\'s level, as a copy');
+  assert.equal(sound.stats().samples.hammer, 3);
+  const from = ctx.started.length;
+  run(sound, 6);
+  const blows = ctx.started.slice(from).filter((b) => takes.includes(b));
+  assert.ok(blows.length > 6, `the hammers play the recordings (${blows.length} blows)`);
+  for (let i = 1; i < blows.length; i++) assert.notEqual(blows[i], blows[i - 1], 'a variant twice running is a tic');
+  assert.ok(sound.wanted().includes('hammer'));
+  // Taken away, the computed hammer is back.
+  sound.setSamples('hammer', []);
+  assert.equal(sound.stats().samples.hammer, undefined);
+  const after = ctx.started.length;
+  run(sound, 3);
+  assert.ok(ctx.started.slice(after).length > 0 && !ctx.started.slice(after).some((b) => takes.includes(b)));
+});
+
+test('a loop with recordings is joined from them, and its computed version is never made', () => {
+  store = {};
+  const look = village(2, { anim: 'still', tavern: false });
+  for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
+  const sound = heardSound(look);
+  assert.ok(!sound.wanted().includes('kraken'), 'nothing of the Kraken is wanted before it is near');
+  sound.setSamples('kraken', [recording(6, 0.6, 4), recording(5, 0.1, 5)]);
+  const mark = ctx.buffers.length;
+  look.pubs = [{ kind: 'kraken', at: [6, 0, 0] }];
+  run(sound, 1);
+  const made = ctx.buffers.slice(mark);
+  assert.equal(made.length, 1, 'one buffer: the loop of the two, and no computed murmur beside it');
+  assert.equal(made[0].length, 22050 * 11 - 2 * Math.floor(1.5 * 22050));
+  assert.equal(sound.stats().samples.kraken, 1);
+  assert.ok(sound.stats().pubs.kraken.playing && loudest(made[0]) > 0, 'and it is what the Kraken hums');
+});
+
+test('recordings for something that is no family are refused, and a bed takes its own over while playing', () => {
+  store = {};
+  const sound = heardSound(village(3));
+  assert.equal(sound.setSamples('rave', [recording(2)]), false, 'the music has its own folders');
+  assert.equal(sound.setSamples('constructor', [recording(2)]), false);
+  sound.setSamples('surf', [recording(8, 0.2, 6)]);
+  const mark = ctx.buffers.length;
+  run(sound, 1);
+  const loop = ctx.buffers.slice(mark).find((b) => b.length === 22050 * 8 - Math.floor(1.5 * 22050));
+  assert.ok(loop, 'the sea\'s loop is joined, a step a frame');
+  assert.equal(loop.numberOfChannels, 1, 'a mono recording stays mono, even for a bed');
+  assert.ok([...ctx.live].some((s) => s.buffer === loop), 'and the bed, already playing, plays it now');
+});
+
 // --- 4. going quiet --------------------------------------------------------
 
 test('switched off, the context is suspended rather than merely silent', () => {

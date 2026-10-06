@@ -1,6 +1,6 @@
 # Meer geluiden op het eiland
 
-**🚧 PLAN** — van 2 oktober 2026, in aanbouw. Dezelfde dag aangevuld met de wensen van de keeper:
+**🚧 PLAN** — van 2 oktober 2026, in aanbouw (fase 1 tot en met 9 gebouwd). Dezelfde dag aangevuld met de wensen van de keeper:
 de kerkklok, de begroeting op straat en een eigen tabblad **Audio** in Settings (bij de besluiten
 hieronder).
 
@@ -11,12 +11,12 @@ vulkaan), hoe laat het is en wat er gebeurt - zonder dat het ooit druk wordt.
 
 ## Stand (2 oktober 2026)
 
-Fase 1 tot en met 8 zijn gebouwd (✅ bij de volgorde hieronder). Wat er nog open staat:
+Fase 1 tot en met 9 zijn gebouwd (✅ bij de volgorde hieronder). Wat er nog open staat:
 
 - **De plafonds per tier** (`full` / `modest` / `phone` in de budgettabel) en `equalpower`-panning op
   de lichtere machines: de pools hebben nu één lengte voor elke machine (`stats().cap` = 38
   plekstemmen). Eerst meten op de telefoon voor er iets kleiner wordt.
-- **Fase 9**, de eigen samples van de keeper: hangt aan open vraag 1.
+- ~~**Fase 9**~~ gebouwd (6 oktober), zie de volgorde hieronder.
 - Kleine gaten: het knetteren van de oven en het smidsvuur, het smelten bij de goudsmid, de
   borrel hangt in het midden van het plein (`town.centre`) en niet in het zwaartepunt van de
   tafels, een ballon bij de begroeting (open vraag 10).
@@ -394,8 +394,14 @@ Elke fase is los af te leveren en los te horen. De kleinste met de meeste winst 
    de klok van de zee), de goudrun `focus()`/`busy()`/`bars()`, de visser zijn bestaande teller
    `bites`; één wielen-loop voor wie het dichtst rolt. Nog niet: het smelten bij de goudsmid (geen
    cue voor het moment zelf zonder in goldrun.js' stappen te kijken).
-9. **Optioneel: eigen samples van de keeper** (`HOME/audio/sfx/`), alleen als blijkt dat een
-   berekende koe of geit echt niet te doen is.
+9. ✅ **Eigen samples van de keeper** (`HOME/audio/sfx/`). Gevraagd toen zee, wind en geroezemoes te
+   hard en te druk bleken. *Gebouwd*: één naam per familie zoals sound.js hem al heeft (`shared/sfx.mjs`,
+   47 stuks; de README in de map noemt ze), varianten als `surf-1.ogg`, `surf-2.ogg`. Een kort geluid
+   kiest steeds een willekeurige variant (nooit twee keer dezelfde achter elkaar), een lus zet al zijn
+   varianten achter elkaar met crossfades van 1,5 s en van de laatste terug naar de eerste, zodat er
+   geen naad is. Elke opname wordt op de luidheid van de berekende versie gebracht (gated RMS,
+   `SFX_LEVEL`), dus de schuiven en vinkjes werken zoals voorheen. Alleen op de pagina van de keeper,
+   alleen geladen als de familie binnen gehoorsafstand gevraagd wordt; zonder bestand blijft de synthese.
 
 Na elke fase: de open zee hoeft niet geredeployd (niets op de draad), en het is een patch - geen
 `SEA_V`, geen layout-gate, niets in `layout.json`, `config.json` of een bundle.
