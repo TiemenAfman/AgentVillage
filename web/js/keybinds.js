@@ -21,7 +21,7 @@ export const ACTIONS = [
   ['back', 's', 'walk back', 'arrowdown', null], ['right', 'd', 'walk right', 'arrowright', null],
   ['run', 'shift', 'run', null, BTN.L3], ['jump', ' ', 'jump', null, BTN.A],
   ['crouch', 'c', 'crouch, hold to lie down', null, BTN.B], ['dance', 'r', 'dance', null, BTN.UP],
-  ['bike', 'f', 'bike', null, BTN.Y], ['firstPerson', 'v', 'first person', null, null],
+  ['bike', 'f', 'bike / horse', null, BTN.Y], ['firstPerson', 'v', 'first person', null, null],
   ['interact', 'e', 'talk / sit down', null, BTN.X], ['sendAway', 'x', 'send away', null, BTN.LT],
   ['plant', 'p', 'sow', null, BTN.RT], ['nextSeed', 'q', 'next seed', null, BTN.RB],
   ['give', 'g', 'give a beer', null, null], ['build', 'b', 'build (debug)', null, null],

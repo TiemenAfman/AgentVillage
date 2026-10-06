@@ -1,7 +1,39 @@
 # Een paard om op te rijden, in plaats van de fiets
 
-**🚧 Status: plan van 29 september 2026, nog niet gebouwd.** Vervangt [fiets.md](DONE/fiets.md);
+**🚧 Status: plan van 29 september 2026; stap 1 en 2 gebouwd op 6 oktober (zie het besluit hieronder), stap 3 (handleiding) open.** Vervangt [fiets.md](DONE/fiets.md);
 die blijft staan als geschiedenis en krijgt bij het bouwen een regel bovenaan.
+
+## Besluit van 6 oktober 2026: het paard naast de fiets, niet in plaats ervan
+
+Martijn: het paard staat op **ware grootte (1,0)** en **alleen de Avonturier rijdt**. De Reiziger
+houdt de fiets. F (pad Y) is dus wat het gekozen lichaam heeft: met de Avonturier op of van het
+paard, met de Reiziger de fiets zoals altijd. Twee voertuigen tegelijk bestaan niet. Daarmee
+vervalt "Wat weggaat" hieronder: de fiets, zijn bake en zijn tests blijven, `state.bike` blijft de
+fiets en het paard komt ernaast als `state.mount`. De toets-id blijft `'bike'` (label
+"bike / horse"), zodat niemands eigen toets een migratie nodig heeft.
+
+**Gebouwd (stap 1 en 2, branch `claude/lucid-babbage-29d640`):**
+- `web/js/mount.js`: `stepMount` (puur, de wereld van de fiets, met borst/kont-sonde en een
+  plafond dat de rit stopt), `gaitOf`/`cadenceOf`/`PATTERN`/`mountPose` (de gangen) en
+  `createMount` (het stalpaard zonder brein). Snelheden die van de fiets; **de gangbanden zijn
+  die van het paard, niet de voeten**: stap tot 1,6, draf tot 4,2, kanter tot 8,2 (W alleen is
+  dus een kanter op `MOUNT_TOP` 8,0), galop daarboven met Shift. De voeten lopen nu 0,65 en
+  sprinten hoogstens 2,7, dus de banden uit "Wat een paard bijzonder maakt" (3,4/6,6) zouden het
+  paard bij elke loopsnelheid laten stilstaan.
+- **Cadans** volgt de referentie: 1,27 Hz aan het eind van de stap en verzadigd rond 2 Hz in
+  galop (`CADENCE_MAX` 2,1). Hoeven glijden; het compromis van de fiets.
+- **Stilstaand idlet het paard op de stalpose** (`stepPose` 'still' in `fauna.js`, dus het stalpaard
+  doet het ook): ademen, staartzwiep, kop rond, af en toe een kopschud, en het gewicht van het ene
+  achterbeen op het andere (dat been iets naar voren, die heup omlaag). Onder het rijden blijft de
+  staart zwiepen; `mountPose` legt de gang over die idle-pose.
+- `walk.js` (`rideKind`, `rides()`, de rijtak, de ruiter op `horse.seat` na de pose), `net.js`/`main.js`
+  (`s.mount` naast `s.bike`), `peers.js` (`mounted`: paard als `FLAG_RIDING` en lichaam Avonturier),
+  touch-pad (Y wordt een paardenkop), `/demo` (rij "Ridden": elke gang op de plek).
+- **Geen nieuwe bit**: `FLAG_RIDING` + het lichaam uit de look. Een oudere pagina tekent een fiets
+  onder een rijdende Avonturier; onschuldig. Geen `SEA_V`, geen layout: een patch, en de open zee
+  hoeft er niet voor opnieuw gedeployd.
+- Open vragen, zo gekozen: eerste persoon kijkt over de hals (niets verborgen); geen hoefslagen
+  nog; één vacht en een groenblauw kleed voor iedereen.
 
 ## Aanleiding
 

@@ -36,6 +36,7 @@ import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal, applyPose, saddleOf } from './fauna.js';
+import { createMount, MOUNT_TOP } from './mount.js';
 import { createClassicAvatar, horsebackOf } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
 import { attachButcher, updateButcher } from './butcher.js';
@@ -538,6 +539,39 @@ line(FURNITURE, ([type, name, note], x, z) => {
       tag(x, z + 1.1, `${character} · ${size}`, size === fit.horse ? 'fits' : 'horse at ' + size);
     }
   }
+  row++;
+}
+
+// Ridden (web/js/mount.js, Plans/paard-in-plaats-van-fiets.md): the Adventurer on the horse he
+// rides at F, at its own size, in every gait - on the spot, the legs going as fast as they would
+// at that speed. Standing it idles as the stable's horse does: breathing, the tail, the head, the
+// weight from one hind leg to the other.
+{
+  const z = row * ROW;
+  heading('Ridden', z);
+  const speeds = [['stand', 0], ['walk', 1.2], ['trot', 3], ['canter', MOUNT_TOP], ['gallop', MOUNT_TOP * 1.3]];
+  speeds.forEach(([gait, speed], i) => {
+    const x = (i - 2) * PITCH * 0.5;
+    const horse = createMount({ scene, material, seed: `demo:ridden:${gait}` });
+    if (!horse) return;
+    const rider = createClassicAvatar(normalizeAvatar({ character: 'adventurer' }), material);
+    rider.object.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+    scene.add(rider.object);
+    const fit = horsebackOf('adventurer');
+    const at = new THREE.Vector3();
+    const pose = { moving: false, grounded: true, horseback: true };
+    const step = (dt) => {
+      horse.place(x, FIELD_Y, z, Math.PI / 2);
+      horse.pose({ speed }, dt);
+      horse.seat(at, rider.hipY, fit.perch);
+      rider.object.position.copy(at);
+      rider.object.quaternion.copy(horse.object.quaternion);
+      rider.update(pose, dt);
+    };
+    for (let k = 0; k < 60; k++) step(1 / 30);
+    lives.push(step);
+    tag(x, z + 1.1, gait, speed ? `${speed.toFixed(1)} a second` : 'at its ease');
+  });
   row++;
 }
 
@@ -1237,7 +1271,7 @@ const flatTerrain = {
 
 const KEYS_OUT = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'
   + '<span>mouse to look, Esc frees it, click takes it back</span>'
-  + '<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike</span><span><kbd>V</kbd> first person</span><span><kbd>Space</kbd> jump</span>'
+  + '<span><kbd>Shift</kbd> run</span><span><kbd>F</kbd> bike / horse</span><span><kbd>V</kbd> first person</span><span><kbd>Space</kbd> jump</span>'
   + '<span><kbd>Ctrl</kbd> crouch</span><span><kbd>R</kbd> dance</span><span><kbd>E</kbd> step inside</span>'
   + '<span><kbd>Esc</kbd> back to the sky</span>';
 const KEYS_IN = '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</span>'

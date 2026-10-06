@@ -12,7 +12,8 @@
 import * as THREE from 'three';
 import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './classic-avatar.js';
+import { createMount } from './mount.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
 import { toWorld } from 'shared/deck.mjs';
@@ -194,6 +195,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       deckTo: null,
       cursor: null,       // where their hand is on a board, if it is on one
       bike: null,         // their bicycle, made the first time they are seen riding
+      horse: null,        // their horse (an Adventurer's ride, web/js/mount.js), the same way
+      gallop: { x: 0, y: 0, z: 0, yaw: 0, v: 0, rate: 0, seen: false },
       ride: { wheel: 0, crank: 0, steer: 0, lean: 0, pitch: 0, x: 0, y: 0, z: 0, yaw: 0 },
       shown: false,
       fade: 0,             // seconds left of the leaving animation
@@ -253,6 +256,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
   function drop(p) {
     setCursor(p, null);
     if (p.bike) { p.bike.dispose(); p.bike = null; }
+    if (p.horse) { p.horse.dispose(); p.horse = null; }
     const from = places.get(p.room);
     if (from) from.scene.remove(p.mesh);
     p.mesh.remove(p.sprite);
@@ -350,6 +354,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
     for (const p of [...peers.values()]) {
       if (p.bike) p.bike.visible = false;   // shown again below, by a pose that says so
+      if (p.horse) p.horse.visible = false;
       if (p.leaving) {
         p.fade -= dt;
         if (p.fade <= 0) { drop(p); continue; }
@@ -462,7 +467,13 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
 
       p.bob += dt * (swimming ? (moving ? 6.5 : 1.4) : moving ? (running ? 13 : 9) : 1.5);
       const riding = !!(f & FLAG_RIDING) && !swimming && !p.room;
-      if (riding) {
+      // What they ride is read off the body they wear, as their own page decides it: a horse
+      // under an Adventurer, the bicycle under anybody else - no second bit on the wire.
+      const onHorse = riding && p.avatar.character === 'adventurer';
+      if (!onHorse) p.gallop.seen = false;
+      if (onHorse) {
+        mounted(p, x, base, z, yaw, dt, airborne);
+      } else if (riding) {
         ride(p, x, base, z, yaw, dt);
       } else if (swimming) {
         // Upright when they are going nowhere, lying in the stroke when they swim - off the
@@ -503,7 +514,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         crouching, sitting, lying, swimming, treading: swimming && !p.dive ? 1 - p.lie : 0,
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
-        riding: riding ? { crank: p.ride.crank, standing: false } : null,
+        riding: riding && !onHorse ? { crank: p.ride.crank, standing: false } : null,
+        horseback: onHorse,
         dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
       }, dt);
 
@@ -573,6 +585,32 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.mesh.rotation.set(RIDE_PITCH - r.pitch, yaw, r.lean);
   }
   const seat = new THREE.Vector3();
+
+  // One frame of a peer on horseback. The same reading as the bicycle's: their speed is how far
+  // they got along their heading since last frame, their turn how fast the heading moved - and the
+  // gait is mount.js's gaitOf of that speed, as their own page works it out, so both screens see
+  // the same walk, trot or gallop with nothing about it on the wire.
+  function mounted(p, x, y, z, yaw, dt, air) {
+    const g = p.gallop;
+    if (!p.horse) p.horse = createMount({ scene, material, seed: `mount:${p.id}` });
+    if (!p.horse) return;
+    if (!g.seen) { g.x = x; g.y = y; g.z = z; g.yaw = yaw; g.seen = true; }
+    const step = Math.hypot(x - g.x, z - g.z);
+    const along = step < 2 ? Math.sign((x - g.x) * Math.sin(yaw) + (z - g.z) * Math.cos(yaw)) * step : 0;
+    let turned = yaw - g.yaw;
+    if (turned > Math.PI) turned -= Math.PI * 2;
+    else if (turned < -Math.PI) turned += Math.PI * 2;
+    const k = 1 - Math.exp(-6 * dt);
+    // Smoothed: samples arrive on the network's beat, not the frame's.
+    if (dt > 0) { g.v += (along / dt - g.v) * k; g.rate += (turned / dt - g.rate) * k; }
+    g.x = x; g.y = y; g.z = z; g.yaw = yaw;
+    p.horse.visible = true;
+    p.horse.place(x, y, z, yaw);
+    p.horse.pose({ speed: g.v, rate: g.rate, air }, dt);
+    p.horse.seat(seat, p.avatar.hipY, horsebackOf(p.avatar.character).perch);
+    p.mesh.position.copy(seat);
+    p.mesh.quaternion.copy(p.horse.object.quaternion);
+  }
 
   // Somebody else's arm (net.js `swung`, `drank`): a swing coming down on the hand it was, a
   // glass going up to the mouth. The rig refuses what it cannot do - a drink from a hand with

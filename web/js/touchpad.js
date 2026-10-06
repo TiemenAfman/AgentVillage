@@ -51,6 +51,8 @@ const ICONS = {
   talk: '<path d="M4 5h16v10H10l-5 4v-4H4z"/>',
   crouch: '<path d="M12 4v10M7 9l5 5 5-5"/><path d="M5 20h14"/>',
   bike: '<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-7h5l3 7M10 9l3 7M14 6h2"/>',
+  // A horse's head, the Adventurer's Y (web/js/mount.js).
+  horse: '<path d="M8 21l1-6-4-2 2-5 5-4 1-2 2 3c3 2 4 6 4 10v6"/><path d="M10 9h.01"/>',
   sword: '<path d="M19 4l1 1-10.5 10.5-2-2zM6 12l6 6M4.5 19.5l3-3"/>',
   shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
   mug: '<path d="M6 8h9v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2M6 8c0-2 2-3 4-2 1-2 5-2 5 1"/>',
@@ -219,7 +221,16 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   // back up), so it stays although the hands and the bike are put away. `riding` keeps Y: it
   // is the only way off the bicycle, and walk.js's onFoot is false on the saddle - hiding it
   // with the hands left a rider who could never get down.
-  function setHands(what, swimming = false, riding = false) {
+  // `ride` is what Y gives the body worn: 'horse' (the Adventurer) or 'bike'.
+  let rideIcon = 'bike';
+  function setHands(what, swimming = false, riding = false, ride = 'bike') {
+    if (ride !== rideIcon) {
+      rideIcon = ride === 'horse' ? 'horse' : 'bike';
+      const y = layer.querySelector('[data-b="Y"]');
+      const svg = y && y.querySelector('svg');
+      if (svg) svg.innerHTML = ICONS[rideIcon];
+      if (y) y.setAttribute('aria-label', rideIcon === 'horse' ? 'Horse' : 'Bicycle');
+    }
     for (const b of onFoot) {
       b.hidden = !what && !(swimming && b.dataset.b === 'B') && !(riding && b.dataset.b === 'Y');
     }

@@ -325,6 +325,16 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   // A walk carries the head level, the way it always did. Only a walk: a peck or a butt the
   // page is still gliding the last centimetres of keeps reading as a peck or a butt.
   if (striding && a === 'walk') { pitch = 0; yaw = 0; }
+  // A horse standing about (the stable's, and the one under a rider - web/js/mount.js idles on
+  // this same pose): now and then it tosses its head, ears and all, and it shifts its weight from
+  // one hind leg to the other, resting the free one on its toe with that hip dropped. Off its own
+  // clock, so two horses side by side do not do it together.
+  const idle = a === 'still' && kind === 'horse';
+  const toss = idle ? jab(cyc(t + 3.1, 9.3), 0.05, 0.16) : 0;
+  const shift = idle ? Math.sin(t * 0.13 + 0.7) : 0;
+  const restL = clamp((shift - 0.35) / 0.3, 0, 1), restR = clamp((-shift - 0.35) / 0.3, 0, 1);
+  pitch -= 0.2 * toss;
+  yaw += 0.08 * toss;
   const quick = QUICK.has(a) || sparrow;
   pose.headX = damp(pose.headX, pitch, quick ? 18 : two ? 14 : 3, step);
   pose.headY = damp(pose.headY, yaw, sparrow ? 30 : 6, step);
@@ -372,8 +382,10 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
       // Tucked in the air: front feet forward, back feet back.
       pose.legs[i] = air * (four ? (i < 2 ? -0.35 : 0.35) : 0.5);
     } else {
-      // Folded under a body lying down, and back to standing from wherever they were.
-      pose.legs[i] = damp(pose.legs[i], fold ? fold[i] * pose.low : 0, 8, step);
+      // Folded under a body lying down, and back to standing from wherever they were - a
+      // rested hind leg (above) a little forward under the body.
+      const rest = i === 2 ? restL : i === 3 ? restR : 0;
+      pose.legs[i] = damp(pose.legs[i], (fold ? fold[i] * pose.low : 0) - 0.12 * rest, 8, step);
     }
   }
 
@@ -411,7 +423,7 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   if (K.swims) bodyY += Math.sin(t * 2.1) * 0.004;
   else if (striding) bodyY += Math.abs(Math.sin(pose.gait)) * 0.006;
   if (hopping) bodyY += (HOP_HIGH[kind] || 0.06) * air;
-  if (a === 'rest') bodyY += 0.002 * Math.sin(t * 1.6);               // breathing
+  if (a === 'rest' || idle) bodyY += 0.002 * Math.sin(t * 1.6);      // breathing
   if (a === 'chirp') bodyY += 0.002 * Math.abs(Math.sin(t * 10));    // the chest puffing
   if (a === 'fly' && !inFlight && !sparrow) bodyY += 0.02 + 0.01 * Math.sin(t * 12);
   switch (a) {
@@ -428,6 +440,8 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
     case 'watch': bodyX = -0.03; break;
     default: break;
   }
+  // The rested leg's hip drops: leg bl hangs at -x, and a turn about +z lowers -x.
+  if (idle) bodyZ += 0.03 * (restL - restR);
   // Banked into a turn on the wing: set outright by a caller that knows (the gull's circle),
   // else from how fast the heading is changing.
   if (bank != null) bodyZ = bank;

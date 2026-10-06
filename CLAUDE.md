@@ -1122,7 +1122,16 @@ step one of Plans/paard-in-plaats-van-fiets.md): the measured riding angles plus
 of the stable's horse drawn at `HORSEBACK.horse` (0.85) - at 1.0 no Traveller leg reaches the irons without
 going through the flap. Each body has its own numbers (`horsebackOf(character)`, `HORSEBACK_OF`): the
 Adventurer fits at 1.0 with his knee opened to 40. In the rig the left leg is at -x (the mirror), so "out" is
--z for it. /demo shows both bodies at 0.85 and 1.0; which size the horse gets is still the keeper's call.
+-z for it. /demo shows both bodies at 0.85 and 1.0; the keeper chose 1.0 and only the Adventurer rides.
+**F is the body's own ride** ([Plans/paard-in-plaats-van-fiets.md](Plans/paard-in-plaats-van-fiets.md)): the
+Adventurer gets a horse (`state.mount`, `web/js/mount.js`), the Traveller his bicycle (`state.bike`), never
+both - `rideKind()` in walk.js reads `classicAvatar.character`, and a change of body gets you off. Every "not
+while riding" check in walk.js asks `rides()`, and net.js/main.js read `s.bike || s.mount`. `stepMount` is
+`stepBike`'s world with a chest/rump probe (`MOUNT_NOSE`/`MOUNT_RUMP`) and a `ceiling` that stops the ride,
+not only a jump (the rider's head is `MOUNT_HEAD` higher); the gait is a band of the speed (`gaitOf`, the
+horse's own edges, not the feet's), the cadence saturates near 2 Hz, and `mountPose` lays the gait over
+fauna.js's own `'still'` pose, so standing it breathes, swishes and shifts its weight like the stable's horse.
+Peers: no new bit - `FLAG_RIDING` on an Adventurer's look is a horse (`mounted` in peers.js).
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
 (`sea.mjs`, `lib/sea.mjs`, `lib/fleet.mjs`) is a clock, a fleet and a relay whose one island

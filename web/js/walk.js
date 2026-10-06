@@ -8,7 +8,7 @@ import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } fr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
@@ -17,6 +17,7 @@ import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
+import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
@@ -209,8 +210,9 @@ export function createWalkMode({
   // steps it itself, so the beer outlasts the door and wears off from the sky too; a walk
   // mode given none (the workbench) keeps and steps its own.
   tipsy = null,
-  // Whether F puts you on a bicycle here (web/js/bicycle.js). The island and the workbench
-  // say yes; a room does not - there is no riding a bike round the tavern.
+  // Whether F puts you on something to ride here: a bicycle for the Traveller (web/js/bicycle.js),
+  // a horse for the Adventurer (web/js/mount.js). The island and the workbench say yes; a room does
+  // not - there is no riding round the tavern.
   bikes = false,
   // Who is dancing and to what, when R is pressed (Plans/DONE/dansen.md): `{ id, beat }`, the id the
   // sea knows us by - so our own screen picks the move everybody else's does - and the beat of
@@ -332,6 +334,10 @@ export function createWalkMode({
     // crank }. Deliberately not `vehicle`, which means the boat everywhere main.js and net.js
     // look at it (the hull sync, the berth, the boat's own stamina) - Plans/DONE/fiets.md.
     bike: null,
+    // The horse under you, or null: mount.js's { x, y, z, yaw, v, rate, vy, air, floor }. The
+    // Adventurer's ride, as the bicycle is the Traveller's (Plans/paard-in-plaats-van-fiets.md); one
+    // of the two at most, and like `bike` never `vehicle`.
+    mount: null,
     // The statue in both arms: its item name, or null. Like `bike`, never `vehicle`. net.js puts it in
     // the pose (CARRYING); aboard it is `cargo` instead, which the sea is not told about.
     carry: null,
@@ -411,7 +417,7 @@ export function createWalkMode({
   function jump() {
     if (state.digging) { cancelDig('jump'); return; }   // the press is the cancel; it does not also jump
     if (state.carry) return;                            // both hands are full
-    if (state.bike) { hopWanted = true; return; }   // taken by the next stepBike, tyres down
+    if (rides()) { hopWanted = true; return; }   // taken by the next stepBike/stepMount, feet down
     if (climb) { climb.letGo = true; return; }     // a jump on a ladder is letting go of it
     if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
@@ -428,7 +434,7 @@ export function createWalkMode({
   // dry ground and nothing else going on - not on the bike, at a tiller, in the water, on a
   // stool or lying down. A crouch is stood up out of, the way a jump stands you off a stool.
   const canDance = () => state.active && !state.working && state.grounded && !state.swimming
-    && !state.vehicle && !state.bike && !state.sitting && !state.lying && !state.carry && !state.digging;
+    && !state.vehicle && !rides() && !state.sitting && !state.lying && !state.carry && !state.digging;
   function danceToggle() {
     if (state.dancing) { state.dancing = false; return; }
     if (!canDance()) return;
@@ -455,7 +461,7 @@ export function createWalkMode({
   // lift() is never how a statue ends up in the water, only wading in with it (or stepping off a hull
   // into it, which unboard refuses) can.
   const canHandle = () => state.active && !state.paused && !state.working && !state.parked
-    && !state.vehicle && !state.deck && !climb && !state.bike && !state.swimming
+    && !state.vehicle && !state.deck && !climb && !rides() && !state.swimming
     && !state.sitting && !state.lying && !state.digging;
 
   // Take the statue (or whatever `item` names) in both arms. False when there is no room for it: the
@@ -509,7 +515,7 @@ export function createWalkMode({
   // nothing else is going on, and with both hands full; the body must already be still, because moving
   // is what cancels it (in update, where the input is read). Returns whether it began.
   const canDig = () => state.active && !state.paused && !state.working && !state.parked && state.grounded
-    && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !state.bike
+    && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !rides()
     && !state.sitting && !state.lying;
   function dig(seconds = DIG_SECONDS) {
     if (state.digging) return false;
@@ -609,7 +615,7 @@ export function createWalkMode({
     // (crouchToggle's own "press it again to get up"), and the repeat after that started
     // the crouch over - an infinite loop that never spent a rendered frame lying down,
     // reachable only by physically releasing and re-pressing the key.
-    if (k === 'c' && !e.repeat) { e.preventDefault(); if (!state.bike) crouchToggle(); }
+    if (k === 'c' && !e.repeat) { e.preventDefault(); if (!rides()) crouchToggle(); }
     // Not on a repeat either, or holding R would start and stop the dance every few frames.
     if (k === 'r' && !e.repeat) { e.preventDefault(); danceToggle(); }
     // Whatever E and X reach for - a door, a stool, a boat, a settler - is done on foot, so
@@ -679,7 +685,7 @@ export function createWalkMode({
   let clickLockFailed = false;
   // Not with the arms already busy: swimming, lying down, sitting, or at a tiller.
   const canFight = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying && !state.sitting
-    && !state.vehicle && !state.bike && !state.carry && !state.digging;
+    && !state.vehicle && !rides() && !state.carry && !state.digging;
   // One swing of `side`'s hand, if it may fight at all. `onSwing` hears of every swing the
   // arm actually started - main.js puts it on the wire (net.js swing()), which is what makes
   // the button hit something on the sea rather than only move an arm - and of none it
@@ -705,7 +711,7 @@ export function createWalkMode({
   // sitting at the bar is what a beer is for. A glass is no shield, so a drink never goes
   // near `guardUp` and never into `blocking`, which the sea would take for a raised guard.
   const canDrink = () => state.active && !state.paused && !state.working && !state.swimming && !state.lying
-    && !state.vehicle && !state.bike && !state.carry && !state.digging;
+    && !state.vehicle && !rides() && !state.carry && !state.digging;
   const beerIn = (side) => classicAvatar.held(side) === 'beer';
   // What a hand's button does on the press or the click, for any hand that is not a shield
   // (whose button holds rather than acts - guardUp above).
@@ -1761,34 +1767,56 @@ export function createWalkMode({
   // Seconds ridden since the camera was last turned by hand (see the bike branch of update).
   let riddenSinceLook = Infinity;
   function lookedAround() { riddenSinceLook = 0; }
+  // Which ride F gives the body you wear: the Adventurer rides a horse, the Traveller his bicycle -
+  // the keeper's choice of 6 October 2026 (Plans/paard-in-plaats-van-fiets.md).
+  const rideKind = () => (classicAvatar.character === 'adventurer' ? 'horse' : 'bike');
+  function rides() { return state.bike || state.mount; }
+  let horse = null;
   function mount() {
-    if (!bikes || !state.active || state.paused || state.working || state.vehicle || state.bike) return false;
+    if (!bikes || !state.active || state.paused || state.working || state.vehicle || rides()) return false;
     if (state.carry) { blockedBy('carry'); return false; }
     if (state.digging) return false;
     if (!state.grounded || state.swimming || state.sitting || state.lying) return false;
-    if (groundAt(state.pos.x, state.pos.z, state.pos.y) < BIKE_SHORE) return false;
-    if (!bikeMesh) bikeMesh = createBicycle({ scene, material });
-    state.bike = bikeAt(state.pos.x, state.pos.z, state.yaw, state.pos.y);
-    bikeMesh.visible = true;
+    if (rideKind() === 'horse') {
+      // The horse comes out of nowhere under you, as the bike comes out of the satchel - but only
+      // where a horse fits: the middle, the chest and the rump on dry ground and in nothing solid.
+      const x = state.pos.x, z = state.pos.z, y = state.pos.y;
+      const fx = Math.sin(state.yaw), fz = Math.cos(state.yaw);
+      for (const d of [0, MOUNT_NOSE, -MOUNT_RUMP]) {
+        const px = x + fx * d, pz = z + fz * d;
+        if (groundAt(px, pz, y) < MOUNT_SHORE || blocked(px, pz, y, true)) return false;
+      }
+      if (!horse) horse = createMount({ scene, material, seed: 'mount:me' });
+      if (!horse) return false;
+      state.mount = mountAt(x, z, state.yaw, y);
+      horse.visible = true;
+    } else {
+      if (groundAt(state.pos.x, state.pos.z, state.pos.y) < BIKE_SHORE) return false;
+      if (!bikeMesh) bikeMesh = createBicycle({ scene, material });
+      state.bike = bikeAt(state.pos.x, state.pos.z, state.yaw, state.pos.y);
+      bikeMesh.visible = true;
+    }
     lowerShields();
     state.crouching = false;
     state.crouchSince = 0;
+    state.dancing = false;
     state.vy = 0;
-    place(camBack * 1.35);
+    place(camBack * (state.mount ? 1.6 : 1.35));
     return true;
   }
 
-  // Off it, and put away. Stepped off to the left of the frame, then the right, then where
-  // the saddle was, whichever is somewhere to stand - the same "somewhere legal" test a
-  // landing from a boat uses.
+  // Off it, and put away. Stepped off to the left, then the right, then where the saddle was,
+  // whichever is somewhere to stand - the same "somewhere legal" test a landing from a boat uses.
+  // A horse is wider than a frame: off it at 0.45 rather than 0.3.
   function dismount() {
-    const b = state.bike;
+    const b = rides();
     if (!b) return false;
+    const reach = state.mount ? 0.45 : 0.3, shore = state.mount ? MOUNT_SHORE : BIKE_SHORE;
     const lx = Math.cos(b.yaw), lz = -Math.sin(b.yaw);   // the rider's left hand
     let at = [b.x, b.z];
-    for (const side of [0.3, -0.3]) {
+    for (const side of [reach, -reach]) {
       const x = b.x + lx * side, z = b.z + lz * side;
-      if (!blocked(x, z, b.y, true) && groundAt(x, z, b.y) >= BIKE_SHORE) { at = [x, z]; break; }
+      if (!blocked(x, z, b.y, true) && groundAt(x, z, b.y) >= shore) { at = [x, z]; break; }
     }
     putBikeAway();
     state.pos.set(at[0], groundAt(at[0], at[1], b.y), at[1]);
@@ -1798,14 +1826,17 @@ export function createWalkMode({
     return true;
   }
 
-  function toggleBike() { if (state.bike) dismount(); else mount(); }
+  function toggleBike() { if (rides()) dismount(); else mount(); }
 
-  // The bike gone without a step: for leaving walk mode, boarding a boat, sitting down.
+  // The bike or the horse gone without a step: for leaving walk mode, boarding a boat, sitting
+  // down, changing into the other body.
   function putBikeAway() {
     hopWanted = false;
-    if (!state.bike) return;
+    if (!rides()) return;
     state.bike = null;
+    state.mount = null;
     if (bikeMesh) bikeMesh.visible = false;
+    if (horse) horse.visible = false;
     place(camBack);
   }
 
@@ -1939,6 +1970,10 @@ export function createWalkMode({
   function setAvatar(spec) {
     avatarLook = spec;
     classicAvatar.set(spec);
+    // A body that does not ride what is under it gets off: the Traveller has no horse, the
+    // Adventurer no bicycle.
+    if (state.bike && rideKind() !== 'bike') dismount();
+    if (state.mount && rideKind() !== 'horse') dismount();
     // A new look must not drop what the hands are doing: the rig starts from empty hands.
     if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true);
     if (state.digging && classicAvatar.dig) classicAvatar.dig(true);
@@ -1984,7 +2019,7 @@ export function createWalkMode({
     if (p.hit('jump')) jump();
     // Held, it swims a diver up - the pad's Space (update reads it).
     padJump = p.down('jump');
-    if (p.hit('crouch') && !state.bike) crouchToggle();
+    if (p.hit('crouch') && !rides()) crouchToggle();
     if (p.hit('dance')) danceToggle();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
@@ -2057,7 +2092,7 @@ export function createWalkMode({
   // body cannot (a hull, a saddle, a ladder, a seat) and the jump should be at once. In the
   // water whatever did it, the body sinks: drowning or not, nobody falls over afloat.
   function die(kind) {
-    if (!state.active || state.parked || state.vehicle || state.bike || state.deck || climb || state.sitting) return 0;
+    if (!state.active || state.parked || state.vehicle || rides() || state.deck || climb || state.sitting) return 0;
     cancelDig('hit');
     state.dancing = false;
     state.crouching = state.lying = false;
@@ -2245,6 +2280,50 @@ export function createWalkMode({
       return afterMove(dt);
     }
 
+    // ---- on horseback -----------------------------------------------------------------
+    // The bicycle's shape, on four legs (web/js/mount.js): W and S the reins, A and D the turn,
+    // Shift the gallop out of the body's pool. A rider's head is MOUNT_HEAD higher than a walker's,
+    // so a lid low enough to duck under on foot (a deck, the quay) stops the horse, not only a jump.
+    if (state.mount) {
+      const m = state.mount;
+      const turbo = stepPool(state.stamina.body, boost && iz > 0.02, dt);
+      stepPool(state.stamina.boat, false, dt);
+      state.turbo = turbo;
+      const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
+      stepMount(m, { rein: iz, turn, gallop: turbo, hop: hopWanted }, dt, {
+        ground: (x, z) => groundAt(x, z, m.air ? m.floor : m.y),
+        blocked: (x, z) => blocked(x, z, m.y),
+        ceiling: (x, z) => ceilingAt(x, z, m.floor) - HEAD - MOUNT_HEAD,
+      });
+      hopWanted = false;
+      if (m.splash) {
+        putBikeAway();
+        state.pos.set(m.x, WATER_Y - SWIM_SINK, m.z);
+        state.floor = groundAt(m.x, m.z, m.y);
+        state.grounded = true;
+        state.swimming = true;
+        state.vy = 0;
+        return afterMove(dt);
+      }
+      state.pos.set(m.x, m.y, m.z);
+      state.floor = m.floor;
+      state.yaw = m.yaw;
+      state.moving = Math.abs(m.v) > 0.05;
+      if (state.moving) riddenSinceLook += dt;
+      const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
+      if (ease > 0) {
+        const pull = (0.8 + 2.2 * Math.min(1, Math.abs(m.v) / MOUNT_TOP)) * ease;
+        state.camYaw = lerpAngle(state.camYaw, m.yaw, Math.min(1, dt * pull));
+      }
+      state.running = false;
+      state.sprinting = false;
+      state.grounded = !m.air;      // AIRBORNE on the wire, so a peer's horse jumps too
+      state.swimming = false;
+      state.vy = m.vy;
+      state.bob += dt * 1.2;
+      return afterMove(dt);
+    }
+
     // ---- at the foot of a rope ladder --------------------------------------------------
     // From the water or a quay, pushing at the hull of a ship: no key, you just climb.
     if (state.grounded && !state.sitting && !state.lying && !state.parked) {
@@ -2252,7 +2331,7 @@ export function createWalkMode({
       // A rope ladder wants both hands.
       if (at && state.carry) blockedBy('carry');
       else if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
-      const still = !at && !state.swimming && !state.dive && !state.bike ? fixedAhead(ix, iz) : null;
+      const still = !at && !state.swimming && !state.dive && !rides() ? fixedAhead(ix, iz) : null;
       if (still && state.carry) blockedBy('carry');
       else if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
     }
@@ -2473,7 +2552,7 @@ export function createWalkMode({
     if (state.dancing && (state.moving || state.crouching || !canDance())) state.dancing = false;
     // Dying is seen from behind, whatever the view: the fall is the point.
     const fp = state.firstPerson && !state.vehicle && !state.lying && !state.sitting && !state.dying;
-    if (fp && !state.bike) state.yaw = state.camYaw;
+    if (fp && !rides()) state.yaw = state.camYaw;
     avatar.scale.setScalar(1);
     lounge.visible = state.lying;
     // The body's share of the beer, on its own axes (rotation order YXZ: a nod and a roll
@@ -2506,6 +2585,18 @@ export function createWalkMode({
       bikeMesh.object.localToWorld(seatAt);
       avatar.position.copy(seatAt);
       avatar.rotation.set(RIDE_PITCH - b.pitch, b.yaw, b.lean + roll * 0.3);
+    } else if (state.mount) {
+      // In the saddle, on the horse's own back: posed first (its rock, its bob), then the rider's
+      // hips put on the seat through the horse's matrix, so the horse carries him - and he takes
+      // its pitch and bank whole, the lean forward being in the riding pose itself.
+      const m = state.mount;
+      horse.place(m.x, m.y, m.z, m.yaw);
+      horse.pose({ speed: m.v, rate: m.rate, air: m.air }, dt);
+      const fit = horsebackOf(classicAvatar.character);
+      horse.seat(seatAt, classicAvatar.hipY, fit.perch);
+      avatar.position.copy(seatAt);
+      avatar.quaternion.copy(horse.object.quaternion);
+      if (roll) avatar.rotateZ(roll * 0.3);
     } else if (state.sitting) {
       // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
@@ -2548,6 +2639,7 @@ export function createWalkMode({
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
+      horseback: !!state.mount,
       dancing: dancingNow(),
       dying: state.dying,
     }, dt);
@@ -2703,7 +2795,9 @@ export function createWalkMode({
     // C is "swim down" to a diver, so it does not fold the eye (see `stoop` in afterMove).
     const stoop = state.crouching && !state.dive;
     const eyeDrop = state.lying ? up * 0.55 : stoop || state.sitting ? up * 0.3 : 0;
-    const cy = state.pos.y + camStep + up - eyeDrop + Math.sin(state.camPitch) * dist;
+    // In the saddle the head is MOUNT_HEAD over a walker's (the feet's height is the horse's).
+    const seatLift = state.mount ? MOUNT_HEAD : 0;
+    const cy = state.pos.y + camStep + up - eyeDrop + seatLift + Math.sin(state.camPitch) * dist;
     // The aim follows the eye down as the body folds: crouching and sitting shorten the
     // figure by exactly these factors, so reusing them keeps the camera on the face rather
     // than on the air the settler has just vacated. Lying down there is no standing body
@@ -2711,7 +2805,7 @@ export function createWalkMode({
     // middle of what is left above the ground.
     const aim = state.lying ? camAim * LIE_AIM
       : stoop ? camAim * CROUCH_SCALE
-        : state.sitting ? camAim * SIT_SCALE : camAim;
+        : state.sitting ? camAim * SIT_SCALE : camAim + seatLift;
     camHull = fp ? null : hullForCamera(state.pos.y + aim);
     // Over water the floor is the surface, not the sea bed - see camera-floor.js - until the
     // head goes under: then the camera belongs under it too, floored by the bed and held below
@@ -2861,6 +2955,7 @@ export function createWalkMode({
 
   function dispose() {
     if (bikeMesh) bikeMesh.dispose();
+    if (horse) horse.dispose();
     removeEventListener('keydown', onKeyDown);
     removeEventListener('keyup', onKeyUp);
     removeEventListener('blur', onBlur);
@@ -2891,7 +2986,9 @@ export function createWalkMode({
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },
-    mount, dismount, riding: () => state.bike,
+    mount, dismount, riding: () => rides(),
+    // Which: 'horse' (the Adventurer's, web/js/mount.js) or 'bike' (the Traveller's) - what F gives this body.
+    rideKind: () => rideKind(),
     // The statue in both arms (Plans/schatkaarten.md). `lift(item)` takes it - false if the hands are
     // busy or it is already carried; `putDown()` hands the item name back; `carrying()` is the item or
     // null. Aboard it is cargo: `putOnBoat(hull)` (board() does it for whoever boards carrying),
@@ -2931,10 +3028,10 @@ export function createWalkMode({
       if (shieldIn(side)) { if (canFight()) guardUp(side, true); } else act(side);
     },
     // On foot and on land, which is when the hands have anything to do.
-    onFoot: () => state.active && !state.paused && !state.vehicle && !state.bike && !state.swimming,
+    onFoot: () => state.active && !state.paused && !state.vehicle && !rides() && !state.swimming,
     // In the water under your own power - the phone's B (down) and A (up) mean diving here,
     // so touchpad.js shows them although the hands and the bike stay hidden (onFoot is false).
-    inWater: () => state.active && !state.paused && !state.vehicle && !state.bike && state.swimming,
+    inWater: () => state.active && !state.paused && !state.vehicle && !rides() && state.swimming,
     // The head is under the surface: the mist, the sound and the sea's air (main.js).
     diving: () => state.diving,
     // The sea floor as a diver meets it (see bedUnder).
