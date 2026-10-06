@@ -108,6 +108,17 @@ export function mergePose(base, patch = {}) {
   return out;
 }
 
+// Whether the body is on foot outdoors, which is what holds its breath (stepBreath in main.js).
+// Noclip only moves the camera: the body stays where enterNoclip found it (`from`, its mode and
+// room), still under water if it was, so the air goes on running down and the sea, which never
+// hears of the camera, goes on drowning it. Asking of `mode` alone made noclip a way to fill the
+// bar again at the bottom of the sea (issue #90). A room only peeked into is the camera's, not
+// the body's, so `inside` counts only outside noclip.
+export function onFootOutdoors(mode, inside, from) {
+  if (mode === 'noclip') return !!from && from.mode === 'walk' && !from.inside;
+  return mode === 'walk' && !inside;
+}
+
 // A three.js camera looks down its own -z, so a yaw of `y` is a rotation of y + pi about +y.
 export function applyPose(camera, p) {
   camera.position.set(p.x, p.y, p.z);
