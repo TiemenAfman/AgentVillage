@@ -9,14 +9,14 @@
 // fetched at boot"): a player switching body in the inventory must not wait on a loader, and
 // neither may a peer who arrives already wearing the other one.
 import { SETTLER_PARTS, SETTLER_RIG, SETTLER_JOINTS, SETTLER_COLORS, SETTLER_EYE_Y } from './settler-mesh.js';
-import { ADVENTURER_PARTS, ADVENTURER_RIG, ADVENTURER_JOINTS, ADVENTURER_EYE_Y } from './adventurer-mesh.js';
+import { ADVENTURER_PARTS, ADVENTURER_RIG, ADVENTURER_JOINTS, ADVENTURER_EYE_Y, ADVENTURER_FINGERS } from './adventurer-mesh.js';
 
 // `gait` names its walk and run in avatar-gait.js GAITS: how fast, how long a stride, how
 // the upper body carries itself.
 // The order is the inventory's: the Traveller first, because it is who everybody already is.
 export const CHARACTERS = [
   { id: 'traveller', name: 'Traveller', parts: SETTLER_PARTS, rig: SETTLER_RIG, joints: SETTLER_JOINTS, eyeY: SETTLER_EYE_Y, gait: 'traveller' },
-  { id: 'adventurer', name: 'Adventurer', parts: ADVENTURER_PARTS, rig: ADVENTURER_RIG, joints: ADVENTURER_JOINTS, eyeY: ADVENTURER_EYE_Y, gait: 'athlete' },
+  { id: 'adventurer', name: 'Adventurer', parts: ADVENTURER_PARTS, rig: ADVENTURER_RIG, joints: ADVENTURER_JOINTS, fingers: ADVENTURER_FINGERS, eyeY: ADVENTURER_EYE_Y, gait: 'athlete' },
 ];
 export const DEFAULT_CHARACTER = 'traveller';
 // The colour every fixed wardrobe slot (steel, brass, pack...) has, whichever body wears it:

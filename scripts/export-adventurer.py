@@ -27,6 +27,8 @@ for o in sorted(bpy.data.objects, key=lambda x: x.name):
     names = {g.index: g.name for g in o.vertex_groups}
     if group:
         p.update(skinGroup=group, skin=[])
+        if group.endswith('Arm') and o['avatar_variant'] == 'body':
+            p.update(skinIndices=[], skinWeights=[])
     normal_matrix = o.matrix_world.to_3x3().inverted().transposed()
     for tri in mesh.loop_triangles:
         for idx, loop in zip(tri.vertices, tri.loops):
@@ -39,6 +41,13 @@ for o in sorted(bpy.data.objects, key=lambda x: x.name):
             if group:
                 weights = {names[g.group]: g.weight for g in mesh.vertices[idx].groups}
                 p['skin'] += [round(weights.get(group + ':' + str(i), 0), 4) for i in (1, 2)]
+                if 'skinIndices' in p:
+                    influences = sorted([(int(name.rsplit(':', 1)[1]), value) for name, value in weights.items()
+                                         if name.startswith(group + ':') and value > 0], key=lambda x: (-x[1], x[0]))[:4]
+                    total = sum(value for _, value in influences)
+                    influences += [(0, 0)] * (4 - len(influences))
+                    p['skinIndices'] += [i for i, _ in influences]
+                    p['skinWeights'] += [round(value / total, 6) for _, value in influences]
     parts.append(p)
 if not parts:
     raise RuntimeError('Open assets/adventurer/island-adventurer.blend before exporting.')
@@ -46,6 +55,7 @@ data = {
     'ADVENTURER_EYE_Y': scene['adventurer_eye_y'],
     'ADVENTURER_RIG': json.loads(scene['adventurer_rig']),
     'ADVENTURER_JOINTS': json.loads(scene['adventurer_joints']),
+    'ADVENTURER_FINGERS': json.loads(scene['adventurer_fingers']),
     'ADVENTURER_PARTS': parts,
 }
 (ROOT / 'web/js/adventurer-mesh.js').write_text(

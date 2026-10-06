@@ -127,7 +127,7 @@ function bodyOf(character) {
   const HAND_ATTACH = { rightArm: GRIP.map((v, i) => v - PIVOTS.rightArm[i]) };
   HAND_ATTACH.leftArm = [-HAND_ATTACH.rightArm[0], HAND_ATTACH.rightArm[1], HAND_ATTACH.rightArm[2]];
   const body = {
-    id: c.id, parts: c.parts, joints: c.joints, LIMBS, HEAD, PIVOTS, GRIP, HAND_ATTACH,
+    id: c.id, parts: c.parts, joints: c.joints, fingers: c.fingers, LIMBS, HEAD, PIVOTS, GRIP, HAND_ATTACH,
     BACKPACK: groupedParts('backpack'),
     CORE: c.parts.map(({ name }) => name)
       .filter((name) => !MOVING.has(name) && !EQUIPPABLE.has(name) && !HEAD.includes(name)),
@@ -365,7 +365,7 @@ export function heldItemGeometry(item, spec) {
 // One body's rig. createClassicAvatar below is what everybody holds; it builds one of these
 // and builds a new one when the look changes body.
 function buildRig(spec, material) {
-  const { id: character, parts: PARTS, joints: JOINTS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec?.character);
+  const { id: character, parts: PARTS, joints: JOINTS, fingers: FINGERS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec?.character);
   // The island shares a flat building material. Give this rig smooth shading while
   // retaining its shader hooks and live night/fade uniforms; never mutate the world.
   const sourceMaterial = material;
@@ -403,7 +403,19 @@ function buildRig(spec, material) {
       // whatever the arm's pivot turned, so what is weighted to it stays with the torso.
       const bones = [root, bend, end];
       let cap = null, toe = null, ball = null;
-      if (G.leanAtHip && group.endsWith('Arm')) { cap = new THREE.Bone(); cap.name = group + ':cap'; root.add(cap); bones.push(cap); }
+      const fingers = [];
+      if (FINGERS?.[group]) {
+        bones.push(...torso.skeleton.bones);
+        for (const joint of FINGERS[group]) {
+          const bone = new THREE.Bone();
+          bone.name = group + ':' + joint.name;
+          const parentPoint = joint.parent === 2 ? ankle : new THREE.Vector3(...FINGERS[group][joint.parent - 8].point).multiplyScalar(PLAYER_SCALE);
+          bone.position.set(...joint.point).multiplyScalar(PLAYER_SCALE).sub(parentPoint);
+          bones[joint.parent].add(bone);
+          bones.push(bone);
+          fingers.push({ bone, axis: new THREE.Vector3(...joint.axis), relaxed: joint.relaxed, grip: joint.grip });
+        }
+      } else if (G.leanAtHip && group.endsWith('Arm')) { cap = new THREE.Bone(); cap.name = group + ':cap'; root.add(cap); bones.push(cap); }
       // A toe for the foot (Mixamo's ToeBase), at the ball: FOOT_BALL of the way from the ankle
       // to the tip of the first mesh bound to this leg (its own body), on the ground.
       if (group.endsWith('Leg')) {
@@ -413,7 +425,7 @@ function buildRig(spec, material) {
         toe.position.copy(ball).sub(local);
         end.add(toe); bones.push(toe);
       }
-      chains[group] = { root, bend, end, cap, toe, ball, knee: knee.sub(origin), ankle: ankle.sub(origin),
+      chains[group] = { root, bend, end, cap, toe, ball, fingers, grasp: 0, knee: knee.sub(origin), ankle: ankle.sub(origin),
         skeleton: new THREE.Skeleton(bones) };
     }
     if (chains[group].toe) weightToes(mesh.geometry, chains[group]);
@@ -436,6 +448,7 @@ function buildRig(spec, material) {
   // so the cloth stretches instead.
   const SHOULDER_CAP = { from: -.05, to: .004, most: .85 };
   function capShoulder(geometry, name) {
+    if (FINGERS?.[name]) return; // Source weights share the torso bones across the sleeve seam.
     if (!G.leanAtHip || !name.endsWith('Arm')) return;
     const p = geometry.attributes.position, ix = geometry.attributes.skinIndex, w = geometry.attributes.skinWeight;
     for (let i = 0; i < p.count; i++) {
@@ -494,7 +507,14 @@ function buildRig(spec, material) {
       torso[name] = b;
       parent = b; below = SPINE[name];
     }
-    torso.skeleton = new THREE.Skeleton([torso.pelvis, torso.spine, torso.chest, torso.neck]);
+    const bones = [torso.pelvis, torso.spine, torso.chest, torso.neck];
+    if (FINGERS) {
+      torso.head = new THREE.Bone();
+      torso.head.name = 'torso:head';
+      torso.neck.add(torso.head);
+      bones.push(torso.head);
+    }
+    torso.skeleton = new THREE.Skeleton(bones);
     torso.rest = { spine: torso.spine.position.y };
   }
   const mounts = {};
@@ -519,16 +539,23 @@ function buildRig(spec, material) {
   }
   // Pelvis, small of the back, chest and neck: what the torso's vertices go with, by height,
   // each band fading into the next.
-  function weightTorso(geometry) {
+  function weightTorso(geometry, offsetY = 0) {
     const p = geometry.attributes.position, ix = geometry.attributes.skinIndex, w = geometry.attributes.skinWeight;
     const ramp = (y, from, span) => Math.max(0, Math.min(1, (y - from) / span));
     for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i);
+      const y = p.getY(i) + offsetY;
       const a = ramp(y, SPINE.pelvis + .1 * SPINE.L, .3 * SPINE.L);
       const b = ramp(y, SPINE.spine + .1 * SPINE.L, .3 * SPINE.L);
       const c = ramp(y, SPINE.shoulder + .3 * (SPINE.neck - SPINE.shoulder), .6 * (SPINE.neck - SPINE.shoulder));
       ix.setXYZW(i, 0, 1, 2, 3);
       w.setXYZW(i, 1 - a, a * (1 - b), a * b * (1 - c), a * b * c);
+      if (FINGERS && y >= SPINE.neck) {
+        // The exposed neck and the lower head overlap in the source. Give both the
+        // same deformation instead of tearing that overlap apart when the head turns.
+        const head = ramp(y, SPINE.neck, .016 * PLAYER_SCALE);
+        ix.setXYZW(i, 3, 4, 0, 0);
+        w.setXYZW(i, 1 - head, head, 0, 0);
+      }
     }
   }
   const restOf = { pelvis: SPINE.pelvis, chest: SPINE.chest, neck: SPINE.neck };
@@ -581,6 +608,18 @@ function buildRig(spec, material) {
     skinned.bind(torso.skeleton);
   }
   makePiece('head', HEAD, { parent: mounts.neck });
+  if (FINGERS) {
+    pieces.head.pivot.add(torso.head);
+    const old = pieces.head.mesh, head = new THREE.SkinnedMesh(old.geometry, material);
+    weightTorso(head.geometry, PIVOTS.head[1]);
+    head.castShadow = true;
+    head.frustumCulled = false;
+    pieces.head.pivot.remove(old);
+    pieces.head.pivot.add(head);
+    pieces.head.mesh = head;
+    object.updateMatrixWorld(true);
+    head.bind(torso.skeleton);
+  }
   for (const [name, names] of Object.entries(LIMBS)) {
     makePiece(name, names, { parent: name.endsWith('Leg') ? mounts.pelvis : clavicles[name] });
   }
@@ -1391,6 +1430,11 @@ function buildRig(spec, material) {
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.
+      chain.grasp = damp(chain.grasp, holding[side] || digging || carrying || ride ? 1 : 0, 12, dt);
+      for (const finger of chain.fingers) {
+        finger.bone.quaternion.setFromAxisAngle(finger.axis,
+          finger.relaxed + (finger.grip - finger.relaxed) * chain.grasp);
+      }
       const hand = handAttach[side];
       hand.position.set(...HAND_ATTACH[side]);
       hand.position.sub(chain.ankle).applyQuaternion(chain.end.quaternion).add(chain.ankle)
@@ -1499,6 +1543,7 @@ function buildRig(spec, material) {
       const name = Object.keys(pieces).find((k) => pieces[k] === piece);
       capShoulder(geometry, name);
       if (name === 'core') weightTorso(geometry);
+      if (name === 'head' && FINGERS) weightTorso(geometry, PIVOTS.head[1]);
       const leg = PARTS.find((part) => piece.names.includes(part.name) && part.skinGroup)?.skinGroup;
       if (leg && chains[leg]?.toe) weightToes(geometry, chains[leg]);
       piece.mesh.geometry.dispose();
@@ -1525,6 +1570,11 @@ function buildRig(spec, material) {
     if (material !== sourceMaterial) material.dispose();
   }
 
+  // Bind in the source rest pose first; even previews without an animation tick then
+  // start with relaxed fingers rather than the imported straight-finger pose.
+  for (const chain of Object.values(chains)) {
+    for (const finger of chain.fingers) finger.bone.quaternion.setFromAxisAngle(finger.axis, finger.relaxed);
+  }
   return {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,

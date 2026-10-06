@@ -15,7 +15,7 @@ What the runtime needs is the Traveller's contract (scripts/build-settler.py, re
 web/js/classic-avatar.js): parts cut per limb group (head, outfit, leftArm, rightArm, leftLeg,
 rightLeg), each limb skinned to a root/bend/end chain, a rig of pivots, and the wardrobe's parts
 under the same names. So the source's 124 bones are folded into those three joints per limb,
-its A-pose arms are lowered to hang, its texture is sampled into corner colours (no loader, no
+with the finger chains preserved, its A-pose arms are lowered to hang, its texture is sampled into corner colours (no loader, no
 texture: CLAUDE.md "Nothing is fetched at boot"), and the Traveller's gear is refitted onto it
 by measurement.
 """
@@ -84,17 +84,38 @@ rig['head'] = list(at('Neck_'))
 # Where a held item's grip sits: in the fist, a little in front of and above the wrist bone.
 rig['grip'] = list(Vector(joints['rightArm']['end']) + Vector((0, -.014, .008)))
 
+# Keep the source's three knuckles per digit. Indices 3..7 are the shared torso/head
+# bones at runtime, so sleeve vertices can retain their original torso influence.
+fingers, finger_bones = {}, {}
+for side, suffix, sign in [('left', 'R', -1), ('right', 'L', 1)]:
+    origin, turn = turns[side]
+    chain = []
+    for digit in ['Thumb', 'IndexFinger', 'MiddleFinger', 'RingFinger', 'LittleFinger']:
+        for segment in range(3):
+            source = bone(f'{digit}{segment if digit == "Thumb" else segment + 1}_{suffix}_')
+            point = origin + turn @ (game(arm.matrix_world @ source.head_local) - origin)
+            index = 8 + len(chain)
+            chain.append(dict(name=f'{digit}:{segment}', point=list(point),
+                              parent=2 if segment == 0 else index - 1,
+                              axis=[0, 0, -sign],
+                              relaxed=([.12, .22, .18] if digit == 'Thumb' else [.16, .28, .18])[segment],
+                              grip=([.35, .55, .45] if digit == 'Thumb' else [.85, 1.05, .7])[segment]))
+            finger_bones[source.name] = (side + 'Arm', index)
+    fingers[side + 'Arm'] = chain
+
 
 def classify(name):
     """Which limb chain, and which of its three joints, a source bone deforms with.
 
-    Fingers, assist bones and toes fold into the nearest of shoulder/elbow/wrist or hip/knee/
-    ankle by walking up the parents; everything else (spine, head, the skirt's cloth bones)
+    Fingers keep their knuckles; assist bones and toes fold into the nearest shoulder/elbow/
+    wrist or hip/knee/ankle by walking up the parents; everything else (spine, head, the skirt's cloth bones)
     is the rigid outfit.
     """
     b = arm.data.bones.get(name)
     while b:
         n = b.name
+        if n in finger_bones:
+            return finger_bones[n]
         for src, dst in [('Left', 'right'), ('Right', 'left')]:
             if src + ' wrist_' in n: return dst + 'Arm', 2
             if src + ' elbow_' in n: return dst + 'Arm', 1
@@ -177,7 +198,7 @@ for obj in meshes:
     if 'Eyeball' in label or label.endswith('Head'):
         bm = bmesh.new()
         bm.from_mesh(obj.data)
-        bmesh.ops.subdivide_edges(bm, edges=list(bm.edges), cuts=1, use_grid_fill=True)
+        bmesh.ops.subdivide_edges(bm, edges=list(bm.edges), cuts=3 if 'Eyeball' in label else 1, use_grid_fill=True)
         bm.to_mesh(obj.data)
         bm.free()
     mesh = obj.data
@@ -214,8 +235,10 @@ for obj in meshes:
 
     def sample(loop):
         uv = mesh.uv_layers.active.data[loop].uv if mesh.uv_layers.active else Vector((0, 0))
-        x = min(w - 1, max(0, int(uv.x * w)))
-        y = min(h - 1, max(0, int(uv.y * h)))
+        # The left eye is deliberately in UV tile (0, 1). Its source sampler repeats;
+        # clamping that tile to the last row erased the entire iris and pupil.
+        x = int((uv.x % 1) * w) % w
+        y = int((uv.y % 1) * h) % h
         c = pixels[(y * w + x) * 4:(y * w + x) * 4 + 3] if pixels else [.5, .5, .5]
         return [round(v, 5) for v in recolour(label, c)]
 
@@ -226,6 +249,9 @@ for obj in meshes:
             for (group, _), value in weights[idx].items():
                 score[group] = score.get(group, 0) + value
         group = 'head' if head else max(score, key=score.get) if score else 'outfit'
+        arm_groups = [g for g in ['leftArm', 'rightArm'] if score.get(g, 0) > 1e-6]
+        if not head and arm_groups:
+            group = max(arm_groups, key=score.get)
         # The trousers, and the tunic's skirt below the hips, go with the leg on their side:
         # weighted to the hips they would stand still while the legs walked out of them.
         centre = sum((points[i] for i in tri.vertices), Vector()) / 3
@@ -237,9 +263,26 @@ for obj in meshes:
             ids.append(len(batch['vertices']))
             batch['vertices'].append(blender(points[idx]))
             batch['colors'].append(sample(loop))
-            ww = [weights[idx].get((group, b), 0) for b in range(3)]
+            count = 23 if group.endswith('Arm') else 3
+            ww = [weights[idx].get((group, b), 0) for b in range(count)]
+            if group.endswith('Arm'):
+                # Match classic-avatar.js weightTorso at the seam, without throwing away
+                # the source weights when a triangle crosses from tunic to sleeve.
+                y = points[idx].y
+                hip, shoulder, neck = rig['leftLeg'][1], rig['leftArm'][1], rig['head'][1]
+                length = shoulder - hip
+                ramp = lambda value: max(0, min(1, value))
+                a = ramp((y - hip - .1 * length) / (.3 * length))
+                b = ramp((y - hip - .4 * length) / (.3 * length))
+                c = ramp((y - shoulder - .3 * (neck - shoulder)) / (.6 * (neck - shoulder)))
+                rest = max(0, sum(weights[idx].values()) - sum(ww))
+                for j, value in enumerate([1-a, a*(1-b), a*b*(1-c), a*b*c]):
+                    ww[3+j] = rest * value
+                if y >= neck:
+                    head_weight = ramp((y - neck) * FIT / .016)
+                    ww[3:8] = [0, 0, 0, rest * (1-head_weight), rest * head_weight]
             total = sum(ww)
-            batch['skin'].append([1, 0, 0] if total < 1e-6 else [x / total for x in ww])
+            batch['skin'].append([1] + [0] * (count-1) if total < 1e-6 else [x / total for x in ww])
         batch['faces'].append(ids)
     for group, batch in batches.items():
         name = 'Adventurer ' + label.split('Mt_')[-1] + ' ' + group
@@ -259,7 +302,7 @@ for obj in meshes:
             poly.use_smooth = True
         if group in joints:
             o['avatar_skin'] = group
-            vg = [o.vertex_groups.new(name=group + ':' + str(i)) for i in range(3)]
+            vg = [o.vertex_groups.new(name=group + ':' + str(i)) for i in range(23 if group.endswith('Arm') else 3)]
             for i, ww in enumerate(batch['skin']):
                 for g, value in zip(vg, ww):
                     if value:
@@ -410,6 +453,9 @@ for o in objects:
     o.data.transform(fit)
 rig = {k: [x * FIT for x in v] for k, v in rig.items()}
 joints = {k: {j: [x * FIT for x in p] for j, p in c.items()} for k, c in joints.items()}
+for chain in fingers.values():
+    for joint in chain:
+        joint['point'] = [v * FIT for v in joint['point']]
 eye_y = round(sum(p.y for p in eye_points) / len(eye_points) * FIT, 4)
 
 material = bpy.data.materials.new('Baked adventurer colours')
@@ -438,7 +484,26 @@ for group, chain in joints.items():
         b.tail = blender(pts[i + 1]) if i < 2 else blender(pts[i] + Vector((0, -.02, .005)))
         if i:
             b.parent = skel.edit_bones[group + ':' + str(i - 1)]
+    if group in fingers:
+        hip, shoulder, neck = rig['leftLeg'][1], rig['leftArm'][1], rig['head'][1]
+        for i, y in enumerate([hip, hip + .3 * (shoulder-hip), hip + .7 * (shoulder-hip), neck, neck], 3):
+            b = skel.edit_bones.new(group + ':' + str(i))
+            b.head = blender(Vector((0, y, 0)))
+            b.tail = b.head + Vector((0, 0, .01))
+            if i > 3:
+                b.parent = skel.edit_bones[group + ':' + str(i - 1)]
+        for i, joint in enumerate(fingers[group], 8):
+            b = skel.edit_bones.new(group + ':' + str(i))
+            b.head = blender(Vector(joint['point']))
+            b.tail = b.head + Vector((0, 0, -.004))
+            b.parent = skel.edit_bones[group + ':' + str(joint['parent'])]
 bpy.ops.object.mode_set(mode='OBJECT')
+for group, chain in fingers.items():
+    for i, joint in enumerate(chain, 8):
+        pose = ao.pose.bones[group + ':' + str(i)]
+        local_axis = pose.bone.matrix_local.to_3x3().inverted() @ blender(Vector(joint['axis']))
+        pose.rotation_mode = 'AXIS_ANGLE'
+        pose.rotation_axis_angle = (joint['relaxed'], *local_axis)
 ao.show_in_front = True
 for o in objects:
     if 'avatar_skin' in o:
@@ -448,6 +513,7 @@ for o in objects:
 scene = bpy.context.scene
 scene['adventurer_rig'] = json.dumps(rig)
 scene['adventurer_joints'] = json.dumps(joints)
+scene['adventurer_fingers'] = json.dumps(fingers)
 scene['adventurer_eye_y'] = eye_y
 bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(OUT / 'island-adventurer.blend'))
