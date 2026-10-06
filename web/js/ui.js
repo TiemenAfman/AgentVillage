@@ -1617,7 +1617,6 @@ export function createUI(handlers) {
 // Fullscreen itself, with Safari's prefixed calls, is display.js.
 function setupShell(display) {
   const btn = el('fullscreen-btn');
-  const install = el('install-btn');
   if (!btn) return;
 
   const expand = btn.querySelector('[data-icon="expand"]');
@@ -1632,25 +1631,6 @@ function setupShell(display) {
   btn.addEventListener('click', () => display.toggle());
   display.onChange(sync);
   sync();
-
-  // The browser decides whether the island can be installed, and only says so once.
-  // Until it does there is nothing to offer, so the button stays out of the way.
-  let prompt = null;
-  addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    prompt = e;
-    if (install) install.hidden = false;
-  });
-  if (install) {
-    install.addEventListener('click', async () => {
-      if (!prompt) return;
-      install.hidden = true;
-      prompt.prompt();
-      try { await prompt.userChoice; } catch { /* they can always ask again later */ }
-      prompt = null;
-    });
-  }
-  addEventListener('appinstalled', () => { if (install) install.hidden = true; });
 }
 
 function cssHex(hex) { return `#${hex.toString(16).padStart(6, '0')}`; }

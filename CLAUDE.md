@@ -1586,6 +1586,9 @@ select all, the context menu, page zoom (ctrl+wheel, ctrl with + - = 0), find/pr
 (`isBrowserKey`), F3, F7, Alt alone and dragging a picture off the HUD; ui.css takes pinch zoom, overscroll and the
 tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. promptholm.exe's window paints
 `#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
+**There is no installable web app.** The island is played in promptholm.exe, the Android app or the browser at
+`/play`; the manifest, `sw.js` and the install button are gone, and main.js `unregisterWorkers()` takes down the
+worker a browser kept from before. Do not add a manifest back: a browser offers to install any page that has one.
 **Fullscreen is one switch** (`web/js/display.js`): Settings → Display, the button and Alt+Enter (F11 in the
 window). In promptholm.exe the *window* goes borderless (`promptholm://fullscreen/on|off`, handled in lib.rs's
 `on_navigation` beside close) and the choice is remembered (`promptholm.display`); in a tab it is the Fullscreen API.

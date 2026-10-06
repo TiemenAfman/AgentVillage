@@ -85,12 +85,5 @@ export function shelfJson(build, id) {
   return `${JSON.stringify({ version: (build && build.version) || null, commit: (build && build.commit) || null, path: id })}\n`;
 }
 
-// An installed page starts at the door, never on the shelf it was installed from - or it would
-// open on that day's version for as long as the shelf stood, and then not at all.
-export function webManifest(text) {
-  const m = JSON.parse(text);
-  return `${JSON.stringify({ ...m, start_url: '../', scope: '../' }, null, 2)}\n`;
-}
-
 // What is worth compressing ahead of time: text and the GLBs, not the PNGs (already compressed).
 export const GZIP_EXT = new Set(['.js', '.mjs', '.json', '.html', '.css', '.svg', '.webmanifest', '.txt', '.glb', '.wasm']);

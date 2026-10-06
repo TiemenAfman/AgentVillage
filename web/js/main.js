@@ -7950,13 +7950,13 @@ function setLiveMode() {
 }
 
 // --------------------------------------------------------------- boot
-// The worker caches nothing; it exists so the browser will offer to install the island.
-// Browsers only allow one on a secure origin, which is localhost or https - a visitor on
-// http://msi:4747 can still add the page to their home screen by hand, and the manifest
-// makes it open without any browser chrome around it.
-function registerWorker() {
-  if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-  navigator.serviceWorker.register(mineUrl('/sw.js')).catch(() => { /* not installable, no matter */ });
+// There is no installable web app any more: the island is played in promptholm.exe, the Android app
+// or the browser at /play (Plans/minder-browser-meer-spel.md). A browser that installed it before still
+// has the old do-nothing service worker registered for this origin, and a worker outlives the file it
+// came from, so the page takes it down itself.
+function unregisterWorkers() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.getRegistrations().then((all) => all.forEach((r) => r.unregister())).catch(() => {});
 }
 
 function escapeHtml(s) {
@@ -8777,10 +8777,10 @@ Everything is copied and checked first; the island then starts again there. The 
   // The pack's answer comes after the island is drawn: what stands outside is switched then (rooms are
   // built later and ask for themselves).
   if (!STANDALONE) loadHdManifest().then(() => { applyDetail(); if (state.graphics.detail === 'hd') hdMissingSaid(); });
-  // No islander to hear from and none to install from: /events and sw.js are both its own.
+  // No islander to hear from: /events is its own.
   if (STANDALONE) return;
   connect();
-  registerWorker();
+  unregisterWorkers();
   // Our own animals and what they did while we were away. After the island is up, so the
   // card lands on a picture rather than on the boot screen.
   if (state.animals) state.animals.boot().catch(() => { /* an islander without animals */ });

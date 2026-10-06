@@ -2,7 +2,7 @@
 // desktop window's splash and the island are switched off (Plans/minder-browser-meer-spel.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 const { isBrowserKey, installPageKeys } = await import('../web/js/page-keys.js');
 
 const key = (key, mods = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, ...mods });
@@ -67,4 +67,15 @@ test('Alt+Enter (and F11 in the window) is the fullscreen key; the window goes b
   const rs = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
   assert.match(rs, /host_str\(\) == Some\("fullscreen"\)/);
   assert.match(rs, /set_fullscreen\(url\.path\(\) == "\/on"\)/);
+});
+
+test('no installable web app: no manifest, no service worker, no install button - and an old worker is taken down', () => {
+  assert.equal(existsSync(new URL('../web/manifest.webmanifest', import.meta.url)), false);
+  assert.equal(existsSync(new URL('../web/sw.js', import.meta.url)), false);
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /rel="manifest"|install-btn/);
+  assert.doesNotMatch(readFileSync(new URL('../web/js/ui.js', import.meta.url), 'utf8'), /beforeinstallprompt/);
+  const main = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(main, /serviceWorker\.register/);
+  assert.match(main, /getRegistrations\(\)\.then\(\(all\) => all\.forEach\(\(r\) => r\.unregister\(\)\)\)/);
 });

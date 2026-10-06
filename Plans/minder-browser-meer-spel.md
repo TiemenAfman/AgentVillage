@@ -72,7 +72,9 @@ Nog open:
 - ✅ **Volledig scherm** (`web/js/display.js`): Settings → This screen → *Display* (Windowed / Borderless fullscreen),
   de knop rechtsonder en **Alt+Enter** (in het venster ook F11). In `promptholm.exe` gaat het venster zelf randloos over
   het scherm (`promptholm://fullscreen/on|off` → `set_fullscreen`, dezelfde deur als de bevestigde close) en onthoudt het
-  dat voor de volgende start; in een tab is het de Fullscreen API. De install-knop blijft voorlopig staan. ❓
+  dat voor de volgende start; in een tab is het de Fullscreen API.
+- ✅ **Geen PWA meer**: spelen is de exe, de APK of `/play`. Manifest, `sw.js` en de installeerknop zijn weg; een
+  eerder geregistreerde worker meldt de pagina zelf af (`unregisterWorkers`).
 
 ## 3. Haperingen (gemeten)
 
