@@ -548,7 +548,7 @@ look. `lib/islandbundle.mjs` survives and is the centrepiece: an island *is* its
 is what a strict `parseBundle` accepts (the sea), `SENT` what `buildBundle` packs to (`ctx.caps`
 picks by `strict`); a list one past a sea's cap is refused *whole*, so `SENT` may never be above
 the `CAPS` of any sea still out there, and raising a cap is two steps: `CAPS` in a patch plus a
-redeploy of the open sea, `SENT` in the next minor. Past a sending cap `firstOf` orders civics,
+redeploy of the open sea, `SENT` in the next minor (0.9.2 raised `CAPS`, 0.10.0 set `SENT` equal to it). Past a sending cap `firstOf` orders civics,
 then houses, then sheds (roads before `path:house:` front paths) and only then cuts, and
 `out.cuts` / the `[sea] ... past the bundle's caps` log line say so - Hoogezand at 962
 buildings once sent its first 600 and no civic at all, so the sea stood no keeper anywhere.
