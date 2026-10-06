@@ -67,6 +67,64 @@ anders is dan een fiets, want daar zit het werk.
 | Opstappen | Het paard verschijnt op je plek in jouw richting en je zit erop in één frame: `mount()` weigert waar de fiets weigerde, en daarbij als er geen ruimte is voor een paard (midden, borst en kont op droog land zonder botsing). Afstappen naar links, anders rechts, op 0,45 (de fiets: 0,3). | Geen animatie in fase 1. |
 | Onder iets door | Een ruiter zit ongeveer 0,35 hoger dan iemand te voet (zadel 0,50 tegen heup 0,157), dus `RIDE_HEAD` (0,07 bij de fiets) wordt zo'n 0,35 en **een laag dek, een brug of de kade stopt nu ook de rit, niet alleen de sprong** (`ceiling` beperkt bij de fiets alleen hoe hoog een sprong komt). | Dit is de plek waar een paard een hoofd meeneemt dat de fiets niet had. Te testen op een kade en een brug. |
 
+## De ruiterhouding, gemeten
+
+Gemeten op 6 oktober 2026 uit de `Mount`-clip van een lokaal opgehaald WoW-mensmodel
+(`D:\Promptholm\characters\benny-blaanco`, de `wowhead-character-extract`-skill). **Alleen de
+hoeken hieronder zijn overgenomen**; het model, de clip en de bake blijven Blizzard's en komen
+nooit in de repo of het spel. De clip is een stilstaande houding met wat ademen (de romp 12-15
+graden), de benen bewegen niet. Richtingen in het eigen frame van de ruiter, hoeken t.o.v.
+rechtop staan:
+
+| Deel | Houding |
+|---|---|
+| Bekken | zakt 0,95 beenlengte (heup tot enkel) t.o.v. staan: zit op het zadel, recht boven de enkels |
+| Romp | 15 graden voorover |
+| Bovenbeen | 36 graden naar voren en 29 graden naar buiten gespreid (om de romp van het paard) |
+| Knie | 73 graden gebogen; het onderbeen hangt 37 graden naar achteren, nauwelijks gespreid (7 graden) |
+| Enkels | 0,39 yd uit het midden tegen 0,13 voor de heupen (drie keer zo breed), recht onder het bekken: in de beugels |
+| Voet | bijna 45 graden naar beneden, tenen naar voren |
+| Bovenarm | 28 graden naar voren, 16 graden naar buiten |
+| Elleboog | 51 graden gebogen; de onderarm 19 graden onder horizontaal en 38 graden naar binnen |
+| Handen | samen voor het lichaam op ongeveer heuphoogte, iets uit elkaar (de teugels), 0,52 yd voor het bekken |
+
+Dat spoort met de besluiten bij "De ruiter": de benen gespreid, de voeten in de beugels, de armen naar
+voren en omlaag naar de teugels. Een rig met knieën en ellebogen kan het één-op-één nemen; de oude
+fietsbenen (stijf, geen knie) alleen de spreiding en de dijhoek.
+
+## De gangen van een referentiepaard, gemeten
+
+Gemeten op 6 oktober 2026 uit de `Walk`- en `Run`-clip van het lokaal opgehaalde WoW-paard (npc 385,
+`D:\Promptholm\characters\horse`). Ook hier **alleen getallen**, nooit de clip of keyframes. Lengtes in
+**beenlengtes** (schoudergewricht tot hoef, 1,28 yd bij dat paard), zodat ze op `fauna_horse` passen.
+Een hoef telt als "aan de grond" onder 0,07 yd. Fasen als deel van de cyclus. De rig van dat paard heeft
+per poot een schouder/heup, knie/hak, kogel en hoef; de hoeken zijn de buiging van die gewrichten.
+
+| | Walk (stap) | Run (galop) |
+|---|---|---|
+| Cyclus | 0,79 s (1,27 Hz) | 0,79 s (1,27 Hz): even lang, de pas wordt langer |
+| Snelheid | 2,5 yd/s | 6,94 yd/s (2,8 keer de stap) |
+| Paslengte | 1,55 beenlengte | 4,3 beenlengtes |
+| Volgorde (landen) | vierslag, lateraal: RA 2%, RV 30%, LA 52%, LV 80% (achter, dan voor aan dezelfde kant, een kwart later) | gekruiste galop: LA 42%, RA 60%, LV 0%, RV 20% (rechts leidt); zweeffase rond 88-100% |
+| Tijd aan de grond | 70-72% per poot | 18-28% per poot |
+| Rug op en neer | 0,014 beenlengte (bijna stil) | 0,22 beenlengte |
+| Kop op en neer | 0,06 beenlengte (knikt mee) | 0,29 beenlengte |
+| Rug kantelt | 8-10 graden (de schoft hoger dan de heup) | 3-22 graden (wipt mee met de sprong) |
+| Voorbeen: knie / kogel | 0-72 / 11-70 graden | 10-110 / 6-85 graden |
+| Achterbeen: hak / kogel | 42-97 / 1-40 graden | 32-118 / 6-82 graden |
+| Bovenbeen zwaait | voor 57, achter 52 graden | voor 93, achter tot 125 graden |
+
+Wat dit zegt voor `mountPose`:
+- **De cadans verzadigt veel eerder dan het plan hierboven zegt.** Het referentiepaard houdt 1,27 Hz van
+  stap tot galop en wint snelheid alleen met de paslengte. Het plan noemt galop ~3,4 Hz. Een echte galop
+  ligt rond 2 Hz (Muybridge narekenen). Dat is dichter bij de referentie dan bij 3,4. Kies dus een
+  lagere cadans en een langere pas; dat hoeven glijden de compromis is, blijft gelden.
+- **De stap is lateraal, niet diagonaal.** Achter landt een kwart cyclus voor voor aan dezelfde kant.
+  Diagonale paren (zoals `fauna.js` nu en het plan voor de stap) horen bij de draf.
+- **De rug ligt in de stap stil en de kop knikt.** In de galop wipt de hele romp en kantelt hij. Dat
+  hoort in `bodyY`/`bodyX`/`headX`; een ruiter op het zadelpunt deint dan vanzelf mee.
+- **Draf en kanter** heeft deze referentie niet (alleen Walk en Run). Daarvoor Muybridge.
+
 ## Wat weggaat
 
 `web/js/bicycle.js`, `web/js/bicycle-mesh.js`, `assets/bicycle/`, `scripts/build-bicycle.py`,

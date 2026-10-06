@@ -142,6 +142,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   kade-eind (`layout.resort`, afgeleid door `resortSite`), de pier blijft bij de kade (optie A),
   `QUAY_VERSION` 3, langere palen, een ring houdt het oord open. Open: kade op nieuwe eilanden is zeldzaam,
   de open zee redeployen, de echte island migreren.
+- 🚧 [eigen-karakters-en-paard.md](eigen-karakters-en-paard.md) — plan van 1 oktober 2026, nog niet gebouwd:
+  een eigen paard en eigen personages, vrij van Blizzard-IP (WoW alleen als referentie van getallen), met
+  een rig-bake (skelet + clips als gewone module, geen loader), rijden in plaats van de fiets, één
+  Promptholm-skelet voor elk personage en `/character` om te kiezen. Bouwt voort op het paard-plan hieronder.
 - 🚧 [paard-in-plaats-van-fiets.md](paard-in-plaats-van-fiets.md) — plan van 29 september 2026, nog
   niet gebouwd: een paard om op te rijden dat de fiets vervangt (zelfde F-toets en `FLAG_RIDING`,
   het gezadelde `fauna_horse`, gangen als snelheidsbanden). Wacht op `touwladders-schip`, dat in
