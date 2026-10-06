@@ -8923,6 +8923,9 @@ Everything is copied and checked first; the island then starts again there. The 
         tilt: () => hullTiltOf(b, seatTilt),
       };
     },
+    // Somebody hanging on a rope ladder - a ship's or the Salty Kraken's - is drawn there climbing,
+    // read off their height against the ladders walk mode knows (walk.js ladderAt): no pose bit.
+    ladderAt: (x, y, z) => (state.walk && state.walk.ladderAt ? state.walk.ladderAt(x, y, z) : null),
   });
   // Told how big we are, so the ring is exact rather than the default 64 it falls back to.
   // On a 64-grid our half is 32, so the default was putting every neighbour thirty-two

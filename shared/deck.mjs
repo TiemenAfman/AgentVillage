@@ -224,6 +224,25 @@ export function ladderUp(craft, lx, lz, ly, dx) {
   return null;
 }
 
+// The ladder a body is hanging on, read off where it is and nothing else - which is all a page has
+// of somebody else (peers.js): on the climb's plumb line outside the ropes (ladderPath), within
+// HOLD_SLACK of it, and between a little over `y0` (where a climber's feet start, as ladderPath's)
+// and the top. No new bit crosses the sea for a climber: they are a walker at a height, and there
+// is no floor at that height outside a hull to have put them there.
+const HOLD_SLACK = 0.2;
+const HOLD_LIFT = 0.25;
+export function ladderHolding(craft, lx, lz, ly, y0) {
+  if (!craft.ladders) return null;
+  for (const l of craft.ladders) {
+    const s = sideOf(l);
+    if (Math.abs(lx - s * (Math.abs(l.x) + CLIMB_OUT)) > HOLD_SLACK) continue;
+    if (Math.abs(lz - l.z) > HOLD_SLACK) continue;
+    if (ly < y0 + HOLD_LIFT || ly > l.top + 0.05) continue;
+    return l;
+  }
+  return null;
+}
+
 // The ladder a body standing on the deck is at the head of and pushing out over, or null.
 export function ladderDown(craft, lx, lz, dx) {
   if (!craft.ladders) return null;

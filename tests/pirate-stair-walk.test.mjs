@@ -235,14 +235,14 @@ test('down the rope ladder from the plank, and letting go of it halfway, onto th
   const s = walk.state;
   const L = C.side;
   // out along the plank to its end, over the ropes: down them, not off the end
-  const down = walkTo(walk, [L.lo.x, L.lo.z + 0.6], 4);
+  const down = walkTo(walk, [L.lo.x, L.lo.z + 0.6], 10);
   const between = down.filter(([, , y]) => y > T.land.y + 0.3 && y < T.boarding.y - 0.3);
   assert.ok(between.length > 20, `climbed down, not dropped (${between.length} frames on the way)`);
   for (const [x, z] of between) assert.ok(Math.abs(x - L.lo.x) < 0.01 && Math.abs(z - L.lo.z) < 0.01, `on the ropes: ${x.toFixed(2)},${z.toFixed(2)}`);
   assert.ok(down.every(([, , y]) => y > T.land.y - 0.05), 'never fell');
   assert.ok(Math.abs(s.pos.y - T.land.y) < 0.05, `down on the landing: ${s.pos.y.toFixed(2)} for ${T.land.y.toFixed(2)}`);
   // up again a while, and jump: let go, and down onto the landing, not into the sea
-  walkTo(walk, [L.hi.x, L.hi.z], 0.8);
+  walkTo(walk, [L.hi.x, L.hi.z], 2.5);
   assert.ok(s.pos.y > T.land.y + 0.6, `half way up: ${s.pos.y.toFixed(2)}`);
   key(' ', true);
   walk.update(FRAME);

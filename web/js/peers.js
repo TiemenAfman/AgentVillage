@@ -129,7 +129,7 @@ function labelTexture(text) {
 // `hullOf(boatId)` is the same hull for somebody standing on its deck (Plans/DONE/lopen-op-de-boot.md):
 // { x, y, z, yaw }, with y its deck. They are drawn as that hull plus where they are on it,
 // and never from their own world position, for the same reason a pilot is.
-export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null }) {
+export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null, ladderAt = () => null }) {
   const places = new Map([[null, { scene, terrain: ground || terrain }]]);
 
   const peers = new Map();   // id -> peer
@@ -188,6 +188,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       moving: false,
       carrying: false,    // what the rig has last been told (avatar.setCarry / avatar.dig)
       digging: false,
+      climbY: null,       // on a rope ladder: the height drawn last frame, which the climb is played by
       room: null,
       want: null,
       aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
@@ -460,7 +461,16 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       } else p.vy = 0;
       p.dive = diving;
       p.moving = moving;
+      // Hanging on a rope ladder (main.js -> walk.js ladderAt): at the height they sent, facing the
+      // rungs, the rig climbing by how far that height moved since the last frame - their own page
+      // plays the same clip off the same rise. No bit says so; there is just no floor up there.
+      const hold = !swimming && !airborne && !seat && !p.aboard && !p.deckTo && !p.room && !(f & FLAG_RIDING)
+        ? ladderAt(x, sentY, z) : null;
+      const climbing = hold ? { rise: p.climbY == null ? 0 : sentY - p.climbY } : null;
+      p.climbY = hold ? sentY : null;
+      if (hold) yaw = hold.yaw;
       const base = seat ? seat.y
+        : hold ? sentY
         : diving ? dived
         : p.aboard || airborne || sitting || dancing ? (a.y + (b.y - a.y) * k)
           : (ground < 0 ? -0.07 : ground);
@@ -517,11 +527,12 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         riding: riding && !onHorse ? { crank: p.ride.crank, standing: false } : null,
         horseback: onHorse,
         dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
+        climbing,
       }, dt);
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot
       // see standing in open water is worse than walking through a swimmer.
-      if (!swimming && !airborne && !p.aboard && !p.deckTo) blockersIn(p.room).push({ x, z, r: BODY_R });
+      if (!swimming && !airborne && !p.aboard && !p.deckTo && !hold) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
   }
 

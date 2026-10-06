@@ -1675,6 +1675,13 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill.
+**On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`,
+`rise` a cycle, `climbStep`), backwards going down and still while hanging; the Traveller reaches up
+procedurally (`climbReach`). walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
+not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.45 (it was 1.8 - fifteen cycles a
+second; the keeper chose slower). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
+ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
+and draws them there - before this a climbing peer was drawn standing on the ground under the ladder.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,

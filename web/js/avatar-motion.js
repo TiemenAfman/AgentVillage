@@ -35,6 +35,16 @@ const helper=new THREE.SkeletonHelper(carrier);helper.visible=false;scene.add(he
 const camera=new THREE.PerspectiveCamera(32,1,.01,100);
 // walk.js's own numbers, for the Springen button.
 const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
+// Up a rope ladder (Klimmen): at CLIMB_V, as walk.js's CLIMB_SPEED, from the floor to CLIMB_TOP and
+// from the bottom again; each body facing its own ladder, its feet CLIMB_OUT in front of the ropes
+// (shared/deck.mjs) and the rungs a ship's RUNG_STEP apart (boat.js), seen from behind as on foot.
+const CLIMB_V=.45, CLIMB_TOP=1.2, CLIMB_OUT=.16, RUNG_STEP=.2;
+const ladders=figures.map(f=>{
+  const g=new THREE.Group(), rope=new THREE.MeshStandardMaterial({color:0x9c7f52,roughness:1}), wood=new THREE.MeshStandardMaterial({color:0x6e4d2b,roughness:1});
+  for(const x of [-.12,.12]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,CLIMB_TOP+.6,.012),rope);r.position.set(x,(CLIMB_TOP+.6)/2,0);g.add(r);}
+  for(let y=.15;y<CLIMB_TOP+.55;y+=RUNG_STEP){const r=new THREE.Mesh(new THREE.BoxGeometry(.26,.012,.014),wood);r.position.y=y;g.add(r);}
+  g.visible=false;g.position.x=f.stand.position.x;scene.add(g);return g;
+});
 let jumpAt=null, deathAt=0;
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
@@ -50,7 +60,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op, de handen en voeten per sport':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
@@ -62,6 +72,7 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
+  for(const l of ladders)l.visible=mode==='climb';
   // walk.js's swimming beat: quick in the stroke, slow treading water.
   bob+=dt*(mode==='swim'?6.5:1.4);
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
@@ -86,6 +97,13 @@ function tick(dt){
       f.rig.update(down?{dying:{kind,t},distance:0}:{grounded:true,distance:0},dt);
       continue;
     }
+    if(mode==='climb'){
+      const was=f.stand.position.y, y=(time*CLIMB_V)%CLIMB_TOP;
+      f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=y;
+      ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
+      f.rig.update({moving:true,grounded:true,distance:0,climbing:{rise:y>=was?y-was:0}},dt);
+      continue;
+    }
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
     const up=jumpAt===null?0:Math.max(0,JUMP_V*(time-jumpAt)-GRAVITY*(time-jumpAt)**2/2);
     // Above the floor where the island has it under the water, with walk.js's heave on top.
@@ -104,7 +122,7 @@ function render(){
   track.position.z=Math.floor(distance/2)*2;
   const x=close<0?0:figures[close].stand.position.x, near=close<0?1:.72;
   // Close up, the camera rises with a jump so the leap stays in the frame.
-  const lift=close<0?0:figures[close].stand.position.y*.8;
+  const lift=mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
   const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
   camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
   camera.setViewOffset(innerWidth,innerHeight,close<0?-innerWidth*.13:-innerWidth*.2,0,innerWidth,innerHeight);
