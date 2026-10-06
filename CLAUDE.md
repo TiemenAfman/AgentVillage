@@ -2577,7 +2577,9 @@ chat out of the stick's half, 44px targets, a tappable speech, no key letters on
 carries both always, the web only while somebody is touching (below). Edges from `--sl/--sr/--st/--sb`
 (`env(safe-area-inset-*)`, the APK draws into the notch), toasts and island chat moved out of
 the stick's half with `pointer-events: none`, and a `max-height: 480px` block for landscape.
-The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name)
+The radar is tappable (opens the chart; `createWorldMap({ phone })` adds its ✕ and tap-to-name; two
+fingers on an open chart pinch it through the wheel's `zoomMapAt`, caught on the window in the capture
+phase - the first finger is taken back from the touch layer with a synthetic `pointercancel`)
 and sizes its canvas off its box. To see it without a phone: `node scripts/pack-android.mjs`,
 serve `src-android/dist/`, and drive it with Playwright's touch emulation.
 
