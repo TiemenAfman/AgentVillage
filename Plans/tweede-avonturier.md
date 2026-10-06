@@ -89,7 +89,9 @@ Gebouwd op `feat/tweede-avonturier` (30 september 2026), nog niet naar main.
   stilstand de staande sprong, op snelheid de rennende, elk over de eigen vluchttijd.
 - **Graven** speelt Mixamo's tweehandige schep (gespiegeld met links), de worp op `DIG_THROW`;
   de schep ligt tussen beide handen. **Zwemmen** is de schoolslag zonder de vaste kanteling
-  (walk.js kantelt een zwemmer al), sneller naarmate je harder zwemt.
+  (walk.js kantelt een zwemmer al), sneller naarmate je harder zwemt; stil in het water gaat hij over
+  in Mixamo's **watertrappen** (op `pose.treading`, dezelfde overgang als walk.js tussen liggen en rechtop),
+  met de 31 graden voorover die de clip zelf heeft.
 - **Voeten** worden na het poseren op de grond gezet (`plantFeet`): Mixamo's hoeken op onze
   verhoudingen lieten een voet een centimeter in de grond.
 - **Skill** `.claude/skills/mixamo-clips/`: hoe een nieuwe clip erbij komt.

@@ -36,7 +36,7 @@ own joints towards the baked rotations. The plan is [Plans/tweede-avonturier.md]
    Mixamo animations inside a game, not handed out as files, and the repository is public. Only
    `clips.json` and the baked `gait-clips.js` are committed; a machine without the FBX downloads
    them again (each listed file is named after its Mixamo clip: Walking, Running, Sprint,
-   Standing Idle, Jump, Standing Jump, Swimming, Digging) before it can re-bake.
+   Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging) before it can re-bake.
 2. Decide how it is played and say so in `bake-mixamo-gait.py`:
    - **by distance** (a gait: walk, run, sprint): nothing to add; it needs a travelling clip and
      gets `stride`, `speed` and `contact` (where in the cycle the left foot comes down).

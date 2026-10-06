@@ -212,7 +212,7 @@ def measure(clip, path):
 
 
 # Played by time, not by distance.
-TIMED = ('idle', 'jump', 'standingJump', 'swim', 'dig')
+TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig')
 out = {name: measure(name, path) for name, path in sorted(clips.items())}
 target = ROOT / 'web/js/gait-clips.js'
 target.write_text(

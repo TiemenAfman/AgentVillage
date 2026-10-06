@@ -6,5 +6,6 @@
   "jump": "jump.fbx",
   "standingJump": "standing-jump.fbx",
   "swim": "swimming.fbx",
-  "dig": "digging.fbx"
+  "dig": "digging.fbx",
+  "tread": "treading-water.fbx"
 }

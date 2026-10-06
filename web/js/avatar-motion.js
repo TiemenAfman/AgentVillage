@@ -48,7 +48,7 @@ document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textConte
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
   mode=button.dataset.gait;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='dig'?'Graven · met de schep':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
@@ -67,13 +67,14 @@ function tick(dt){
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
     // Swimming lies the body forward the way walk.js does (1.32 rad), at the surface.
-    f.stand.rotation.x=mode==='swim'?1.32:0;
+    // Treading water stands it up, as walk.js does (diving.js TREAD_PITCH, TREAD_SINK).
+    f.stand.rotation.x=mode==='swim'?1.32:mode==='tread'?.12:0;
     const step=speed*dt;f.distance+=step;f.stand.position.z=f.distance;
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
     const up=jumpAt===null?0:Math.max(0,JUMP_V*(time-jumpAt)-GRAVITY*(time-jumpAt)**2/2);
-    f.stand.position.y=mode==='swim'?.18:up;
+    f.stand.position.y=mode==='swim'?.18:mode==='tread'?-.1:up;
     const grounded=jumpAt===null||time-jumpAt>2*JUMP_V/GRAVITY;
-    f.rig.update({moving:speed>0,running:mode==='run'||mode==='sprint',sprinting:mode==='sprint',swimming:mode==='swim',grounded,phase:time,distance:step},dt);
+    f.rig.update({moving:speed>0,running:mode==='run'||mode==='sprint',sprinting:mode==='sprint',swimming:mode==='swim'||mode==='tread',treading:mode==='tread'?1:0,grounded,phase:time,distance:step},dt);
   }
   // Drawn too far apart to be compared, the one behind is set level again.
   const lead=Math.max(...figures.map(f=>f.distance));

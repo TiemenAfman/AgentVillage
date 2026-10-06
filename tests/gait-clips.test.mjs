@@ -41,5 +41,5 @@ test('the gaits stride and travel, faster each; the jumps know when they are in 
     const [a, b] = GAIT_CLIPS[name].air;
     assert.ok(a >= 0 && a < b && b <= 1, `${name}: ${a}..${b}`);
   }
-  for (const name of ['idle', 'swim', 'dig']) assert.ok(GAIT_CLIPS[name].seconds > 1, name);
+  for (const name of ['idle', 'swim', 'tread', 'dig']) assert.ok(GAIT_CLIPS[name].seconds > 1, name);
 });

@@ -965,8 +965,8 @@ function buildRig(spec, material) {
   // the load flung at DIG_THROW of the clip. The swim is played at SWIM_RATE (none, all out) of
   // its own pace by how fast the swimmer goes, SWIM_PACE (walk.js SWIM_SPEED) being all out.
   const DIG_THROW = .52, SWIM_RATE = [.45, 1.25], SWIM_PACE = 1.9;
-  let digByClip = false, digT = 0, swimT = 0, speedOf = 0;
-  const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose();
+  let digByClip = false, digT = 0, swimT = 0, treadT = 0, speedOf = 0;
+  const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose(), poseTread = clipPose(), poseTreadMix = clipPose();
   const handA = new THREE.Vector3(), handB = new THREE.Vector3(), alongY = new THREE.Vector3(0, 1, 0), handInv = new THREE.Matrix4();
   let clipFree = false, clipMix = 0, jumpMix = 0, airT = 0, leanNow = 0, jumpLeap = 0;
   const poseWalk = clipPose(), poseRun = clipPose(), poseSprint = clipPose(), poseIdle = clipPose();
@@ -988,11 +988,18 @@ function buildRig(spec, material) {
       if (was - k * C.seconds < at && digT - k * C.seconds >= at) dirt++;
     } else digT = 0;
     swimT = swim ? swimT + dt * (SWIM_RATE[0] + (SWIM_RATE[1] - SWIM_RATE[0]) * Math.min(1, speedOf / SWIM_PACE)) : 0;
+    treadT = swim ? treadT + dt : 0;
     if (swim || digging) {
       if (clipMix < 1e-3) return;
       let p;
-      if (swim) p = sampleClip(GAIT_CLIPS.swim, swimT / GAIT_CLIPS.swim.seconds, poseSwim);
-      else {
+      if (swim) {
+        // The breaststroke while going somewhere, Mixamo's Treading Water while going nowhere, as
+        // far as walk.js has stood the swimmer up (swimPose, `pose.treading` 0..1) - each on its
+        // own clock.
+        const tread = Math.max(0, Math.min(1, pose.treading || 0)), C = GAIT_CLIPS;
+        p = sampleClip(C.swim, swimT / C.swim.seconds, poseSwim);
+        if (C.tread && tread > 0) p = blendPose(poseTreadMix, p, sampleClip(C.tread, treadT / C.tread.seconds, poseTread), tread);
+      } else {
         p = sampleClip(GAIT_CLIPS.dig, digT / GAIT_CLIPS.dig.seconds, poseDig);
         // The clip digs right-handed; with the shovel in the left hand it is its mirror.
         if (dug.side === 'leftArm') p = mirrorPose(poseMirror, p);
