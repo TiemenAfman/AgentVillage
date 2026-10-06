@@ -575,6 +575,12 @@ export function createUI(handlers) {
   // The director (web/js/director.js, Plans/DONE/regisseur.md): the camera wandering off by itself
   // to watch something happen when nobody has touched the island for a while. On unless
   // switched off, per browser like the arrow.
+  // The island's card (settlers, districts) on foot: off by default, a view from above (ui.css
+  // body[data-mode]); somebody who wants the numbers while walking keeps them with this.
+  const FOOT_CARD_KEY = 'promptholm.footcard';
+  let footCard = false;
+  try { footCard = localStorage.getItem(FOOT_CARD_KEY) === '1'; } catch { /* private window: off */ }
+  document.body.classList.toggle('foot-card', footCard);
   const DIRECTOR_KEY = 'promptholm.director';
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
@@ -967,7 +973,11 @@ export function createUI(handlers) {
       + `<div class="chips wrap"><button class="chip${fixedOn ? ' on' : ''}" data-camfixed="1" aria-pressed="${fixedOn}">Fixed camera distance</button></div>`
       + `<p class="muted" style="margin-top:9px">${fixedOn
         ? 'On: the camera always stays as far back as you scrolled it. A wall, a fountain or a board may hide you for a moment; the camera does not zoom in for it.'
-        : 'Off: the camera comes in towards you when something stands between it and you, and goes back out once it is clear. Rails, posts and crates it still looks past.'}</p>`;
+        : 'Off: the camera comes in towards you when something stands between it and you, and goes back out once it is clear. Rails, posts and crates it still looks past.'}</p>`
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${footCard ? ' on' : ''}" data-footcard="1" aria-pressed="${footCard}">Island card on foot</button></div>`
+      + `<p class="muted" style="margin-top:9px">${footCard
+        ? 'On: the island\'s card at the top left - settlers, apprentices, districts - stays while you walk.'
+        : 'Off: the card at the top left is for the view from above; on foot the screen is the island.'}</p>`;
     const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -1062,6 +1072,12 @@ export function createUI(handlers) {
     }));
     el('settings-body').querySelectorAll('[data-display]').forEach((b) => b.addEventListener('click', () => {
       display.set(b.dataset.display === 'full');
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-footcard]').forEach((b) => b.addEventListener('click', () => {
+      footCard = !footCard;
+      try { if (footCard) localStorage.setItem(FOOT_CARD_KEY, '1'); else localStorage.removeItem(FOOT_CARD_KEY); } catch { /* kept for this page only */ }
+      document.body.classList.toggle('foot-card', footCard);
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-camfixed]').forEach((b) => b.addEventListener('click', () => {

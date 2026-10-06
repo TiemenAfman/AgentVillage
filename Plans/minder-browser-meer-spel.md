@@ -65,7 +65,8 @@ Nog open:
 - ✅ De ronde knoppen rechtsonder (installeren, volledig scherm) zijn weg: installeren is er niet meer (geen PWA) en
   volledig scherm is Settings → Display of Alt+Enter.
 - ✅ **Chips per modus** (`body[data-mode]`, gezet in ui.js `syncSidebar`, regels onderaan ui.css): lucht alles;
-  te voet (en in een kamer) Fly up, Say, Map, Inventory, Quests + klok en ☰, en de eilandkaart linksboven weg;
+  te voet (en in een kamer) Fly up, Say, Map, Inventory, Quests + klok en ☰, en de eilandkaart linksboven weg
+  (terug te zetten met Settings → On foot → *Island card on foot*);
   planner alleen Done (geen inklap-pijl, geen eilandkaart, de Plan-tools schuiven naar boven). De toetsen blijven
   werken waar ze iets betekenen.
 - ✅ **Fades**: zijpanelen schoven al in; nu faden ook het menu, de dialoogkaarten en popovers in, en de kaart en de

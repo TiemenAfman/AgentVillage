@@ -1469,6 +1469,7 @@ body[data-mode="foot"] :is(#found-btn, #plan-btn, #build-btn, #animals-btn, #res
 body[data-mode="plan"] #nav-chips > .chip:not(#plan-btn),
 body[data-mode="plan"] #nav-chips > .chips-sep,
 body[data-mode="plan"] #nav-collapse-btn,
-body:is([data-mode="foot"], [data-mode="plan"]) #titlecard { display: none !important; }
+body[data-mode="foot"]:not(.foot-card) #titlecard,
+body[data-mode="plan"] #titlecard { display: none !important; }
 /* With the island's card gone the planner's tools take its place at the top left. */
 body[data-mode="plan"] .panel.left { top: 14px; max-height: calc(100vh - 28px); }

@@ -1588,7 +1588,8 @@ tap highlight. F5 (desktop.js asks), F11 and F12 stay. A field keeps all of it. 
 `#0d1420` between documents (`background_color` in src-tauri/src/lib.rs), or the splash flashed white into the island.
 **Which chips stand is the mode's** (`body[data-mode]` = sky / foot / plan, written by ui.js `syncSidebar`, rules at
 the end of ui.css): a new chip shows everywhere until it is listed there. On foot only Fly up, Say, Map, Inventory and
-Quests; in the planner only Done. There is no round button at the bottom right any more.
+Quests, and the island's card only with Settings → On foot → *Island card on foot* (`promptholm.footcard`, body
+`.foot-card`); in the planner only Done. There is no round button at the bottom right any more.
 **There is no installable web app.** The island is played in promptholm.exe, the Android app or the browser at
 `/play`; the manifest, `sw.js` and the install button are gone, and main.js `unregisterWorkers()` takes down the
 worker a browser kept from before. Do not add a manifest back: a browser offers to install any page that has one.

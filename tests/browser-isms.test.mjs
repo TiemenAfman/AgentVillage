@@ -88,4 +88,5 @@ test('one set of chips per mode, and no round button at the bottom right', () =>
   const css = readFileSync(new URL('../web/css/ui.css', import.meta.url), 'utf8');
   assert.match(css, /body\[data-mode="foot"\] :is\(#found-btn, #plan-btn, #build-btn, #animals-btn, #reset-btn\)/);
   assert.match(css, /body\[data-mode="plan"\] #nav-chips > \.chip:not\(#plan-btn\)/);
+  assert.match(css, /body\[data-mode="foot"\]:not\(\.foot-card\) #titlecard/, 'Settings -> On foot -> Island card on foot');
 });
