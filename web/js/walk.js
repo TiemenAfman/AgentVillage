@@ -1784,7 +1784,8 @@ export function createWalkMode({
     }
     stick.x = p.move.x;
     stick.z = -p.move.y;                       // pushing up on the stick walks forward
-    // A tap keeps you running until you stand still; holding it down works too.
+    // A tap keeps you running until you stand still; holding it down works too. Afloat a
+    // tap is one burst of turbo (update, aboard).
     if (!stick.x && !stick.z) stick.run = false;
     if (p.hit('sprint')) stick.run = !stick.run;
     if (p.down('sprint')) stick.run = true;
@@ -1920,6 +1921,12 @@ export function createWalkMode({
     if (state.vehicle) {
       // Only ahead: the turbo lifts the top speed, and astern has nothing for it to lift.
       const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
+      // The pad's tapped sprint is one burst afloat. On foot it lasts until the stick is let
+      // go, but at the helm the stick is the throttle and is never let go, so a tap held the
+      // turbo open for good: the pool ran dry, refilled, and opened again. It ends when the
+      // throttle comes off ahead or the pool runs dry - a held button (pad or touchpad) goes
+      // on working like Shift, as pad() sets it again every frame it is down.
+      if (iz <= 0.02 || state.stamina.boat.spent) stick.run = false;
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
       stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround);
