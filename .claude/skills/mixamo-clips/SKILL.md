@@ -31,16 +31,19 @@ own joints towards the baked rotations. The plan is [Plans/tweede-avonturier.md]
 
 1. Copy the download to `assets/mixamo/<file>.fbx` (lower case, dashes) and add
    `"<name>": "<file>.fbx"` to `assets/mixamo/clips.json`. The bake writes the module **whole**
-   from that list, so a clip left out of it disappears from the game - and it needs **every**
-   listed FBX on this machine. The FBX are **not in git** (`.gitignore`): Adobe's terms allow
+   from that list, so a clip left out of it disappears from the game. A listed clip whose FBX is
+   not on this machine keeps the rows the module already has (`KEPT` in the output), so a new
+   clip needs only its own download; one that was never baked and has no FBX stops the bake. The
+   FBX are **not in git** (`.gitignore`): Adobe's terms allow
    Mixamo animations inside a game, not handed out as files, and the repository is public. Only
    `clips.json` and the baked `gait-clips.js` are committed; a machine without the FBX downloads
    them again (each listed file is named after its Mixamo clip: Walking, Running, Sprint,
-   Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging) before it can re-bake.
+   Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging, Falling Forward Death and
+   Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip) before it can re-bake.
 2. Decide how it is played and say so in `bake-mixamo-gait.py`:
    - **by distance** (a gait: walk, run, sprint): nothing to add; it needs a travelling clip and
      gets `stride`, `speed` and `contact` (where in the cycle the left foot comes down).
-   - **by time** (idle, a jump, swim, dig, any action): add the name to `TIMED`. A jump also
+   - **by time** (idle, a jump, swim, dig, `die`, `drown`, any action): add the name to `TIMED`. A jump also
      gets `air` (the stretch with both feet off the ground) when it is listed where `air` is
      worked out.
 3. Bake (needs Blender; `node scripts/blender.mjs` says which one):
@@ -71,6 +74,10 @@ All of it is in `web/js/classic-avatar.js`, inside `buildRig`:
   dig, which holds the shovel with both hands). A new action is a new branch in `playClips`:
   its condition from `pose` (or the rig's own state, like `dug`), its own clock (`digT`,
   `swimT`), and whatever gameplay counter it drives (the dig's `dirt` at `DIG_THROW`).
+- Dying (`die`, `drown`; Plans/vallen-en-verdrinken.md) is the first branch of `playClips`, on
+  `pose.dying.t` (the caller's clock), and with no clip baked `dyingPose` does it procedurally -
+  so baking one is the whole change. `dyingSeconds` caps a clip at 4 s, inside the sea's wait for arrival (lib/health.mjs `ARRIVE_MAX_MS`).
+  Never a death clip from the WoW pack (`/wowhead-character-extract`): Blizzard's, local only.
 - Speeds: a gait plays by distance, so its foot never slides at any speed. `withClips` takes
   the clips' stride (scaled by this body's leg, hip to ankle) and the walk's speed; run and
   sprint keep the profile's faster speeds, which only raises their cadence.

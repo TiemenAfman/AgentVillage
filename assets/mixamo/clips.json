@@ -7,5 +7,7 @@
   "standingJump": "standing-jump.fbx",
   "swim": "swimming.fbx",
   "dig": "digging.fbx",
-  "tread": "treading-water.fbx"
+  "tread": "treading-water.fbx",
+  "die": "falling-forward-death.fbx",
+  "drown": "floating-flailing.fbx"
 }

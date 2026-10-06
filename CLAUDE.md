@@ -1436,7 +1436,7 @@ A blow costs `GUARD_HIT` (10; `RESIDENT_HIT` 6) less `SHIELD_ARMOR` (0.25) per h
 says carries a shield (`POSE.SHIELD_LEFT` 32 / `SHIELD_RIGHT` 64, raised or not, stacking),
 then `BLOCK_FRACTION` on top if a raised shield (`POSE.BLOCKING` 16, in `lib/players.mjs`)
 faces the guard within `FRONT_ARC_COS` (`blowOn`); lava ignores both.
-Only the 0-hp hit evicts, then whole + 5 s immunity. **Respawn to town** (the Esc menu, under
+Only the 0-hp hit evicts, then whole + 5 s immunity, counted from the first pose back home (`observe`, below). **Respawn to town** (the Esc menu, under
 Back, only on foot outdoors; issue #74) is the same evict asked for: the page sends a bare
 `{t:'respawn'}`, `health.respawn` sends you to `refuge` with `why: 'respawn'` - no health taken
 or given, no immunity, at most once per `RESPAWN_EVERY_MS` - and a no is `{t:'respawn', ok:false}`.
@@ -1458,6 +1458,19 @@ is a target. The private `{t:'health', hp, max, regenIn, rate}` carries relative
 the page fills the bar on its own clock; it is sent only when the page's number would be
 wrong without it: after every hit that leaves you standing, and "whole" after an evict the
 page was told less than.
+
+**A death is played before the jump home, and the sea only says the word** ([Plans/vallen-en-verdrinken.md](Plans/vallen-en-verdrinken.md)).
+An `evicted` with no `why` or `'drown'` is a death: main.js `evictedHere` asks `walk.die(kind)` (walk mode paused,
+the body held - or sunk by `DROWN_SINK` to the bed; afloat it always sinks) and calls `sentHome` only after the
+seconds it returns (`dyingSeconds` + `DEATH_REST`; 0 on a hull, saddle, ladder, deck or seat = at once). The rig plays
+`pose.dying = { kind, t }`: gait-clips.js `die` / `drown` on the Adventurer (Falling Forward Death; Floating In Air Flailing
+Arms, Mixamo has no drowning), `dyingPose` (classic-avatar.js) on every body without them. The
+sea's `evict` sends everybody else `{t:'fell', id, how}` before the next beat, and peers.js holds that body where it
+was drawn until it has played - the beat's row already says the refuge. Nothing else of health, refuge or immunity
+changed, so no `SEA_V`; the open sea needs a redeploy for others to see it. The `IMMUNE_MS` of a capture starts at
+arrival (lib/health.mjs `observe`): the first pose after the evict within `ARRIVE_R` of the refuge - lib/players.mjs counts
+poses (`p.poses`) so a pose sent after the evict is told from the place the evict wrote - and a body posing elsewhere
+meanwhile (going down) is immune until then, at most `ARRIVE_MAX_MS`. Keep `dyingSeconds` + `DEATH_REST` under that.
 
 **Air is the sea's too, and the page keeps the same sum** ([Plans/onderwater-zwemmen.md](Plans/onderwater-zwemmen.md)).
 `shared/breath.mjs` is the one copy - `AIR_S` 30 seconds of lung, `REFILL_S` 3 to fill it at the

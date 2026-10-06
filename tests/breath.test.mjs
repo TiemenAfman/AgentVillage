@@ -105,9 +105,11 @@ test('the page has the bar, the handler, and says why in its own words', () => {
   assert.match(main, /m\.why === 'drown'/);
   assert.match(main, /stepBreath\(nowMs\)/);
   // The bar is the last thing frame() writes after the health, and evict puts the lung back.
-  // (The handler is sentHome since Respawn to town shares it, issue #74.)
-  assert.match(main, /onEvicted: \(m\) => sentHome\(m\)/);
-  assert.match(main, /function sentHome\(m\) \{\s*(\/\/[^\n]*\n\s*)*air = AIR_S;/);
+  // (The handler is sentHome since Respawn to town shares it, issue #74; a death plays first,
+  // evictedHere, and then hands over to it - Plans/vallen-en-verdrinken.md.)
+  assert.match(main, /onEvicted: \(m\) => evictedHere\(m\)/);
+  assert.match(main, /function evictedHere\(m\) \{[\s\S]*?sentHome\(m\)/);
+  assert.match(main, /function sentHome\(m\) \{\s*(\/\/[^\n]*\n\s*|if \([^\n]*\n\s*)*air = AIR_S;/);
 });
 
 test('the air bar is a stamina-style bar: gone while full, back the moment it drains', async () => {

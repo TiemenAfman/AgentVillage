@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
-import { createClassicAvatar } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { swimPose, TREAD_SINK } from './diving.js';
 
@@ -35,7 +35,7 @@ const helper=new THREE.SkeletonHelper(carrier);helper.visible=false;scene.add(he
 const camera=new THREE.PerspectiveCamera(32,1,.01,100);
 // walk.js's own numbers, for the Springen button.
 const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
-let jumpAt=null;
+let jumpAt=null, deathAt=0;
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
@@ -48,8 +48,9 @@ document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
   mode=button.dataset.gait;
+  deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
@@ -75,6 +76,16 @@ function tick(dt){
     const wet=mode==='swim'||mode==='tread', lie=mode==='swim'?1:0, pose=swimPose(lie,f.rig.strokes?0:bob);
     f.stand.rotation.set(wet?pose.pitch:0,0,wet?pose.roll:0);
     const step=speed*dt;f.distance+=step;f.stand.position.z=f.distance;
+    // Dying (Plans/vallen-en-verdrinken.md), over and over: each body's own length, the rest after,
+    // and a moment standing before it goes down again. A drowning body sinks as walk.js sinks it.
+    if(mode==='fall'||mode==='drown'){
+      const kind=mode, loop=f.rig.dyingSeconds(kind)+DEATH_REST+.8, t=(time-deathAt)%loop;
+      const down=t<loop-.8;
+      f.stand.rotation.set(0,0,0);
+      f.stand.position.y=kind==='drown'?-.1-DROWN_SINK*Math.max(0,Math.min(t,loop-.8)-.3):0;
+      f.rig.update(down?{dying:{kind,t},distance:0}:{grounded:true,distance:0},dt);
+      continue;
+    }
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
     const up=jumpAt===null?0:Math.max(0,JUMP_V*(time-jumpAt)-GRAVITY*(time-jumpAt)**2/2);
     // Above the floor where the island has it under the water, with walk.js's heave on top.

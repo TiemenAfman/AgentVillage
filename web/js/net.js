@@ -261,6 +261,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // a swing coming down, a glass going up. Events, like the agents' own `swing`.
         case 'swung': peers.act(m.id, 'attack', m.side); break;
         case 'drank': peers.act(m.id, 'drink', m.side); break;
+        // Somebody captured or drowned (lib/players.mjs evict): their body goes down where we
+        // draw it before it is taken home. Not about us - the sea leaves the evicted one out.
+        case 'fell': peers.act(m.id, m.how === 'drown' ? 'drown' : 'fall'); break;
         case 'leave': peers.leave(m.id); break;
         case 'roster': peers.roster(m.players); break;
         case 's': {

@@ -10,8 +10,11 @@ These are the details the downloaded file carries itself (`asset.extras` in
 - **Source:** https://sketchfab.com/3d-models/link-c14d3de2cfc546ad94c3c9be4f24496a
 - **Licence:** CC BY 4.0 — http://creativecommons.org/licenses/by/4.0/
 
-The plan named the uploader as 1_clicks_ (@ZENTA-_-) from the model page; the file's own
-metadata names A_CAT564. Both are recorded here until the page is checked again.
+The model page names the uploader **1_clicks_** (username ZENTA-_-), and the file's own metadata
+names **A_CAT564**. Checked again on 6 October 2026: the page (and Sketchfab's own API for the
+model) still says 1_clicks_ / ZENTA-_-, CC BY 4.0, with an empty description; the A_CAT564 profile
+the metadata links to no longer exists (404) - most likely the same account under an older name,
+but nothing on the page says so. Until that is known, both are credited.
 
 ## What was changed
 
