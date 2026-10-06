@@ -148,6 +148,34 @@ function bodyOf(character) {
 const RIDE_LEG = -0.42;
 const RIDE_SWING = 0.3;
 const RIDE_ARM = -1.15;
+// On horseback (`pose.horseback`, Plans/paard-in-plaats-van-fiets.md "De ruiterhouding, gemeten"):
+// the angles of a reference riding clip, as angles only - none of the clip's data is used. The
+// torso tips forward, the thighs go forward and out round the barrel, the knees fold so the
+// ankles hang straight under the hips, and the arms come forward with the elbows bent so both
+// hands meet in front of the hips at the width of a pair of reins.
+// Three numbers are not the clip's, and tests/horseback-pose.test.mjs holds why. The clip is a
+// man on a horse; the Traveller has hips 0.09 wide and 0.16 of leg on a horse whose saddle flaps
+// stand out 0.11 either side, so at 29 degrees his knees went into the flap and his shins
+// through the cloth: the thighs go out 35 and the shins out again 30 at the knee (`shin`), which
+// puts the ankles at the clip's three hip-widths apart, outside the flap where the irons hang.
+// `armIn` turns each upper arm in about z until the hands meet. And no leg reaches the irons of
+// the stable's horse at its own size - hip on the seat at 0.48, irons at 0.30 - so the horse he
+// rides is drawn at `horse` of it, where every sole is on its tread and nothing of the leg is
+// inside the horse; the plan's MOUNT_SCALE, which turned out below 1, not above.
+// Pivot rotation.x is negative forward, a knee positive back, an elbow negative.
+const DEG = Math.PI / 180;
+export const HORSEBACK = {
+  lean: 15 * DEG,     // the torso forward, shared between the small of the back and the chest
+  thigh: 36 * DEG,    // each upper leg forward from hanging
+  spread: 35 * DEG,   // and out to the side, round the horse (the clip: 29)
+  knee: 73 * DEG,     // the knee's fold
+  shin: 30 * DEG,     // each shin turned out again at the knee, over the saddle flap
+  arm: 28 * DEG,      // each upper arm forward
+  elbow: 51 * DEG,    // the elbow's fold
+  armIn: 55 * DEG,    // each upper arm turned in towards the other hand
+  perch: 0.015,       // the hips this far over the top of the seat: the thighs' own thickness
+  horse: 0.85,        // the size of the stable's horse this rider fits
+};
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -1141,7 +1169,9 @@ function buildRig(spec, material) {
     if (pose.digging !== undefined && !!pose.digging !== !!digging) dig(!!pose.digging);
     if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
-    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride;
+    // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
+    const horse = !ride && pose.horseback ? HORSEBACK : null;
+    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {
       if (object.parent) {
@@ -1158,7 +1188,7 @@ function buildRig(spec, material) {
     const gaitPose = gait.update(Math.max(0,distance), { ...pose, sprinting }, dt);
     const run = gaitPose.run, dash = gaitPose.sprint;
     // In the air: how fast the jump is going, as a share of a sprint.
-    const flying = !pose.grounded && !pose.swimming && !ride && !pose.sitting && !pose.lying;
+    const flying = !pose.grounded && !pose.swimming && !ride && !horse && !pose.sitting && !pose.lying;
     leap = damp(leap, flying ? Math.min(1, speedNow / G.sprint) : 0, flying ? 8 : 14, dt);
     if (pose.grounded) {
       const [a, b] = gaitPose.feet;
@@ -1190,12 +1220,12 @@ function buildRig(spec, material) {
     // leg is furthest forward when its pedal is: -sin of the crank for the right, +sin left.
     const pedal = ride ? RIDE_SWING * Math.sin(ride.crank) : 0;
     const targets = {
-      leftLeg: ride ? RIDE_LEG - pedal : sit || (stride + (pose.grounded ? 0 : split.leftLeg) + crouch),
-      rightLeg: ride ? RIDE_LEG + pedal : sit || (-stride + (pose.grounded ? 0 : split.rightLeg) + crouch),
+      leftLeg: ride ? RIDE_LEG - pedal : horse ? -horse.thigh : sit || (stride + (pose.grounded ? 0 : split.leftLeg) + crouch),
+      rightLeg: ride ? RIDE_LEG + pedal : horse ? -horse.thigh : sit || (-stride + (pose.grounded ? 0 : split.rightLeg) + crouch),
       // Held out in front rather than swinging with the stride - an item on a walking arm
       // would sweep equipment through the body. Free arms counter the opposite foot.
-      leftArm: holding.leftArm ? holdX(holding.leftArm) : (moving ? swingL : idle + flung.leftArm),
-      rightArm: holding.rightArm ? holdX(holding.rightArm) : (moving ? swingR : -idle + flung.rightArm),
+      leftArm: holding.leftArm ? holdX(holding.leftArm) : horse ? -horse.arm : (moving ? swingL : idle + flung.leftArm),
+      rightArm: holding.rightArm ? holdX(holding.rightArm) : horse ? -horse.arm : (moving ? swingR : -idle + flung.rightArm),
     };
     // First person (walk.js) draws what a shooter draws: the two arms and what is in them,
     // and nothing of the body the camera is standing in. The arms are carried higher and
@@ -1217,9 +1247,9 @@ function buildRig(spec, material) {
     // body's and go on `object` below, the rig's root at the feet, since the limbs are not
     // children of the core. Not in first person: that pose is a view model nobody else sees.
     // A dig cannot go on from a saddle, a bench, the ground or the water: put down, as a drink is.
-    if (digging && (ride || pose.sitting || pose.lying || pose.swimming)) dig(false);
-    const dug = digging, carryOn = carrying && !ride;
-    const dancing = pose.dancing && !ride && !pose.sitting && !pose.lying && !pose.swimming && !fp && !dug && !carryOn ? pose.dancing : null;
+    if (digging && (ride || horse || pose.sitting || pose.lying || pose.swimming)) dig(false);
+    const dug = digging, carryOn = carrying && !ride && !horse;
+    const dancing = pose.dancing && !ride && !horse && !pose.sitting && !pose.lying && !pose.swimming && !fp && !dug && !carryOn ? pose.dancing : null;
     const dance = dancing ? dancePose(dancing.move, dancing.beat, dancing.hype || 0) : null;
     if (dance) {
       // The legs take the lean back off, as the settlers' do, so they stay under the body.
@@ -1276,6 +1306,11 @@ function buildRig(spec, material) {
     }
     // Both hands on the bars, whatever they are holding.
     if (ride) targets.leftArm = targets.rightArm = RIDE_ARM;
+    // Both free hands in towards the reins in front of the hips.
+    if (horse) {
+      if (!holding.leftArm) armZ.leftArm = horse.armIn;
+      if (!holding.rightArm) armZ.rightArm = -horse.armIn;
+    }
     // Both hands on the handles of a barrow or the rim of a cart (web/js/goldrun.js): the
     // angle is the caller's, since a barrow's handles are lower than a cart's rim.
     if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
@@ -1335,14 +1370,14 @@ function buildRig(spec, material) {
         drunk[side].x -= back * ARM_FOLLOW;
       }
     }
-    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !dance;
+    const locomotion = pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !horse && !dance;
     // The run's forward lean (Plans/tweede-avonturier.md), turned about the hips rather than the
     // feet: the legs hang from the hips and stay under them, and everything above - the torso,
     // the pack, the chestplate and the shoulders the arms hang from - tips forward round them.
     // The arms hang from a leaning torso, so the lean is added to where each one points.
     // In the air the lean is the leap's (a long jump goes forward over the front leg), and it is
     // eased either way, so neither the take-off nor the landing snaps the torso upright.
-    const bowWant = !G.leanAtHip || dug || carryOn || fp ? 0
+    const bowWant = !G.leanAtHip || dug || carryOn || fp || horse ? 0
       : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend
         : flying ? mixOf(G.lean, 1, .5) * .8 * leap : 0;
     bowNow = damp(bowNow, bowWant, 10, dt);
@@ -1390,17 +1425,27 @@ function buildRig(spec, material) {
       } else {
         // The pushing leg folds up behind in a leap, the reaching one straightens towards the landing.
         const pushing = i === trail;
-        chain.bend.rotation.x = ride ? .65 : pose.sitting ? 1.2
+        chain.bend.rotation.x = ride ? .65 : horse ? horse.knee : pose.sitting ? 1.2
           : !pose.grounded ? .55 + (pushing ? .75 : -.2) * leap : .12;
         chain.bend.rotation.y = chain.bend.rotation.z = 0;
-        chain.end.rotation.set(-chain.bend.rotation.x*.55, 0, 0);
+        // In the saddle the foot is held level in the stirrup: back by what hip and knee tipped it.
+        chain.end.rotation.set(horse ? horse.thigh - horse.knee : -chain.bend.rotation.x*.55, 0, 0);
+      }
+      // Out round the horse: the left leg (at -x in the rig, before its mirror) turns out about -z.
+      if (horse) {
+        const out = i === 0 ? -1 : 1;
+        pieces[side].pivot.rotation.z = out * horse.spread;
+        // and the shin out again from the knee, so the foot hangs outside the saddle flap, where
+        // the stirrup is - then the foot turned back flat on its tread.
+        chain.bend.rotation.z = out * horse.shin;
+        chain.end.rotation.z = -out * (horse.spread + horse.shin);
       }
     }
     // The torso's own pose when no clip is playing: the lean shared between the small of the
     // back and the chest, the shoulders' turn against the hips in the chest, the pelvis and the
     // neck still. A clip (playClips) is blended over this.
     const twistNow = locomotion ? Math.sin(phase) * (G.twist ? mixOf(G.twist, run, dash) : .025) * gaitPose.blend : 0;
-    leanNow = G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
+    leanNow = horse ? horse.lean : G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
     if (locomotion) object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
     torso.pelvis.quaternion.identity();
     torso.spine.rotation.set(leanNow / 2, 0, 0);
@@ -1414,7 +1459,7 @@ function buildRig(spec, material) {
       // Action poses already have authored hand targets. Preserve those targets;
       // free arms flex naturally during locomotion and a little while at rest.
       const action = holding[side] || drunk[side] || (swung && swing.side === side)
-        || ride || Number.isFinite(pose.pushing) || Number.isFinite(pose.reach)
+        || ride || horse || Number.isFinite(pose.pushing) || Number.isFinite(pose.reach)
         // A dig and a carry pose both arms themselves (the shovel stroke, the load held out).
         || !!digging || carrying || blocks.includes(side);
       busy[side] = !!action;
@@ -1425,15 +1470,15 @@ function buildRig(spec, material) {
       // A runner's elbow closes as the arm comes forward - the fist up to the chin - and opens
       // as it drives back: at one angle all the way, the forearm stood out level in front of him.
       const armAt = side === 'leftArm' ? swingAt : -swingAt;
-      const pumped = action || !G.pump ? elbow : elbow + mixOf(G.pump, run, dash) * gaitPose.blend * (armAt < 0 ? -armAt : -.5 * armAt);
+      const pumped = horse && !holding[side] ? horse.elbow : action || !G.pump ? elbow : elbow + mixOf(G.pump, run, dash) * gaitPose.blend * (armAt < 0 ? -armAt : -.5 * armAt);
       chain.bend.rotation.set(-pumped, 0, 0);
       chain.end.rotation.set(pumped*.22, 0, 0);
     }
-    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back });
+    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back });
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.
-      chain.grasp = damp(chain.grasp, holding[side] || digging || carrying || ride ? 1 : 0, 12, dt);
+      chain.grasp = damp(chain.grasp, holding[side] || digging || carrying || ride || horse ? 1 : 0, 12, dt);
       for (const finger of chain.fingers) {
         finger.bone.quaternion.setFromAxisAngle(finger.axis,
           finger.relaxed + (finger.grip - finger.relaxed) * chain.grasp);
