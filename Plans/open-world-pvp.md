@@ -34,7 +34,7 @@ mechaniek.
 De keeper besliste op 6 oktober 2026: **de vlag is een persoonlijke instelling** (geen zee-brede
 stand en geen host-schakelaar), **alleen jij bent veilig op je eigen eiland**, het uitzetten duurt
 **30 s** en die tijd begint opnieuw bij elke treffer, en **te paard of op de fiets mag je vechten**,
-maar een treffer laat je afstijgen.
+maar een treffer laat je afstijgen. Een wanderer (geen eigen eiland) telt de starter als zijn eigen eiland.
 
 ### 1. Wie zet het aan: elke speler zelf, met een vlag
 
@@ -100,7 +100,7 @@ Wat er elders geldt:
 |---|---|---|
 | **Je eigen eiland** (grid + rand) | **veilig voor jou**, behalve 10 s na een eigen treffer | zie hierboven |
 | **Andermans eiland** | met vlag: doelwit | de keeper koos "alleen je eigen" |
-| **Starters** (`starter: true`) | **veilig voor wanderers** (`island: null`), voor islanders gewoon andermans grond | Een wanderer heeft geen eigen eiland; de starter is waar hij begint ([start-op-land.md](start-op-land.md)) en is daarmee het dichtst bij "je eigen". Een islander die er staat, is er op bezoek. Zie de open vraag hieronder. |
+| **Starters** (`starter: true`) | **veilig voor wanderers** (`island: null`), voor islanders gewoon andermans grond | Een wanderer heeft geen eigen eiland; de starter is waar hij begint ([start-op-land.md](start-op-land.md)) en is daarmee het dichtst bij "je eigen". Een islander die er staat, is er op bezoek. Besluit van de keeper. |
 | **Eilandjes** (`shared/islets.mjs`) | PvP met vlag | De zee kent ze niet: ze zijn van de pagina en voor de zee is het open water. Het eerste gebied buiten de vulkaan waar twee spelers *staand* kunnen vechten. |
 | **Open water** (zwemmend) | PvP met vlag, maar alleen vanaf land of een eilandje te raken | `combat.swing` weigert al slagen tijdens het zwemmen (`POSE.SWIMMING`). Een zwemmer slaat dus niet, maar kan binnen `SWING_RISE` vanaf de kant wel geraakt worden, net als door een guard. Een duiker dieper dan 1,2 is buiten bereik (hetzelfde losse eindje als bij de guards). |
 | **Aan boord** (roer, dek, ladder) | **veilig** in fase 1 | `afoot` en `pilotsOf` sluiten aan boord al uit. Enteren op de galjoen is een eigen ontwerp (fase 4). |
@@ -293,8 +293,4 @@ Nieuw, en alles is een toevoeging:
 
 ## Open vragen voor de keeper
 
-1. **Is een starter veilig voor wanderers?** Het plan zegt: een wanderer (telefoon of web, geen
-   eigen eiland) is op een starter veilig, omdat dat is waar hij begint en hij geen eigen eiland
-   heeft. Een islander is daar op bezoek en dus met vlag een doelwit. Het alternatief is dat een
-   starter niemands eiland is, net als de vulkaan, en een wanderer dan nergens op land veilig is
-   (alleen aan boord van zijn skiff).
+Geen: alle besluiten zijn genomen (6 oktober 2026).
