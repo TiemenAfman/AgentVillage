@@ -64,7 +64,7 @@ import { createSound } from './sound.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
 import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
-import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, SPOTS_KEY } from './noclip.js';
+import { createNoclip, mergePose, poseOf, lookFrom, parseCam, formatCam, camLink, onFootOutdoors, SPOTS_KEY } from './noclip.js';
 import { createPeers } from './peers.js';
 import { LAG_MS, pushSample, trackAt } from './timeline.js';
 import { createNet } from './net.js';
@@ -7344,7 +7344,8 @@ function stepBreath(nowMs) {
   // The same test the sea makes of the pose we send it (`afoot`, then `submerged`): on foot
   // outdoors and not at a tiller, with the swimming bit set and the head under the surface.
   // Today walk mode keeps a swimmer at the surface, so this stays false and the bar full.
-  const under = !!w && state.mode === 'walk' && !state.inside && !state.walk.aboard()
+  // In noclip it is the body left standing that breathes, not the camera (onFootOutdoors).
+  const under = !!w && onFootOutdoors(state.mode, state.inside, noclipFrom) && !state.walk.aboard()
     && submerged(w.swimming ? SWIMMING : 0, w.pos.y);
   air = stepAir(air, under, dt);
   state.vitals.setAir(air / AIR_S);

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   stepNoclip, turnBy, lookFrom, nudgeSpeed, parseCam, formatCam, camLink, mergePose,
-  applyPose, poseOf, forwardOf, moveOf, wrapAngle, SPEED, PITCH_MAX,
+  applyPose, poseOf, forwardOf, moveOf, wrapAngle, onFootOutdoors, SPEED, PITCH_MAX,
 } from '../web/js/noclip.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
@@ -106,4 +106,18 @@ test('a pose put on a three.js camera reads back the same, looking where it says
     const back = poseOf(cam);
     for (const k of ['x', 'y', 'z', 'yaw', 'pitch']) assert.ok(near(back[k], p[k], 1e-6), `${k}: ${back[k]} vs ${p[k]}`);
   }
+});
+
+test('in noclip the body left standing holds its breath, not the camera (issue #90)', () => {
+  const room = { room: 'tavern' };
+  assert.equal(onFootOutdoors('walk', null, null), true);
+  assert.equal(onFootOutdoors('walk', room, null), false);
+  assert.equal(onFootOutdoors('orbit', null, null), false);
+  // Flown off from a body under water: it is still there, so the air keeps running down.
+  assert.equal(onFootOutdoors('noclip', null, { mode: 'walk', inside: null }), true);
+  // A room peeked into is the camera's; the body is still outdoors.
+  assert.equal(onFootOutdoors('noclip', room, { mode: 'walk', inside: null }), true);
+  assert.equal(onFootOutdoors('noclip', room, { mode: 'walk', inside: room }), false);
+  assert.equal(onFootOutdoors('noclip', null, { mode: 'orbit', inside: null }), false);
+  assert.equal(onFootOutdoors('noclip', null, null), false);
 });
