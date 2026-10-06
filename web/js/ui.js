@@ -10,6 +10,7 @@ import { createSysMenu } from './sysmenu.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 import { NOCLIP_KEY } from './noclip.js';
 import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
+import { createDisplay } from './display.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -77,6 +78,8 @@ function setLabel(id, text, title) {
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI(handlers) {
+  // Windowed or fullscreen (display.js): the button, Settings and Alt+Enter share it.
+  const display = createDisplay();
   const state = {
     filters: {
       code: true,
@@ -945,6 +948,15 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${qualityAuto
         ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
         : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
+    // Windowed or fullscreen (display.js). In promptholm.exe fullscreen is the window itself,
+    // borderless over the whole screen; in a tab it is the browser's own fullscreen.
+    const full = display.isFull();
+    const screenSec = '<h3 class="sec">Display</h3>'
+      + `<div class="chips wrap"><button class="chip${full ? '' : ' on'}" data-display="window" aria-pressed="${!full}">Windowed</button>`
+      + `<button class="chip${full ? ' on' : ''}" data-display="full" aria-pressed="${full}">${display.desktop ? 'Borderless fullscreen' : 'Fullscreen'}</button></div>`
+      + `<p class="muted" style="margin-top:9px">${full
+        ? `Fullscreen. <kbd>Alt</kbd>+<kbd>Enter</kbd>${display.desktop ? ' or <kbd>F11</kbd>' : ''} goes back to a window.`
+        : `In a window. <kbd>Alt</kbd>+<kbd>Enter</kbd>${display.desktop ? ' or <kbd>F11</kbd>' : ''} fills the screen${display.desktop ? ', and the window remembers it next time' : ''}.`}</p>`;
     // The follow camera on foot (camera-prefs.js): kept at its distance, or pulled in by what is in
     // the way (walk.js placeCamera's boom).
     const fixedOn = cameraFixed();
@@ -962,7 +974,7 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin-top:9px">${noclipOn
         ? 'On: <kbd>`</kbd> flies a free camera through walls, ground and water (<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, <kbd>Space</kbd>/<kbd>E</kbd> up, <kbd>Shift</kbd>/<kbd>Q</kbd> down, the wheel for speed); <code>__noclip</code> in the console.'
         : 'Off. A free-flying camera for looking at the graphics, also on with <code>?noclip</code> in the address.'}</p>`;
-    el('settings-body').innerHTML = `<section data-tab="screen">${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
+    el('settings-body').innerHTML = `<section data-tab="screen">${screenSec}${sky}${onFoot}${graphicsSection()}${timeline}${buttons}</section>`
       + `<section data-tab="audio">${audioSection()}</section>`
       + (standalone && !keyboardToo ? '' : `<section data-tab="controls">${controlsSection()}</section>`)
       + (keeper ? `<section data-tab="island">${signs}${sizeSection()}${homeSection()}${seaSection()}${debug}</section>` : '');
@@ -1044,6 +1056,10 @@ export function createUI(handlers) {
       try { if (qualityAuto) localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, '0'); } catch { /* kept for this page only */ }
       renderSettings();
       if (handlers.onQualityAuto) handlers.onQualityAuto(qualityAuto);
+    }));
+    el('settings-body').querySelectorAll('[data-display]').forEach((b) => b.addEventListener('click', () => {
+      display.set(b.dataset.display === 'full');
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-camfixed]').forEach((b) => b.addEventListener('click', () => {
       setCameraFixed(!cameraFixed());
@@ -1579,7 +1595,8 @@ export function createUI(handlers) {
   el('build-btn').addEventListener('click', () => handlers.onBuild());
   el('plan-btn').addEventListener('click', () => handlers.onTogglePlan && handlers.onTogglePlan());
 
-  setupShell();
+  setupShell(display);
+  display.onChange(() => { if (!el('sysmenu').hidden) renderSettings(); });
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
@@ -1597,12 +1614,8 @@ export function createUI(handlers) {
 }
 
 // --- fullscreen and installing ------------------------------------------
-// Safari and the older Android browsers still only have the prefixed calls.
-function fullscreenElement() {
-  return document.fullscreenElement || document.webkitFullscreenElement || null;
-}
-
-function setupShell() {
+// Fullscreen itself, with Safari's prefixed calls, is display.js.
+function setupShell(display) {
   const btn = el('fullscreen-btn');
   const install = el('install-btn');
   if (!btn) return;
@@ -1610,24 +1623,14 @@ function setupShell() {
   const expand = btn.querySelector('[data-icon="expand"]');
   const collapse = btn.querySelector('[data-icon="collapse"]');
   const sync = () => {
-    const on = !!fullscreenElement();
+    const on = display.isFull();
     expand.hidden = on;
     collapse.hidden = !on;
-    btn.title = on ? 'Leave fullscreen' : 'Fullscreen';
-    btn.setAttribute('aria-label', btn.title);
+    btn.title = on ? 'Leave fullscreen (Alt+Enter)' : 'Fullscreen (Alt+Enter)';
+    btn.setAttribute('aria-label', on ? 'Leave fullscreen' : 'Fullscreen');
   };
-  btn.addEventListener('click', () => {
-    if (fullscreenElement()) {
-      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
-    } else {
-      const root = document.documentElement;
-      (root.requestFullscreen || root.webkitRequestFullscreen || (() => {})).call(root);
-    }
-  });
-  // Follow the real state, not our own idea of it: Esc and the phone's back
-  // gesture both leave fullscreen without ever touching the button.
-  document.addEventListener('fullscreenchange', sync);
-  document.addEventListener('webkitfullscreenchange', sync);
+  btn.addEventListener('click', () => display.toggle());
+  display.onChange(sync);
   sync();
 
   // The browser decides whether the island can be installed, and only says so once.

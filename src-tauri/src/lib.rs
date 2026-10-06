@@ -263,6 +263,13 @@ pub fn run() {
                                 let _ = w.destroy();
                             }
                         }
+                        // web/js/display.js: Settings -> Display, Alt+Enter, F11. On Windows this
+                        // is borderless fullscreen over the window's monitor, not a mode change.
+                        if url.host_str() == Some("fullscreen") {
+                            if let Some(w) = closer.get_webview_window("main") {
+                                let _ = w.set_fullscreen(url.path() == "/on");
+                            }
+                        }
                         return false;
                     }
                     if stays_here(url, &own_host) {

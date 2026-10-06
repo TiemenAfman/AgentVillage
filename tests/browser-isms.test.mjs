@@ -43,3 +43,28 @@ test('the chart keeps its painted ground when it opens at the same size, and the
   assert.match(main, /k !== 'escape' && state\.sysmenu && state\.sysmenu\.isOpen\(\)\) return;/);
   assert.match(main, /getElementById\('nav-chips'\)\?\.addEventListener\('click'/);
 });
+
+test('a tooltip draws a trailing key as a key cap, and main.js installs ours', async () => {
+  const { splitKey } = await import('../web/js/tooltip.js');
+  assert.deepEqual(splitKey('Walk the island on foot (Enter)'), { text: 'Walk the island on foot', key: 'Enter' });
+  assert.deepEqual(splitKey('Menu (Esc)'), { text: 'Menu', key: 'Esc' });
+  assert.deepEqual(splitKey('Seen it'), { text: 'Seen it', key: null });
+  const main = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /\ninstallTooltips\(\);/);
+  assert.match(main, /await warmRooms\(/, 'the rooms are built behind the boot screen, not at the door');
+  assert.match(readFileSync(new URL('../web/js/models.js', import.meta.url), 'utf8'), /lazy-set-worker\.js/);
+});
+
+test('Alt+Enter (and F11 in the window) is the fullscreen key; the window goes borderless through Rust', async () => {
+  const { isFullscreenKey } = await import('../web/js/display.js');
+  const k = (key, m = {}) => ({ key, altKey: false, ctrlKey: false, metaKey: false, repeat: false, ...m });
+  assert.ok(isFullscreenKey(k('Enter', { altKey: true })));
+  assert.equal(isFullscreenKey(k('Enter')), false, 'Enter alone is Walk');
+  assert.equal(isFullscreenKey(k('Enter', { altKey: true, ctrlKey: true })), false, 'AltGr+Enter');
+  assert.equal(isFullscreenKey(k('Enter', { altKey: true, repeat: true })), false);
+  assert.equal(isFullscreenKey(k('F11')), false, 'a tab keeps F11 for the browser');
+  assert.ok(isFullscreenKey(k('F11'), true));
+  const rs = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  assert.match(rs, /host_str\(\) == Some\("fullscreen"\)/);
+  assert.match(rs, /set_fullscreen\(url\.path\(\) == "\/on"\)/);
+});

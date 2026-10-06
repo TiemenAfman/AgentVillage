@@ -29,8 +29,9 @@ plakken en ctrl+F enz. Chat, Settings en de borden van de keeper zijn velden of 
 
 Open (smaak keeper):
 
-- **`title`-tooltips** (29 in `index.html`, meer in JS): het grijze systeemvakje is het meest "browser"-ding dat
-  overblijft. Voorstel: één eigen tooltip in de huisstijl (`data-tip`, zelfde vertraging), `title` weg. ❓
+- ✅ **Eigen tooltip** (`web/js/tooltip.js`): elke `title` blijft staan in markup en code; bij hover verhuist de tekst
+  naar `data-tip` vóór de browser zijn grijze vak toont, en na 450 ms komt onze tip (donker, gouden rand, een
+  `(Enter)` aan het eind als toetskapje). Alleen muis, niet onder pointer lock, weg bij elke klik/toets/wheel.
 - **Cursor**: knoppen tonen de handcursor; voorstel: overal de pijl, of een eigen cursor. ❓
 - **Focusringen** na een muisklik: alleen `:focus-visible` tonen is nu al grotendeels zo; nalopen per paneel.
 
@@ -66,8 +67,12 @@ Nog open:
 - "Vraag voor jou"/"nu bouwen" verdwijnen te voet en in de planner, de tijdlijn ook - dat is consequent; maar de
   chips blijven allemaal zichtbaar te voet terwijl de helft (Plan, Overview, New settler) daar niets doet of uit
   de loopmodus trekt. Voorstel: te voet alleen Inventory, Map, Quests, ☰. ❓
-- Overgangen: panelen *verschijnen* (hidden-toggle) i.p.v. in te faden; voorstel: 120 ms fade+schuif voor `.panel`
-  en `.sysmenu-card`, alleen opacity/transform zodat het niets kost. ❓ (smaak)
+- ✅ **Fades**: zijpanelen schoven al in; nu faden ook het menu, de dialoogkaarten en popovers in, en de kaart en de
+  inventaris komen 8 px omhoog (160-200 ms, alleen opacity/transform). Sluiten blijft direct. `prefers-reduced-motion` zet het uit.
+- ✅ **Volledig scherm** (`web/js/display.js`): Settings → This screen → *Display* (Windowed / Borderless fullscreen),
+  de knop rechtsonder en **Alt+Enter** (in het venster ook F11). In `promptholm.exe` gaat het venster zelf randloos over
+  het scherm (`promptholm://fullscreen/on|off` → `set_fullscreen`, dezelfde deur als de bevestigde close) en onthoudt het
+  dat voor de volgende start; in een tab is het de Fullscreen API. De install-knop blijft voorlopig staan. ❓
 
 ## 3. Haperingen (gemeten)
 
@@ -76,8 +81,8 @@ en `long-animation-frame` (welke script). Volgorde = baten/kosten.
 
 | actie | langste frame | oorzaak | status |
 |---|---|---|---|
-| **eerste keer een kamer in** (Salty Kraken) | 1748 ms + 565 + 896 | lazy set parsen (`models.js` 1245 ms, `piratetavern_room-mesh.js` 474), daarna bouwen + shaders | open: set parsen in een worker / in `requestIdleCallback` zodra de deur in zicht is, en `renderer.compileAsync` vóór het tonen |
-| **daarna terug naar het eiland** | 391 / 480 / 629 ms | three.js compileert eilandprogramma's opnieuw (de kamer heeft 7 PointLights; het aantal lichten zit in elke programmasleutel) | open: lichtaantal gelijk houden (lichten op 0 i.p.v. weg, zoals CLAUDE.md al voor kampvuren doet) |
+| **eerste keer een kamer in** (Salty Kraken) | 1748 ms + 565 + 896 | lazy set parsen (`models.js` 1245 ms, `piratetavern_room-mesh.js` 474), daarna bouwen + shaders | **gerepareerd**: de sets worden in een worker geparsed (`lazy-set-worker.js`, typed arrays overgedragen), vanaf de start van de boot; de kamer wordt gebouwd en `renderer.compile`d achter het laadscherm (`warmRooms`, ~0,8 s extra laadtijd, max 3 s wachten). Nu één frame van ~250 ms: het HD-pakket dat bij binnenkomst een GLB laadt |
+| **daarna terug naar het eiland** | 391 / 480 / 629 ms | shaders opnieuw gecompileerd na de eerste kamer | **weg** (max 60 ms) sinds de kamer vooraf gecompileerd wordt; de lampen hoefden niet gelijk |
 | tweede keer kamer in | 39 ms | – | goed |
 | **kaart openen (M)** | 155–167 ms, elke keer | `resize()` gooide bij elke opening de grondkaart weg (~150 ms hoogtes opzoeken) | **gerepareerd**: alleen bij een echte maatwijziging; nu alleen de eerste opening (221 ms), daarna 0 |
 | inventaris openen | 119–124 ms, elke keer | twee nieuwe WebGL-contexten per bezoek (studio.js, bewust: contexten worden teruggegeven) + 70 ms in een setTimeout | open: één context houden voor de hele sessie en hergebruiken (blijft binnen het maximum van ~16) |

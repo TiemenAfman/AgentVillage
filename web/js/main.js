@@ -138,6 +138,7 @@ import { createInput } from './input.js';
 import { createWeather, setSky, forceSky, haze, hazeRange, skyWord } from './weather.js';
 import { lavaLines } from './lava.js';
 import { installPageKeys } from './page-keys.js';
+import { installTooltips } from './tooltip.js';
 import { createUnderwater } from './underwater.js';
 import { createSeabed } from './seabed.js';
 import { createSeaLife } from './sea-life.js';
@@ -664,6 +665,7 @@ function endParley({ camera = true } = {}) {
 }
 // ctrl+A selects nothing on this page, in any mode (page-keys.js).
 installPageKeys();
+installTooltips();
 // Captured on the window, and stopped dead, for the same reason the chat and the town hall
 // stop theirs: walk.js listens on this window too, and the key that ends a conversation must
 // not also be read as "back to the sky" or as E at whatever is nearest.
@@ -7967,7 +7969,25 @@ function playerName() {
   try { return localStorage.getItem('promptholm.name') || null; } catch { return null; }
 }
 
+// The rooms' sets start parsing in a worker as soon as the boot does (models.js offThread), so that
+// they are usually in by the time the island is drawn; warmRooms then builds each room and compiles
+// its shaders while the boot screen still stands. Left to the door, the Salty Kraken's first visit
+// froze the page for ~1.7 s parsing and ~0.8 s building (Plans/minder-browser-meer-spel.md). The
+// phone and the web carry no rooms (pack-page.mjs ROOM_ONLY), and there is no islander to own one.
+let roomsLoading = null;
+async function warmRooms(waitMs) {
+  if (!roomsLoading) return;
+  const ready = await Promise.race([roomsLoading.then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), waitMs))]);
+  if (!ready) return;   // still parsing: the door builds it, the parse no longer blocks anything
+  for (const room of ROOM_KINDS) {
+    if (!roomReady(room) || rooms.has(room)) continue;
+    const inside = roomFor(room);
+    try { if (inside) renderer.compile(inside.scene, camera); } catch (e) { console.warn('room warm-up', e); }
+  }
+}
+
 async function boot() {
+  if (!STANDALONE) roomsLoading = Promise.all(ROOM_KINDS.filter((r) => !roomReady(r)).map(prepareRoom));
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
     // The four graphics sliders in Settings. The only way into state.graphics, which is what
@@ -8731,6 +8751,7 @@ Everything is copied and checked first; the island then starts again there. The 
   // Somebody to steer from the first frame: the body stands on the square, asleep, until you
   // walk down into it or send it somewhere from the sky. Before the net exists, so the
   // net's own start says it is walking.
+  if (!STANDALONE) await warmRooms(3000);
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
