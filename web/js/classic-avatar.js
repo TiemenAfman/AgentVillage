@@ -176,6 +176,17 @@ export const HORSEBACK = {
   perch: 0.015,       // the hips this far over the top of the seat: the thighs' own thickness
   horse: 0.85,        // the size of the stable's horse this rider fits
 };
+// The Adventurer (player-bodies.js) on the same horse: a hand taller, hips 0.25 up and narrower
+// (0.064 across), and his own body hanging 0.05 under them where the Traveller's hangs 0.02 - so
+// he sits higher over the seat (`perch`), his thighs go out further to clear the flap, and at
+// the clip's knee his soles stood 3 cm over the irons: the knee opens to 40, the shins straight
+// down from it. He fits the horse at its own size. Measured like the Traveller's, in
+// tests/horseback-pose.test.mjs.
+export const HORSEBACK_OF = {
+  traveller: HORSEBACK,
+  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 40 * DEG, shin: 0, armIn: 20 * DEG, perch: 0.045, horse: 1 },
+};
+export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -1237,7 +1248,7 @@ function buildRig(spec, material) {
     if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
     // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
-    const horse = !ride && pose.horseback ? HORSEBACK : null;
+    const horse = !ride && pose.horseback ? horsebackOf(character) : null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {

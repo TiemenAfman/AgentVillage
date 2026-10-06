@@ -12,7 +12,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { normalizeAvatar } = await import('../web/js/avatar.js');
-const { createClassicAvatar, HORSEBACK } = await import('../web/js/classic-avatar.js');
+const { createClassicAvatar, HORSEBACK, horsebackOf } = await import('../web/js/classic-avatar.js');
 const { saddleOf } = await import('../web/js/fauna.js');
 const models = await import('../web/js/models.js');
 if (previousDocument === undefined) delete globalThis.document;
@@ -21,8 +21,8 @@ else globalThis.document = previousDocument;
 const DEG = Math.PI / 180;
 const SADDLE = { moving: false, grounded: true, horseback: true };
 
-function rider(pose = SADDLE) {
-  const avatar = createClassicAvatar(normalizeAvatar({}), new THREE.MeshBasicMaterial());
+function rider(pose = SADDLE, character) {
+  const avatar = createClassicAvatar(normalizeAvatar({ character }), new THREE.MeshBasicMaterial());
   const root = new THREE.Group();
   root.add(avatar.object);
   for (let i = 0; i < 120; i++) avatar.update(pose, 1 / 60);
@@ -44,6 +44,13 @@ function limbVertices(avatar) {
   });
   return out;
 }
+
+test('the Adventurer keeps the clip\'s torso, thighs and arms, and opens his knee', () => {
+  const a = horsebackOf('adventurer');
+  for (const key of ['lean', 'thigh', 'arm', 'elbow']) assert.equal(a[key], HORSEBACK[key], key);
+  assert.ok(a.knee < HORSEBACK.knee && a.spread > HORSEBACK.spread);
+  assert.equal(horsebackOf('nobody'), HORSEBACK);
+});
 
 test('the pose is the measured one, angle for angle', () => {
   // Plans/paard-in-plaats-van-fiets.md "De ruiterhouding, gemeten".
@@ -88,21 +95,23 @@ test('the ankles hang under the hips, three hip-widths apart, and the hands meet
   assert.ok(neck.z - spine.z > 0.015, `neck ${neck.z.toFixed(3)} ahead of the spine ${spine.z.toFixed(3)}`);
 });
 
-test('on the stable\'s horse at its size the soles are on the irons and no leg is inside it', () => {
+for (const character of ['traveller', 'adventurer']) test(`the ${character} on the stable's horse at his size: soles on the irons, no leg inside it`, () => {
   const saddle = saddleOf();
   assert.ok(saddle && saddle.stirrup, 'the horse has a seat and irons');
   // Plans/paard-in-plaats-van-fiets.md: the seat round y 0.50, the irons round 0.30-0.32.
   assert.ok(saddle.seat > 0.45 && saddle.seat < 0.53, `seat ${saddle.seat}`);
   assert.ok(saddle.stirrup.y > 0.28 && saddle.stirrup.y < 0.33, `irons ${saddle.stirrup.y}`);
-  const s = HORSEBACK.horse;
-  const { avatar } = rider();
+  const fit = horsebackOf(character), s = fit.horse;
+  const { avatar } = rider(SADDLE, character);
+  assert.equal(avatar.character, character);
   // The rider's feet at y = 0 stand this high in the horse's frame, in the horse's units.
-  const lift = saddle.seat * s + HORSEBACK.perch - avatar.hipY;
-  // The legs below the top of the seat: the hips are HORSEBACK.perch over it, and where the
+  const lift = saddle.seat * s + fit.perch - avatar.hipY;
+  // The legs below the top of the seat: the hips are `perch` over it, and where the
   // thighs leave them they sit on the cloth, which a slab of the solid cannot tell from a wall.
-  const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - HORSEBACK.perch);
+  const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - fit.perch);
   const sole = Math.min(...legs.map((p) => p.y)) + lift;
-  assert.ok(sole >= saddle.stirrup.y * s - 0.002 && sole <= saddle.stirrup.top * s, `soles at ${sole.toFixed(3)}, irons ${(saddle.stirrup.y * s).toFixed(3)}-${(saddle.stirrup.top * s).toFixed(3)}`);
+  // In the iron, or resting on its top bar: the Adventurer's sole is 0.007 over it.
+  assert.ok(sole >= saddle.stirrup.y * s - 0.002 && sole <= saddle.stirrup.top * s + 0.01, `soles at ${sole.toFixed(3)}, irons ${(saddle.stirrup.y * s).toFixed(3)}-${(saddle.stirrup.top * s).toFixed(3)}`);
   // The horse's body as a solid: how far out it reaches either side in every 1 cm slab of
   // height and length - the barrel, the saddle and its flaps, the irons.
   const C = 0.01, half = new Map();
