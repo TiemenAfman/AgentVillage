@@ -457,6 +457,10 @@ shore is a kade cell): the kadehaven's record (harbour slot, and the district's 
 wall cell as `shore` and `slip`, and the foot plus the nearest `fingers` finger's cells as `pier`; the old ramp
 and planks are one more `works.dig` (planKade had held them, an islet with the boats beside it mid-harbour), the
 slip path is the shore and the approach loses its boardwalk out there. A new hash, nothing older code misreads.
+After it, once, `planHarbourFloor` (`layout.harbourFloor`, top-level) digs every funnel cell wholly under water,
+above `CHANNEL_H` and reached from the head, held off what stands: the digs before it each took their own mask
+(planHaven only *sand*, planKade basin/west rows/dock/anchorage) and the ring's bay between them showed from
+above as square, lighter shallows (Hoogezand: 197 cells, hash 76dc0053 -> 0d988d69, nothing moved).
 The resort reaches pages and the sea only as the houses (`plot.quay`, on piles now reaching -1.00: the boardwalk
 set's `DECK` is 1.44) and the district's `deck` (`resortCells(layout).drawn`: the shortest walk inside the
 deck from the jetty to every occupied lot's doorstep, grows with the district; `centre` is the jetty head).
