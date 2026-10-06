@@ -1718,7 +1718,15 @@ beside it), else the room's spawn. Only while the door stands within `DOOR_SLACK
 `setWorking` for a board) and asks for it again on the way out of those — so a new panel only
 has to pause the walker, never touch the lock. A re-request without a gesture is allowed only
 after a lock the *page* released; after the user's Escape it needs a click, which is why a
-single click on the canvas takes it back and does not also swing. That first Escape only frees
+single click on the canvas takes it back and does not also swing - but not at once: Chromium
+refuses any new lock for ~1.3 s after the user's own Escape (`SecurityError`, "cannot be acquired
+immediately after the user has exited the lock"; measured in the desktop window), so `requestLock`
+asks again when that is over (`lockAgainSoon`, on the click's five seconds of activation; noclip.js
+likewise), and it never asks *while Escape is down* (`escDown`): a panel closed with Escape asked
+for the lock inside that keydown, got it, and the browser then took the same Escape as the user
+leaving it. The desktop window's confirm cards give the look back the same way (`resumeLock`, after
+the keyup when answered with Escape). Walk away from the window and the lock is gone for good: one
+click gets it back (the browser grants it to nothing else). That first Escape only frees
 the mouse (`unlockedAt` swallows it), the second leaves walk mode - except in a room, where it opens the
 menu with the room paused under it (interior.js `onEscape`, from main.js; `onMenuClose` hands the room back a
 turn later, or the closing Escape reopens it) and you leave by the door. Drag-to-look is the fallback
@@ -2496,6 +2504,28 @@ are not redirected either.
 What the window adds is what a browser cannot: it probes the port and, if nothing answers,
 starts the islander exe (in `app\`, or next to it in a build folder; node directly when that
 exe is missing).
+**Three things make it a game window rather than a browser** ([Plans/DONE/eiland-als-desktop-app.md](Plans/DONE/eiland-als-desktop-app.md)
+has the base; the page's half is `web/js/desktop.js`, switched on by `PROMPTHOLM_DESKTOP`).
+*The pointer-lock bubble is hidden* (`src-tauri/src/bubble.rs`): WebView2 has no switch for Chromium's
+"press Esc to show your cursor" popup (WebView2Feedback#3511) and every walk-mode lock raises it for
+~4.7 s. It is a separate top-level popup of the WebView2 *browser* process (class `Chrome_WidgetWin_1`,
+TOPMOST|TOOLWINDOW|NOACTIVATE, ~525x58 centred at the top) that is **owned by our main window**, so a
+`SetWinEventHook` (out of context, own thread with a message loop) on CREATE..SHOW, filtered by owner +
+the pure `looks_like_bubble` (cargo test), finds it. Hiding it is not enough - Chromium shows it again
+every ~70 ms for as long as it lives (a 6 ms screen sampler caught 365 of 585 frames with only SW_HIDE) -
+so it is moved to -32000,-32000 first: 0 of 587. `PROMPTHOLM_KEEP_BUBBLE=1` turns it off. To re-measure:
+start the debug exe with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`, then CDP
+`Runtime.evaluate` reads `document.pointerLockElement` in the real window (the built-in preview pane cannot).
+*Fullscreen is the window's*: F11 and the Fullscreen chip navigate to `promptholm://fullscreen/<on|off|toggle|query>`
+(the close's door - cancelled in `on_navigation`, no IPC capability is opened to a remote page) and Rust
+answers `window.promptholmFullscreen(bool)` on every resize and on `query` (the page asks at boot, so a
+window that starts fullscreen is right), so the chip follows the real window. No HTML fullscreen, hence
+no Esc bubble, no Esc conflict and no Keyboard Lock (`lockKeys` returns in the window; Ctrl+W loses no tab).
+*The window is remembered*: position, windowed size, maximized and fullscreen go to `window.json` beside the
+WebView2 profile (throttled to 0.5 s, always on Destroyed; a position off every monitor is dropped), and the
+window is built hidden and shown once placed. Pitfall: started from a Claude desktop session these writes land
+in the MSIX LocalCache (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\com.promptholm.island\`), not the
+real AppData.
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the

@@ -149,9 +149,16 @@ export function createNoclip({ camera, dom, onExit = null, onChange = null }) {
 
   const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
   const locked = () => document.pointerLockElement === dom;
-  function lock() {
+  function lock(again = 0) {
     if (locked()) return;
-    try { dom.requestPointerLock()?.catch?.(() => { /* no lock: drag to look */ }); } catch { /* drag to look */ }
+    // The browser refuses a lock for ~1.3 s after the user's own Escape (a SecurityError, as in
+    // walk.js): a click inside that wait asks again once it is over, on the click's activation.
+    try {
+      dom.requestPointerLock()?.catch?.((err) => {
+        if (err?.name !== 'SecurityError' || again >= 3) return;   // else: no lock, drag to look
+        setTimeout(() => { if (on && !locked()) lock(again + 1); }, Math.max(150, 1350 - (performance.now() - unlockedAt)));
+      });
+    } catch { /* drag to look */ }
   }
   const changed = () => { if (onChange) onChange(); };
 
