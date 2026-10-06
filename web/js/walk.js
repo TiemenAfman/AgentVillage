@@ -757,8 +757,15 @@ export function createWalkMode({
   // When the lock went away, so the Escape that took it does not also leave walk mode: the
   // keydown can reach the page either side of the pointerlockchange that says it is gone.
   let unlockedAt = -Infinity;
+  // Chrome's first pointermove after a lock is taken (and now and then one after focus moved)
+  // carries the whole jump of the cursor since the last event as movementX/Y - hundreds of
+  // pixels, which put camPitch straight on its limit: the camera looking at the sky after the
+  // focus had been walked round the HUD (0.9.1). The first locked move is dropped, and so is any
+  // single move bigger than a hand can make in one event.
+  let freshLock = false;
+  const LOOK_JUMP = 250;
   const onLockChange = () => {
-    if (document.pointerLockElement === dom) { clickLockFailed = false; lockAgainTries = 0; }
+    if (document.pointerLockElement === dom) { clickLockFailed = false; lockAgainTries = 0; freshLock = true; }
     else unlockedAt = performance.now();
   };
   document.addEventListener('pointerlockchange', onLockChange);
@@ -794,7 +801,10 @@ export function createWalkMode({
     if (!state.active) return;
     const locked = document.pointerLockElement === dom;
     let dx = 0, dy = 0;
-    if (locked) { dx = e.movementX; dy = e.movementY; } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    if (locked) {
+      dx = e.movementX; dy = e.movementY;
+      if (freshLock || Math.abs(dx) > LOOK_JUMP || Math.abs(dy) > LOOK_JUMP) { freshLock = false; dx = dy = 0; }
+    } else if (dragging) { dx = e.clientX - lastX; dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
     if (dragging && !pressMoved && Math.hypot(e.clientX - pressX, e.clientY - pressY) > CLICK_PX) pressMoved = true;
     if (!dx && !dy) return;
     if (dx) lookedAround();
