@@ -12,7 +12,7 @@ import { Color, Matrix4, MeshBasicMaterial, MeshStandardMaterial, Vector3 } from
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { avatarPlayerGeometry, avatarFigureGeometry, avatarPlayerComponentGeometry, HAT_SHAPES,
-  DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar } = await import('../web/js/avatar.js');
+  DEFAULT_AVATAR, PLAYER_EYE, loadAvatar, saveAvatar, saveCharacter } = await import('../web/js/avatar.js');
 const { createClassicAvatar } = await import('../web/js/classic-avatar.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
@@ -67,6 +67,22 @@ test('existing browser looks survive the new mesh and corrupt storage falls back
     assert.deepEqual(loadAvatar(), spec);
     values.set('promptholm.avatar', '{broken');
     assert.deepEqual(loadAvatar(), DEFAULT_AVATAR);
+  } finally {
+    if (original === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = original;
+  }
+});
+
+test('the body picked is kept on its own, so a restart opens on the same character', () => {
+  const original = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = { getItem: (k) => values.get(k), setItem: (k,v) => values.set(k,v) };
+  try {
+    saveAvatar({ ...DEFAULT_AVATAR, hatShape: 'cap', tunic: 0x3d7ed9 });
+    assert.equal(saveCharacter('adventurer').character, 'adventurer');
+    // Only the body changed: the outfit saved before is still the one on it.
+    assert.deepEqual(loadAvatar(), { ...DEFAULT_AVATAR, hatShape: 'cap', tunic: 0x3d7ed9, character: 'adventurer' });
+    assert.equal(saveCharacter('nonsense').character, 'traveller');
   } finally {
     if (original === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = original;
