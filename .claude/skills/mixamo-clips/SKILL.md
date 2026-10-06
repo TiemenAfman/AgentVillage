@@ -27,6 +27,13 @@ own joints towards the baked rotations. The plan is [Plans/tweede-avonturier.md]
   stride from how far the hips travel and refuses an In Place gait. For a clip played by time
   (idle, jumps, swim, dig) it does not matter.
 
+**Many at once:** `node scripts/mixamo-fetch.mjs anims Walking "Standing Idle"` (or `--query`,
+`--all`; `characters` for bodies with skin in T-pose) exports with exactly these settings on Y Bot
+through mixamo.com's web API, under the user's own token, into `D:\Mixamo\anims\y-bot\` - outside
+git, skipping what it already has, a `<name>.json` manifest beside each file. README.md, "Mixamo in
+bulk", says how the user gets the token; never type, paste or log one yourself. A fetched clip is
+not in the game until it is copied into `assets/mixamo/` as below.
+
 ## 2. Add it
 
 1. Copy the download to `assets/mixamo/<file>.fbx` (lower case, dashes) and add

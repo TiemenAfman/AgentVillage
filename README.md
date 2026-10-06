@@ -199,6 +199,36 @@ the island never draws itself once with stand-ins and again with the real thing.
 | `assets/` | The Blender sets, one folder per set. [assets/README.md](assets/README.md) is the house style: axes, scale, sheets, triangle budgets |
 | `npm run models` | Bake every set and refuse anything that breaks one of those rules |
 
+### Mixamo in bulk
+
+`scripts/mixamo-fetch.mjs` fetches many Mixamo animations and characters at once, under your
+own mixamo.com login, into a folder **outside the repository** (default `D:\Mixamo`, or
+`--out` / `MIXAMO_OUT`). Nothing it fetches reaches the game until a clip is copied into
+`assets/mixamo/` on purpose ([the mixamo-clips skill](.claude/skills/mixamo-clips/SKILL.md)).
+Using Mixamo's web API this way is not something Adobe offers; whether that is acceptable
+under their terms is yours to weigh.
+
+**The token.** Log in on mixamo.com in your browser, open DevTools (F12) → Console and run
+`copy(localStorage.access_token)`, then paste it into `D:\Mixamo\token.txt` (or set
+`MIXAMO_TOKEN`). It lasts about a day; a 401 means take a fresh one. The script never prints it.
+
+```bash
+node scripts/mixamo-fetch.mjs list --query walk
+node scripts/mixamo-fetch.mjs anims Walking "Standing Idle" Swimming
+node scripts/mixamo-fetch.mjs anims --query "sword" --max 40
+node scripts/mixamo-fetch.mjs anims --all
+node scripts/mixamo-fetch.mjs characters "Y Bot" "X Bot"
+```
+
+Animations are exported on Y Bot (`--character "X Bot"` or `--character-id`) as FBX Binary,
+without skin, 30 fps, no keyframe reduction, In Place **off** (`--inplace` turns it on; leave
+it off for anything played by distance). Characters come with skin, in T-pose. Files land in
+`anims/<character>/<name>.fbx` and `characters/<name>.fbx`, each with a `<name>.json` manifest
+(name, id, character, settings, date) and an `index.json` mapping Mixamo ids to files. A file
+already there is skipped, so a stopped run carries on where it was; requests are paced
+(`--delay`, 1.5 s) and back off on 429 and 5xx. `--dry-run` lists what it would fetch.
+Motion packs are listed but not fetched: fetch their motions by name.
+
 ## Layout
 
 ```
