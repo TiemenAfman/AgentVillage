@@ -1,0 +1,3465 @@
+// Everything that stands on a plot. Each building is composed from a handful of
+// vertex-coloured primitives and merged into a single geometry, so 300 houses cost
+// 300 draw calls rather than 6000. Windows glow at night through a per-vertex
+// emissive mask on the one shared material.
+import { BASIN_DECK } from 'shared/quay-basin.mjs';
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeRng, hash32 } from 'shared/rng.mjs';
+// The palette moved to shared/ so Node can read it without importing this file -
+// see the header of shared/palette.mjs. Re-exported because most of the tree asks
+// here for it, and the colours of the island are this file's subject.
+import { PALETTE } from 'shared/palette.mjs';
+export { PALETTE };
+import { SEA_LEVEL } from 'shared/terrain.mjs';
+import * as models from './models.js';
+import { textureUrl } from './assets.js';
+import { patchSeeThrough } from './see-through.js';
+import { fadeNeeded, FADE_RANGE_UNIFORM, FADE_EYE_UNIFORM, FADE_VERTEX_DECL, FADE_VERTEX_BODY,
+  FADE_FRAGMENT_DECL, FADE_FRAGMENT_BODY, FADE_DEPTH_VERTEX_DECL, FADE_DEPTH_VERTEX_BODY } from './fade.js';
+import { yardStage, shownAtStage, HULL_STAGE } from './shipyard.js';
+// The Salty Kraken's sign: piratesign.js imports this file back, which is safe because neither
+// reads the other before a building is built.
+import { pirateSignParts } from './piratesign.js';
+
+// Four styles, and every one of them roofed in the same family of fired clay. The roofs
+// used to be the loudest thing about a style - copper, blue-grey slate, green and gold,
+// one to a district - and a hillside of them read as a colour chart rather than as a
+// village. A real village roofs itself out of whatever the local kiln fires, so the
+// difference between one house and the next is which batch it came from. Identity moved
+// down into `wall`, `trim` and `accent`, where it is still perfectly legible from the
+// ground and does not decide what the island looks like from the air.
+//
+// The four tints are one clay each: fable's is the tavern's own terracotta, opus fires
+// darkest, sonnet brightest, haiku palest. They are also what the Blender roofs are
+// painted with, so a gable off `roof_gable_a` and a `prismRoof` fallback are the same
+// colour on the same street.
+
+// How high a harbour house's own deck rides inside its model, measured from the model's
+// origin the way the dock set measures DOCK_DECK from its piles' feet. The island drops
+// the whole house by `QUAY_DECK - HARBOUR_DECK` (main.js), which is the same trick and for
+// the same reason: one waterline for the planks, the front decks and the boardwalk between
+// them, so there is no step where two independently-built pieces of decking meet.
+export const HARBOUR_DECK = 0.62;
+
+export const C = {
+  foundation: 0x8d8577, wood: 0x8b5e3c, darkWood: 0x5a3c28, canvas: 0xe9d8b4,
+  stripe: 0xc86b4a, anvil: 0x3a3a3f, copper: 0xb87333, stone: 0xa8a59e,
+  slate: 0x4c5566, plank: 0xb07a4a, blueprint: 0x4d7ec9, paper: 0xf5efe0,
+  thatch: 0xc9a75c, brick: 0x9c5a44, glass: 0xffd27f, white: 0xf5efe0,
+  // Verdigris, for the one roof on the island that is allowed not to be clay. Now that
+  // every house is terracotta the town hall needs to be the exception rather than one
+  // more slate box, and weathered copper over a civic hall is what the dome in the
+  // reference illustration is - the cool note the whole warm hillside is read against.
+  patina: 0x5f8f7a,
+  green: 0x6fb84a, red: 0xd94f3d, blue: 0x3d7ed9, gold: 0xd9a33d, iron: 0x3a3a3f,
+};
+
+export const TIER_INDEX = { tent: 0, hut: 1, cottage: 2, house: 3, manor: 4, keep: 5, shed: -1, civic: -2 };
+export const TIER_LABEL = { tent: 'Tent', hut: 'Hut', cottage: 'Cottage', house: 'House', manor: 'Manor', keep: 'Keep' };
+
+// Both the nearby beam and horizon light start at the baked lamp: the lens standing in the
+// lantern, whose origin scripts/build-lighthouse.py puts at the middle of the glass. Reading
+// its actual origin keeps a future Blender edit from leaving the distant lamp behind - which
+// is what rebuilding the tower at its real height did to every number that had been copied.
+export const BEACON_RISE = models.part('Lighthouse lamp lens').at[1];
+// And how wide the lantern is where the beam leaves it: the glass cylinder's own radius, off
+// its corners. web/js/beacon.js opens the cone at exactly this width, so the bar of air leaves
+// the lantern at the lantern's own size rather than from a point somewhere inside it.
+export const BEACON_THROAT = (() => {
+  const p = models.part('Lighthouse lantern glass').positions;
+  let r = 0;
+  for (let i = 0; i < p.length; i += 3) r = Math.max(r, Math.hypot(p[i], p[i + 2]));
+  return r;
+})();
+// The shipyard's datum over its own pile feet: the ground at the landward end, which is where
+// scripts/build-shipyard.py puts the slipway's origin. The yard is modelled in one frame from
+// the feet of its piles up (the ground rule wants a set's lowest point at zero) and the island
+// wants it from the land, so civic() lowers it by this and main.js stands it on the land.
+export const SHIPYARD_LAND = models.part('shipyard slipway').at[1];
+
+// ---------------------------------------------------------------- sheets
+// world.js keeps the same three lines for the ground and the trees and does not export
+// them, so here they are again: fetch a sheet, wrap it, and if it never arrives say so
+// once and leave the surface exactly as it was drawn before there were any sheets.
+//
+// Three of them serve every building on the island, and which one a face takes is a
+// number carried on the vertex rather than a material of its own. That matters: the
+// obvious way round - one material group per part and an array of materials on the mesh
+// - turns a building from one draw call into one per part, and there are hundreds of
+// buildings. It would also mean handing main.js an array where it passes a single
+// material, and main.js hands that same material to the settlers, the crops, the boats
+// and the bridges, none of which have groups to match it. So: one material and a branch in
+// the fragment shader. It is also what lets every building on an island share one draw call
+// (web/js/record-batch.js): a BatchedMesh has one material, and a material array would split
+// the batch as surely as it split a building.
+const texLoader = new THREE.TextureLoader();
+// One white pixel until a sheet arrives, and for good if none ever does: white
+// multiplies out, so a building with no textures is the building the island always drew.
+const BLANK = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+BLANK.needsUpdate = true;
+const SHEET_UNIFORM = { wall: 'uWall', roof: 'uRoof', stone: 'uStone', plank: 'uPlank', grass: 'uGrass', earth: 'uEarthDetail' };
+const sheetUsers = [];               // the uniform block of every material handed out
+function loadSheet(name, slot) {
+  texLoader.load(textureUrl(name), (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
+    for (const u of sheetUsers) u[SHEET_UNIFORM[slot]].value = tex;
+  }, undefined, () => {
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
+  });
+}
+loadSheet('wall-plaster', 'wall');
+loadSheet('roof-tile', 'roof');
+loadSheet('stone-stacked', 'stone');
+loadSheet('plank', 'plank');
+loadSheet('grass', 'grass');
+loadSheet('river-shingle', 'earth');
+
+// What a part is drawn on. Zero - no sheet at all - is the default and stays the default:
+// glass, ironwork, cloth, paper and every small painted thing are better flat.
+// 'plank' and 'plankZ' are the same sheet read two ways. The boards on it run along
+// the sheet's own x, so a deck that runs north-south wants them turned a quarter, and
+// the shader does that by reading the position and the normal back to front rather than
+// by carrying a second copy of the wood.
+const SHEET = { wall: 1, roof: 2, stone: 3, plank: 4, plankZ: 5, ground: 6 };
+const sheetOf = (o, dflt) => SHEET[o.sheet === undefined ? dflt : o.sheet] || 0;
+
+// ---------------------------------------------------------------- material
+// Where the player's eye is, in the world, for the shadow pass's fade (fade.js). One object
+// shared by every building material's depth twin; main.js copies the camera into it once a
+// frame (setFadeEye) rather than every twin keeping a camera of its own.
+const FADE_EYE = { value: new THREE.Vector3() };
+export function setFadeEye(v) { FADE_EYE.value.copy(v); }
+
+// `seeThrough`: what stands between the camera and the walker is stippled away
+// (see-through.js). Only for the island's own buildings and props (buildingMat in main.js),
+// never the crowd's material - a settler between you and the camera stays a settler.
+export function createBuildingMaterial({ seeThrough = false } = {}) {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0.0 });
+  mat.userData.uniforms = {
+    uNight: { value: 0 },
+    uWall: { value: BLANK }, uRoof: { value: BLANK }, uStone: { value: BLANK }, uPlank: { value: BLANK },
+    uGrass: { value: BLANK }, uEarthDetail: { value: BLANK },
+    [FADE_RANGE_UNIFORM]: { value: 0 },
+  };
+  // Whether the fade is in the compiled shader at all - see fadeNeeded() for why this is a
+  // question worth asking. Flipping it costs a recompile, so it flips once per session at
+  // most, and only when a slider is dragged across the fog.
+  //
+  // Calling this twice is a supported thing to do and not a mistake: main.js does it, once
+  // for the world and once for the crowd, because Object Distance and NPC Distance are two
+  // numbers and a shared material has one uniform slot. Same onBeforeCompile below and the
+  // same customProgramCacheKey, so three hands both the same compiled program - two uniform
+  // sets, one program, and the same draw calls either way.
+  mat.userData.fadeOn = false;
+  sheetUsers.push(mat.userData.uniforms);
+  // A function, not an arrow: a body's clone of this material (classic-avatar.js buildRig) runs
+  // the same hook and opts out of the see-through with `seeThroughOff`, read off `this`.
+  mat.onBeforeCompile = function (shader) {
+    const u = mat.userData.uniforms;
+    shader.uniforms[FADE_RANGE_UNIFORM] = u[FADE_RANGE_UNIFORM];
+    shader.uniforms.uNight = u.uNight;
+    shader.uniforms.uWall = u.uWall;
+    shader.uniforms.uRoof = u.uRoof;
+    shader.uniforms.uStone = u.uStone;
+    shader.uniforms.uPlank = u.uPlank;
+    shader.uniforms.uGrass = u.uGrass;
+    shader.uniforms.uEarthDetail = u.uEarthDetail;
+    const glsl = (...lines) => lines.join(String.fromCharCode(10));
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'attribute float aEmissive;',
+        'attribute float aSheet;',
+        'varying float vEmi;',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;'))
+      .replace('#include <begin_vertex>', glsl(
+        '#include <begin_vertex>',
+        'vEmi = aEmissive;',
+        'vSheet = aSheet;',
+        'vSheetPos = position;',
+        'vSheetNrm = normal;'));
+    // There is no uv anywhere on a building - finish() throws it away so that parts built
+    // at wildly different sizes can be merged into one loaf - so the sheet is projected on
+    // instead, from the three axes at once, blended by how far the face turns towards each.
+    // A box face takes one projection whole; a roof pitch, whose normal points between two
+    // axes, cross-fades two, which is what lets a sheet lie flat over a ridge with no seam
+    // along it. Projecting also makes the pattern the same size on a cottage and on a keep,
+    // which is the one thing a per-face uv could never do.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', glsl(
+        '#include <common>',
+        'varying float vEmi;',
+        'uniform float uNight;',
+        'varying float vSheet;',
+        'varying vec3 vSheetPos;',
+        'varying vec3 vSheetNrm;',
+        'uniform sampler2D uWall;',
+        'uniform sampler2D uRoof;',
+        'uniform sampler2D uStone;',
+        'uniform sampler2D uPlank;',
+        'uniform sampler2D uGrass;',
+        'uniform sampler2D uEarthDetail;',
+        'vec3 islandSheet(sampler2D m, vec3 p, vec3 n, float s) {',
+        '  vec3 w = n * n;',
+        '  w /= max(1e-4, w.x + w.y + w.z);',
+        '  return texture2D(m, p.zy * s).rgb * w.x',
+        '       + texture2D(m, p.xz * s).rgb * w.y',
+        '       + texture2D(m, p.xy * s).rgb * w.z;',
+        '}'))
+      .replace('#include <color_fragment>', glsl(
+        '#include <color_fragment>',
+        'if (vSheet > 0.5) {',
+        '  vec3 sn = normalize(vSheetNrm);',
+        '  vec3 sc = vec3(1.0);',
+        // The stacked stone was drawn for a rubble wall and swings from a fifth of full
+        // brightness to all of it. At that strength it would be the loudest thing on the
+        // island, and the paving is meant to keep the deepest tone here, so a plinth takes
+        // under two thirds of the sheet.
+        '  float sk = 1.0;',
+        // The same three-unit grass grain and shingle scale as the terrain. A noisy
+        // crossfade lets turf run down the shoulders instead of meeting a solid band.
+        '  if (vSheet > 5.5) {',
+        '    vec3 grass = texture2D(uGrass, vSheetPos.xz / 3.0).rgb;',
+        '    vec3 earth = islandSheet(uEarthDetail, vSheetPos, sn, .72) * 1.27;',
+        '    float fleck = texture2D(uGrass, vSheetPos.xz * 2.7).r;',
+        '    float turf = smoothstep(.015, .18, vSheetPos.y + (fleck-.5)*.10);',
+        '    sc = mix(earth, grass, turf);',
+        '  }',
+        '  else if (vSheet > 4.5) { sc = islandSheet(uPlank, vSheetPos.zyx, sn.zyx, 1.3); }',
+        '  else if (vSheet > 3.5) { sc = islandSheet(uPlank, vSheetPos, sn, 1.3); }',
+        '  else if (vSheet > 2.5) { sc = islandSheet(uStone, vSheetPos, sn, 1.0); sk = 0.62; }',
+        '  else if (vSheet > 1.5) { sc = islandSheet(uRoof, vSheetPos, sn, 1.0); }',
+        '  else { sc = islandSheet(uWall, vSheetPos, sn, 1.7); }',
+        '  diffuseColor.rgb *= mix(vec3(1.0), sc, sk);',
+        '}'))
+      .replace('#include <emissivemap_fragment>', glsl(
+        '#include <emissivemap_fragment>',
+        'totalEmissiveRadiance += vColor.rgb * vEmi * (0.25 + uNight * 1.7);'));
+    // The distance fade, and only while fadeNeeded() says the cut would land out in clear
+    // air rather than inside fog that has already closed over it. It rides the hook points
+    // that are already here: <fog_vertex> is the last place mvPosition is still in view
+    // space, and <emissivemap_fragment> is the last point before the lighting begins, so a
+    // pixel thrown away here never paid for a single light.
+    if (mat.userData.fadeOn) {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${FADE_VERTEX_DECL}`)
+        .replace('#include <fog_vertex>', `#include <fog_vertex>\n${FADE_VERTEX_BODY}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FADE_FRAGMENT_DECL}`)
+        .replace('#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>\n${FADE_FRAGMENT_BODY}`);
+    }
+    if (seeThrough && !this.seeThroughOff) patchSeeThrough(shader);
+  };
+  mat.customProgramCacheKey = function () {
+    return (mat.userData.fadeOn ? 'settlers-emissive-ground-v1-fade' : 'settlers-emissive-ground-v1')
+      + (seeThrough && !this.seeThroughOff ? '-see' : '');
+  };
+  // The shadow pass's twin (fade.js, "The shadow pass"): three's own depth material with the
+  // same band spliced in, so a house stippled out of the picture takes its shadow with it.
+  // Unpatched while the fade is off, and then it is the material three would have used
+  // anyway - RGBADepthPacking, and getDepthMaterial copies side, map and clipping onto a
+  // custom one exactly as onto its own. The crowd's meshes are handed it where they are made
+  // (settler-figures.js createFigures); the houses never need it, since they are cut in fog.
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  depth.onBeforeCompile = (shader) => {
+    if (!mat.userData.fadeOn) return;
+    shader.uniforms[FADE_RANGE_UNIFORM] = mat.userData.uniforms[FADE_RANGE_UNIFORM];
+    shader.uniforms[FADE_EYE_UNIFORM] = FADE_EYE;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${FADE_DEPTH_VERTEX_DECL}`)
+      .replace('#include <project_vertex>', `#include <project_vertex>\n${FADE_DEPTH_VERTEX_BODY}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${FADE_FRAGMENT_DECL}`)
+      .replace('#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>\n${FADE_FRAGMENT_BODY}`);
+  };
+  depth.customProgramCacheKey = () => (mat.userData.fadeOn ? 'settlers-depth-v1-fade' : 'settlers-depth-v1');
+  mat.userData.fadeDepth = depth;
+  // Ask for a range, get the right shader. `fogCap` is the furthest the fog can ever close
+  // (main.js fogCeiling) - see fadeNeeded for why it is that and not the fog of the moment.
+  // A shader that costs every building on the island its early depth test to hide a cut
+  // nobody can see is a bad trade at any default, so the patch is only in while somebody
+  // could see the cut.
+  mat.userData.fade = (range, fogCap) => {
+    const on = fadeNeeded(range, fogCap);
+    if (on !== mat.userData.fadeOn) {
+      mat.userData.fadeOn = on;
+      mat.needsUpdate = true;
+      depth.needsUpdate = true;
+    }
+    // Out of range as well as off: a range of 0 has to read as "no fade", never as
+    // "distance divided by zero, so everything within an inch is gone".
+    mat.userData.uniforms[FADE_RANGE_UNIFORM].value = on ? Math.max(0, range) : 0;
+  };
+  return mat;
+}
+
+// The building material for what the walker himself rides (mount.js, bicycle.js): the same
+// hooks and the same live uniforms (userData is the source's, not a copy, so the night and the
+// fade reach it), but never seen through - the cone is cut to show the rider, and stippling
+// the horse under him away with the house in front of him is the bug this exists for
+// (7 Oct 2026). One clone per source material, so every rider's horse and bike share one
+// program. A material with no see-through of its own (the demo's) is handed back as it is.
+const solids = new WeakMap();
+export function solidMaterial(material) {
+  if (!material || typeof material.customProgramCacheKey !== 'function'
+    || !String(material.customProgramCacheKey()).endsWith('-see')) return material;
+  let solid = solids.get(material);
+  if (!solid) {
+    solid = material.clone();
+    solid.userData = material.userData;
+    solid.onBeforeCompile = material.onBeforeCompile;
+    solid.customProgramCacheKey = material.customProgramCacheKey;
+    solid.seeThroughOff = true;
+    solids.set(material, solid);
+  }
+  return solid;
+}
+
+// ---------------------------------------------------------------- primitives
+function finish(g, hex, emissive = 0, sheet = 0) {
+  g.deleteAttribute('uv');
+  g.deleteAttribute('normal');
+  const flat = g.index ? g.toNonIndexed() : g;
+  const n = flat.attributes.position.count;
+  const c = new THREE.Color(hex);
+  const col = new Float32Array(n * 3), emi = new Float32Array(n), she = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    emi[i] = emissive;
+    she[i] = sheet;
+  }
+  flat.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  flat.setAttribute('aEmissive', new THREE.BufferAttribute(emi, 1));
+  // Only the parts that are drawn on something carry the attribute; merge() fills in the
+  // rest. See the note there - it is not an optimisation, it is what keeps the figures
+  // buildable out of these same primitives.
+  if (sheet) flat.setAttribute('aSheet', new THREE.BufferAttribute(she, 1));
+  return flat;
+}
+function place(g, o = {}) {
+  if (o.ry) g.rotateY(o.ry);
+  if (o.rx) g.rotateX(o.rx);
+  if (o.rz) g.rotateZ(o.rz);
+  g.translate(o.x || 0, o.y || 0, o.z || 0);
+  return g;
+}
+
+// ---------------------------------------------------------------- provenance
+// A merged mesh can no longer say that one of its faces used to be
+// `box(0.16, 0.26, 0.05, pal.accent, { z: 0.51 })`, and that is precisely what the model
+// editor needs in order to show you a door, let you nudge it, and hand back the line to
+// paste. So every primitive notes its own call on the geometry it returns. It costs one
+// small object per part, nothing on the island reads it, and the merge drops it again.
+let groupSeq = 0;
+let openGroup = null;
+
+// Some primitives only mean anything together: one box is a window, six are a bench.
+// Wrapping them marks every part inside as a single pickable thing, so the editor moves
+// the window and not the pane it happens to be made of.
+export function group(kind, fn, args = null) {
+  const outer = openGroup;
+  openGroup = { kind, id: ++groupSeq, args };
+  try { return fn(); } finally { openGroup = outer; }
+}
+function note(g, fn, args, hex, o) {
+  // `o` is copied: the editor writes to it, and the call sites hand in literals they
+  // reuse across a loop.
+  g.userData.part = { fn, args, hex, o: { ...o }, group: openGroup };
+  if (tracing) g.userData.part.sites = callSites();
+  return g;
+}
+
+// Where in this file a part was asked for, as line:column pairs off the stack, innermost
+// first. A line that says `x: W / 2 - 0.08` or passes a colour by variable can never be
+// found word for word, so the editor asks where the call *is* instead and edits the
+// numbers in place. Only the editor switches it on: an Error per part is nothing on one
+// model and not something three hundred houses should pay for.
+let tracing = false;
+export function traceParts(on) { tracing = !!on; }
+function callSites() {
+  const out = [];
+  for (const line of String(new Error().stack || '').split('\n')) {
+    const m = /\/buildings\.js(?:\?[^:\s)]*)?:(\d+):(\d+)/.exec(line);
+    if (m) out.push([Number(m[1]), Number(m[2])]);
+  }
+  return out;
+}
+// Moves a finished part and keeps its note honest, for the one or two places that build
+// a piece around the origin and hoist it afterwards.
+function lift(g, dy) {
+  g.translate(0, dy, 0);
+  const p = g.userData.part;
+  if (p) p.o = { ...p.o, y: (p.o.y || 0) + dy };
+  return g;
+}
+
+// A Blender-baked part has the same attributes and placement contract as box().
+// Material prefixes become existing sheet IDs; vertex colours stay in linear space.
+//
+// Which .blend it came out of is web/js/models.js's business, not the call site's: every
+// baked set is in one register under one flat set of names. An unknown name throws rather
+// than drawing nothing, because a part that has quietly gone missing from a building is
+// far harder to notice than a page that says so. A caller that means "use the model if it
+// has been made yet" asks models.has() first - see barrel() in props.js.
+// `sx`/`sy`/`sz` scale it before it is turned and moved, which is what lets one gable
+// modelled on a unit square roof every width of house on the island - the scale is the
+// overhang and `sy` alone is the pitch. `repaint` is the other half of that: normally
+// `hex` multiplies the colours Blender baked in, so white leaves a barrel exactly the
+// barrel that was modelled, but a roof's colour belongs to the island rather than to the
+// .blend - there is one gable and there are four styles - and multiplying two terracottas
+// gives neither of them. So the slots the island owns say so, and the timber under them
+// keeps the oak it was modelled in.
+// `keep(x, y, z, x0)` keeps only the triangles it answers true for, given their middle and the
+// least x of their corners in the set's own frame, for the one caller that draws a part of
+// somebody else's bake without all of it: the Batavia on the stocks, whose fittings carry a
+// boarding ladder and a spare anchor she is not given until she is afloat (bataviaOnStocks).
+// What it keeps comes back in that frame too, the part's own origin added in, so that a turn is
+// about the set's origin whatever `at` the bake gave the part. It stays out of what the part
+// remembers of its options, like meshAsset's `skip`: the editor reads those back.
+export function mesh(name, hex = 0xffffff, o = {}) {
+  const found = models.part(name);
+  if (!found) throw new Error(`Unknown Blender building part: ${name}`);
+  const { keep, ...rest } = o;
+  const part = keep ? keptTriangles(found, keep) : found;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(part.positions, 3));
+  const options = { sheet: part.sheet, emissive: part.emissive, ...rest };
+  finish(g, hex, options.emissive, sheetOf(options));
+  if (!options.repaint) {
+    const colors = g.attributes.color.array;
+    for (let i = 0; i < colors.length; i++) colors[i] *= part.colors[i];
+  }
+  if (options.sx !== undefined || options.sy !== undefined || options.sz !== undefined) {
+    g.scale(options.sx ?? 1, options.sy ?? 1, options.sz ?? 1);
+  }
+  return note(place(g, options), 'mesh', [name], hex, options);
+}
+
+// A baked part with only the triangles `keep` wants, positions and colours still in step, in the
+// set's frame.
+function keptTriangles(part, keep) {
+  const p = part.positions, c = part.colors, [ax, ay, az] = part.at;
+  const positions = [], colors = [];
+  for (let i = 0; i < p.length; i += 9) {
+    const x = (p[i] + p[i + 3] + p[i + 6]) / 3 + ax;
+    const y = (p[i + 1] + p[i + 4] + p[i + 7]) / 3 + ay;
+    const z = (p[i + 2] + p[i + 5] + p[i + 8]) / 3 + az;
+    if (!keep(x, y, z, Math.min(p[i], p[i + 3], p[i + 6]) + ax)) continue;
+    for (let k = 0; k < 9; k++) {
+      positions.push(p[i + k] + part.at[k % 3]);
+      colors.push(c[i + k]);
+    }
+  }
+  return { ...part, positions, colors, at: [0, 0, 0] };
+}
+
+// Every part of one Blender asset, each where Blender had it, as parts to push. An asset
+// is a whole building for a set that holds one - the tavern - or one roof out of a set
+// that holds several. `o` shifts, turns and scales the lot, for a caller composing an
+// asset into something bigger: meshAsset('roof_gable_a') sat on top of a house body.
+//
+// `hex` may be one colour for all of it, or a function of a part's name and sheet that
+// answers with the colour the island wants there - or with null to keep the colour
+// Blender gave it. A roof needs both in one asset: the island owns the tiles and the
+// .blend owns the barge boards.
+//
+// `skip(partName)` leaves parts out of the merge: the ones that move and are hung on pivots of
+// their own, like the sawmill's blade (web/js/sawmill.js).
+export function meshAsset(name, hex = 0xffffff, { skip = null, ...o } = {}) {
+  const sx = o.sx ?? 1, sy = o.sy ?? 1, sz = o.sz ?? 1;
+  const c = Math.cos(o.ry || 0), s = Math.sin(o.ry || 0);
+  // Only a caller that asks per part is repainting. A plain colour multiplies, the way it
+  // always has: `meshAsset(name)` is white times what Blender baked, which is Blender's
+  // own colours, and that is what the model sheet has to show.
+  const per = typeof hex === 'function' ? hex : null;
+  return models.assetParts(name).filter((n) => !skip || !skip(n)).map((partName) => {
+    const part = models.part(partName);
+    // Where Blender had this part, scaled and turned with the asset rather than on its
+    // own: an asset turned a quarter has to take its chimney round with it.
+    const x = part.at[0] * sx, z = part.at[2] * sz;
+    const paint = per ? per(partName, part.sheet) : hex;
+    return mesh(partName, paint ?? 0xffffff, {
+      ...o,
+      repaint: o.repaint || (per !== null && paint != null),
+      x: (o.x || 0) + x * c + z * s,
+      y: (o.y || 0) + part.at[1] * sy,
+      z: (o.z || 0) - x * s + z * c,
+    });
+  });
+}
+
+// The sawmill's parts that move (scripts/build-sawmill.py): baked inside the yard asset so it
+// stands on the ground, left out of its merge, and hung on their own pivots by sawmill.js. A
+// part with several colours bakes as `name:0`, `name:1`, which the optional tail allows.
+// The Salty Kraken's parts that move in the wind (web/js/kraken-motion.js): its two Jolly Rogers, its
+// three set sails and the lanterns that hang on a hook. Out of the merged body; that file hangs them.
+export const isKrakenMoving = (n) => /^Salty ((great|fore) jolly roger( (crossbone|knuckle|skull|socket))?|(fore course|fore topsail|aft topsail)( (reef band|boltrope|patch))?|(stern|bow|fore top|door) lantern (ring|cap|rim|glass|stile|band|base|foot|finial))( \d+)?(:\d+)?$/.test(n);
+export const isSawmillMoving = (n) => /^civic_sawmill_yard (blade|log|roller \d+|billet)(:\d+)?$/.test(n);
+// The smithy's, the same way (scripts/build-smithy.py, web/js/smithy.js).
+export const isSmithyMoving = (n) => /^civic_smithy_yard (bellows|coals|lantern)(:\d+)?$/.test(n);
+// The goldsmith's fire, the same way (scripts/build-goldsmith.py, web/js/goldsmith.js): it
+// flares while a load of the mine's ore melts, so it cannot be part of the loaf.
+export const isGoldsmithMoving = (n) => /^civic_goldsmith glow(:\d+)?$/.test(n);
+// Where a still part of a baked asset stands - its Blender origin, which the bake keeps as
+// `at` on every one of its material slots. For the parts that are measured rather than drawn
+// apart: the mine's bin and cart stop, the goldsmith's bench.
+export function partAt(asset, name) {
+  const full = `${asset} ${name}`;
+  const slot = models.assetParts(asset).find((n) => n === full || n.startsWith(full + ':'));
+  return slot ? models.part(slot).at.slice() : null;
+}
+// How far the gold mine's hill is modelled too high (DATUM in scripts/build-goldmine.py): its
+// rim goes that far under the grass, and a bake stands on its lowest point.
+export const MINE_DATUM = 0.34;
+// The static shops of the town's plan (Plans/DONE/knus-dorpscentrum.md), each one baked asset
+// `civic_<type>` with nothing that moves - drawn by one branch of `civic`, walked round
+// face by face (wallsOf) so the door can be reached between the crates on the pavement, and
+// set on the tavern's step (porchOverhang). The bakery and the butcher's are
+// shops too, but they have a fire and a shopkeeper and cases of their own.
+export const SHOPS = new Set(['grocer', 'apothecary', 'tailor', 'library', 'tearoom', 'wandmaker', 'sweetshop', 'owlpost', 'cauldron']);
+// The harbour's buildings (scripts/build-harbourhouses.py, Plans/DONE/havengebouwen.md): the warehouse,
+// the weigh house and the fisherman's hut, one baked asset `civic_<type>` each, with nothing that
+// moves. Drawn, walked round and stood on the tavern's step exactly as the shops are; they differ
+// in one thing, which is why they are not in SHOPS: three buildings come out of one .blend, so the
+// set's building_height is the warehouse's gable and each asks for its own rise instead.
+export const HARBOUR_HOUSES = new Set(['warehouse', 'weighhouse', 'fishery']);
+// And the bakery's fire (scripts/build-bakery.py, web/js/countryside.js).
+export const isBakeryMoving = (n) => /^civic_bakery glow(:\d+)?$/.test(n);
+// The butcher's (scripts/build-butcher.py, web/js/butcher.js) - the awning and the sign too,
+// although they hang on the house: every part that moves is in the yard's asset.
+export const isButcherMoving = (n) => /^civic_butcher_yard (awning|sign|hang \d+|joint|slice|embers)(:\d+)?$/.test(n);
+// The quarry's (scripts/build-workshops.py, web/js/quarry.js): the treadwheel, the jib, its rope
+// and hook, the block it carries and the tub on the rail.
+export const isQuarryMoving = (n) => /^civic_quarry_yard (wheel|jib|rope|hook|block|tub)(:\d+)?$/.test(n);
+// And the Batavia's (scripts/build-batavia.py, web/js/batavia.js): her five flags, each baked
+// with its origin at the middle of its hoist, left out of the hull and flown on their own.
+export const isBataviaMoving = (n) => /^batavia (flag|pennant) /.test(n);
+
+// ---------------------------------------------------------------- the ship
+// The Batavia on the roads (Plans/DONE/batavia.md): one bake, and the three ships an island can
+// earn drawn from it. `civic:ship` is her as she was modelled; `civic:ship:2` and `:3` are the
+// same hull in other paint, chosen from the id alone so every page and every visitor paints
+// them alike. Only the three livery parts change - scripts/build-batavia.py gathers every
+// face in those colours into them wherever it is on her - so a second ship is a different
+// ship for nothing: the same material, the same one draw call. The ensign and the jack stay
+// the Prinsenvlag on all three; `flag` repaints the main truck's flag and the pennants,
+// stripe by stripe, top first (null keeps the bake's).
+export const SHIP_LIVERIES = Object.freeze([
+  Object.freeze({ name: 'oak and green', topsides: null, panel: null, accent: null, flag: null }),
+  Object.freeze({ name: 'blue and gold', topsides: 0x4b3b2d, panel: 0x2d4b7c, accent: 0xc49a36, flag: [0x274a8c, 0xf3efe5, 0x274a8c] }),
+  Object.freeze({ name: 'red and black', topsides: 0x6c4a2f, panel: 0x8c2d24, accent: 0x262220, flag: [0xb3302a, 0xf3efe5, 0xb3302a] }),
+]);
+export function shipLivery(id) {
+  const m = /^civic:ship(?::(\d+))?$/.exec(String(id));
+  const k = m ? (m[1] ? Number(m[1]) - 1 : 0) : hash32(String(id));
+  return SHIP_LIVERIES[((k % SHIP_LIVERIES.length) + SHIP_LIVERIES.length) % SHIP_LIVERIES.length];
+}
+// Which colour of the livery a part takes: her skin (`batavia livery ...`) and what is on it
+// (`batavia trim ...`) alike. Kept as two sets of parts by the bake only so that shipSolids
+// can tell her side from a quarter gallery.
+const liveryRole = (name) => (/^batavia (?:livery|trim) (topsides|panel|accent)$/.exec(name) || [])[1] || null;
+
+// How deep she sits: the bake's `anchor.waterline`, the one number the island lowers her by,
+// exactly as the dock set is lowered by QUAY_DECK - DOCK_DECK. She is modelled keel on the
+// ground like every other building (scripts/model-rules.mjs), so it is her draught.
+export function shipDraught() {
+  const w = models.anchorsOf('batavia').waterline;
+  return w ? w[1] : 0;
+}
+
+// Where her side is, to a swimmer and to a boat: the plan of her skin from just under the
+// water to the waist rail, in slabs a unit long along her, measured off the bake - the hull
+// and livery parts only, her skin, so the float and the ladder beside her stay water you can
+// swim up to and the head rails and quarter galleries (the trim) overhang it as they do. The
+// rudder is left out with them: it is under the counter, and a tenth of a unit of it at most.
+// Each slab carries `hull`, how high her main deck stands over the sea, which walk.js
+// hands a boat's bow point and probes instead of the sea bed (boat.js hullOver). A rectangle
+// with a height rather than a deck on the level map, because the levels are a cell each and
+// her side falls on no cell edge: on the 4 by 16 plot it is 0.6 in from the plot's side, so a
+// level on her cells either stopped a Benchy 0.6 off her or let its bow 0.4 into her, and a
+// level beside her was a floor in the air that "step ashore" could put you on.
+const SHIP_SLAB = 1.0;
+export function shipSolids(draught = shipDraught()) {
+  const deck = (models.anchorsOf('batavia')['deck.waist.lo'] || [0, draught + 1.1, 0])[1];
+  const lo = draught - 0.05, hi = deck + 0.25;
+  const slabs = new Map();
+  for (const name of models.assetParts('batavia')) {
+    if (!/^batavia (hull|livery)/.test(name)) continue;
+    const { positions: p, at } = models.part(name);
+    for (let i = 0; i < p.length; i += 9) {
+      let y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity, x = 0;
+      for (let k = i; k < i + 9; k += 3) {
+        const y = p[k + 1] + at[1], z = p[k + 2] + at[2];
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+        if (z < z0) z0 = z;
+        if (z > z1) z1 = z;
+        x = Math.max(x, Math.abs(p[k] + at[0]));
+      }
+      if (y1 < lo || y0 > hi) continue;
+      for (let s = Math.floor(z0 / SHIP_SLAB); s * SHIP_SLAB <= z1; s++) {
+        const a = Math.max(z0, s * SHIP_SLAB), b = Math.min(z1, (s + 1) * SHIP_SLAB);
+        if (b < a) continue;
+        const slab = slabs.get(s) || { z0: Infinity, z1: -Infinity, hx: 0 };
+        slab.z0 = Math.min(slab.z0, a);
+        slab.z1 = Math.max(slab.z1, b);
+        slab.hx = Math.max(slab.hx, x);
+        slabs.set(s, slab);
+      }
+    }
+  }
+  return [...slabs.entries()].sort((a, b) => a[0] - b[0]).filter(([, s]) => s.z1 > s.z0)
+    .map(([, s]) => ({ x: 0, z: (s.z0 + s.z1) / 2, hx: s.hx, hz: (s.z1 - s.z0) / 2, hull: deck - draught }));
+}
+
+// Where an asset's anchors end up once meshAsset has put it somewhere. Same arithmetic,
+// and it has to be the same arithmetic: a chimney whose smoke comes out half a unit from
+// its pot is the kind of thing nobody sees until the island is running at dusk.
+export function meshAnchors(name, o = {}) {
+  const sx = o.sx ?? 1, sy = o.sy ?? 1, sz = o.sz ?? 1;
+  const c = Math.cos(o.ry || 0), s = Math.sin(o.ry || 0);
+  const out = {};
+  for (const [kind, at] of Object.entries(models.anchorsOf(name))) {
+    const x = at[0] * sx, z = at[2] * sz;
+    out[kind] = [(o.x || 0) + x * c + z * s, (o.y || 0) + at[1] * sy, (o.z || 0) - x * s + z * c];
+  }
+  return out;
+}
+
+// A colour a shade lighter or darker, for the two places one surface has to read against
+// another of the same material: the course of caps over its own ridge, and one house's
+// batch of tiles against its neighbour's.
+export function shade(hex, f) {
+  return new THREE.Color(hex).multiplyScalar(f).getHex();
+}
+
+// How the island paints a Blender composable it has stood on a house. Three of the slots
+// belong to the style rather than to the .blend - the plaster, the tiles, and a pane that
+// has to light up with every other window at dusk - and everything else keeps what
+// Blender gave it, because oak is oak and brick is brick whoever lives there.
+//
+// The rolls and courses - the caps along a ridge, the proud bottom row at the eaves - are
+// tiles too, and they are lifted a shade so the lines they draw survive being repainted.
+// Without that they come out the same number as the pitch they sit on and a roof goes
+// back to being one flat triangle, which is the thing the .blend was modelled to stop.
+const styleTint = (roofHex, pal) => (name, sheet) => (
+  sheet === 'wall' ? pal.wall
+    : sheet === 'roof' ? (/roll|course/.test(name) ? shade(roofHex, 1.16) : roofHex)
+      : /pane/.test(name) ? pal.glow
+        : null);
+
+// a box whose base sits at y = o.y
+// Water and soil are modelled flush with the rim that holds them, which puts two faces
+// on exactly the same plane and leaves the depth buffer to guess - the hatched surfaces
+// on the well, the fountain and the flower beds. Lifting the inner surface by a hair
+// settles it: far below anything the eye can see at this scale, far above the precision
+// the depth buffer has to work with. Filled to the brim rather than a hair short of it,
+// which is also the way a fountain should look.
+const BRIM = 0.004;
+
+export function box(w, h, d, hex, o = {}) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  g.translate(0, h / 2, 0);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'box', [w, h, d], hex, o);
+}
+export function cylinder(rt, rb, h, seg, hex, o = {}) {
+  const g = new THREE.CylinderGeometry(rt, rb, h, seg);
+  g.translate(0, h / 2, 0);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'cylinder', [rt, rb, h, seg], hex, o);
+}
+export function cone(r, h, seg, hex, o = {}) {
+  const g = new THREE.ConeGeometry(r, h, seg);
+  g.translate(0, h / 2, 0);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'cone', [r, h, seg], hex, o);
+}
+export function dome(r, hex, o = {}) {
+  const g = new THREE.SphereGeometry(r, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'dome', [r], hex, o);
+}
+export function sphere(r, hex, o = {}) {
+  const g = new THREE.SphereGeometry(r, 7, 5);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'sphere', [r], hex, o);
+}
+// gable roof: a triangular prism, base at y = o.y, ridge running along x
+export function prismRoof(w, d, h, hex, o = {}) {
+  const hw = w / 2, hd = d / 2;
+  const v = [
+    -hw, 0, -hd, hw, 0, -hd, hw, 0, hd, -hw, 0, hd,   // 0..3 base
+    -hw, h, 0, hw, h, 0,                               // 4,5 ridge
+  ];
+  // Wound counter-clockwise seen from outside, or the whole roof is back-face culled
+  // and you look straight through the house.
+  const f = [
+    0, 5, 1, 0, 4, 5,   // the slope facing -z
+    2, 4, 3, 2, 5, 4,   // the slope facing +z
+    0, 3, 4, 1, 5, 2,   // the two gable ends
+    0, 2, 3, 0, 1, 2,   // the underside
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex(f);
+  return note(place(finish(g, hex, 0, sheetOf(o, 'roof')), o), 'prismRoof', [w, d, h], hex, o);
+}
+export function pyramidRoof(w, d, h, hex, o = {}) {
+  const g = new THREE.ConeGeometry(0.7071, h, 4);
+  g.rotateY(Math.PI / 4);
+  g.scale(w, 1, d);
+  g.translate(0, h / 2, 0);
+  return note(place(finish(g, hex, 0, sheetOf(o, 'roof')), o), 'pyramidRoof', [w, d, h], hex, o);
+}
+// A flat triangle or quad, given 3 or 4 points. Used for sails, fins and pennants.
+export function quad(pts, hex, o = {}) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3));
+  g.setIndex(pts.length === 3 ? [0, 1, 2, 0, 2, 1] : [0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]);
+  return note(place(finish(g, hex, o.emissive || 0, sheetOf(o)), o), 'quad', [pts], hex, o);
+}
+
+function merge(parts) {
+  const list = parts.filter(Boolean);
+  // mergeGeometries will only weld shapes that agree on which attributes exist, and
+  // settlers.js and avatar.js build their figures by merging a capsule of their own with
+  // box() and sphere() from this file. Put `aSheet` on every primitive as it is made and
+  // their merge stops dead, on a line in a file this one has no business breaking. So a
+  // part says which sheet it wants only when it wants one, and the zeroes are filled in
+  // here, where the loaf is a building and nothing else is in it.
+  let n = 0;
+  for (const g of list) if (g.attributes.aSheet) n++;
+  if (n && n < list.length) {
+    for (const g of list) {
+      if (g.attributes.aSheet) continue;
+      g.setAttribute('aSheet', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    }
+  }
+  const g = mergeGeometries(list, false);
+  g.computeVertexNormals();
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+
+// props.js builds its shapes out of these same primitives and needs the same filling in,
+// so it merges with this rather than with a copy of it that had drifted: a prop made of a
+// Blender part, which carries a sheet, and a cylinder, which does not, came out of the
+// copy with the sheet thrown away. See the note inside merge() for why the zeroes are
+// filled in here and not in finish().
+export { merge as mergeParts };
+
+// ---------------------------------------------------------------- the kit
+// Places one piece inside a sub-assembly: its offset turns with the assembly, and so
+// does the piece, which is what lets a bench stand against a wall at an angle without
+// every number in it being rewritten by hand.
+function inside(a, o = {}) {
+  const c = Math.cos(a.ry || 0), s = Math.sin(a.ry || 0);
+  const x = o.x || 0, z = o.z || 0;
+  return {
+    ...o,
+    x: (a.x || 0) + x * c + z * s,
+    y: (a.y || 0) + (o.y || 0),
+    z: (a.z || 0) - x * s + z * c,
+    ry: (o.ry || 0) + (a.ry || 0),
+  };
+}
+
+// The pieces that keep coming back, each as one named thing rather than the boxes it
+// happens to be: a window, a door, a bench. The builders below reach for them, and the
+// model editor offers the same list when you want one more - which is the whole point
+// of giving them names. `defaults` is what the editor puts in its number fields; every
+// piece also takes the placement `{ x, y, z, ry }` that `inside` spreads over its parts.
+export const KIT = {
+  window: {
+    label: 'Window',
+    defaults: { w: 0.13, h: 0.17, d: 0.04, hex: C.glass },
+    build: (parts, a) => group('window', () => {
+      parts.push(box(a.w, a.h, a.d, a.hex, inside(a, { emissive: 1 })));
+    }, a),
+  },
+  door: {
+    label: 'Door',
+    defaults: { w: 0.16, h: 0.26, d: 0.05, hex: C.darkWood },
+    build: (parts, a) => group('door', () => {
+      parts.push(box(a.w, a.h, a.d, a.hex, inside(a, {})));
+    }, a),
+  },
+  bench: {
+    label: 'Bench',
+    defaults: { w: 0.46, hex: C.plank },
+    build: (parts, a) => group('bench', () => {
+      const lx = a.w / 2 - 0.05;
+      for (const x of [-lx, lx]) {
+        parts.push(box(0.04, 0.2, 0.04, C.iron, inside(a, { x, z: -0.05 })));
+        parts.push(box(0.04, 0.2, 0.04, C.iron, inside(a, { x, z: 0.05 })));
+      }
+      parts.push(box(a.w, 0.035, 0.16, a.hex, inside(a, { y: 0.2 })));
+      parts.push(box(a.w, 0.17, 0.03, a.hex, inside(a, { y: 0.22, z: -0.07, rx: -0.16 })));
+    }, a),
+  },
+  table: {
+    label: 'Table',
+    defaults: { r: 0.13, h: 0.2, hex: C.plank },
+    build: (parts, a) => group('table', () => {
+      parts.push(cylinder(0.035, 0.045, a.h, 6, C.darkWood, inside(a, {})));
+      parts.push(cylinder(a.r, a.r, 0.025, 8, a.hex, inside(a, { y: a.h })));
+    }, a),
+  },
+  chair: {
+    label: 'Chair',
+    defaults: { w: 0.09, h: 0.12, hex: C.plank },
+    build: (parts, a) => group('chair', () => {
+      for (const [lx, lz] of [[-0.032, -0.032], [0.032, -0.032], [-0.032, 0.032], [0.032, 0.032]]) {
+        parts.push(box(0.014, a.h, 0.014, C.darkWood, inside(a, { x: lx, z: lz })));
+      }
+      parts.push(box(a.w, 0.022, a.w, a.hex, inside(a, { y: a.h })));
+      parts.push(box(a.w, 0.12, 0.018, C.darkWood, inside(a, { y: a.h + 0.022, z: -0.036 })));
+    }, a),
+  },
+};
+
+// ---------------------------------------------------------------- pieces
+function windowsOn(parts, pal, { w, h, y0, count, ry = 0 }) {
+  const hw = w / 2 + 0.005;
+  const spots = [
+    { x: -w * 0.22, z: hw, ry: 0 }, { x: w * 0.22, z: hw, ry: 0 },
+    { x: hw, z: 0, ry: Math.PI / 2 }, { x: -hw, z: 0, ry: Math.PI / 2 },
+    { x: -w * 0.22, z: -hw, ry: 0 }, { x: w * 0.22, z: -hw, ry: 0 },
+  ];
+  for (let i = 0; i < Math.min(count, spots.length); i++) {
+    const s = spots[i];
+    KIT.window.build(parts, { ...KIT.window.defaults, hex: pal.glow, x: s.x, y: y0, z: s.z, ry: s.ry });
+  }
+  void h; void ry;
+}
+function door(parts, pal, w) {
+  KIT.door.build(parts, { ...KIT.door.defaults, hex: pal.accent, z: w / 2 + 0.01 });
+}
+function foundation(parts, w, d) {
+  group('foundation', () => parts.push(box(w + 0.12, 0.34, d + 0.12, C.foundation, { y: -0.3, sheet: 'stone' })));
+}
+
+function timberFrame(parts, w, h, d, hex) {
+  const t = 0.035;
+  group('frame', () => {
+    for (const [x, z, ry] of [[0, d / 2, 0], [0, -d / 2, 0], [w / 2, 0, Math.PI / 2], [-w / 2, 0, Math.PI / 2]]) {
+      parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : -w * 0.3), y: 0, z, ry }));
+      parts.push(box(t, h, t, hex, { x: x + (ry ? 0 : w * 0.3), y: 0, z, ry }));
+      parts.push(box(w * 0.9, t, t, hex, { x, y: h - t, z, ry }));
+    }
+  });
+}
+
+// ---------------------------------------------------------------- roofs
+// How far a roof oversails the wall it stands on, all round. A Blender roof is modelled
+// on a unit square, so this is also the number that scales it: `dims.w + ROOF_OVERHANG`
+// is what `prismRoof(dims.w + 0.14, ...)` was passing by hand on every line before.
+const ROOF_OVERHANG = 0.14;
+
+// The top of a heap of parts. A Blender roof knows its own height and the caller has just
+// scaled it by an amount the rng chose, so reading the answer back off the geometry is
+// both cheaper than a table of model heights in this file and impossible to leave stale
+// when the .blend changes.
+function riseOf(parts) {
+  let y = -Infinity;
+  for (const g of parts) {
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) if (p.getY(i) > y) y = p.getY(i);
+  }
+  return Number.isFinite(y) ? y : 0;
+}
+
+// How tall an asset is at its own scale, straight off the baked arrays. Needed before
+// anything is built: a chimney is stretched to clear the roof it comes out of, and that
+// sum wants the stack's own height on one side of it. Measured once per name.
+const assetRise = (() => {
+  const cache = new Map();
+  return (name) => {
+    if (!cache.has(name)) {
+      let y = 0;
+      for (const p of models.assetParts(name)) {
+        const part = models.part(p);
+        for (let i = 1; i < part.positions.length; i += 3) {
+          const v = part.positions[i] + part.at[1];
+          if (v > y) y = v;
+        }
+      }
+      cache.set(name, y);
+    }
+    return cache.get(name);
+  };
+})();
+
+// The rng houseBody has been handed since the day it was written and had never once used.
+// Every house on the island wore the same roof at the same pitch as every other house of
+// its tier, and a hillside of them read as an estate rather than as the village in the
+// reference illustration, whose charm is that no two roofs next door are quite the same.
+//
+// The roof is planned before a single part of it is built, and that order is the point of
+// the card: a chimney may not come up through a dormer, and where a dormer can sit depends
+// on which way the ridge runs. So every die is thrown here, the shapes are known before
+// anything is placed, and the things that hang off the roof are put against the answer
+// rather than each guessing for itself.
+function planRoof(rng, style, tier, modest) {
+  // Each style keeps the roof it was known for as its starting point - opus builds square
+  // and hipped, haiku round - and the rng varies it from there, so a district still reads
+  // as a district while no street in it repeats.
+  const family = style === 'haiku' ? 'roof_cone'
+    : style === 'opus' || (tier >= 2 && rng.chance(0.25)) ? 'roof_hip'
+      : 'roof_gable';
+  const variants = models.variants(family);
+  return {
+    family,
+    asset: variants.length ? rng.pick(variants) : null,
+    // A pitch a fifth either way is a generation of builders rather than a mistake, and
+    // it multiplies the model's own height rather than replacing it, so the steep gable
+    // and the shallow one stay a steep one and a shallow one.
+    pitch: rng.range(0.9, 1.2),
+    // Two of the three add-ons are luxuries. A modest GPU gets the roof and the chimney
+    // it smokes from and nothing else, because these are drawn three hundred times.
+    dormer: !modest && tier >= 2 && rng.chance(0.5),
+    dormerSide: rng.chance(0.5) ? 1 : -1,
+    turret: !modest && rng.chance(0.3),
+  };
+}
+
+// How high the roof is over a point on the plan: what a dormer is set into, and what a
+// chimney has to clear. A pitch falls away from its ridge at a constant rate and a cone
+// falls away from its own middle; a hip falls away in both directions, and answering it
+// as a pitch overstates it, which errs on the side of a chimney that is tall enough.
+function surfaceOf(plan, span, rise) {
+  const fall = (d) => Math.max(0, rise * (1 - 2 * d / span));
+  return plan.family === 'roof_cone'
+    ? (x, z) => fall(Math.hypot(x, z))
+    : (x, z) => fall(Math.abs(z));
+}
+
+// The roof itself, and the fallback that is also the history: every shape in the second
+// branch is the shape these houses wore before Blender, so a checkout with no
+// village-mesh.js in it boots and looks like the island of a week ago rather than not at
+// all. The two branches share the palette, which is what keeps a baked gable and a
+// prismRoof the same colour when they end up on the same street.
+function roofOn(parts, plan, dims, pal, roofHex, top) {
+  const span = dims.w + ROOF_OVERHANG;
+  let built;
+  if (plan.asset) {
+    // One uniform scale, with the pitch on top of it: the footprint has to be the wall's
+    // and the proportions have to be the model's, or a wide house gets a flat roof.
+    built = meshAsset(plan.asset, styleTint(roofHex, pal),
+      { y: top, sx: span, sy: span * plan.pitch, sz: span });
+  } else if (plan.family === 'roof_cone') {
+    built = [cone(dims.w * 0.82, (dims.roof + 0.16) * plan.pitch, 8, roofHex, { y: top - 0.02, sheet: 'roof' })];
+  } else if (plan.family === 'roof_hip') {
+    built = [pyramidRoof(span, span, (dims.roof + 0.06) * plan.pitch, roofHex, { y: top })];
+  } else {
+    built = [prismRoof(span, span, dims.roof * plan.pitch, roofHex, { y: top })];
+  }
+  for (const g of built) parts.push(g);
+  return riseOf(built) - top;
+}
+
+// ---------------------------------------------------------------- the yard
+// What a house puts out around itself. The reference illustration's charm is as much the
+// stuff lying about between the houses as the houses themselves: a handcart by the gable
+// end, a crate against the wall, cordwood stacked under the eaves, a line of washing out
+// the back. It is also the cheapest thing on the island - a yard piece is merged into the
+// same geometry as the house it belongs to, so a street of them is still one draw call
+// each - and all five of them are already modelled at true size in assets/props.
+//
+// What the yard is not free of. The door cell on +Z is where the path arrives and where a
+// settler stands. The eight cells round the house are also where lib/layout.mjs seats an
+// apprentice's shed. And the house reaches over the inner edge of all eight, by far more
+// at a manor with a wing than at a hut. So nothing here is placed by a number measured
+// once: a piece is offered a spot, its rectangle is worked out where it would stand, and
+// it is put down only if walk mode would still see a way past it.
+//
+// That last test is the point of this block and not decoration. mergeRects() glues two
+// rectangles together when the gap between them is too narrow to walk through, so a cart
+// set close against its own house makes one blob with it - and a blob that reaches round
+// the corner of the house covers the doorstep, which is the one cell the yard may not
+// have. Keeping every piece a rectangle of its own makes that impossible rather than
+// unlikely.
+//
+// Where a piece may stand, in the house's own frame, the door being +Z. Never [0, 1].
+const YARD_SPOTS = [
+  [-1, -1], [1, -1],                     // the back corners
+  [-1, 0], [1, 0],                       // the flanks
+  [0, -1],                               // straight out the back
+  [-1, 1], [1, 1],                       // beside the door, on the lane
+];
+
+// The five, with how far each reaches across x and along z as it is modelled. Written
+// down rather than measured off the geometry, because these are the numbers
+// tests/models.test.mjs holds the models to - a figure that reads itself checks nothing.
+const YARD_KIT = [
+  { asset: 'prop_cart', hx: 0.16, hz: 0.43 },
+  { asset: 'prop_crate', hx: 0.15, hz: 0.15 },
+  { asset: 'prop_woodpile', hx: 0.23, hz: 0.15 },
+  { asset: 'prop_barrel', hx: 0.12, hz: 0.12 },
+  { asset: 'prop_washline', hx: 0.12, hz: 0.43 },
+];
+
+// A piece lies along the wall it stands beside - which is how a cart is actually parked,
+// and what keeps its long side out of the lane. The wall runs along x behind the house and
+// along z beside it, so a piece whose own long side is the other way round gets a quarter
+// turn: the woodpile is stacked across x and the cart and the line run along z.
+function yardLie(piece, [sx, sz]) {
+  const wallAlongX = sx === 0;
+  const turn = wallAlongX !== (piece.hx >= piece.hz);
+  return { ry: turn ? Math.PI / 2 : 0, hx: turn ? piece.hz : piece.hx, hz: turn ? piece.hx : piece.hz };
+}
+
+// Two rectangles walk mode would glue into one. mergeRects()'s own condition, read the
+// other way round: separated by more than the gap on either axis and they stay two things
+// with a way between them.
+function wouldMerge(a, b) {
+  return !(a.x - a.hx - WALK_GAP > b.x + b.hx || b.x - b.hx - WALK_GAP > a.x + a.hx)
+    && !(a.z - a.hz - WALK_GAP > b.z + b.hz || b.z - b.hz - WALK_GAP > a.z + a.hz);
+}
+
+// Up to two pieces, from the same rng the roof was chosen with. Two rather than three
+// because a yard with three things in it stops reading as a yard and starts reading as a
+// depot, and one fewer for every apprentice: a shed is standing in one of these cells too
+// and nothing on this side knows which, so a yard filling up with sheds stops filling up
+// with carts. A modest GPU gets one at most.
+//
+// The parts come back rather than going into the loaf, because the porch has not been
+// built yet and porch() lifts everything it finds by the height of its own step. A cart
+// standing on the grass beside the house is not standing on the step.
+function yardOn(spec, rng, solids, modest) {
+  let want = Math.min(rng.int(3), modest ? 1 : 2) - (spec.sheds || []).length;
+  const kit = YARD_KIT.filter((k) => models.hasAsset(k.asset));
+  if (want <= 0 || !kit.length) return [];
+  const taken = [...solids];
+  const spots = [...YARD_SPOTS];
+  const out = [];
+  // Counted rather than read off `out`, which holds a part per box and cone of the model
+  // and would call one cart two pieces over.
+  while (taken.length - solids.length < want && spots.length) {
+    const spot = spots.splice(rng.int(spots.length), 1)[0];
+    const piece = rng.pick(kit);
+    const lie = yardLie(piece, spot);
+    // As far out as the yard goes, cell-centred on the axis it does not stand off. Pushed
+    // out rather than sat on the cell centre because the room is between the house and the
+    // plot edge, and it is the house that varies.
+    const at = {
+      x: spot[0] ? spot[0] * (YARD_REACH - lie.hx) : 0,
+      z: spot[1] ? spot[1] * (YARD_REACH - lie.hz) : 0,
+      hx: lie.hx, hz: lie.hz,
+    };
+    if (taken.some((r) => wouldMerge(at, r))) continue;
+    taken.push(at);
+    for (const g of meshAsset(piece.asset, 0xffffff, { x: at.x, z: at.z, ry: lie.ry })) out.push(g);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- houses
+// A tent is the one dwelling with neither plaster nor tiles on it, so the slot the island
+// owns is the band down its doorway: from the lane that is what tells you whose tent it
+// is, the way the walls and the roof do on a house.
+const tentTint = (pal) => (name) => (/band/.test(name) ? pal.trim : null);
+
+function houseBody(parts, spec, pal, rng, ctx = {}) {
+  const tier = TIER_INDEX[spec.tier] ?? 1;
+  const anchors = {};
+  const style = spec.style || 'unknown';
+  // A house on stilts over the shoreline has no yard: there is nothing under it to leave
+  // a cart on. Everything else gets one, a tent included - a tent with a woodpile and a
+  // barrel beside it is exactly the corner of the reference this card is aiming at.
+  const yard = (built) => (spec.harbour ? [] : yardOn(spec, rng, footprintOf(built, WALK_CLEARANCE), ctx.modest));
+
+  if (tier === 0) {                                   // tent
+    if (models.hasAsset('prop_tent')) {
+      for (const g of meshAsset('prop_tent', tentTint(pal))) parts.push(g);
+      parts.push(...meshAsset('addon_tent_camp'));
+      return { anchors, height: assetRise('prop_tent'), w: 0.8, yard: yard(parts) };
+    }
+    // The tent the island drew before Blender, and what a checkout with no props-mesh.js
+    // in it still gets.
+    parts.push(prismRoof(0.8, 0.86, 0.58, C.canvas, { sheet: null }));
+    parts.push(box(0.045, 0.64, 0.045, C.darkWood, { z: -0.41 }));
+    parts.push(box(0.3, 0.025, 0.035, pal.trim, { y: 0.24, z: 0.44 }));
+    return { anchors, height: 0.62, w: 0.84, yard: yard(parts) };
+  }
+
+  const dims = [
+    null,
+    { w: 0.88, h: 0.56, roof: 0.4, win: 2 },
+    { w: 1.0, h: 0.68, roof: 0.46, win: 3 },
+    { w: 1.08, h: 0.98, roof: 0.5, win: 4 },
+    { w: 1.14, h: 1.12, roof: 0.52, win: 5 },
+    { w: 1.18, h: 1.42, roof: 0.44, win: 6 },
+  ][tier];
+
+  const bodyAsset = 'house_' + spec.tier + '_a';
+  const hasBody = models.hasAsset(bodyAsset);
+  if (hasBody) {
+    parts.push(...meshAsset(bodyAsset, styleTint(pal.roof, pal)));
+    foundation(parts, dims.w, dims.w);
+  } else {
+  parts.push(box(dims.w, dims.h, dims.w, pal.wall, { sheet: 'wall' }));
+  foundation(parts, dims.w, dims.w);
+  door(parts, pal, dims.w);
+  windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.42, count: dims.win });
+  if (tier >= 3) windowsOn(parts, pal, { w: dims.w, h: dims.h, y0: dims.h * 0.12, count: 2 });
+
+  }
+
+  // Every roof is now chosen rather than tabulated. What is left of a style here is the
+  // detailing under it: opus keeps its stone string course, sonnet its timber frame, and
+  // the district still reads from the ground.
+  const plan = planRoof(rng, style, tier, ctx.modest);
+  // One batch of tiles per house, within a twelfth of the style's clay. A street of them
+  // is a street of kiln loads rather than one paint tin, and it is free.
+  const roofHex = shade(pal.roof, rng.range(0.94, 1.06));
+  if (style === 'opus') parts.push(box(dims.w + 0.06, 0.13, dims.w + 0.06, C.stone, { y: 0, sheet: 'stone' }));
+  if (!hasBody && style === 'sonnet') timberFrame(parts, dims.w, dims.h, dims.w, pal.trim);
+
+  let top = dims.h;
+  const span = dims.w + ROOF_OVERHANG;
+  const rise = roofOn(parts, plan, dims, pal, roofHex, top);
+  const surface = surfaceOf(plan, span, rise);
+  top += rise;
+
+  // A chimney on every house from its first hut upward, and the point of it is the anchor:
+  // main.js has known for a while how often a settler's chimney should puff and how far
+  // away to stop bothering, and until now there was nowhere on a house to puff from.
+  //
+  // It stands behind the ridge and a little off the centre line - which is where a dormer
+  // never is, and that is the rule this card exists to keep - and swaps to the other side
+  // when the style has already built a tower into that corner. It is drawn from the eaves
+  // plane up, the way a flue actually runs, and stretched so its pot clears the tiles
+  // around it whatever pitch the rng just chose: a stack tall enough for a shallow roof
+  // disappears into a steep one.
+  const towered = style === 'fable' && tier >= 2;
+  const cx = dims.w * (towered || tier === 5 ? 0.26 : -0.26);
+  const cz = -dims.w * (plan.family === 'roof_cone' ? 0.26 : 0.12);
+  if (models.hasAsset('addon_chimney_a')) {
+    const o = { x: cx, y: dims.h, z: cz };
+    o.sx = o.sz = Math.min(1.05, Math.max(0.8, dims.w / 1.08));
+    o.sy = Math.max(o.sx, (surface(cx, cz) + 0.20) / assetRise('addon_chimney_a'));
+    for (const g of meshAsset('addon_chimney_a', styleTint(roofHex, pal), o)) parts.push(g);
+    Object.assign(anchors, meshAnchors('addon_chimney_a', o));
+    top = Math.max(top, dims.h + assetRise('addon_chimney_a') * o.sy);
+  } else {
+    parts.push(box(0.12, 0.3, 0.12, C.brick, { x: cx, y: dims.h, z: cz }));
+    anchors.smoke = [cx, dims.h + 0.3, cz];
+  }
+
+  // A dormer breaks the front pitch, which is the difference between a roof and a lid. It
+  // is sized to the roof it sits in rather than given a height, because the same window
+  // on a shallow roof would stand clean over the ridge.
+  if (plan.dormer && models.hasAsset('addon_dormer_a')) {
+    const s = Math.min(1, Math.max(0.6, rise * 1.5));
+    const o = {
+      x: dims.w * 0.22 * plan.dormerSide, y: top - rise + rise * 0.05, z: span * 0.20,
+      sx: s, sy: s, sz: s,
+    };
+    for (const g of meshAsset('addon_dormer_a', styleTint(roofHex, pal), o)) parts.push(g);
+  }
+  // And a turret on the back corner the tower styles do not use, which is what the
+  // reference's houses have instead of a second storey. Its flag only flies if nothing
+  // else on the house has already claimed the one anchor main.js reads.
+  if (plan.turret && models.hasAsset('addon_turret_a')) {
+    const o = { x: dims.w * 0.42, z: -dims.w * 0.42 };
+    o.sx = o.sz = 1;
+    o.sy = Math.min(1.35, Math.max(0.75, (dims.h + 0.34) / assetRise('addon_turret_a')));
+    for (const g of meshAsset('addon_turret_a', styleTint(roofHex, pal), o)) parts.push(g);
+    const turretTop = assetRise('addon_turret_a') * o.sy;
+    if (!anchors.flag) Object.assign(anchors, meshAnchors('addon_turret_a', o));
+    top = Math.max(top, turretTop);
+  }
+  if (tier >= 4) {                                     // wing
+    parts.push(box(0.44, dims.h * 0.72, 0.5, pal.wall, { x: dims.w * 0.62, z: -0.1, sheet: 'wall' }));
+    parts.push(prismRoof(0.52, 0.58, 0.28, roofHex, { x: dims.w * 0.62, y: dims.h * 0.72, z: -0.1, ry: Math.PI / 2 }));
+    // Two low fence sections leave a real opening in front of the door.
+    for (const x of [-0.60, -0.27, 0.27, 0.60]) {
+      parts.push(box(0.04, 0.18, 0.04, C.darkWood, { x, z: 0.62 }));
+    }
+    for (const x of [-0.435, 0.435]) {
+      parts.push(box(0.33, 0.03, 0.03, C.darkWood, { x, y: 0.13, z: 0.62 }));
+    }
+  }
+  if (tier === 5) {                                    // keep: corner tower + battlements
+    parts.push(cylinder(0.2, 0.22, dims.h + 0.4, 8, pal.wall, { x: -dims.w * 0.42, z: -dims.w * 0.42, sheet: 'wall' }));
+    parts.push(cone(0.26, 0.32, 8, roofHex, { x: -dims.w * 0.42, y: dims.h + 0.4, z: -dims.w * 0.42, sheet: 'roof' }));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      parts.push(box(0.1, 0.1, 0.1, pal.wall, { x: Math.cos(a) * dims.w * 0.42, y: dims.h, z: Math.sin(a) * dims.w * 0.42 }));
+    }
+    anchors.flag = [0, top + 0.34, 0];
+    parts.push(box(0.025, 0.4, 0.025, C.darkWood, { y: top }));
+  }
+
+  // Fable builds upward: an observatory tower with a copper dome and a telescope.
+  if (style === 'fable' && tier >= 2) {
+    const tx = -dims.w * 0.36, tz = -dims.w * 0.36, th = dims.h + 0.45 + tier * 0.06;
+    parts.push(cylinder(0.21, 0.23, th, 14, pal.wall, { x: tx, z: tz, sheet: 'wall' }));
+    parts.push(dome(0.25, pal.accent, { x: tx, y: th, z: tz }));
+    parts.push(cone(0.05, 0.24, 6, C.copper, { x: tx, y: th + 0.2, z: tz }));
+    parts.push(box(0.09, 0.12, 0.03, pal.glow, { x: tx, y: th - 0.28, z: tz + 0.22, emissive: 1 }));
+    parts.push(cylinder(0.028, 0.04, 0.3, 6, C.copper, { rz: -0.6, x: tx + 0.2, y: th + 0.12, z: tz + 0.06 }));
+    top = Math.max(top, th + 0.42);
+  }
+  return { anchors, height: top, w: dims.w, yard: yard(parts) };
+}
+
+function ornament(parts, name, pal, dims, anchors) {
+  const w = dims.w;
+  const tent = dims.tier === 0;
+  switch (name) {
+    case 'forge':
+      if (tent) {   // no chimney on a tent: a brazier on the ground instead
+        parts.push(cylinder(0.1, 0.13, 0.14, 7, C.brick, { x: -0.46, z: -0.4 }));
+        parts.push(cylinder(0.09, 0.09, 0.03, 7, 0x3a2a22, { x: -0.46, y: 0.14, z: -0.4 }));
+        anchors.smoke = [-0.46, 0.2, -0.4];
+      } else {
+        parts.push(box(0.15, 0.5, 0.15, C.brick, { x: -w * 0.34, y: dims.height * 0.55, z: -w * 0.34 }));
+        anchors.smoke = [-w * 0.34, dims.height * 0.55 + 0.5, -w * 0.34];
+      }
+      break;
+    case 'lumber': {
+      const s = tent ? 0.72 : 1;
+      for (let i = 0; i < 3; i++) parts.push(box(0.3 * s, 0.055, 0.1 * s, C.plank, { x: 0.44, y: 0.02 + i * 0.06, z: 0.42 - i * 0.02, ry: 0.2 }));
+      parts.push(box(0.028, 0.17, 0.028, C.darkWood, { x: 0.34, z: 0.62, rz: 0.32 }));
+      parts.push(box(0.028, 0.17, 0.028, C.darkWood, { x: 0.55, z: 0.62, rz: -0.32 }));
+      parts.push(box(0.24, 0.025, 0.025, C.darkWood, { x: 0.445, y: 0.16, z: 0.62 }));
+      break;
+    }
+    case 'lantern':
+      parts.push(cylinder(0.02, 0.025, 0.5, 5, C.darkWood, { x: -0.46, z: 0.46 }));
+      parts.push(box(0.1, 0.12, 0.1, 0xffb347, { x: -0.46, y: 0.5, z: 0.46, emissive: 1 }));
+      parts.push(box(0.13, 0.02, 0.13, C.iron, { x: -0.46, y: 0.62, z: 0.46 }));
+      break;
+    case 'weathervane': {
+      if (tent) {   // a pennant on the tent pole
+        parts.push(quad([[0, 0.5, -0.34], [0, 0.62, -0.34], [0.26, 0.55, -0.34]], pal.trim, {}));
+        break;
+      }
+      const y = dims.height + 0.04;
+      parts.push(cylinder(0.012, 0.012, 0.26, 4, C.iron, { y }));
+      parts.push(box(0.2, 0.02, 0.02, C.iron, { y: y + 0.24 }));
+      parts.push(quad([[0.02, y + 0.16, 0], [0.02, y + 0.31, 0], [0.13, y + 0.235, 0]], C.copper, {}));
+      break;
+    }
+    case 'pigeons': {
+      const base = tent ? 0.0 : dims.height - 0.05;
+      const px = tent ? 0.46 : w * 0.26, pz = tent ? 0.3 : w * 0.2;
+      parts.push(cylinder(0.02, 0.024, tent ? 0.6 : 0.3, 4, C.darkWood, { x: px, y: base, z: pz }));
+      const loftY = base + (tent ? 0.6 : 0.3);
+      parts.push(box(0.19, 0.15, 0.15, C.wood, { x: px, y: loftY, z: pz }));
+      parts.push(box(0.05, 0.05, 0.02, 0x2b2b2b, { x: px, y: loftY + 0.05, z: pz + 0.08 }));
+      parts.push(sphere(0.035, 0xf4f4f4, { x: px + 0.11, y: loftY + 0.19, z: pz }));
+      break;
+    }
+    case 'banner': {
+      const y = tent ? 0.42 : dims.height - 0.04;
+      parts.push(box(0.022, 0.34, 0.022, C.darkWood, { x: w * 0.36, y, z: w * 0.3 }));
+      anchors.flag = [w * 0.36, y + 0.34, w * 0.3];
+      break;
+    }
+    case 'lightningrod': {
+      const y = tent ? 0.4 : dims.height;
+      parts.push(cylinder(0.012, 0.012, 0.42, 4, C.iron, { x: -w * 0.3, y }));
+      parts.push(sphere(0.028, C.copper, { x: -w * 0.3, y: y + 0.44 }));
+      break;
+    }
+    default: break;
+  }
+}
+
+// ---------------------------------------------------------------- sheds
+function shed(parts, spec, pal) {
+  const t = spec.shedType || 'other';
+  const anchors = {};
+  if (t === 'explore') {
+    parts.push(cone(0.3, 0.5, 6, C.canvas, {}));
+    parts.push(box(0.03, 0.3, 0.03, C.darkWood, { x: 0.24, z: 0.1, rz: 0.28 }));
+    parts.push(box(0.03, 0.3, 0.03, C.darkWood, { x: 0.32, z: -0.06, rz: -0.18 }));
+    parts.push(cylinder(0.028, 0.042, 0.28, 6, C.copper, { rz: -0.55, x: 0.3, y: 0.34, z: 0.02 }));
+    return { anchors, height: 0.55 };
+  }
+  if (t === 'plan') {
+    parts.push(box(0.44, 0.3, 0.42, pal.wall, { sheet: 'wall' }));
+    parts.push(box(0.1, 0.2, 0.03, pal.accent, { y: 0, z: 0.21 }));
+    // a single pitch roof, clearly slanted
+    const roof = prismRoof(0.54, 0.5, 0.22, pal.roof, { y: 0.3 });
+    parts.push(roof);
+    parts.push(box(0.5, 0.03, 0.03, pal.trim, { y: 0.3, z: 0.24 }));
+    // the drawing board leaning against the wall
+    const board = box(0.34, 0.32, 0.025, C.blueprint, { x: 0.28, y: 0.02, z: 0.1, ry: Math.PI / 2 });
+    board.rotateZ(0);
+    parts.push(board);
+    parts.push(box(0.02, 0.02, 0.22, C.paper, { x: 0.295, y: 0.24, z: 0.1 }));
+    parts.push(box(0.02, 0.02, 0.15, C.paper, { x: 0.295, y: 0.18, z: 0.13 }));
+    parts.push(box(0.02, 0.02, 0.19, C.paper, { x: 0.295, y: 0.12, z: 0.09 }));
+    return { anchors, height: 0.54 };
+  }
+  if (t === 'general') {
+    parts.push(box(0.46, 0.32, 0.46, pal.wall, { sheet: 'wall' }));
+    parts.push(prismRoof(0.54, 0.54, 0.2, pal.roof, { y: 0.32 }));
+    parts.push(box(0.09, 0.1, 0.09, C.brick, { x: -0.15, y: 0.32, z: -0.15 }));
+    parts.push(cylinder(0.07, 0.08, 0.12, 7, C.darkWood, { x: 0.3, z: 0.22 }));
+    parts.push(box(0.17, 0.055, 0.07, C.anvil, { x: 0.3, y: 0.12, z: 0.22 }));
+    return { anchors, height: 0.52 };
+  }
+  if (t === 'guide') {
+    parts.push(box(0.44, 0.3, 0.4, pal.wall, { sheet: 'wall' }));
+    parts.push(box(0.44, 0.05, 0.1, C.wood, { y: 0.3, z: 0.2 }));
+    const awn = box(0.5, 0.04, 0.3, C.stripe, { y: 0.32, z: 0.28 });
+    awn.rotateX(-0.3);
+    parts.push(awn);
+    parts.push(box(0.11, 0.03, 0.08, C.red, { y: 0.32, z: 0.16 }));
+    parts.push(box(0.11, 0.03, 0.08, C.blue, { y: 0.355, z: 0.14 }));
+    parts.push(box(0.11, 0.03, 0.08, C.gold, { y: 0.39, z: 0.17 }));
+    return { anchors, height: 0.44 };
+  }
+  parts.push(box(0.42, 0.3, 0.42, C.wood));
+  parts.push(prismRoof(0.5, 0.5, 0.18, C.darkWood, { y: 0.3 }));
+  return { anchors, height: 0.48 };
+}
+
+// ---------------------------------------------------------------- civic
+// Two boards stand on the square and they are the same piece of furniture in different
+// paint: posts, a panel, a frame, a little roof and one pinned note per open card. The
+// sprint board is cork under a plank roof; the island's own board is slate in an iron
+// frame under copper, so which is which reads from across the green.
+function noticeBoard(parts, spec, { panel, frame, roof, sign, note, pins }) {
+  const W = 1.7, H = 1.0;
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: -W / 2 + 0.08, z: 0 }));
+  parts.push(cylinder(0.06, 0.07, 1.05, 6, frame, { x: W / 2 - 0.08, z: 0 }));
+  parts.push(box(W, H, 0.06, panel, { y: 0.62, z: 0.02 }));                     // the panel
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 0.58, z: 0.02 }));             // its frame
+  parts.push(box(W + 0.1, 0.07, 0.1, frame, { y: 1.62, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: -W / 2 - 0.02, y: 0.58, z: 0.02 }));
+  parts.push(box(0.07, H + 0.14, 0.1, frame, { x: W / 2 + 0.02, y: 0.58, z: 0.02 }));
+  parts.push(prismRoof(W + 0.34, 0.44, 0.22, roof, { y: 1.69, z: 0.02 }));
+  parts.push(box(0.62, 0.16, 0.03, sign, { y: 1.72, z: 0.2 }));                 // the sign
+  // one pinned card per open issue, up to twelve, in three rows
+  const cards = Math.max(1, Math.min(12, spec.cards == null ? 6 : spec.cards));
+  for (let i = 0; i < cards; i++) {
+    const col = i % 4, row = Math.floor(i / 4);
+    const x = -0.6 + col * 0.4, y = 1.34 - row * 0.31;
+    const tilt = ((i * 37) % 13 - 6) * 0.012;
+    parts.push(box(0.3, 0.23, 0.012, note, { x, y, z: 0.06, rz: tilt }));
+    parts.push(box(0.19, 0.018, 0.014, 0xb9b2a4, { x: x - 0.03, y: y + 0.06, z: 0.068, rz: tilt }));
+    parts.push(box(0.13, 0.018, 0.014, 0xb9b2a4, { x: x - 0.06, y: y + 0.02, z: 0.068, rz: tilt }));
+    parts.push(sphere(0.024, pins[i % pins.length], { x, y: y + 0.1, z: 0.078 }));
+  }
+  return 2.1;
+}
+
+function civic(parts, spec, rng) {
+  const anchors = {};
+  const animated = {};
+  // The shops of the town's plan (Plans/DONE/knus-dorpscentrum.md): one baked asset each, in the set
+  // named after the shop (scripts/build-<shop>.py), at the tavern's size and under the same
+  // terracotta, standing towards the street on its lot, and with nothing that moves.
+  if (SHOPS.has(spec.civicType)) {
+    const name = `civic_${spec.civicType}`;
+    parts.push(...meshAsset(name));
+    Object.assign(anchors, meshAnchors(name));
+    return { anchors, animated, height: models.heightOf(name) };
+  }
+  if (HARBOUR_HOUSES.has(spec.civicType)) {
+    const name = `civic_${spec.civicType}`;
+    parts.push(...meshAsset(name));
+    Object.assign(anchors, meshAnchors(name));
+    return { anchors, animated, height: assetRise(name) };
+  }
+  switch (spec.civicType) {
+    case 'townhall': {
+      // The tavern's plaster, oak and tile palette, with a civic cupola and facade.
+      parts.push(...meshAsset('townhall'));
+      Object.assign(anchors, meshAnchors('townhall'));
+      return { anchors, animated, height: models.heightOf('townhall') };
+    }
+    case 'well':
+      // Nine segments is a nonagon, and a nonagon standing on the town square next to a
+      // round fountain reads as a mistake rather than as a well. Twenty-two is round at
+      // every distance the island is ever looked at from, and costs a few dozen
+      // triangles on one object that exists once per village.
+      //
+      // The drum is stacked stone, and it wears a coping that oversails it: the shadow
+      // that overhang throws is what makes a low round thing read as a wall you could
+      // sit on rather than as a barrel.
+      parts.push(cylinder(0.3, 0.32, 0.32, 22, C.stone, { sheet: 'stone' }));
+      parts.push(cylinder(0.345, 0.335, 0.07, 22, C.stone, { y: 0.32, sheet: 'stone' }));
+      parts.push(cylinder(0.25, 0.25, 0.06, 22, 0x2a4a5a, { y: 0.33 + BRIM }));
+      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: -0.24, y: 0.39 }));
+      parts.push(box(0.04, 0.5, 0.04, C.darkWood, { x: 0.24, y: 0.39 }));
+      parts.push(prismRoof(0.62, 0.5, 0.2, C.plank, { y: 0.89, ry: Math.PI / 2, sheet: 'roof' }));
+      parts.push(cylinder(0.05, 0.045, 0.09, 8, C.wood, { y: 0.65 }));
+      return { anchors, animated, height: 1.13 };
+    case 'watertower': {
+      // The one thing in the reference illustration the island had no way of drawing: a
+      // plank tank up on battered, braced legs, with a ladder up the front and a board
+      // hanging under the deck. It arrives as a whole Blender asset rather than as a
+      // composition, because what makes it read is forty rods of timber framing and forty
+      // rods written out here would be unreadable and unmaintainable both.
+      //
+      // The branch below is a fallback and not a design - four posts, a drum and a lid -
+      // so that a checkout with no baked set still boots and still puts one on its plot.
+      if (models.hasAsset('civic_watertower')) {
+        for (const g of meshAsset('civic_watertower')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_watertower'));
+        return { anchors, animated, height: assetRise('civic_watertower') };
+      }
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
+        parts.push(cylinder(0.04, 0.05, 1.56, 6, C.darkWood, { x, z, sheet: 'plank' }));
+      }
+      parts.push(box(0.86, 0.05, 0.86, C.plank, { y: 1.56, sheet: 'plank' }));
+      parts.push(cylinder(0.38, 0.38, 0.86, 12, C.wood, { y: 1.61, sheet: 'plank' }));
+      parts.push(cone(0.44, 0.32, 12, C.darkWood, { y: 2.47, sheet: 'roof' }));
+      anchors.sign = [0.28, 1.37, 0.68];
+      return { anchors, animated, height: 2.9 };
+    }
+    case 'market': {
+      // The seed merchant is authored as one Blender asset now: a timber shop with a
+      // striped canopy, labelled drawers, open bins and sacks of stock. Keep the old
+      // three-stall composition below as a fallback so an unbaked development checkout
+      // can still open its market instead of leaving an empty square.
+      if (models.hasAsset('civic_seed_stall')) {
+        for (const g of meshAsset('civic_seed_stall')) parts.push(g);
+        Object.assign(anchors, meshAnchors('civic_seed_stall'));
+        return { anchors, animated, height: assetRise('civic_seed_stall') };
+      }
+      // Three stalls, and the point of them is that they are three different stalls. The
+      // market is what the island puts up at ten settlers and it used to be four sticks, a
+      // roof and two spheres, three times over - which reads as scaffolding rather than as
+      // a morning on the square. Now each one has a trade: a fruiterer, a fishmonger and a
+      // baker, told apart by the colour of the awning and by what is out on the counter.
+      //
+      // The awnings keep their own colour - they are painted canvas and the roof sheet
+      // would make them tiled - and the timber takes the plank sheet, which is what the
+      // deck of the bridge is drawn on.
+      const STALLS = [
+        { cloth: C.red, trade: 0 },
+        { cloth: C.blue, trade: 1 },
+        { cloth: C.gold, trade: 2 },
+      ];
+      const fruit = [0xe04a3a, 0xf2c53d, 0x6fb84a, 0xd96fa8];
+      for (let i = 0; i < 3; i++) {
+        const x = -0.74 + i * 0.74;
+        const st = STALLS[i];
+        group('stall', () => {
+          for (const [dx, dz] of [[-0.3, -0.25], [0.3, -0.25], [-0.3, 0.25], [0.3, 0.25]]) {
+            parts.push(cylinder(0.026, 0.032, 0.48, 6, C.darkWood, { x: x + dx, z: dz, sheet: 'plank' }));
+          }
+          // the counter: a board on a boarded front, with a crate stowed under it
+          parts.push(box(0.66, 0.045, 0.36, C.plank, { x, y: 0.26, z: 0, sheet: 'plank' }));
+          parts.push(box(0.64, 0.26, 0.03, C.wood, { x, y: 0, z: 0.185, sheet: 'plank' }));
+          parts.push(box(0.22, 0.17, 0.17, C.wood, { x: x - 0.17, z: -0.08, sheet: 'plank' }));
+          // the awning, and the scallops hanging off its front edge - little tabs with a
+          // ball on the end of each, which is a valance at this size and at this distance
+          parts.push(prismRoof(0.8, 0.66, 0.17, st.cloth, { x, y: 0.48, sheet: null }));
+          for (let v = 0; v < 5; v++) {
+            const vx = x - 0.28 + v * 0.14;
+            const hue = v % 2 ? C.white : st.cloth;
+            parts.push(box(0.115, 0.075, 0.022, hue, { x: vx, y: 0.405, z: 0.325 }));
+            parts.push(sphere(0.031, hue, { x: vx, y: 0.405, z: 0.325 }));
+          }
+          // and a chalked price board leaning against the counter front
+          parts.push(box(0.2, 0.15, 0.018, 0x2f3a33, { x: x + 0.2, y: 0.02, z: 0.2, rz: -0.08 }));
+          parts.push(box(0.12, 0.016, 0.012, C.white, { x: x + 0.18, y: 0.12, z: 0.211 }));
+          parts.push(box(0.08, 0.016, 0.012, C.white, { x: x + 0.16, y: 0.08, z: 0.211 }));
+
+          if (st.trade === 0) {                       // the fruiterer: three open trays
+            for (let b = 0; b < 3; b++) {
+              const bx = x - 0.2 + b * 0.2;
+              parts.push(cylinder(0.085, 0.07, 0.05, 9, C.wood, { x: bx, y: 0.305, z: -0.02, sheet: 'plank' }));
+              for (let f = 0; f < 4; f++) {
+                const a = (f / 4) * Math.PI * 2;
+                parts.push(sphere(0.036, fruit[(b + f) % 4], { x: bx + Math.cos(a) * 0.035, y: 0.36, z: -0.02 + Math.sin(a) * 0.035 }));
+              }
+              parts.push(sphere(0.038, fruit[b % 4], { x: bx, y: 0.385, z: -0.02 }));
+            }
+          } else if (st.trade === 1) {                // the fishmonger: a slab and a catch
+            parts.push(box(0.52, 0.03, 0.26, 0xbfd4d8, { x, y: 0.305, z: -0.01, sheet: null }));
+            for (let fsh = 0; fsh < 3; fsh++) {
+              const fx = x - 0.16 + fsh * 0.16, ry = 0.3 - fsh * 0.3;
+              parts.push(sphere(0.055, 0x93a8b4, { x: fx, y: 0.35, z: -0.02 }));
+              parts.push(cone(0.045, 0.09, 5, 0x93a8b4, { x: fx - 0.075, y: 0.35, z: -0.02, rz: 1.5708, ry }));
+            }
+            // one more hanging from the front rail, because a fishmonger always has one up
+            parts.push(box(0.014, 0.1, 0.014, C.iron, { x: x + 0.24, y: 0.4, z: 0.2 }));
+            parts.push(sphere(0.05, 0x93a8b4, { x: x + 0.24, y: 0.34, z: 0.2 }));
+            parts.push(cone(0.042, 0.08, 5, 0x93a8b4, { x: x + 0.24, y: 0.27, z: 0.2, rx: Math.PI }));
+          } else {                                    // the baker: loaves and a sack of flour
+            parts.push(cylinder(0.14, 0.12, 0.055, 10, C.wood, { x: x - 0.12, y: 0.305, z: -0.02, sheet: 'plank' }));
+            // Loaves are cylinders on their side with a domed end, because sphere() hands
+            // back a shape already moved into place and scaling one afterwards scales its
+            // distance from the origin along with it.
+            for (let l = 0; l < 3; l++) {
+              const lx = x - 0.17 + l * 0.05, lz = -0.05 + (l % 2) * 0.06;
+              parts.push(cylinder(0.038, 0.038, 0.15, 7, 0xd2a15e, { x: lx, y: 0.37, z: lz, rz: Math.PI / 2, ry: 0.5 + l * 0.2 }));
+            }
+            parts.push(cylinder(0.075, 0.095, 0.17, 8, C.canvas, { x: x + 0.19, y: 0.305, z: -0.02 }));
+            parts.push(sphere(0.06, C.canvas, { x: x + 0.19, y: 0.46, z: -0.02 }));
+          }
+        });
+      }
+      return { anchors, animated, height: 0.78 };
+    }
+    case 'clocktower':
+      parts.push(...meshAsset('clocktower'));
+      Object.assign(anchors, meshAnchors('clocktower'));
+      animated.clock = { at: [...models.part('Clocktower clock dial').at] };
+      return { anchors, animated, height: models.heightOf('clocktower') };
+    case 'statue': {
+      parts.push(...meshAsset('statue'));
+      return { anchors, animated, height: models.heightOf('statue') };
+    }
+    case 'pirate':
+    case 'treasure': {
+      // The pirate's sea chest by the tavern door, and the golden treasure statue on the square
+      // (Plans/schatkaarten.md): one baked asset each, `civic_pirate` and `civic_treasure`, in
+      // the `treasure` set (scripts/build-treasure.py). The statue publishes `anchors.sign`, the
+      // middle of the blank iron panel on its plinth, which main.js letters with the count of
+      // treasures found (web/js/treasure-plaque.js).
+      //
+      // The branch below is a fallback and not a design, for the watertower's reason: a checkout
+      // whose baked set is missing still boots and still puts something on the plot.
+      const name = `civic_${spec.civicType}`;
+      if (models.hasAsset(name)) {
+        parts.push(...meshAsset(name));
+        Object.assign(anchors, meshAnchors(name));
+        return { anchors, animated, height: models.topOf(name) };
+      }
+      if (spec.civicType === 'pirate') {
+        // Small on purpose, like the bake (scripts/build-treasure.py): he stands behind the tavern,
+        // a corner you come upon, so the chest is ~0.72 of what it was and the mast 0.72 tall.
+        parts.push(box(0.40, 0.17, 0.25, C.darkWood, { y: 0.01 }));
+        parts.push(box(0.42, 0.04, 0.26, C.gold, { y: 0.085 }));
+        parts.push(cylinder(0.01, 0.01, 0.5, 5, C.darkWood, { x: 0.14, y: 0.2 }));
+        parts.push(box(0.2, 0.13, 0.009, 0x17161a, { x: 0.25, y: 0.58 }));
+        return { anchors, animated, height: 0.72 };
+      }
+      parts.push(box(0.74, 0.5, 0.74, C.stone, { sheet: 'stone' }));
+      parts.push(box(0.5, 0.32, 0.36, C.gold, { y: 0.5 }));
+      anchors.sign = [0, 0.3, 0.371];
+      return { anchors, animated, height: 0.9 };
+    }
+    case 'lamp': {
+      // The glass is emissive, so the square lights itself once the sun is down.
+      let y = 0;
+      parts.push(cylinder(0.11, 0.14, 0.07, 8, C.stone, { y })); y += 0.07;
+      parts.push(cylinder(0.032, 0.045, 0.78, 6, C.iron, { y })); y += 0.78;
+      parts.push(box(0.16, 0.02, 0.02, C.iron, { y: y - 0.14 }));
+      parts.push(box(0.02, 0.02, 0.16, C.iron, { y: y - 0.14 }));
+      parts.push(cylinder(0.085, 0.06, 0.03, 4, C.iron, { y, ry: Math.PI / 4 })); y += 0.03;
+      parts.push(box(0.1, 0.14, 0.1, C.glass, { y, emissive: 1 })); y += 0.14;
+      parts.push(cone(0.095, 0.1, 4, C.iron, { y, ry: Math.PI / 4 })); y += 0.1;
+      parts.push(sphere(0.026, C.iron, { y: y + 0.02 }));
+      return { anchors, animated, height: y + 0.05 };
+    }
+    case 'mailbox': {
+      // The postbox on the town hall's pavement: a pillar box on a cast post, with the
+      // slot on the side you walk up to and a flag on its right cheek.
+      //
+      // The flag is the whole point of it and is not drawn here. A building is one merged
+      // geometry that cannot move a piece of itself, and this piece has to go up when
+      // there is mail waiting - so it is published as an anchor and hung on the group as
+      // its own small mesh, exactly the way the clock tower's hands are. See
+      // web/js/mailflag.js, and `animated.clock` above it for the older instance of the
+      // same trick.
+      parts.push(cylinder(0.15, 0.17, 0.05, 8, C.foundation, { sheet: 'stone' }));        // the pad it is set in
+      parts.push(cylinder(0.045, 0.055, 0.6, 8, C.iron));                                 // the post
+      parts.push(box(0.36, 0.035, 0.26, C.iron, { y: 0.6 }));                             // the collar under the box
+      parts.push(box(0.34, 0.16, 0.24, C.red, { y: 0.635 }));
+      parts.push(box(0.34, 0.16, 0.24, C.red, { y: 0.635 + 0.16 }));                      // two courses: the seam is the door
+      parts.push(cylinder(0.12, 0.12, 0.34, 12, C.red, { x: 0.17, y: 0.955, rz: Math.PI / 2 }));
+      parts.push(box(0.2, 0.028, 0.02, C.iron, { y: 0.9, z: 0.121 }));                    // the slot
+      parts.push(box(0.26, 0.14, 0.012, 0xc05a49, { y: 0.645, z: 0.121 }));               // the door the postman opens
+      parts.push(sphere(0.022, C.gold, { x: 0.09, y: 0.715, z: 0.13 }));                  // its handle
+      parts.push(box(0.16, 0.038, 0.012, C.gold, { y: 0.815, z: 0.122 }));                // the plate with nothing on it
+      animated.mailflag = { at: [0.185, 0.7, 0] };
+      return { anchors, animated, height: 1.08 };
+    }
+    case 'planter': {
+      // A stone trough with something flowering in it. The colour is drawn per plant so
+      // a row of them is not four copies of the same red.
+      const beds = [0xd94f3d, 0xe8a13a, 0xd96fa8, 0xf2e04a, 0x9a6fd9];
+      parts.push(box(0.42, 0.18, 0.28, C.stone));
+      parts.push(box(0.34, 0.04, 0.2, 0x53402e, { y: 0.14 + BRIM }));
+      for (let i = 0; i < 5; i++) {
+        const x = -0.13 + i * 0.065, z = rng.range(-0.05, 0.05);
+        const h = 0.07 + rng.range(0, 0.05);
+        parts.push(cylinder(0.012, 0.014, h, 4, C.green, { x, y: 0.18, z }));
+        parts.push(sphere(0.034, beds[rng.int(beds.length)], { x, y: 0.18 + h + 0.02, z }));
+      }
+      return { anchors, animated, height: 0.36 };
+    }
+    case 'bench':
+      KIT.bench.build(parts, { ...KIT.bench.defaults });
+      return { anchors, animated, height: 0.42 };
+    case 'terrace': {
+      // Two little tables with a chair either side, and one parasol between them. Three
+      // things were wrong before. The pole stood on the first table's own centre, so it
+      // was coaxial with that table's pedestal and came up through the top. The chairs
+      // sat left and right of each table, which put the right-hand chair of one table
+      // 0.06 from the left-hand chair of the other - close enough that the seats
+      // intersected. And the two backs faced opposite ways.
+      //
+      // So the chairs now sit in front of and behind their own table, where the
+      // neighbouring one cannot reach them, and the parasol stands on its own spot
+      // between the two and shades both.
+      for (const [tx, tz] of [[-0.24, -0.02], [0.26, 0.06]]) {
+        parts.push(cylinder(0.035, 0.045, 0.2, 6, C.darkWood, { x: tx, z: tz }));
+        parts.push(cylinder(0.13, 0.13, 0.025, 8, C.plank, { x: tx, y: 0.2, z: tz }));
+        for (const cz of [-0.23, 0.23]) {
+          for (const [lx, lz] of [[-0.032, -0.032], [0.032, -0.032], [-0.032, 0.032], [0.032, 0.032]]) {
+            parts.push(box(0.014, 0.12, 0.014, C.darkWood, { x: tx + lx, z: tz + cz + lz }));
+          }
+          parts.push(box(0.09, 0.022, 0.09, C.plank, { x: tx, y: 0.12, z: tz + cz }));
+          // the back on the outer side, so both chairs face their table
+          parts.push(box(0.09, 0.12, 0.018, C.darkWood, { x: tx, y: 0.142, z: tz + cz + (cz < 0 ? -0.036 : 0.036) }));
+        }
+      }
+      parts.push(cylinder(0.02, 0.022, 0.62, 6, C.darkWood, { x: 0.01, z: 0.02 }));
+      parts.push(cone(0.32, 0.18, 8, C.red, { x: 0.01, y: 0.62, z: 0.02 }));
+      parts.push(sphere(0.03, C.gold, { x: 0.01, y: 0.84, z: 0.02 }));
+      return { anchors, animated, height: 0.88 };
+    }
+    case 'fountain': {
+      // The square's centrepiece is a complete Blender asset now: a carved basin, tiered
+      // bowl, copper finial and four arcing streams. Keep the compact procedural version
+      // below as a boot-safe fallback for a checkout whose baked village set is stale.
+      if (models.hasAsset('civic_fountain')) {
+        const names = models.assetParts('civic_fountain');
+        const baked = meshAsset('civic_fountain');
+        for (let i = 0; i < baked.length; i++) {
+          // Water has to live in its own meshes: buildBuilding merges everything in
+          // `parts`, and a vertex inside that loaf can no longer ripple independently.
+          if (fountainWaterPart(names[i])) baked[i].dispose();
+          else parts.push(baked[i]);
+        }
+        animated.fountain = { at: [0, 0, 0] };
+        return { anchors, animated, height: assetRise('civic_fountain') };
+      }
+      // An eight sided basin with a tiered column standing in it. The water sits just
+      // below the rim so it catches the light instead of hiding in the shadow.
+      parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
+      parts.push(cylinder(0.44, 0.46, 0.28, 16, C.stone, { y: 0.1, sheet: 'stone' }));        // 0.10 - 0.38
+      parts.push(cylinder(0.38, 0.38, 0.16, 8, 0x2f6f8f, { y: 0.14 + BRIM })); // the water
+      parts.push(cylinder(0.48, 0.48, 0.05, 8, C.stone, { y: 0.36 }));        // the rim
+      parts.push(box(0.26, 0.14, 0.26, C.stone, { y: 0.3 }));                 // 0.30 - 0.44
+      parts.push(cylinder(0.09, 0.13, 0.4, 8, C.stone, { y: 0.44 }));         // 0.44 - 0.84
+      parts.push(cylinder(0.26, 0.12, 0.1, 8, C.stone, { y: 0.8 }));          // the bowl
+      parts.push(cylinder(0.22, 0.22, 0.03, 8, 0x2f6f8f, { y: 0.87 + BRIM }));
+      parts.push(cylinder(0.05, 0.08, 0.2, 8, C.stone, { y: 0.9 }));
+      parts.push(sphere(0.07, C.copper, { y: 1.15 }));
+      // four jets leaning out of the bowl and back down into the basin
+      for (const [ax, az, rx, rz] of [[1, 0, 0, -0.95], [-1, 0, 0, 0.95], [0, 1, 0.95, 0], [0, -1, -0.95, 0]]) {
+        parts.push(cylinder(0.014, 0.022, 0.3, 5, 0x8fc4dc, { x: ax * 0.11, y: 0.84, z: az * 0.11, rx, rz }));
+      }
+      return { anchors, animated, height: 1.25 };
+    }
+    case 'flowerbed': {
+      // What keeps the middle of the square until the fountain is earned. It is laid on
+      // the fountain's own footprint - the same eight sided kerb on the same foundation -
+      // so the day the water arrives it reads as the basin having been built in the bed
+      // that was holding the place for it, rather than as one prop swapped for another.
+      //
+      // The middle of a plaza is the one cell you cannot leave empty. Bare, it reads as a
+      // gap somebody forgot; planted, the same emptiness reads as room.
+      const blooms = [0xd94f3d, 0xe8a13a, 0xd96fa8, 0xf2e04a, 0x9a6fd9];
+      parts.push(cylinder(0.5, 0.54, 0.1, 8, C.foundation));                  // 0.00 - 0.10
+      parts.push(cylinder(0.47, 0.48, 0.13, 8, C.stone, { y: 0.1, sheet: 'stone' }));   // the kerb
+      parts.push(cylinder(0.42, 0.42, 0.04, 8, 0x53402e, { y: 0.19 + BRIM }));          // the earth
+      // Three rings rather than a scatter: a bed somebody planted, not a patch of weeds.
+      // The tallest stand in the middle, which is also where the column will go.
+      for (const [r, n, tall] of [[0, 1, 0.2], [0.17, 5, 0.15], [0.33, 9, 0.1]]) {
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + r * 3;
+          const x = Math.cos(a) * r, z = Math.sin(a) * r;
+          const h = tall + rng.range(0, 0.04);
+          parts.push(cylinder(0.012, 0.015, h, 4, C.green, { x, y: 0.21, z }));
+          parts.push(sphere(0.038, blooms[rng.int(blooms.length)], { x, y: 0.21 + h + 0.02, z }));
+        }
+      }
+      return { anchors, animated, height: 0.48 };
+    }
+    case 'tavern': {
+      // Authored in assets/tavern/promptholm-tavern.blend, facing the street (+z).
+      // The existing porch, footprint, shader and editor consume ordinary parts.
+      parts.push(...meshAsset('tavern'));
+      for (const [name, at] of Object.entries(models.anchorsOf('tavern'))) anchors[name] = [...at];
+      return { anchors, animated, height: models.heightOf('tavern') };
+    }
+    case 'piratetavern': {
+      // The Salty Kraken, the pirates' pub (Plans/piratenkroeg.md), authored in
+      // assets/piratetavern/ facing the water (+z). It bakes no anchor.flag on purpose: every
+      // anchors.flag gets the district's flag, and this house flies its own Jolly Roger.
+      parts.push(...meshAsset('piratetavern', 0xffffff, { skip: isKrakenMoving }));
+      for (const [name, at] of Object.entries(models.anchorsOf('piratetavern'))) anchors[name] = [...at];
+      // Its flags, sails and hanging lanterns move (web/js/kraken-motion.js, hung by main.js).
+      animated.krakenMotion = true;
+      // Its hanging sign (web/js/piratesign.js): the still arm merged in here, on anchor.sign on its
+      // post at the foot of the stair; what swings is hung by main.js on `animated.piratesign`, at the
+      // same point once the porch has lifted it (`anchors.sign`) and at the same turn.
+      if (anchors.sign) {
+        parts.push(...pirateSignParts({ at: anchors.sign, yaw: PIRATE_SIGN_YAW }));
+        animated.piratesign = { yaw: PIRATE_SIGN_YAW };
+      }
+      // Its stair is walked (Plans/piratenkroeg.md, "Bijsturing"): floors and ramps for walk mode,
+      // and solids with a height, so the rock under a flight is no wall to whoever is on it.
+      // And its rope ladder up the hull is climbed (issue #86): walk.js `climbs`.
+      const surfaces = pirateSurfaces(anchors);
+      const climbs = pirateClimbs(anchors);
+      return { anchors, animated, height: models.heightOf('piratetavern'), surfaces, climbs, solids: pirateSolids(parts, anchors, surfaces, climbs) };
+    }
+    case 'chapel': {
+      // A brick village church with a saddleback tower, modelled in
+      // scripts/build-village.py. The branch below is the chapel the island drew before
+      // there was a bake of it, kept for the same reason the water tower keeps its four
+      // posts and a drum: a checkout that has never run Blender still boots and still has
+      // somewhere to ring a bell.
+      if (models.hasAsset('civic_chapel')) {
+        for (const g of meshAsset('civic_chapel')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_chapel'));
+        return { anchors, animated, height: assetRise('civic_chapel') };
+      }
+      // A small stone chapel: a nave running front to back, a round window over the
+      // door, an apse behind, and a tower carrying the bell.
+      const f = 0.1;
+      parts.push(box(0.86, 0.16, 1.24, C.foundation, { y: -0.06 }));
+      parts.push(box(0.78, 0.76, 1.16, C.stone, { y: f, sheet: 'stone' }));
+      parts.push(prismRoof(1.28, 0.9, 0.44, C.slate, { y: 0.86, ry: Math.PI / 2 }));
+      parts.push(cylinder(0.36, 0.36, 0.76, 14, C.stone, { y: f, z: 0.66, sheet: 'stone' }));
+      parts.push(dome(0.37, C.slate, { y: 0.86, z: 0.66 }));
+      parts.push(cylinder(0.14, 0.14, 0.05, 12, C.glass, { y: 0.66, z: -0.62, rx: Math.PI / 2, emissive: 1 }));
+      parts.push(box(0.28, 0.46, 0.04, C.darkWood, { y: f, z: -0.6 }));
+      for (const z of [-0.2, 0.2]) {
+        for (const x of [-0.4, 0.4]) parts.push(box(0.03, 0.36, 0.13, C.glass, { x, y: f + 0.24, z, emissive: 1 }));
+      }
+      // the tower
+      const th = 1.5;
+      parts.push(box(0.44, th, 0.44, C.stone, { y: f, z: -0.74 }));
+      parts.push(box(0.1, 0.24, 0.05, C.glass, { y: f + 1.0, z: -0.96, emissive: 1 }));
+      parts.push(box(0.52, 0.07, 0.52, 0x8f8a80, { y: f + th, z: -0.74 }));
+      parts.push(cone(0.36, 0.8, 4, C.slate, { y: f + th + 0.07, z: -0.74, ry: Math.PI / 4 }));
+      parts.push(sphere(0.05, C.gold, { y: f + th + 0.92, z: -0.74 }));
+      parts.push(box(0.02, 0.2, 0.02, C.gold, { y: f + th + 0.96, z: -0.74 }));
+      parts.push(box(0.13, 0.02, 0.02, C.gold, { y: f + th + 1.09, z: -0.74 }));
+      return { anchors, animated, height: f + th + 1.2 };
+    }
+    case 'tables': {
+      // Two trestle tables with a round of beer and a plate of bitterballen on them,
+      // modelled in scripts/build-village.py. The branch below is the pair of tables the
+      // island drew before there was a bake of them, kept for the same reason the water
+      // tower keeps its four posts and a drum: a checkout that has never run Blender
+      // still boots and still puts something on the square.
+      if (models.hasAsset('civic_tables')) {
+        for (const g of meshAsset('civic_tables')) parts.push(g);
+        Object.assign(anchors, models.anchorsOf('civic_tables'));
+        return { anchors, animated, height: assetRise('civic_tables') };
+      }
+      // Two trestle tables and their benches, on the corner of the square.
+      for (const [tx, tz] of [[-0.16, -0.14], [0.2, 0.2]]) {
+        for (const dx of [-0.16, 0.16]) {
+          parts.push(box(0.03, 0.2, 0.03, C.darkWood, { x: tx + dx, z: tz - 0.08 }));
+          parts.push(box(0.03, 0.2, 0.03, C.darkWood, { x: tx + dx, z: tz + 0.08 }));
+        }
+        parts.push(box(0.42, 0.035, 0.24, C.plank, { x: tx, y: 0.2, z: tz }));
+        for (const dz of [-0.17, 0.17]) {
+          parts.push(box(0.4, 0.03, 0.08, C.plank, { x: tx, y: 0.11, z: tz + dz }));
+          for (const dx of [-0.14, 0.14]) parts.push(box(0.025, 0.11, 0.025, C.darkWood, { x: tx + dx, z: tz + dz }));
+        }
+      }
+      parts.push(cylinder(0.035, 0.045, 0.34, 6, C.darkWood, { x: 0.42, z: -0.36 }));
+      parts.push(sphere(0.09, C.green, { x: 0.42, y: 0.41, z: -0.36 }));
+      return { anchors, animated, height: 0.52 };
+    }
+    case 'school': {
+      parts.push(...meshAsset('school'));
+      Object.assign(anchors, meshAnchors('school'));
+      return { anchors, animated, height: models.heightOf('school') };
+    }
+    case 'sawmill': {
+      // The barn and the yard, less what turns and slides: sawmill.js hangs those on their own
+      // pivots, and a blade merged in here would stand still inside the one that spins.
+      parts.push(...meshAsset('civic_sawmill'), ...meshAsset('civic_sawmill_yard', 0xffffff, { skip: isSawmillMoving }));
+      Object.assign(anchors, meshAnchors('civic_sawmill'));
+      animated.sawmill = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_sawmill') };
+    }
+    case 'smithy': {
+      // The house and the lean-to, less the bellows, the fire and the lantern: smithy.js hangs
+      // those, and brings the smith who works there.
+      parts.push(...meshAsset('civic_smithy'), ...meshAsset('civic_smithy_yard', 0xffffff, { skip: isSmithyMoving }));
+      Object.assign(anchors, meshAnchors('civic_smithy'));
+      animated.smithy = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_smithy') };
+    }
+    case 'stable': {
+      // The stable and its paddock; the horse and the hens are stable.js's (web/js/fauna.js).
+      parts.push(...meshAsset('civic_stable'), ...meshAsset('civic_stable_yard'));
+      animated.stable = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_stable') };
+    }
+    case 'bakery': {
+      parts.push(...meshAsset('civic_bakery', 0xffffff, { skip: isBakeryMoving }));
+      Object.assign(anchors, meshAnchors('civic_bakery'));
+      animated.bakery = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_bakery') };
+    }
+    case 'butcher': {
+      // The shop and the yard, less the awning, the sign, the hanging meat, the joint, the slice
+      // and the fire: butcher.js hangs those, and brings the butcher who works at the block.
+      parts.push(...meshAsset('civic_butcher'), ...meshAsset('civic_butcher_yard', 0xffffff, { skip: isButcherMoving }));
+      Object.assign(anchors, meshAnchors('civic_butcher'));
+      animated.butcher = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_butcher') };
+    }
+    // The three trades past the castle, one Blender set between them (scripts/build-workshops.py,
+    // Plans/DONE/ambachten.md). Their heights are each asset's own (topOf): the set's building_height
+    // is the brewery's chimney, and that is no height for a field.
+    case 'brewery': {
+      // The brewhouse, the copper under its lean-to, and the casks, the dray and the hops. The
+      // chimney smokes and the copper steams, each off an anchor.smoke of its own - which is why
+      // the copper is an asset apart: an asset has one anchor of a name.
+      parts.push(...meshAsset('civic_brewery'), ...meshAsset('civic_brewery_copper'), ...meshAsset('civic_brewery_yard'));
+      Object.assign(anchors, meshAnchors('civic_brewery'));
+      const steam = meshAnchors('civic_brewery_copper').smoke;
+      if (steam) animated.steam = { at: steam };
+      return { anchors, animated, height: models.topOf('civic_brewery') };
+    }
+    case 'trainingfield': {
+      // The fenced field with its shelter and racks, and the dummies, pells and butts. The flag
+      // on the shelter's pole is the island's, flown by main.js off anchor.flag like the hall's.
+      parts.push(...meshAsset('civic_trainingfield'), ...meshAsset('civic_trainingfield_yard'));
+      Object.assign(anchors, meshAnchors('civic_trainingfield'));
+      return { anchors, animated, height: models.topOf('civic_trainingfield') };
+    }
+    case 'quarry': {
+      // The benches and the hill, and the yard less what turns, slews and runs: quarry.js hangs
+      // the treadwheel, the jib, the rope, the hook, the block and the tub on their own pivots.
+      parts.push(...meshAsset('civic_quarry'), ...meshAsset('civic_quarry_yard', 0xffffff, { skip: isQuarryMoving }));
+      animated.quarry = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.topOf('civic_quarry') };
+    }
+    case 'windmill':
+    case 'poldermill':
+      parts.push(...meshAsset('civic_windmill'));
+      // The entire sail disc stands ahead of the widest course of brickwork.
+      animated.blades = { at: [0, 1.61, 0.64], r: 0.5 };
+      return { anchors, animated, height: models.heightOf('civic_windmill') };
+    case 'lighthouse': {
+      parts.push(...meshAsset('lighthouse'));
+      Object.assign(anchors, meshAnchors('lighthouse'));
+      animated.beacon = { at: [0, BEACON_RISE, 0] };
+      return { anchors, animated, height: models.heightOf('lighthouse') };
+    }
+    case 'castle': {
+      // Two bakes, picked by the lot. On seven by seven (CASTLE_LOT in lib/layout.mjs,
+      // Plans/DONE/groot-kasteel.md) the great castle, built at that size: it used to be the three
+      // by three's bake drawn at 7/3, and a gate a whole cell wide and a storey and a half
+      // tall is not a door a settler walks through - a building that is bigger has more
+      // windows, not bigger ones. Anything narrower is the castle it always was: one that
+      // could not grow yet, and the volcano's guardhouse (GUARDHOUSE_LOOKS_LIKE), whose
+      // reach shared/volcano.mjs has measured.
+      const name = ((spec.plot && spec.plot.w) || 3) >= 7 ? 'greatcastle' : 'castle';
+      parts.push(...meshAsset(name));
+      Object.assign(anchors, meshAnchors(name));
+      return { anchors, animated, height: models.heightOf(name) };
+    }
+    case 'chronicle': {
+      // The chronicle house, the ladder's last rung (Plans/DONE/kroniekhuis.md): a brick hall with a
+      // portico and a lantern, baked whole in scripts/build-chronicle.py, nothing in it moving.
+      // It stands on the ordinary civic step rather than the shops' narrower one: it is not a
+      // shop on a street but a public building on its own lot, like the town hall. What it
+      // opens is web/js/chronicle-house.js's and main.js's; `anchor.door` is where it is asked.
+      parts.push(...meshAsset('civic_chronicle'));
+      Object.assign(anchors, meshAnchors('civic_chronicle'));
+      return { anchors, animated, height: models.heightOf('civic_chronicle') };
+    }
+    case 'board': {
+      // The sprint board: a cork panel under a little roof, with cards pinned to it.
+      const height = noticeBoard(parts, spec, {
+        panel: 0x8a6a44, frame: C.darkWood, roof: C.plank, sign: C.paper, note: C.paper,
+        pins: [0xd94f3d, 0x3d7ed9, 0xd9a33d, 0x6fb84a, 0x9a6fd9],
+      });
+      return { anchors, animated, height };
+    }
+    case 'issues': {
+      // The island's own board: the same furniture in slate and iron under a copper
+      // roof, with a lamp over it, because the work on the island itself never stops.
+      const height = noticeBoard(parts, spec, {
+        panel: C.slate, frame: C.iron, roof: C.copper, sign: C.white, note: C.white,
+        pins: [0xd9a33d, 0xb87333, 0xf5efe0, 0xd9a33d, 0x8a8a8a],
+      });
+      parts.push(cylinder(0.018, 0.018, 0.16, 4, C.iron, { y: 1.95, z: 0.22 }));
+      parts.push(sphere(0.05, C.glass, { y: 1.99, z: 0.22, emissive: 1 }));
+      return { anchors, animated, height };
+    }
+    case 'office': {
+      // A clerk's office: brick, a tiled roof, a lamp by the door and a board with the
+      // branch chalked on it. Small, because it is a village.
+      parts.push(box(0.62, 0.44, 0.5, C.brick, { y: 0, sheet: 'wall' }));
+      parts.push(box(0.64, 0.06, 0.52, C.stone, { y: 0.44 }));
+      parts.push(prismRoof(0.72, 0.6, 0.26, C.slate, { y: 0.5 }));
+      parts.push(box(0.09, 0.2, 0.03, C.darkWood, { z: 0.26 }));                       // door
+      parts.push(box(0.12, 0.13, 0.03, C.glass, { x: -0.17, y: 0.2, z: 0.26, emissive: 1 }));
+      parts.push(box(0.12, 0.13, 0.03, C.glass, { x: 0.17, y: 0.2, z: 0.26, emissive: 1 }));
+      parts.push(cylinder(0.02, 0.02, 0.16, 4, C.iron, { x: 0.24, y: 0.3, z: 0.28 }));  // lamp bracket
+      parts.push(sphere(0.045, C.glass, { x: 0.24, y: 0.44, z: 0.28, emissive: 1 }));
+      parts.push(box(0.3, 0.16, 0.02, 0x2f3a33, { x: -0.02, y: 0.24, z: 0.28 }));       // the chalk board
+      parts.push(box(0.2, 0.02, 0.014, C.white, { x: -0.05, y: 0.32, z: 0.292 }));
+      parts.push(box(0.12, 0.02, 0.014, C.white, { x: -0.09, y: 0.28, z: 0.292 }));
+      parts.push(box(0.07, 0.24, 0.07, C.brick, { x: 0.2, y: 0.5, z: -0.12 }));         // chimney
+      anchors.smoke = [0.2, 0.78, -0.12];
+      return { anchors, animated, height: 0.82 };
+    }
+    case 'bridge': {
+      // The stone at the head of the plank bridge, and the only civic on the island whose
+      // building is somewhere else: the crossing itself is drawn from `layout.bridges` by
+      // `buildBridgeGeometry` further down this file, because a deck stands over water and
+      // has no plot to be drawn on. What stands here is the record of it - a squared
+      // waymarker on the bank where the road meets the planks, which is what a milestone
+      // needs in order to have a dossier, a date and somewhere to send the camera.
+      //
+      // Deliberately small and deliberately not a building. A shelter, a toll house or a
+      // keeper's hut would all read as something the village staffed, and nobody staffs
+      // this; a waymarker reads as what it is, which is a date carved where you cross.
+      let y = 0;
+      parts.push(box(0.34, 0.06, 0.34, C.foundation, { y })); y += 0.06;
+      parts.push(box(0.24, 0.50, 0.24, C.stone, { y, sheet: 'stone' })); y += 0.50;
+      // The bronze plate faces +z, which is the front of every model on the island, and
+      // lib/layout.mjs turns the stone to look at the bridge head - so the plate is
+      // towards whoever is about to cross rather than out into the field behind it.
+      parts.push(box(0.15, 0.18, 0.018, 0x9c7a3c, { y: y - 0.34, z: 0.129 }));
+      parts.push(box(0.30, 0.05, 0.30, C.stone, { y, sheet: 'stone' })); y += 0.05;
+      parts.push(pyramidRoof(0.30, 0.30, 0.09, C.stone, { y, sheet: 'stone' }));
+      return { anchors, animated, height: y + 0.09 };
+    }
+    case 'crane': {
+      // The harbour crane on the quayside, reaching out over the water. Every civic on
+      // this island faces the town; this one faces the sea, which lib/layout.mjs arranges
+      // by handing the plot the water beside it to look at instead of the town centre -
+      // so here the jib simply reaches out along +z, the way every model on the island is
+      // drawn facing, and the crate is over water wherever the plot ended up.
+      //
+      // A timber derrick rather than the treadwheel crane it would have been in life: a
+      // wheelhouse is a building, and this stands on a single cell of quayside with the
+      // planks alongside it. What has to read at fifty metres is a mast, an arm out over
+      // the water and something hanging off it, so those are what it is made of and the
+      // rest is the rigging that explains them.
+      //
+      // Everything here lies in the crane's own yz-plane, so one rotation about x places
+      // a timber between two points - which is what `spar` is, and why it needs no second
+      // angle. atan2 is safe in this file (it is not under shared/); the arithmetic is
+      // the endpoints rather than the angles because the endpoints are what a drawing of
+      // a crane is about, and an angle written out as a literal is a number nobody can
+      // check against the shape.
+      const spar = (a, b, t, hex, o = {}) => {
+        const dy = b[1] - a[1], dz = b[2] - a[2];
+        return box(t, Math.hypot(dy, dz), t, hex, { ...o, x: a[0], y: a[1], z: a[2], rx: Math.atan2(dz, dy) });
+      };
+      const HEAD = 1.78;                  // the top of the mast
+      const TIP = [0, 1.30, 1.04];        // and the end of the jib, out over the water
+
+      parts.push(box(0.56, 0.09, 0.56, C.stone, { sheet: 'stone' }));                 // the pad
+      parts.push(cylinder(0.26, 0.30, 0.13, 8, C.darkWood, { y: 0.09, sheet: 'plank' }));  // the ring it turns on
+      parts.push(cylinder(0.055, 0.085, HEAD - 0.22, 8, C.wood, { y: 0.22, sheet: 'plank' }));
+      // A collar under the cap. Without it the eight-sided cone sits straight on the
+      // eight-sided mast and the two read as one tapered spike a storey and a half tall -
+      // a spear stuck in the quay rather than a mast with a hat on. The break is what
+      // says where the timber stops.
+      parts.push(cylinder(0.115, 0.115, 0.045, 8, C.iron, { y: HEAD - 0.045 }));
+      parts.push(cone(0.145, 0.12, 8, C.darkWood, { y: HEAD, sheet: 'roof' }));       // a hat, so the end grain stays dry
+      parts.push(spar([0, 0.48, 0.05], TIP, 0.08, C.darkWood, { sheet: 'plank' }));   // the jib
+      parts.push(spar([0, HEAD - 0.04, 0], TIP, 0.032, C.iron));                      // the chain that holds it up
+      parts.push(spar([0, HEAD - 0.10, -0.02], [0, 0.11, -0.24], 0.055, C.darkWood, { sheet: 'plank' }));  // and the strut that holds it back
+      parts.push(box(0.17, 0.10, 0.11, C.iron, { y: 0.44, z: 0.05 }));                // the jib's shoe
+
+      // The winch across the foot of the mast, with a crank on the near end. It is below
+      // WALK_CLEARANCE, so it is part of what stops you walking into the crane - which is
+      // right: it is the part of it that is in your way.
+      group('winch', () => {
+        parts.push(cylinder(0.075, 0.075, 0.32, 8, C.wood, { x: -0.16, y: 0.40, z: -0.06, rz: -Math.PI / 2, sheet: 'plank' }));
+        parts.push(box(0.05, 0.15, 0.05, C.iron, { x: 0.20, y: 0.39, z: -0.06 }));
+        parts.push(box(0.05, 0.05, 0.13, C.darkWood, { x: 0.20, y: 0.51, z: -0.06 }));
+      });
+
+      // The load, on a rope off the jib. It hangs clear of the planks it is being swung
+      // over rather than resting on them: a crane with its crate on the deck is a crate
+      // beside a mast, and the whole point of the shape is the thing in the air.
+      group('load', () => {
+        parts.push(cylinder(0.014, 0.014, TIP[1] - 0.90, 4, C.darkWood, { y: 0.90, z: TIP[2] }));
+        parts.push(box(0.08, 0.08, 0.08, C.iron, { y: 0.83, z: TIP[2] }));
+        parts.push(box(0.26, 0.24, 0.26, C.wood, { y: 0.59, z: TIP[2], sheet: 'plank' }));
+        parts.push(box(0.28, 0.035, 0.28, C.darkWood, { y: 0.68, z: TIP[2] }));
+        parts.push(box(0.28, 0.035, 0.28, C.darkWood, { y: 0.62, z: TIP[2] }));
+      });
+      return { anchors, animated, height: HEAD + 0.12 };
+    }
+    case 'ship': {
+      // The Batavia at anchor (scripts/build-batavia.py, Plans/DONE/batavia.md), on a plot of 4 by
+      // 16 with her length along its long side - which housePlacement's turn gives her, since
+      // she is modelled bow to +z like every front on the island. Lowered by her draught, so
+      // her origin is her waterline and `floats` tells main.js to set that on the sea rather
+      // than on the bed under her; painted as the ship she is; less the flags batavia.js flies.
+      const draught = shipDraught();
+      const livery = shipLivery(spec.id);
+      const paint = (name) => (liveryRole(name) ? livery[liveryRole(name)] : null);
+      parts.push(...meshAsset('batavia', paint, { y: -draught, skip: isBataviaMoving }));
+      Object.assign(anchors, meshAnchors('batavia', { y: -draught }));
+      animated.ship = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('batavia') - draught, solids: shipSolids(draught), floats: true };
+    }
+    case 'goldmine': {
+      // The gold mine (Plans/DONE/goudmijn.md): the hill lowered by its datum so its rim is under the
+      // grass on any slope a lot may have, and the adit, the rails and the bin on the ground.
+      // The ore in the bin is instanced like the pit's bars (web/js/goldmine.js), and the cart
+      // is a mesh of its own because it leaves - web/js/goldrun.js pushes it down the road.
+      parts.push(...meshAsset('civic_goldmine_hill', 0xffffff, { y: -MINE_DATUM }), ...meshAsset('civic_goldmine'));
+      Object.assign(anchors, meshAnchors('civic_goldmine'));
+      animated.orepile = { at: partAt('civic_goldmine', 'bin') };
+      animated.minecart = { at: partAt('civic_goldmine', 'cartstop') };
+      return { anchors, animated, height: models.heightOf('civic_goldmine') };
+    }
+    case 'goldsmith': {
+      // The workshop, the furnace and the bench, less the fire in the furnace's mouth, which
+      // goldsmith.js hangs on its own and brightens while ore melts. The goldsmith and the
+      // miner are the player's rig, dressed there and walked by goldrun.js.
+      parts.push(...meshAsset('civic_goldsmith', 0xffffff, { skip: isGoldsmithMoving }));
+      Object.assign(anchors, meshAnchors('civic_goldsmith'));
+      animated.goldsmith = { at: [0, 0, 0] };
+      return { anchors, animated, height: models.heightOf('civic_goldsmith') };
+    }
+    case 'goldpit': {
+      // Baked concrete and coping stay one draw call; the shrinking stock is instanced.
+      parts.push(...meshAsset('civic_goldpit'));
+      animated.goldpile = { at: [0, 0.031, 0] };
+      // The clock that says when the pit is full again (attachResetClock in clock.js), in
+      // the gable of the office over its door. The gable's face is the roof's front
+      // triangle in build-goldpit.py - eaves at 0.95, ridge at 1.20, front at z 1.19 - and a
+      // dial of 0.075 centred at 1.05 sits inside it with the eaves' width to spare.
+      animated.resetclock = { at: [-0.79, 1.05, 1.192], r: 0.075 };
+      return { anchors, animated, height: 1.22 };
+    }
+    case 'shipyard': {
+      // The yard and the ship on its stocks (scripts/build-shipyard.py, Plans/DONE/scheepswerf.md):
+      // one baked asset on a five by sixteen lot, the sea end on +z. What of the ship stands on
+      // the slipway is `spec.stage`, and the part names say which parts a stage draws - see
+      // shownAtStage in shipyard.js. Lowered by its datum, so y = 0 here is the land at the
+      // landward end like every other building's ground, and the slipway and its piles go on
+      // down below it into the water.
+      //
+      // From HULL_STAGE her hull is complete, and what stands on the ways then is the Batavia's
+      // own bake (bataviaOnStocks), not a copy of her: the ship on the stocks at 115 is the ship
+      // on the roads at 120 by construction, less what she is given afloat.
+      const stage = yardStage(spec);
+      const lift = { y: -SHIPYARD_LAND };
+      const start = parts.length;
+      parts.push(...meshAsset('shipyard', 0xffffff, { ...lift, skip: (n) => !shownAtStage(n, stage) }));
+      if (stage >= HULL_STAGE) parts.push(...bataviaOnStocks());
+      Object.assign(anchors, meshAnchors('shipyard', lift));
+      // As tall as the sheerlegs, or her crest's lanterns once she stands there: measured off
+      // what was drawn, which is the only thing that knows.
+      let height = 0;
+      for (let k = start; k < parts.length; k++) {
+        const y = parts[k].attributes.position.array;
+        for (let i = 1; i < y.length; i += 3) if (y[i] > height) height = y[i];
+      }
+      return { anchors, animated, height };
+    }
+    default:
+      parts.push(box(0.5, 0.4, 0.5, C.stone, { sheet: 'stone' }));
+      return { anchors, animated, height: 0.5 };
+  }
+  void rng;
+}
+
+// ---------------------------------------------------------------- the Batavia on the stocks
+// Where she lies on the ways: her own origin - the bottom of her keel amidships - is the baked
+// origin of the yard's keel (scripts/build-shipyard.py lays that keel on her lines, under her),
+// lowered by the yard's datum like the rest of it, and her declivity is that keel's own fall
+// from forefoot to heel. Read off the bake, so that moving the ship along the slipway in the
+// builder moves her bake with her keel and nothing here has to be told.
+export const STOCKS = (() => {
+  const keel = models.part('shipyard s1-3 keel');
+  const p = keel.positions, at = keel.at;
+  const pts = [];
+  for (let i = 0; i < p.length; i += 3) pts.push([p[i] + at[0], p[i + 1] + at[1], p[i + 2] + at[2]]);
+  const mid = pts.reduce((s, q) => s + q[2], 0) / pts.length;
+  const lowest = (side) => pts.filter((q) => (q[2] > mid) === side).reduce((a, b) => (b[1] < a[1] ? b : a));
+  const fore = lowest(false), aft = lowest(true);
+  return Object.freeze({ x: at[0], y: at[1] - SHIPYARD_LAND, z: at[2], tilt: Math.atan2(fore[1] - aft[1], aft[2] - fore[2]) });
+})();
+
+// What of her bake stands on the stocks, and in what colour. Everything that makes her hull -
+// skin, decks, bulwarks, the stern and its galleries, the head, the channels, the capstan - and
+// nothing she is given at the fitting-out quay: not her masts, yards, sails, rigging, bowsprit
+// or anchor cable (all of `batavia rig`) nor her flags; not the accommodation ladder and its
+// float, which hang over the water she is not in yet; and not the spare anchor at her cathead.
+// The ladder and the anchor are fitted parts in the middle of her fittings, so they go by where
+// they are, in her own frame (scripts/build-batavia.py LX0, FLOAT, CAT): the ladder is anything
+// abreast of the entry port reaching out past her side - past 1.42 below her channels, whose
+// widest is 1.40, and past 1.5 beside them, since they stand out to 1.47 - and by its outermost
+// corner rather than its middle, so the platform goes whole rather than cut down a diagonal;
+// the anchor is what hangs under the port cathead. The rig's tops are trim, painted with her
+// accent, and go by height - nothing of her hull stands above her crest's lanterns at 4.5.
+const onStocks = (name) => /^batavia (hull|livery|trim|fittings)\b/.test(name);
+const IRON_OR_YARD = new Set([0x2f2f33, 0x4d3625]);
+function stocksKeep(part) {
+  const anchor = IRON_OR_YARD.has(bakedHex(part));
+  return (x, y, z, x0) => !(y > 4.8
+    || (x0 < (y < 2.2 ? -1.42 : -1.5) && y < 2.45 && z > 1.1 && z < 4.2)
+    || (anchor && x > 0.8 && x < 1.4 && y > 1.7 && y < (bakedHex(part) === 0x2f2f33 ? 2.86 : 2.68) && z > 5.1 && z < 5.75));
+}
+// And her paint: on the stocks she is timber, because paint is the fitting out. The oak of her
+// topsides and the pale stuff and tar of her bottom stay - a bottom is paid before she is
+// launched, since nobody can do it afloat - but the green of her panels, the red of her
+// mouldings and bulwarks, the gilt of her carving, the red lion and the painted sky on her
+// transom are bare oak, and nothing on her is lit. By her baked colour rather than by part
+// name, so a colour the bake moves to another slot is still found.
+const STOCKS_PAINT = new Map([
+  [0x2f5b3d, 0x7d5735],   // green panels: the oak of her topsides
+  [0x8e2b20, 0x5e4128],   // red mouldings and rail caps: darker oak
+  [0x873323, 0x8a6a48],   // the red inside her bulwarks: oak, seen from inside
+  [0xc79634, 0x9c7a50],   // gilt carving: the carving, uncoated
+  [0xb8352a, 0x9c7a50],   // the red lion: the same
+  [0x3e6a92, 0x7d5735],   // the painted sky on her transom: bare boards
+]);
+const UNLIT = 0x2b2a2e;   // her windows and lanterns, dark
+const srgb = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+function bakedHex(part) {
+  const [r, g, b] = part.colors;
+  return (srgb(r) << 16) | (srgb(g) << 8) | srgb(b);
+}
+export function stocksPaint(part) {
+  if (part.emissive) return UNLIT;
+  return STOCKS_PAINT.get(bakedHex(part)) ?? null;
+}
+
+// Her bake laid on the ways: turned stern to the sea (a half turn, since she is modelled bow to
+// +z like every front on the island), pitched onto the declivity and set on her keel, less what
+// she is not given until she is afloat and in timber rather than paint. Turned about her own
+// origin, which is why every part goes through `keep` - it hands the part back in her frame.
+// Parts left empty by the cut are dropped rather than merged as nothing.
+export function bataviaOnStocks() {
+  const out = [];
+  for (const name of models.assetParts('batavia')) {
+    if (!onStocks(name)) continue;
+    const part = models.part(name);
+    const paint = stocksPaint(part);
+    const g = mesh(name, paint ?? 0xffffff, {
+      repaint: paint != null, emissive: 0, keep: stocksKeep(part),
+      ry: Math.PI, rx: STOCKS.tilt, x: STOCKS.x, y: STOCKS.y, z: STOCKS.z,
+    });
+    if (g.attributes.position.count) out.push(g);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- entry point
+// A session that ran a dozen or more apprentices builds upward instead of filling its
+// yard with sheds. One window per room, lit while that apprentice was working, and the
+// session itself takes the penthouse: set back from the parapet, with a terrace on the
+// roof and a light that stays on.
+function tower(parts, spec, pal, rng) {
+  const h = spec.hotel || { rooms: 10, floors: 2, busy: 0 };
+  const floors = Math.max(2, Math.min(14, h.floors | 0));
+  const FLOOR = 0.42;
+  const W = 1.06;
+
+  parts.push(box(W + 0.16, 0.14, W + 0.16, C.foundation));
+  parts.push(box(W + 0.06, 0.2, W + 0.06, C.stone, { y: 0.14, sheet: 'stone' }));       // the plinth
+  parts.push(box(0.3, 0.34, 0.04, C.darkWood, { y: 0.34, z: W / 2 + 0.04 }));
+
+  // The rooms: four to a floor, one window each, and they light up after dark like
+  // every other window on the island. A finished run is not a dark building; what says
+  // a session is running is the scaffolding and the hammering, the same as anywhere.
+  // The top floor is short if the last apprentices do not fill it, which is the only
+  // thing the room count changes about the shape.
+  let room = 0;
+  for (let f = 0; f < floors; f++) {
+    const y = 0.34 + f * FLOOR;
+    parts.push(box(W, FLOOR - 0.04, W, pal.wall, { y, sheet: 'wall' }));
+    parts.push(box(W + 0.04, 0.045, W + 0.04, pal.trim, { y: y + FLOOR - 0.045 }));
+    for (const [dx, dz, ry] of [[0, W / 2, 0], [0, -W / 2, 0], [W / 2, 0, 1], [-W / 2, 0, 1]]) {
+      if (room++ >= h.rooms) continue;
+      const w = ry ? 0.03 : 0.26, d = ry ? 0.26 : 0.03;
+      parts.push(box(w, 0.2, d, C.glass, { x: dx * 1.02, y: y + 0.09, z: dz * 1.02, emissive: 1 }));
+    }
+  }
+
+  // the penthouse, and the parapet it stands behind
+  const top = 0.34 + floors * FLOOR;
+  parts.push(box(W + 0.1, 0.07, W + 0.1, pal.trim, { y: top }));
+  for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    parts.push(box(dx ? 0.05 : W, 0.1, dz ? 0.05 : W, pal.trim, { x: dx * W / 2, y: top + 0.07, z: dz * W / 2 }));
+  }
+  const pw = W - 0.34;
+  parts.push(box(pw, 0.34, pw, pal.wall, { y: top + 0.07, sheet: 'wall' }));
+  for (const [dx, dz, ry] of [[0, 1, 0], [1, 0, 1], [-1, 0, 1]]) {
+    parts.push(box(ry ? 0.03 : pw - 0.12, 0.19, ry ? pw - 0.12 : 0.03, C.glass, { x: dx * pw / 2, y: top + 0.14, z: dz * pw / 2, emissive: 1 }));
+  }
+  parts.push(pyramidRoof(pw + 0.22, pw + 0.22, 0.24, pal.roof, { y: top + 0.41 }));
+  parts.push(cylinder(0.02, 0.02, 0.34, 5, C.iron, { y: top + 0.65 }));
+  parts.push(sphere(0.05, C.gold, { y: top + 1.02 }));
+  // a chair and a table out on the roof terrace, because someone lives up here
+  parts.push(cylinder(0.02, 0.026, 0.1, 6, C.darkWood, { x: 0.3, y: top + 0.07, z: 0.28 }));
+  parts.push(cylinder(0.08, 0.08, 0.02, 8, C.plank, { x: 0.3, y: top + 0.17, z: 0.28 }));
+
+  const anchors = { flag: [0, top + 0.72, 0], roof: [0, top + 0.41, 0] };
+  void rng;
+  return { anchors, height: top + 1.0, w: W };
+}
+
+// ---------------------------------------------------------------- footprints
+// What actually stops you walking. This used to be a circle around the widest part of
+// the whole bounding box, which turned a row of market stalls into a fat bollard and
+// left half the town square impassable. Instead: take every part low enough to bump
+// into, keep its rectangle, and glue rectangles together when the gap between them is
+// too narrow to walk through anyway. Anything above head height -- a roof overhang, a
+// bell tower, a parasol -- does not block at all, because you walk under it.
+export const WALK_CLEARANCE = 0.55;   // a settler stands about this tall
+export const WALK_BODY_R = 0.16;      // and is about this wide, with a little skin
+const WALK_GAP = 0.36;                // a gap narrower than this is not a gap
+
+function partRect(g, clearance) {
+  const p = g.attributes.position;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, n = 0;
+  for (let i = 0; i < p.count; i++) {
+    if (p.getY(i) > clearance) continue;
+    const x = p.getX(i), z = p.getZ(i);
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (z < z0) z0 = z;
+    if (z > z1) z1 = z;
+    n++;
+  }
+  return n ? { x0, x1, z0, z1 } : null;
+}
+
+// Greedy: a rectangle swallows every rectangle it already touches, and keeps swallowing
+// until nothing is close enough, so the order the parts were built in does not matter.
+function mergeRects(rects, gap) {
+  const out = [];
+  for (const r of rects) {
+    let cur = r;
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < out.length; i++) {
+        const o = out[i];
+        if (cur.x0 - gap > o.x1 || o.x0 - gap > cur.x1) continue;
+        if (cur.z0 - gap > o.z1 || o.z0 - gap > cur.z1) continue;
+        cur = {
+          x0: Math.min(cur.x0, o.x0), x1: Math.max(cur.x1, o.x1),
+          z0: Math.min(cur.z0, o.z0), z1: Math.max(cur.z1, o.z1),
+        };
+        out.splice(i, 1);
+        again = true;
+        break;
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+// The solid rectangles of a shape, in its own frame, as centre plus half extents.
+export function footprintOf(parts, clearance = WALK_CLEARANCE, { merge = true } = {}) {
+  const rects = [];
+  for (const g of parts) {
+    if (!g) continue;
+    const r = partRect(g, clearance);
+    if (r) rects.push(r);
+  }
+  return (merge ? mergeRects(rects, WALK_GAP) : rects).map((r) => ({
+    x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2,
+    hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2,
+  }));
+}
+
+// ---------------------------------------------------------------- walls as they stand
+// What walk mode walks into (Plans/muren-met-hitboxes.md). footprintOf() above takes one
+// rectangle per part, of every corner of it under head height, and glues those within a gap
+// of each other - and one Blender object is often a whole curtain wall or an open silo, whose
+// rectangle closes the courtyard it stands round: the great castle was one block over its
+// seven cells with a gate nobody could walk into (a body got 0.54 from the gate, 0.14 against
+// the stone), the gold pit a block where its mouth is open for the barrow, a yard of crates and
+// logs one block from the shed to the last log. So a wall is measured off its faces instead:
+// every triangle cut to the band a body stands in, the rectangle of what is left, and two of
+// those joined only where the one rectangle round them holds almost nothing the two did not
+// (WALK_TIGHT). No gluing across a gap is needed any more - walk.js grows every solid by a
+// body's radius, so a gap narrower than a body closes by itself - and nothing has to be kept
+// APART from its neighbours by name, which is the list that used to say which buildings the
+// gluing got wrong.
+//
+// The band starts a step up, not at the ground: what is lower than WALK_STEP is walked onto,
+// the way the porch (PORCH_RISE, 0.18) always has been. From the ground, a shop's own plinth and
+// the sill in front of its door closed the whole front of the library, the warehouse and the
+// sweet shop into one block.
+//
+// Each solid also says how high it stands (`y0`/`y1`, in the frame the parts were built in, so
+// before the porch lifts them): the top of the highest face that went into it, for a jump to
+// clear a crate or a barrel, and a bottom well under the porch's skirt, so nobody walks under a
+// house on the downhill side of its plot. main.js hands those on with the building's own height.
+export const WALK_STEP = 0.15;
+const WALK_TIGHT = 0.05;          // the most of a joined rectangle that may be empty ground
+const WALK_SLIVER = 0.03;         // how far over the step a face has to reach to be in the way
+
+// A triangle cut to y0..y1, as the rectangle round what is left of it and the top of the whole
+// triangle; null when none of it is in the band.
+function bandRect(ax, ay, az, bx, by, bz, cx, cy, cz, y0, y1, out) {
+  const hi = Math.max(ay, by, cy);
+  // A face that only just reaches over the step is still the step: the grocer's stall front tops
+  // out 3 mm over it, and its sliver of band was a wall across the walk up to the door.
+  if (hi < y0 + WALK_SLIVER || Math.min(ay, by, cy) > y1) return null;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const take = (x, z) => {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (z < z0) z0 = z;
+    if (z > z1) z1 = z;
+  };
+  // The corners inside the band, and where each edge crosses its two lines.
+  const P = [[ax, ay, az], [bx, by, bz], [cx, cy, cz]];
+  for (let i = 0; i < 3; i++) {
+    const [px, py, pz] = P[i], [qx, qy, qz] = P[(i + 1) % 3];
+    if (py >= y0 && py <= y1) take(px, pz);
+    for (const y of [y0, y1]) {
+      if ((py - y) * (qy - y) < 0) {
+        const t = (y - py) / (qy - py);
+        take(px + (qx - px) * t, pz + (qz - pz) * t);
+      }
+    }
+  }
+  if (!Number.isFinite(x0)) return null;
+  out.x0 = x0; out.x1 = x1; out.z0 = z0; out.z1 = z1; out.top = hi;
+  return out;
+}
+
+const rectArea = (r) => (r.x1 - r.x0) * (r.z1 - r.z0);
+const overlapOf = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0))
+  * Math.max(0, Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0));
+
+// Join rectangles while the one round two of them is no emptier than WALK_TIGHT. Biggest
+// first, so the small pieces of a wall are swallowed by its long faces rather than joined to
+// each other into strips first; a rectangle wholly inside another is simply dropped.
+function joinTight(rects) {
+  const list = rects.slice().sort((a, b) => rectArea(b) - rectArea(a));
+  const out = [];
+  for (const r of list) {
+    let cur = { ...r };
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < out.length; i++) {
+        const o = out[i];
+        const u = { x0: Math.min(cur.x0, o.x0), x1: Math.max(cur.x1, o.x1), z0: Math.min(cur.z0, o.z0), z1: Math.max(cur.z1, o.z1) };
+        const au = rectArea(u);
+        if (au - (rectArea(cur) + rectArea(o) - overlapOf(cur, o)) > WALK_TIGHT * au + 1e-5) continue;
+        u.top = Math.max(cur.top, o.top);
+        u.bottom = Math.min(cur.bottom, o.bottom);
+        cur = u;
+        out.splice(i, 1);
+        again = true;
+        break;
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+// The solid rectangles of a shape as walk mode meets them, in its own frame: centre, half
+// extents and the height it stands, `step` and `clearance` in the same frame as the parts.
+export function wallsOf(parts, clearance = WALK_CLEARANCE, step = WALK_STEP) {
+  const rects = [];
+  const tri = {};
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position, index = g.index;
+    const n = index ? index.count : p.count;
+    let bottom = Infinity;
+    for (let i = 0; i < p.count; i++) bottom = Math.min(bottom, p.getY(i));
+    const mine = [];
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i0 = index ? index.getX(t) : t, i1 = index ? index.getX(t + 1) : t + 1, i2 = index ? index.getX(t + 2) : t + 2;
+      const r = bandRect(p.getX(i0), p.getY(i0), p.getZ(i0), p.getX(i1), p.getY(i1), p.getZ(i1),
+        p.getX(i2), p.getY(i2), p.getZ(i2), step, clearance, tri);
+      if (r) mine.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, top: r.top, bottom });
+    }
+    // Within the part first: that is where almost every face lies against another.
+    rects.push(...joinTight(mine));
+  }
+  return joinTight(rects).map((r) => ({
+    x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2,
+    hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2,
+    y0: Math.min(r.bottom, -PORCH_SKIRT), y1: r.top,
+  }));
+}
+
+function scaleSolids(solids, s) {
+  return solids.map((r) => ({
+    x: r.x * s, z: r.z * s, hx: r.hx * s, hz: r.hz * s,
+    ...(r.r ? { r: r.r * s } : {}),
+    ...(r.y0 != null ? { y0: r.y0 * s, y1: r.y1 * s } : {}),
+  }));
+}
+
+// What is round is walked round, not into the corners of the square it fits in. A box
+// round the fountain reaches 0.78 out along a diagonal where the stone stops at 0.54, and
+// with the tables set down on the next cell corner to corner, those two box corners met
+// and closed the diagonal between them - a gap you could see through and not walk. So a
+// round thing's solid also carries `r`, and walk.js tests a circle for it; hx/hz stay as
+// its bounds for everything that only wants a rectangle.
+// The lighthouse is round too, and since it was built at its real size (1.44 across at the
+// foot) the corners of its box stood 0.3 off the stone on every diagonal - on a coast cell,
+// where the way round it is often the strip between the tower and the water.
+const ROUND = new Set(['well', 'fountain', 'flowerbed', 'lighthouse']);
+// Everything else is measured face by face (wallsOf), which is what the list that stood here -
+// the tables' L, the shops and harbour houses with crates by the door, the shipyard's sixteen
+// cells, the Salty Kraken's barrels - kept apart by name, one building the gluing got wrong at a
+// time. Measured that way, each of them is walked round as it stands without being named.
+// Bar one, which is the other way round: the shipyard's slipway is one solid as a whole part
+// (its ways have no deck level, and run out over the water), and the ship on it falls inside it.
+// Face by face, the ways were walked between. The shed, the stacks and the hearth are parts of
+// their own, each walked round.
+const BY_PART = new Set(['shipyard']);
+// The turn that brings the sign's arm (+x) to where the Salty Kraken's sign points: none. It stands
+// on its own post at the foot of the stair, the arm out east over the way up and the board facing
+// the water (+z), where the island's camera reads it (scripts/build-piratetavern.py).
+const PIRATE_SIGN_YAW = 0;
+
+// The Salty Kraken's stair as walk mode stands on it (scripts/build-piratetavern.py): every
+// `anchor.deck.<name>.lo|hi` pair is the two corners of one axis-aligned floor and every
+// `anchor.stair.<name>.lo|hi` a ramp along x from its foot (`lo`) to its head (the ship's own
+// vocabulary, scripts/model-rules.mjs) - walk.js `surfaces`, the rooms'
+// own shape, in the building's frame (main.js turns and places them). The corners are the bake's,
+// so the numbers of the stair live in one place.
+export function pirateSurfaces(anchors) {
+  const out = [];
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^(deck|stair)\.(.+)\.lo$/.exec(key);
+    const hi = m && anchors[`${m[1]}.${m[2]}.hi`];
+    if (!hi) continue;
+    const name = m[2];
+    const x0 = Math.min(lo[0], hi[0]), x1 = Math.max(lo[0], hi[0]);
+    const z0 = Math.min(lo[2], hi[2]), z1 = Math.max(lo[2], hi[2]);
+    if (Math.abs(lo[1] - hi[1]) < 1e-6) out.push({ name, x0, x1, z0, z1, y: lo[1] });
+    else {
+      const first = lo[0] <= hi[0];
+      out.push({ name, x0, x1, z0, z1, axis: 'x', y0: first ? lo[1] : hi[1], y1: first ? hi[1] : lo[1] });
+    }
+  }
+  return out;
+}
+
+// Its rope ladders (scripts/build-piratetavern.py, issue #86): every `anchor.climb.<name>.lo|hi` pair,
+// `lo` where a climber stands at the foot in front of the rungs and `hi` where they step off at the head,
+// in the building's frame like the surfaces (main.js turns and places them). walk.js climbs them the way
+// it climbs a ship's ladder: no key, walk into the foot facing the hull, or out over the end at the top.
+export function pirateClimbs(anchors) {
+  const out = [];
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^climb\.(.+)\.lo$/.exec(key);
+    const hi = m && anchors[`climb.${m[1]}.hi`];
+    if (hi) out.push({ name: m[1], lo: { x: lo[0], y: lo[1], z: lo[2] }, hi: { x: hi[0], y: hi[1], z: hi[2] } });
+  }
+  return out;
+}
+
+// Its solids, with a height each (walk.js `atHeight`): a wall only to a body whose feet-to-head
+// span meets it. From every part as footprintOf takes them - the rectangle of what is low enough to
+// bump into - but standing from the part's foot to its top, so a walker on the landing passes over
+// the rock under it; the stair itself is left out (it is walked, not walked into). Under each floor
+// and each ramp's high end stands a low block, so nobody walks in under the stair instead of up it,
+// and the hull is one solid from its keel to the castle's roof (`anchor.solid.hull.lo|hi`): no
+// vertex of it is a settler's height off the ground, so without it the stair's inner side was open
+// into the ship.
+//
+// Measured from the foot of the stair (`anchor.door`, the landing's floor), not from the asset's
+// y = 0: the rock runs on SKIRT below it into the water or the sand (Plans/kraken-op-zee.md), and
+// what a walker - or a swimmer at the surface, half a unit under the landing - bumps into is what
+// stands round that level, not the skirt's widest reach at the bottom. The landing and its piles
+// are walked on, like the stair.
+const PIRATE_WALKED = /^Salty (stair|door|landing)/;
+const PIRATE_UNDER = 0.6;       // how far under the landing a part still counts as a wall
+const UNDER_STAIR = 0.75;       // a floor at least this high has room under it for somebody to walk
+const PIRATE_RAIL_H = 0.32;     // the rail's height over the floor (RAIL_H in scripts/build-piratetavern.py)
+function pirateSolids(parts, anchors, surfaces, climbs = []) {
+  const out = [];
+  const ground = (anchors.door && anchors.door[1]) || 0;
+  // A point of the rock under one of the stair's floors is walked over, not into: the stair stands on
+  // the rock (since the stair's foot went up the rock, Plans/kraken-op-zee.md, rocks reach under the
+  // flights at a walker's height, and their box stood across the treads).
+  const under = (x, y, z) => surfaces.some((f) => {
+    if (x < f.x0 || x > f.x1 || z < f.z0 || z > f.z1) return false;
+    const top = f.y != null ? f.y : f.y0 + (f.y1 - f.y0) * (x - f.x0) / ((f.x1 - f.x0) || 1);
+    return y <= top + 0.02;
+  });
+  for (const g of parts) {
+    const name = g.userData.part?.args?.[0] || '';
+    if (PIRATE_WALKED.test(name)) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity, low = 0;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      if (y > ground + WALK_CLEARANCE || y < ground - PIRATE_UNDER) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (under(x, y, z)) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+      low++;
+    }
+    if (low) out.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, y0, y1 });
+  }
+  // The rails: each segment a thin wall from the floor under it to a rail's height over it, in
+  // pieces a pace long so a rail up a flight stops you at the flight's height and not at its top
+  // (the first bake left them to the eye: you walked through them and fell off the stair).
+  for (const [key, a] of Object.entries(anchors)) {
+    const m = /^rail\.(\d+)\.a$/.exec(key);
+    const b = m && anchors[`rail.${m[1]}.b`];
+    if (!b) continue;
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.4));
+    for (let i = 0; i < n; i++) {
+      const p = a.map((v, k) => v + (b[k] - v) * i / n), q = a.map((v, k) => v + (b[k] - v) * (i + 1) / n);
+      out.push({ x: (p[0] + q[0]) / 2, z: (p[2] + q[2]) / 2, hx: Math.abs(q[0] - p[0]) / 2 + 0.02, hz: Math.abs(q[2] - p[2]) / 2 + 0.02,
+        y0: Math.min(p[1], q[1]) - 0.05, y1: Math.max(p[1], q[1]) + PIRATE_RAIL_H, rail: true });
+    }
+  }
+  // Under each floor high enough to walk under, a low block - inset by a body's width, because
+  // walk.js grows every solid by one: at the floor's own size, anybody who landed beside the stair
+  // was inside it, and every step from there was blocked (the keeper: "karakter zit vast").
+  // `dry`: a wall to feet, not to a swimmer. In the sea these blocks stand in the water under the
+  // landing and the ladder up the hull, and with the rocks' boxes they penned in whoever fell off
+  // the boarding plank between the ladder and the rock, with no way to swim out (issue #89).
+  // Not under a floor a rope ladder reaches (the boarding plank): what is under it is the landing the
+  // ladder hangs onto, walked by everybody going up the stair, and a block there stood across it.
+  const climbedTo = (s) => s.y != null && climbs.some(({ hi }) =>
+    Math.abs(hi.y - s.y) < 0.02 && hi.x >= s.x0 && hi.x <= s.x1 && hi.z >= s.z0 && hi.z <= s.z1);
+  for (const s of surfaces) {
+    let a = s.x0 + WALK_BODY_R, b = s.x1 - WALK_BODY_R;
+    const top = s.y != null ? s.y : Math.max(s.y0, s.y1);
+    if (top - ground < UNDER_STAIR || climbedTo(s)) continue;
+    if (s.y == null) {
+      // only where the ramp is high enough to be walked under
+      const t = (ground + UNDER_STAIR - s.y0) / (s.y1 - s.y0);
+      const at = s.x0 + (s.x1 - s.x0) * Math.min(Math.max(t, 0), 1);
+      if (s.y1 > s.y0) a = Math.max(a, at); else b = Math.min(b, at);
+    }
+    const y1 = (s.y != null ? s.y : ground + UNDER_STAIR) - 0.3;
+    const hz = (s.z1 - s.z0) / 2 - WALK_BODY_R;
+    if (b > a && hz > 0) out.push({ x: (a + b) / 2, z: (s.z0 + s.z1) / 2, hx: (b - a) / 2, hz, y0: ground - PIRATE_UNDER, y1, dry: true });
+  }
+  // Every block the bake names (anchor.solid.<name>.lo|hi): the hull from its keel to under the deck, and on
+  // the deck the castles, masts, capstan, barrels and crates (Plans/kraken-dek.md).
+  for (const [key, lo] of Object.entries(anchors)) {
+    const m = /^solid\.([a-z]+)\.lo$/.exec(key);
+    const hi = m && anchors[`solid.${m[1]}.hi`];
+    if (!hi) continue;
+    out.push({ x: (lo[0] + hi[0]) / 2, z: (lo[2] + hi[2]) / 2, hx: Math.abs(hi[0] - lo[0]) / 2, hz: Math.abs(hi[2] - lo[2]) / 2, y0: lo[1], y1: hi[1] });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the porch
+// main.js sets a building down at the height of the middle of its plot and leaves it
+// there. The plots are chosen for flat ground, but flat is a comparison and not a
+// promise: measured over the island as it stands, the terrain under a building wanders
+// by about 0.11 from end to end in the median case and by 0.29 at the ninetieth
+// percentile, and the worst plot on the island moves 0.8. Half of that is above the
+// middle and half below, so a house has one corner in the air and the opposite one in
+// the grass - and a tent, which is 0.58 tall in total, can lose a third of itself.
+//
+// The other way out was to flatten the ground under each plot, and that was turned
+// down: the island is hilly and should look it. So every building gets something to
+// stand on instead. A step, wide enough to show past the walls all the way round - the
+// showing is the point, it is what tells you the building is standing on something
+// rather than growing out of the lawn - and with a skirt that reaches well below the
+// ground so the downhill side never opens a gap you can see under.
+const PORCH_RISE = 0.18;      // how far the building is lifted, and how tall the step reads
+const PORCH_OVER = 0.12;      // how far it shows past the widest thing standing on it
+const PORCH_TREAD = 0.11;     // and how much wider again the lower of its two courses is
+const PORCH_SKIRT = 0.7;      // how far it reaches down; only ever seen on the downhill side
+const PORCH_R = 0.14;         // corner radius: nothing on this island has a sharp corner
+const PORCH_UPTO = 0.45;      // above this a part is a roof or a chimney, not a footprint
+// Street furniture is not a building and a bench on a plinth is a monument. The boards
+// stand on their own posts, the statue has a plinth already, and the well and the
+// fountain are round - a square step under either would be the corner the well just
+// stopped having.
+const NO_PORCH = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues', 'statue', 'well', 'fountain',
+  // The postbox stands in a stone pad of its own, on paving somebody already laid. A step
+  // round it would be a plinth under a letter box.
+  'mailbox',
+  // The pirate's chest stands on the tavern's paving and the treasure statue has a plinth of its
+  // own, both baked with their footing: a step round either is a plinth under a plinth.
+  'pirate', 'treasure',
+  // The gold pit is a slab with walls on it, open at the front so a barrow could be run in;
+  // a step across that mouth is the one thing a silo is built not to have.
+  'goldpit',
+  // The gold mine is a hill with an apron of its own, both going under the grass: a step round
+  // a hill is a plinth under a mountain.
+  'goldmine',
+  // The Salty Kraken is a ship on a rock, and the rock is its footing: a step round it read as a
+  // stone plinth under a wreck.
+  'piratetavern',
+  // The water tower came with four stone pads of its own and stands on open grass between
+  // them. A step round the outside of that would be a plinth under a thing on stilts.
+  'watertower',
+  // The bridge stone has a footing course of its own and stands on the bank beside a
+  // country road. A paved step round it would be a doorstep to a stone.
+  'bridge',
+  // The shipyard carries its own footings - a plinth under the shed, a hearth, a bed of stone
+  // under the slipway and piles past it - and everything below 0.45 of it is sixteen cells of
+  // slipway: a porch fitted to that would be a stone quay the length of the lot.
+  'shipyard',
+  // And the ship floats. A step under her would be a stone quay laid out in the sea.
+  'ship']);
+function wantsPorch(spec) {
+  if (spec.harbour) return false;                 // it stands on its own stilts, over water
+  if (spec.kind === 'civic') return !NO_PORCH.has(spec.civicType);
+  return true;
+}
+// How far the step shows past what stands on it. The two numbers above were measured
+// against a house 1.26 across, where 0.23 all round reads as a step. An apprentice's shed
+// is 0.76 across and the same 0.23 made a terrace of it: the shed came out on a 1.00
+// plinth, one whole grid cell edge to edge, so a yard with three apprentices had stone
+// touching stone in every direction. A shed keeps the skirt - that is the half of the
+// porch which stops the downhill side opening a gap you can see under - and gives up the
+// tread it has no room for, because it does not stand on a plot of its own.
+// The church is the third case, and it is the shed's for a different reason. It is long -
+// nave, tower and a great buttress in front of them - and it needs the skirt badly: the
+// buttress has no footing of its own, so the step is the only thing between its foot and
+// whatever the ground does at the front of the lot. But 0.23 of tread all round is 0.46
+// off the length it may be, and on a three cell lot that is the difference between a
+// church and a chapel of ease. So it takes the step at exactly its own footprint: the
+// skirt that holds the ground, and not a hand's width more.
+// The shops are the tavern's size and stand on the tavern's step (Plans/DONE/knus-dorpscentrum.md).
+// They were built out to the edge of their lot at first and took the chapel's rule then; at the
+// village's size that left them the only buildings on the square not standing on something.
+// The lighthouse takes the chapel's rule, for the shed's reason: it has one cell and no more,
+// and since it was built at its real size its own stone foot is 1.44 across. The full step
+// round that came out 1.9 square, most of the next cell over on every side; at its own
+// footprint it is a square plinth under a round tower, which still shows at the corners that
+// it stands on something, with the model's own foot course as a second step above it. On it
+// the tower covers 1.39 by 1.49, where the old one on its full step covered 1.32 by 1.34.
+const porchOverhang = (spec) => (spec.kind === 'shed' || spec.civicType === 'chapel' || spec.civicType === 'lighthouse' ? [0, 0]
+  : spec.civicType === 'tavern' || spec.civicType === 'piratetavern' || SHOPS.has(spec.civicType) || HARBOUR_HOUSES.has(spec.civicType) ? [0.06, 0.08]
+    : [PORCH_OVER, PORCH_TREAD]);
+
+// The widest a shape reaches from its own centre, at any height. Head height is the line
+// that matters for walking into something, and a shed is knee high: all of it is down in
+// the yard, so all of it has to fit in the yard.
+function reachOf(parts) {
+  let r = 0;
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const d = Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)));
+      if (d > r) r = d;
+    }
+  }
+  return r;
+}
+// What a shed may take of its yard cell, across. A shed has no plot: lib/layout.mjs gives
+// it one cell of its master's 3x3, and the room actually left on that cell is the cell
+// less what the master's house already reaches over it. Measured on this island: a house
+// tier reaches 0.86 from the middle of its plot and the plot edge is 1.50 out, so the
+// border an apprentice stands in is 0.64 wide. The sheds were being drawn 1.00 to 1.15
+// across, which is why 37 of 39 of them in the yards with more than one apprentice had
+// their master's doorstep drawn through them. Fitting the shed to the border instead
+// leaves grass on both sides of it, and leaves it somewhere to be pushed to - see
+// yardNudge in main.js.
+const SHED_SPAN = 0.58;
+// And how far out a thing standing in the yard may reach - a cart, a crate, a woodpile.
+// The plot edge is 1.50 out and the lane is the cell beyond it, so this leaves a hand's
+// width of grass inside the boundary, and enough of it that the four per cent a house may
+// be scaled up by (see `s` in buildBuilding) cannot push a cart into the road. It is the
+// third number on the same 3x3: a house reaches 1.15, a shed gets SHED_SPAN of a corner
+// cell, and the yard has what is left. Nothing is placed by it alone - see yardOn().
+const YARD_REACH = 1.40;
+
+// Everything low enough to be part of the footprint, as one rectangle. One rectangle and
+// not the walkable ones footprintOf() finds: a porch is a floor, and a floor with a
+// notch cut out of it where the barrels stand is not a floor.
+function groundRect(parts) {
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const g of parts) {
+    if (!g) continue;
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) > PORCH_UPTO) continue;
+      const x = p.getX(i), z = p.getZ(i);
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+    }
+  }
+  return Number.isFinite(x0) ? { x0, x1, z0, z1 } : null;
+}
+
+// Most of the island builds its front on local +z: the town hall, the market, the clock
+// tower, the castle and the office all put their door there, and the layout's rot is
+// written expecting exactly that. The old chapel does not
+// grew their doors on -z. The Blender tavern now faces +z; the remaining pair turn
+// to match. Once main.js was turning buildings the way the layout actually asked, those
+// three came out backwards.
+//
+// They are turned rather than rebuilt. Moving a door means moving everything that was
+// composed around it, and a facade that was drawn as a whole is worth more than the
+// satisfaction of having every case agree in the source. A half turn costs nothing: the
+// footprint is measured afterwards, and it is symmetric about the centre anyway.
+const BACKWARDS = new Set(['chapel']);
+
+function turnAround(parts, anchors, animated) {
+  for (const g of parts) g.rotateY(Math.PI);
+  for (const k of Object.keys(anchors)) anchors[k] = [-anchors[k][0], anchors[k][1], -anchors[k][2]];
+  for (const a of Object.values(animated)) if (a && a.at) a.at = [-a.at[0], a.at[1], -a.at[2]];
+}
+
+function porch(parts, anchors, animated, [over, tread] = [PORCH_OVER, PORCH_TREAD], earthen = false) {
+  const r = groundRect(parts);
+  if (!r) return;
+  for (const g of parts) lift(g, PORCH_RISE);
+  for (const k of Object.keys(anchors)) anchors[k] = [anchors[k][0], anchors[k][1] + PORCH_RISE, anchors[k][2]];
+  for (const a of Object.values(animated)) if (a && a.at) a.at = [a.at[0], a.at[1] + PORCH_RISE, a.at[2]];
+
+  const x = (r.x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
+  // What it comes to, for whatever has to stand on it and walk off it: the upper course's
+  // outline and its height (web/js/goldrun.js walks the goldsmith off his).
+  // `tread` and `low`: how much further the lower course reaches, and its top (walk mode stands on both).
+  const deck = { x0: r.x0 - over, x1: r.x1 + over, z0: r.z0 - over, z1: r.z1 + over, top: PORCH_RISE, tread, low: PORCH_RISE * 0.45 };
+  if (earthen) {
+    // Blender owns the turf, sloping shoulders and buried skirt. Fit its normalized
+    // plateau to the actual tent, while keeping the top exactly under the groundsheet.
+    parts.push(...meshAsset('addon_tent_mound', 0xffffff, {
+      x, y: -PORCH_SKIRT, z,
+      sx: r.x1 - r.x0 + .05, sy: PORCH_SKIRT + PORCH_RISE, sz: r.z1 - r.z0 + .05,
+    }));
+    return deck;
+  }
+  // Two courses, not one: the lower is wider and comes up half way, so whichever side the
+  // door is on there is something to step onto before the floor. One tall kerb all round
+  // would have left every door on the island opening onto a drop.
+  group('porch', () => {
+    slab(parts, x, z, (r.x1 - r.x0) + (over + tread) * 2, (r.z1 - r.z0) + (over + tread) * 2, PORCH_SKIRT + PORCH_RISE * 0.45);
+    slab(parts, x, z, (r.x1 - r.x0) + over * 2, (r.z1 - r.z0) + over * 2, PORCH_SKIRT + PORCH_RISE);
+  });
+  return deck;
+}
+
+// A rounded rectangle out of the primitives this file already has: two boxes crossed and
+// a post in each corner. The cross piece and the posts stop a hair short of the top,
+// because two faces on one plane is the single thing the depth buffer cannot be asked to
+// decide - the same hair BRIM exists for, and far below anything the eye can see here.
+function slab(parts, x, z, w, d, h) {
+  const r = Math.min(PORCH_R, Math.min(w, d) / 3);
+  const o = { x, y: -PORCH_SKIRT, z, sheet: 'stone' };
+  parts.push(box(w, h, d - r * 2, C.stone, o));
+  parts.push(box(w - r * 2, h - BRIM, d, C.stone, o));
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push(cylinder(r, r, h - BRIM, 7, C.stone, { ...o, x: x + sx * (w / 2 - r), z: z + sz * (d / 2 - r) }));
+    }
+  }
+}
+
+// The camera's boxes (`built.camBoxes`): six numbers a part, x0 y0 z0 x1 y1 z1 in the building's own
+// frame and at its scale, in one Float32Array - a few hundred houses keep a hundred each. A part
+// smaller than CAM_BOX_MIN every way (a lamp, a hinge, a doorknob) is left out: the camera passing
+// through one is not what anybody sees, and it would make the boom twitch along every facade.
+// Measured against the real geometry (tests/camera-boom.test.mjs): a boom stopped by these clears
+// nearly every view that had the building between the camera and the eye.
+const CAM_BOX_MIN = 0.06;
+function camBoxesOf(parts, s) {
+  const out = [];
+  for (const g of parts) {
+    if (!g || !g.attributes.position) continue;
+    const p = g.attributes.position;
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    if (!(x1 >= x0) || Math.max(x1 - x0, y1 - y0, z1 - z0) < CAM_BOX_MIN) continue;
+    out.push(x0 * s, y0 * s, z0 * s, x1 * s, y1 * s, z1 * s);
+  }
+  return new Float32Array(out);
+}
+
+export function buildBuilding(spec, ctx = {}) {
+  const pal = PALETTE[spec.style] || PALETTE.unknown;
+  const rng = makeRng(hash32(spec.id));
+  const parts = [];
+  let anchors = {}, animated = {}, height = 1, w = 0.9, yard = [];
+  // A building that says where it is solid itself (the ship, whose hull is measured off its
+  // bake rather than off everything below head height), and one that floats: main.js and
+  // guest-island.js set its origin on the sea instead of on the ground under the plot.
+  let ownSolids = null, floats = false, ownSurfaces = null, ownClimbs = null;
+
+  if (spec.kind === 'civic') {
+    const r = civic(parts, spec, rng);
+    anchors = r.anchors; animated = r.animated; height = r.height; w = 1.4;
+    ownSolids = r.solids || null;
+    ownSurfaces = r.surfaces || null;
+    ownClimbs = r.climbs || null;
+    floats = !!r.floats;
+    if (BACKWARDS.has(spec.civicType)) turnAround(parts, anchors, animated);
+  } else if (spec.kind === 'shed') {
+    const r = shed(parts, spec, pal);
+    anchors = r.anchors; height = r.height; w = 0.55;
+  } else if (spec.harbour) {
+    // A house on stilts, with a real front deck rather than a square just large enough to
+    // hide beneath its walls. A plot is three cells across and the house stands in the
+    // middle of it, so a one-cell deck left the two rings of boardwalk around it floating
+    // free of the building they belong to. The tongue points towards local +z, the same
+    // direction as the door; main.js turns the whole loaf to meet the district boardwalk.
+    const deck = HARBOUR_DECK;
+    parts.push(...meshAsset('civic_quay_platform', 0xffffff, {
+      y: deck - models.heightOf('civic_quay_platform'),
+    }));
+    const inner = [];
+    const r = houseBody(inner, { ...spec, tier: spec.tier === 'tent' ? 'hut' : spec.tier }, pal, rng, ctx);
+    for (const g of inner) parts.push(lift(g, deck));
+    parts.push(cylinder(0.05, 0.05, 0.36, 6, C.darkWood, { x: 0.44, y: deck, z: 0.44 }));
+    parts.push(box(0.1, 0.12, 0.1, 0xffb347, { x: 0.44, y: deck + 0.36, z: 0.44, emissive: 1 }));
+    anchors = r.anchors; height = deck + r.height; w = r.w;
+    for (const [k, v] of Object.entries(anchors)) anchors[k] = [v[0], v[1] + deck, v[2]];
+    for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
+  } else if (spec.hotel) {
+    const r = tower(parts, spec, pal, rng);
+    anchors = r.anchors; height = r.height; w = r.w;
+    for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
+  } else {
+    const r = houseBody(parts, spec, pal, rng, ctx);
+    anchors = r.anchors; height = r.height; w = r.w; yard = r.yard || [];
+    for (const o of spec.ornaments || []) ornament(parts, o, pal, { w, height, tier: TIER_INDEX[spec.tier] ?? 1 }, anchors);
+  }
+
+  // Both boards are built large for legibility and stand village sized; a house gets a
+  // touch of variety so a street of identical sessions still looks hand-made.
+  const boardish = spec.civicType === 'board' || spec.civicType === 'issues';
+  let s = boardish ? 0.6
+    : spec.kind !== 'civic' ? 0.96 + rng.next() * 0.08
+      : 1;
+  // A shed is fitted to the border of its master's yard rather than to its own idea of
+  // how big a shed is - see SHED_SPAN. Only the two types that stand their tools outside
+  // the walls are over it: the workshop's barrel and anvil and the lookout's spyglass
+  // reach a third further than the hut they belong to, and it was always those that came
+  // out through the master's doorstep first.
+  if (spec.kind === 'shed') {
+    const reach = reachOf(parts);
+    if (reach > 0) s = Math.min(s, SHED_SPAN / 2 / reach);
+  }
+  // The footprint is measured before the scale, so head height is measured there too -
+  // and before the porch, twice over. The porch is a step you walk onto rather than a
+  // wall you walk into, and measuring the building where it stood before it was lifted
+  // keeps every settler on the island walking the lines it already walks.
+  // What is round keeps the one rectangle of old, and becomes its circle below.
+  const round = spec.kind === 'civic' && ROUND.has(spec.civicType);
+  // A house on stilts keeps the one block of old, with no height to it: its walls start at
+  // HARBOUR_DECK, over head height from the ground it is measured from, so measured face by face
+  // only its piles and platform are in the band - and their top is the boardwalk's, so a body on
+  // the boardwalk would have walked over the platform and through the walls. Its deck is the quay
+  // work's (Plans/quay-op-zee.md); until that stands it on its own floor, it stays a wall.
+  const wallRects = ownSolids || (round || spec.harbour ? footprintOf(parts, WALK_CLEARANCE / s)
+    : BY_PART.has(spec.civicType) ? footprintOf(parts, WALK_CLEARANCE / s, { merge: false })
+      : wallsOf(parts, WALK_CLEARANCE / s, WALK_STEP / s));
+  let deck = null;
+  if (wantsPorch(spec)) {
+    deck = porch(parts, anchors, animated, porchOverhang(spec), spec.kind === 'house' && spec.tier === 'tent');
+    height += PORCH_RISE;
+    // The walls were measured before the porch lifted them; their heights go up with them.
+    if (!ownSolids) for (const r of wallRects) if (r.y0 != null) { r.y0 += PORCH_RISE; r.y1 += PORCH_RISE; }
+  }
+  // And the yard last of all, which is the whole reason houseBody() handed it back rather
+  // than putting it in itself: porch() lifts everything already in the loaf onto its step
+  // and grows the step to cover it, and a cart is neither on the step nor part of it.
+  //
+  // Its rectangles are kept as a list of their own as well as being walked into. Two
+  // things read the footprint and they want different answers: walk mode wants everything
+  // it can bump into, and the scaffold wants the walls - a builder's frame goes round the
+  // house, not round the woodpile ten feet away.
+  for (const g of yard) parts.push(g);
+  const yardRects = yard.length ? wallsOf(yard, WALK_CLEARANCE / s, WALK_STEP / s) : [];
+
+  if (round) {
+    for (const r of wallRects) r.r = Math.max(r.hx, r.hz);
+  }
+  // What the follow camera's boom stops at (walk.js, Plans/camera-botsing.md), measured before the
+  // merge loses the parts: the box of every part, roof and upper storey and overhang included -
+  // everything the walls above miss, since they are measured in a body's height only.
+  const camBoxes = camBoxesOf(parts, s);
+  const geometry = merge(parts);
+  let walls = wallRects, solids = wallRects.concat(yardRects);
+  if (s !== 1) {
+    geometry.scale(s, s, s);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    walls = scaleSolids(walls, s);
+    solids = scaleSolids(solids, s);
+    // A small building's skirt is scaled with it, but the ground on a slope is not: the bottom
+    // of a solid stays as far down as a full-sized one's.
+    for (const r of solids) if (r.y0 != null) r.y0 = Math.min(r.y0, -PORCH_SKIRT);
+  }
+  if (boardish) {
+    height *= s;
+    for (const k of Object.keys(anchors)) anchors[k] = anchors[k].map((v) => v * s);
+  }
+  // The editor asks for the pieces rather than the loaf: one geometry per primitive,
+  // still in the space the code was written in, each carrying the call that made it.
+  // Behind a flag, because the island builds hundreds of these and would sooner see the
+  // parts collected than held onto.
+  return {
+    geometry, anchors, animated, height, width: w,
+    bbox: geometry.boundingBox.clone(), solids, walls, camBoxes,
+    ...(floats ? { floats } : {}),
+    // Floors and ramps walk mode stands you on (the Salty Kraken's stair), in the building's frame.
+    ...(ownSurfaces ? { surfaces: ownSurfaces } : {}),
+    ...(ownClimbs ? { climbs: ownClimbs } : {}),
+    // Scaled with the rest: every house is 0.96 to 1.04 of itself, and a porch handed back only at
+    // s === 1 was a porch no house had, so walk mode could not stand anybody on one (main.js porchOf).
+    ...(deck ? { porch: s === 1 ? deck : Object.fromEntries(Object.entries(deck).map(([k, v]) => [k, v * s])) } : {}),
+    ...(ctx.keepParts ? { parts, scale: s } : {}),
+  };
+}
+
+// ---------------------------------------------------------------- extras
+// The fountain's water is baked in Blender with the stone, but returned separately at
+// runtime so its vertices can move. `surface` is the two filled bowls; `jets` is the four
+// pairs of falling rods. Keeping those two meshes apart lets the surface ripple without
+// bending a stream, and lets the streams pulse without lifting a whole basin of water.
+function fountainWaterPart(name, kind = 'all') {
+  if (!name || !name.startsWith('civic_fountain ')) return false;
+  const jets = name.startsWith('civic_fountain water jet');
+  const surface = name.endsWith('basin water') || name.endsWith('upper water');
+  return kind === 'jets' ? jets : kind === 'surface' ? surface : jets || surface;
+}
+
+export function buildFountainWaterGeometry(kind = 'all') {
+  if (!models.hasAsset('civic_fountain')) return new THREE.BufferGeometry();
+  const names = models.assetParts('civic_fountain');
+  const baked = meshAsset('civic_fountain');
+  const picked = [];
+  for (let i = 0; i < baked.length; i++) {
+    if (fountainWaterPart(names[i], kind)) picked.push(baked[i]);
+    else baked[i].dispose();
+  }
+  const geometry = merge(picked);
+  for (const g of picked) g.dispose();
+  return geometry;
+}
+
+export function buildScaffoldGeometry() {
+  const parts = [];
+  const h = 1;
+  for (const [x, z] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+    parts.push(box(0.045, h, 0.045, C.plank, { x, z }));
+  }
+  for (const y of [h * 0.34, h * 0.72]) {
+    parts.push(box(1.045, 0.035, 0.035, C.plank, { y, z: -0.5 }));
+    parts.push(box(1.045, 0.035, 0.035, C.plank, { y, z: 0.5 }));
+    parts.push(box(0.035, 0.035, 1.045, C.plank, { y, x: -0.5 }));
+    parts.push(box(0.035, 0.035, 1.045, C.plank, { y, x: 0.5 }));
+  }
+  const d1 = box(0.03, 1.2, 0.03, C.plank, { x: 0, z: -0.5, rz: 0.7 });
+  const d2 = box(0.03, 1.2, 0.03, C.plank, { x: 0, z: 0.5, rz: -0.7 });
+  parts.push(d1, d2);
+  parts.push(box(0.9, 0.03, 0.34, C.plank, { y: h * 0.56, z: 0.2 }));
+  return merge(parts);
+}
+
+export function buildBoatGeometry() {
+  const parts = [];
+  const hull = new THREE.CylinderGeometry(0.19, 0.12, 0.8, 5);
+  hull.rotateZ(Math.PI / 2);
+  hull.rotateY(Math.PI / 2);
+  parts.push(finish(hull, C.wood));
+  parts.push(box(0.72, 0.035, 0.03, C.stripe, { y: 0.09, z: 0.15 }));
+  parts.push(box(0.72, 0.035, 0.03, C.stripe, { y: 0.09, z: -0.15 }));
+  parts.push(box(0.022, 0.62, 0.022, C.darkWood, { y: 0.08 }));
+  parts.push(quad([[0.01, 0.16, 0], [0.01, 0.66, 0], [0.34, 0.24, 0]], C.paper, {}));
+  return merge(parts);
+}
+
+export function buildCampfireGeometry() {
+  const parts = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    parts.push(sphere(0.045, 0x7f7a72, { x: Math.cos(a) * 0.17, y: 0.02, z: Math.sin(a) * 0.17 }));
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const log = box(0.05, 0.26, 0.05, C.darkWood, { x: Math.cos(a) * 0.06, z: Math.sin(a) * 0.06, rz: 0.5, ry: a });
+    parts.push(log);
+  }
+  return merge(parts);
+}
+export function buildFlameGeometry() {
+  return merge([
+    cone(0.085, 0.26, 5, 0xff8c3a, { y: 0.03, emissive: 1 }),
+    cone(0.05, 0.16, 5, 0xffd23a, { y: 0.07, emissive: 1 }),
+  ]);
+}
+
+export function buildBladesGeometry() {
+  // Blender assets stand on the floor; the moving geometry turns around its hub.
+  return merge(meshAsset('civic_windmill_sails', 0xffffff, { y: -1.05 }));
+}
+
+// ---------------------------------------------------------------- the quay
+// How high the quay's planks ride over the sea, and how high they ride in the .blend they
+// came out of. The island drops the whole dock by the difference, which is the one number
+// that has to be got right about this set: every piece of it - decking, head, ramp and
+// mooring post - is modelled in one frame, so one lift puts all four on the same plane and
+// there is no seam anywhere along the run. See the note at the top of scripts/build-docks.py.
+//
+// 0.44 is a hand more clearance than DECK_MIN below, which is what a bridge over a river
+// keeps. A pier stands in open water instead, where the swell is the whole sea rather than
+// a channel, and 1.8 m of daylight is also what makes it read as something a boat comes
+// alongside rather than as planks lying on the surface. The pier that was here before rode
+// at 0.16, under the 0.09 its own waves reach: at any hour of the day the crests washed
+// straight through the deck.
+export const QUAY_DECK = BASIN_DECK;
+const DOCK_DECK = 0.80;             // the plank surface over the pile feet, in the model
+const DOCK_HEAD_HALF = 0.8;         // how far the wide head reaches across the run
+const DOCK_POST_X = 0.4;            // and where a mooring post stands, outside the walkway
+
+// The quay's planks: the pier the layout recorded, built out of the dock set.
+//
+// `cells` is the run of water cells pierCells() walked out from the shore, in order from
+// the beach, and `from` is the world point the mesh will stand on - the district's own
+// centre, because that is where main.js puts it.
+//
+// What goes where: a ramp on the shore cell behind the run, decking along it, and the wide
+// head on the last cell - but only where there is water either side to take the wings,
+// because the head is 1.6 across and a pier can perfectly well end in an inlet one cell
+// wide. Mooring posts stand outside the walkway, in pairs down the run and at the four
+// corners of the head. They carry nothing; they are what a dock is recognised by from the
+// air, where the deck is one line on the water and the posts are the row of marks along it.
+// Which way a pier runs, which way is across it, and whether it ends in the wide head: the three
+// decisions buildPierGeometry lays the dock set out by, kept in one place because pierSurfaces
+// has to make them the same way - the planks you see and the planks you stand on.
+// `head: false` is a pier that ends against something rather than in open water - the Salty Kraken's
+// gangway, whose last bay meets the landing at the foot of its stair (Plans/kraken-op-zee.md) - and
+// gets no wide head however much water is either side of it.
+function pierFrame(cells, terrain, from, head = true) {
+  const n = cells.length;
+  // Which way the run goes, as a unit step over the cell grid. A pier is a straight line
+  // out from one shore cell along one of the four axes, so the first two cells say it -
+  // and a pier of a single cell has none to compare, so it takes its bearing from the
+  // district it belongs to, which is inland of it by construction.
+  let step = n > 1
+    ? [Math.sign(cells[n - 1][0] - cells[0][0]), Math.sign(cells[n - 1][1] - cells[0][1])]
+    : null;
+  if (!step) {
+    const [x, z] = terrain.cellWorld(cells[0][0], cells[0][1]);
+    const [dx, dz] = [x - from[0], z - from[1]];
+    step = Math.abs(dx) > Math.abs(dz) ? [Math.sign(dx) || 1, 0] : [0, Math.sign(dz) || 1];
+  }
+  const across = [step[1], -step[0]];
+  const wide = (cell) => terrain.isWater(cell[0] + across[0], cell[1] + across[1])
+    && terrain.isWater(cell[0] - across[0], cell[1] - across[1]);
+  return { step, across, head: head && wide(cells[n - 1]) };
+}
+
+export function buildPierGeometry(cells, terrain, from, { head: wantHead = true } = {}) {
+  if (!cells || !cells.length) return null;
+  if (!models.hasAsset('prop_dock_deck_a')) return drawnPier(cells, terrain, from);
+  const n = cells.length;
+  const { step, across, head } = pierFrame(cells, terrain, from, wantHead);
+  // The set is modelled running along +z, like the fence and the bridge, so one rotation
+  // turns the whole pier to face whichever way the sea is.
+  const ry = Math.atan2(step[0], step[1]);
+  const lift = QUAY_DECK - DOCK_DECK;
+
+  const parts = [];
+  const put = (asset, cell, along = 0, side = 0) => {
+    const [x, z] = terrain.cellWorld(cell[0], cell[1]);
+    parts.push(...meshAsset(asset, 0xffffff, {
+      ry, y: lift,
+      x: x - from[0] + step[0] * along + across[0] * side,
+      z: z - from[1] + step[1] * along + across[1] * side,
+    }));
+  };
+  const posts = (cell, along = 0, side = DOCK_POST_X) => {
+    put('prop_dock_post', cell, along, side);
+    put('prop_dock_post', cell, along, -side);
+  };
+
+  // The shore cell, which is not in the run: the layout records the water a pier covers
+  // and the beach it leaves from is the cell behind the first of them.
+  put('prop_dock_ramp', [cells[0][0] - step[0], cells[0][1] - step[1]]);
+
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1;
+    // Alternating bays, because four copies of one bay along a run is a corrugation. Off
+    // the index rather than off a hash: a pier is a handful of cells and the point is that
+    // no two neighbours match, which alternating does exactly and a hash does mostly.
+    if (last && head) put('prop_dock_head', cells[i]);
+    else put(i % 2 ? 'prop_dock_deck_b' : 'prop_dock_deck_a', cells[i]);
+    // A pair of posts every second bay, and the run always ends in one: they mark where a
+    // boat may lie, so the head - or the last bay, if the water was too narrow for one -
+    // gets them at both corners.
+    if (last && head) {
+      for (const along of [-0.42, 0.42]) posts(cells[i], along, DOCK_HEAD_HALF + 0.1);
+    } else if (last || i % 2 === 0) posts(cells[i], last ? 0.3 : 0);
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// The parts of a pier that walk mode's cells cannot say (web/js/walk.js `surfaces`), as rectangles
+// in the terrain's own frame: the ramp on the shore cell, which climbs from the sand to the deck -
+// the cell under it is the beach, so the feet stood in the ramp and the step off the pier onto it
+// was the whole 0.4 - and the wide head, whose wings reach 0.3 into the water cells either side,
+// where the feet went through the planks into the sea. The decking itself is a whole cell of
+// `levels` already (main.js handOutDecks), and stays so: that is also what a swimmer under it
+// bumps their head on. Measured off the dock set, so a rebake moves the feet with the planks.
+let dockTread = null;
+function dockTreads() {
+  if (dockTread) return dockTread;
+  const lift = QUAY_DECK - DOCK_DECK;
+  const extent = (asset) => {
+    let x = 0, foot = -Infinity, top = -Infinity;
+    for (const name of models.assetParts(asset)) {
+      const p = models.part(name);
+      for (let i = 0; i < p.positions.length; i += 3) {
+        const vx = p.positions[i] + p.at[0], vy = p.positions[i + 1] + p.at[1] + lift, vz = p.positions[i + 2] + p.at[2];
+        x = Math.max(x, Math.abs(vx));
+        // The ramp's two ends, landward (-z) and at the pier (+z): the highest board in the
+        // outer tenth of each, which the walk then joins with a straight slope.
+        if (vz < -0.4) foot = Math.max(foot, vy);
+        if (vz > 0.4) top = Math.max(top, vy);
+      }
+    }
+    return { half: x, foot, top };
+  };
+  dockTread = { ramp: extent('prop_dock_ramp'), head: extent('prop_dock_head') };
+  return dockTread;
+}
+
+export function pierSurfaces(cells, terrain, from, { head: wantHead = true } = {}) {
+  if (!cells || !cells.length || !models.hasAsset('prop_dock_ramp')) return [];
+  const { step, across, head } = pierFrame(cells, terrain, from, wantHead);
+  const { ramp, head: wings } = dockTreads();
+  const n = cells.length;
+  // A rectangle round a cell's middle, `along` half its length down the run and `side` half its
+  // width across it, turned onto the grid (a pier only ever runs along an axis).
+  const rect = (cell, side, y) => {
+    const [x, z] = terrain.cellWorld(cell[0], cell[1]);
+    const hx = step[0] ? 0.5 : side, hz = step[0] ? side : 0.5;
+    return { x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz, ...y };
+  };
+  const out = [];
+  // The ramp rises towards the sea, which is `step`: from x0/z0 when the run goes the + way.
+  const up = step[0] + step[1] > 0;
+  out.push(rect([cells[0][0] - step[0], cells[0][1] - step[1]], ramp.half, {
+    y0: up ? ramp.foot : ramp.top, y1: up ? ramp.top : ramp.foot, axis: step[0] ? 'x' : 'z',
+  }));
+  if (head) out.push(rect(cells[n - 1], wings.half, { y: QUAY_DECK }));
+  return out;
+}
+
+// What a pier was before there was a model of one, kept for a checkout where the set has
+// never been baked - the same contract props.js keeps for the barrel. A slab and two pins
+// per cell is not a dock, but it is plainly a pier, and it is better than a quay district
+// with nothing on the water at all.
+function drawnPier(cells, terrain, from) {
+  const parts = [];
+  for (const [gx, gz] of cells) {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    parts.push(box(0.62, 0.07, 0.62, C.plank, { x: x - from[0], y: QUAY_DECK, z: z - from[1] }));
+    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] - 0.24, y: QUAY_DECK - 0.71, z: z - from[1] - 0.24 }));
+    parts.push(cylinder(0.04, 0.04, 0.7, 5, C.darkWood, { x: x - from[0] + 0.24, y: QUAY_DECK - 0.71, z: z - from[1] + 0.24 }));
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// The quay's branching boardwalk uses a Blender bay and an infill on each
+// shared edge. Separate x/z infills keep the plank grain aligned through corners
+// and crossings. Every piece still merges into one material and one draw call.
+// `extra` is more of the same material to go into the same geometry: the resort's raft and
+// parasols (`resortParts`), so they cost the island no draw call of their own.
+export function buildDeckGeometry(cells, terrain, from, extra = null) {
+  const unique = new Map((cells || []).map((c) => [`${c[0]},${c[1]}`, c]));
+  const parts = [...(extra || [])];
+  for (const [gx, gz] of unique.values()) {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const lx = x - from[0], lz = z - from[1];
+    parts.push(...meshAsset((gx + gz) % 2 ? 'prop_boardwalk_b' : 'prop_boardwalk_a', 0xffffff, {
+      x: lx, y: QUAY_DECK - models.heightOf('prop_boardwalk_a'), z: lz,
+    }));
+    // Each shared edge is owned once; duplicated door/street cells must not
+    // build two coincident floors. Infill bases are at zero, their tops at .15.
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      if (!unique.has(`${gx + dx},${gz + dz}`)) continue;
+      parts.push(...meshAsset(dx ? 'prop_boardwalk_join_x' : 'prop_boardwalk_join_z', 0xffffff, {
+        x: lx + dx * .5, y: QUAY_DECK - .15, z: lz + dz * .5,
+      }));
+    }
+  }
+  return parts.length ? merge(parts) : null;
+}
+
+// The resort's dressing (web/js/resort-dressing.js says where): a bathing raft of planks on four
+// drums, riding just clear of the swell, and striped parasols on the sand by the jetty's foot.
+// Primitives in the building material, handed to `buildDeckGeometry` as `extra`, so the whole
+// resort - boardwalk, raft and beach - is one geometry and one draw call. `groundAt(x, z)` is the
+// sand's height at a world point.
+const RAFT_Y = 0.12;              // over WAVE, the swell's own reach
+const PARASOL_STRIPES = [0xd9573f, 0xf2e6c8, 0x3f7fb3];
+export function resortParts(dressing, terrain, from, groundAt) {
+  if (!dressing) return [];
+  const parts = [];
+  if (dressing.raft) {
+    const [x, z] = terrain.cellWorld(dressing.raft[0], dressing.raft[1]);
+    const lx = x - from[0], lz = z - from[1];
+    for (const [dx, dz] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) {
+      parts.push(cylinder(0.11, 0.11, 0.22, 7, 0x9aa3a8, { x: lx + dx, y: RAFT_Y - 0.2, z: lz + dz }));
+    }
+    for (let i = 0; i < 5; i++) parts.push(box(0.9, 0.05, 0.16, i % 2 ? C.plank : 0xa1744e, { x: lx, y: RAFT_Y, z: lz - 0.36 + i * 0.18 }));
+    parts.push(cylinder(0.02, 0.02, 0.5, 5, C.white, { x: lx + 0.38, y: RAFT_Y + 0.05, z: lz + 0.38 }));
+  }
+  (dressing.parasols || []).forEach(([gx, gz], n) => {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const y = groundAt(x, z);
+    const lx = x - from[0] + (n % 2 ? 0.12 : -0.1), lz = z - from[1] + (n % 3 ? -0.08 : 0.1);
+    parts.push(cylinder(0.018, 0.018, 0.62, 5, C.white, { x: lx, y, z: lz }));
+    parts.push(cone(0.36, 0.16, 8, PARASOL_STRIPES[n % PARASOL_STRIPES.length], { x: lx, y: y + 0.52, z: lz }));
+    parts.push(box(0.2, 0.02, 0.42, PARASOL_STRIPES[(n + 1) % PARASOL_STRIPES.length], { x: lx + 0.28, y: y + 0.01, z: lz }));
+  });
+  return parts;
+}
+
+// How high a rail stands over the deck, and how far a deck rides above the water when
+// both its banks are at sea level. The settlers and the walk mode read the deck height
+// so they cross a river rather than wade under it.
+export const BRIDGE_RAIL = 0.3;
+// There is one sheet of water on the island, at SEA_LEVEL, and its shader lifts the
+// surface by up to WAVE (see the sea in web/js/world.js) - so a deck floored at the level
+// it crosses is a deck the crests wash through, which is what the planks looked like.
+// FREEBOARD is the daylight left under them at the ends of the run, where the arch below
+// adds nothing. Together they come to about what a hand-placed bridge already keeps
+// (`bridgeDeck` in web/js/props.js), which is the one crossing nobody complained about.
+const WAVE = 0.09;
+const FREEBOARD = 0.25;
+export const DECK_MIN = SEA_LEVEL + WAVE + FREEBOARD;
+// How far the crown of the deck rides over its two ends. A wooden footbridge humps, and
+// a flat plank laid from bank to bank reads as a jetty that happens to have two ends.
+const BRIDGE_ARCH = 0.34;
+
+// Where a deck runs and how high it is along it. `cells` is the crossing the layout
+// recorded, in order; the deck covers those cells and reaches a little way onto the bank
+// at each end, so there is no seam where the road meets the planks. The height comes from
+// the two banks alone - the ground between them is the riverbed - and ramps between them,
+// which is what makes a deck meet the ground at both ends instead of standing proud of
+// the lower one.
+const DECK_LIP = 0.6;             // how far onto the bank each end reaches
+const DECK_REACH = 8;             // and how far past the recorded run it may look for one
+
+// The crossing as the ground under it actually is, rather than as it was written down.
+// The layout measures its water on the server's own field - four metres to the lot, cut
+// from the baked world - while the ground here is generated per cell from the seed, so the
+// two do not agree on where the bank is. Measured on the live island: a crossing of four
+// cells covers one cell of a channel four cells wide and ends over open water, which is a
+// deck the river runs straight through. A deck is the one thing that cannot be a little
+// out, because what is under it is a river, so the run is carried outward from both ends
+// until it is on land - the question ghost.js already asks of a bridge somebody aims by
+// hand: it needs a bank to land on.
+function spanToBanks(cells, terrain, k) {
+  const n = cells.length;
+  const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) || 1 : 1;
+  const out = cells.map((c) => [...c]);
+  const step = (end, sign) => { const c = [...end]; c[k] += sign; return c; };
+  // `terrain.size` rather than inGrid(): the model sheet crosses a valley of its own with
+  // a terrain of four functions, and this has to hold there too.
+  const wet = (c) => c[0] >= 0 && c[1] >= 0 && c[0] < terrain.size && c[1] < terrain.size
+    && !terrain.isLand(c[0], c[1]);
+  for (let i = 0; i < DECK_REACH; i++) {
+    const next = step(out[0], -dir);
+    if (!wet(next)) break;
+    out.unshift(next);
+  }
+  for (let i = 0; i < DECK_REACH; i++) {
+    const next = step(out[out.length - 1], dir);
+    if (!wet(next)) break;
+    out.push(next);
+  }
+  return out;
+}
+
+function bridgeStops(cells, terrain, axis) {
+  const k = axis === 'x' ? 0 : 1;                    // the coordinate the run moves along
+  cells = spanToBanks(cells, terrain, k);
+  const n = cells.length;
+  const dir = n > 1 ? Math.sign(cells[n - 1][k] - cells[0][k]) : 1;
+  const abut = (end, sign) => { const c = [...end]; c[k] += sign * dir; return c; };
+  const at = (c) => terrain.cellWorld(c[0], c[1]);
+  const a = at(abut(cells[0], -1)), b = at(abut(cells[n - 1], 1));
+  const y0 = terrain.worldHeight(a[0], a[1]) + 0.08, y1 = terrain.worldHeight(b[0], b[1]) + 0.08;
+
+  const centres = cells.map(at);
+  const first = [...centres[0]], last = [...centres[n - 1]];
+  first[k] -= DECK_LIP * dir;
+  last[k] += DECK_LIP * dir;
+  const world = [first, ...centres, last];
+  // Height by where a stop actually is between the two banks, not by its index: the two
+  // lip stops are closer to their neighbours than the cell centres are to each other.
+  const t = (p) => (b[k] === a[k] ? 0 : (p[k] - a[k]) / (b[k] - a[k]));
+  // And the hump. Measured from end to end of the deck itself rather than bank to bank,
+  // so the arch is exactly flat where the planks meet the road - anywhere else and the
+  // crossing would begin with a step. Raised cosine rather than a parabola or a sine:
+  // all three peak in the middle, but only this one leaves the ends level as well as
+  // at the right height, and level is the difference between walking onto a bridge and
+  // climbing onto one.
+  const s0 = world[0][k], s1 = world[world.length - 1][k];
+  // A short crossing gets a shallower hump. Two cells over a ditch arched by the full
+  // amount is not a bridge, it is a speed bump.
+  const rise = BRIDGE_ARCH * Math.min(1, (n + 1) / 5);
+  const arch = (p) => {
+    if (s1 === s0) return 0;
+    const u = Math.min(1, Math.max(0, (p[k] - s0) / (s1 - s0)));
+    return rise * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
+  };
+  const deckYAt = (p) => Math.max(DECK_MIN, y0 + (y1 - y0) * t(p)) + arch(p);
+  const deckY = (i) => deckYAt(world[i]);
+  // `cells` goes back out because it is no longer the list that came in: whoever stands on
+  // this deck has to be told about the part of it that was not written down.
+  return { cells, world, centres, deckY, deckYAt, k };
+}
+
+// Which cell of the crossing carries its deck at what height, for standing figures on it.
+// main.js keeps these in the map the settlers and walk mode read the ground from, so the
+// arch is in here too: they climb it rather than walking through it.
+export function bridgeDeckHeights(cells, terrain, axis) {
+  if (!cells || !cells.length) return [];
+  const { cells: run, deckY } = bridgeStops(cells, terrain, axis);
+  return run.map((c, i) => [c[0], c[1], deckY(i + 1)]);
+}
+
+// The same deck as walk mode stands on it: exactly the planks buildBridgeGeometry lays, as a
+// line of stops along the run (walk.js `setDecks`), rather than one height per cell. Per cell,
+// the arch was a staircase: every cell at the height of its middle, so half a cell either way
+// the drawn planks were up to 0.13 above the feet or below them - you walked in the deck going
+// up and over it coming down - and the deck was the whole cell wide, a hand past the rails.
+// In the terrain's own frame; `cells` is what bridgeStops carried the run out to, for the
+// caller to take out of the per-cell levels.
+export function bridgeDeckOf(cells, terrain, axis) {
+  if (!cells || !cells.length) return null;
+  const { cells: run, world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  const o = world[0], end = world[world.length - 1];
+  const dir = Math.sign(end[k] - o[k]) || 1;
+  const stops = [];
+  for (let i = 0; i < world.length; i++) {
+    stops.push(world[i]);
+    if (i < world.length - 1) stops.push([(world[i][0] + world[i + 1][0]) / 2, (world[i][1] + world[i + 1][1]) / 2]);
+  }
+  return {
+    o: [o[0], o[1]], d: k === 0 ? [dir, 0] : [0, dir], w: BRIDGE_DECK_W,
+    stops: stops.map((p) => [Math.abs(p[k] - o[k]), deckYAt(p)]),
+    rail: BRIDGE_RAIL, cells: run,
+  };
+}
+const BRIDGE_DECK_W = 0.44;          // half the deck's width, buildBridgeGeometry's W
+
+// A plank bridge: a decked arch, a post-and-rail down each side, a kerb board along each
+// edge of the planking, and a trestle in the water under every cell of the crossing. The
+// rail is posts and a beam rather than a solid parapet - a wall the right height for a
+// settler to hold would hide the decking from every angle the island is looked at from.
+export function buildBridgeGeometry(cells, terrain, from, axis) {
+  if (!cells || !cells.length) return null;
+  const { world, deckYAt, k } = bridgeStops(cells, terrain, axis);
+  // The arch is a curve and the deck is drawn in flat pieces, so each span between two
+  // stops is halved. At one piece per cell a three cell crossing comes out as a roof
+  // with a ridge; at two it reads as a curve from every distance the island is seen at.
+  const stops = [];
+  for (let i = 0; i < world.length - 1; i++) {
+    stops.push(world[i]);
+    stops.push([(world[i][0] + world[i + 1][0]) / 2, (world[i][1] + world[i + 1][1]) / 2]);
+  }
+  stops.push(world[world.length - 1]);
+  const ys = stops.map(deckYAt);
+  const at = stops.map(([x, z]) => [x - from[0], z - from[1]]);
+  const W = BRIDGE_DECK_W;                           // half the deck width
+  const parts = [];
+  const across = (p, s) => (k === 0 ? [p[0], p[1] + s] : [p[0] + s, p[1]]);
+  // The boards are laid across the run, so the grain lies across it too - which is the
+  // sheet turned a quarter when the crossing runs along x.
+  const deckSheet = k === 0 ? 'plankZ' : 'plank';
+
+  for (let i = 0; i < at.length - 1; i++) {
+    const p = at[i], q = at[i + 1];
+    const yp = ys[i], yq = ys[i + 1];
+    const pl = across(p, -W), pr = across(p, W), ql = across(q, -W), qr = across(q, W);
+    parts.push(quad([[pl[0], yp, pl[1]], [pr[0], yp, pr[1]], [qr[0], yq, qr[1]], [ql[0], yq, ql[1]]], C.plank, { sheet: deckSheet }));
+    for (const s of [-1, 1]) {
+      const e0 = across(p, s * W), e1 = across(q, s * W);
+      // A kerb standing on the edge of the planking, and the beam over it.
+      parts.push(quad([
+        [e0[0], yp, e0[1]], [e1[0], yq, e1[1]], [e1[0], yq + 0.075, e1[1]], [e0[0], yp + 0.075, e0[1]],
+      ], C.plank, { sheet: deckSheet }));
+      const t0 = yp + BRIDGE_RAIL, t1 = yq + BRIDGE_RAIL;
+      parts.push(quad([
+        [e0[0], t0 - 0.07, e0[1]], [e1[0], t1 - 0.07, e1[1]], [e1[0], t1, e1[1]], [e0[0], t0, e0[1]],
+      ], C.darkWood, { sheet: deckSheet }));
+    }
+  }
+  // Posts at the stops the cells gave, not at the halves the arch was drawn with: a post
+  // every two metres is a railing, a post every metre is a fence.
+  for (let i = 0; i < at.length; i += 2) {
+    const y = ys[i];
+    const inWater = i > 0 && i < at.length - 1;
+    for (const s of [-1, 1]) {
+      const c = across(at[i], s * (W - 0.03));
+      parts.push(box(0.075, BRIDGE_RAIL, 0.075, C.darkWood, { x: c[0], y, z: c[1] }));
+      parts.push(sphere(0.052, C.wood, { x: c[0], y: y + BRIDGE_RAIL + 0.02, z: c[1] }));
+      if (!inWater) continue;
+      const t = across(at[i], s * (W - 0.09));
+      parts.push(cylinder(0.05, 0.05, y + 0.8, 6, C.darkWood, { x: t[0], y: -0.8, z: t[1], sheet: deckSheet }));
+    }
+  }
+  return merge(parts);
+}
+
+export function buildPlaqueGeometry(hue) {
+  const col = new THREE.Color().setHSL(hue / 360, 0.55, 0.55).getHex();
+  return merge([
+    box(0.05, 0.42, 0.05, C.darkWood, { x: -0.2 }),
+    box(0.05, 0.42, 0.05, C.darkWood, { x: 0.2 }),
+    box(0.52, 0.26, 0.035, 0xe6dcc2, { y: 0.26 }),
+    box(0.52, 0.055, 0.045, col, { y: 0.24 }),
+  ]);
+}
+
+// A flag cloth, waved in the vertex shader; one instanced mesh serves every flag.
+export function createFlagMesh(count) {
+  const geo = new THREE.PlaneGeometry(0.3, 0.19, 5, 2);
+  geo.translate(0.15, 0, 0);
+  const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, flatShading: true, roughness: 0.9 });
+  mat.userData.uniforms = { uTime: { value: 0 } };
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = mat.userData.uniforms.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.z += sin(uTime * 6.0 + transformed.x * 9.0) * transformed.x * 0.6;');
+  };
+  mat.customProgramCacheKey = () => 'settlers-flag';
+  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, count));
+  mesh.castShadow = false;
+  mesh.frustumCulled = false;
+  mesh.count = 0;
+  return mesh;
+}
+
+
+
+

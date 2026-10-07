@@ -1,0 +1,3267 @@
+// The island itself: ground, sea, forest, sky and the passage of the day.
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeRng, fbm2, makeSimplex2D, hash32, smoothstep, clamp, lerp } from 'shared/rng.mjs';
+import { POLDER_H } from 'shared/terrain.mjs';
+import { seasonOf, worldTime, localZone } from 'shared/worldclock.mjs';
+import * as models from './models.js';
+import { placeBuoys } from './buoy-placement.js';
+import { groundWearField, riverBankField, dressGroundWear } from './ground-wear.js';
+import { decodeOwnership, settledDistance, buildBorders, planFields, buildFieldDecals, dressFieldMaterial, createBoundaryMaterial, orchardTrees, FIELD_COVERAGE, FIELD_REACH, NONE, TOWN } from './hamlets.js';
+import { textureUrl } from './assets.js';
+import { patchSeeThrough } from './see-through.js';
+
+import { quayKade } from 'shared/quay-basin.mjs';
+import { buildQuayKade } from './quay-basin.js';
+import { createVolcanoDressing, lavaLines } from './lava.js';
+
+const tmpColor = new THREE.Color();
+const tmpTint = new THREE.Color();
+
+const tmpObj = new THREE.Object3D();
+
+export const SEASON = {
+  spring: { meadow: 0x93cf62, upland: 0x74ad4c, canopyMul: 1.06, summit: 0xa39d90 },
+  summer: { meadow: 0x8fbf5a, upland: 0x6fa64a, canopyMul: 1.0, summit: 0xa39d90 },
+  autumn: { meadow: 0x91ad68, upland: 0x738b53, canopyMul: 0.95, summit: 0xa39d90 },
+  winter: { meadow: 0x8f9f76, upland: 0x77855f, canopyMul: 0.86, summit: 0xe6e6e0 },
+};
+// Which season a month is lives in shared/worldclock.mjs now, beside the month itself, so
+// the sea and the page cannot disagree about when autumn starts. Re-exported because half of
+// web/js/ has always asked world.js for it.
+export { seasonOf } from 'shared/worldclock.mjs';
+
+// hour -> the look of the sky. Interpolated linearly between neighbours.
+const DAY = [
+  { h: 0, top: 0x0b1430, hor: 0x1c2a55, key: 0x8fa6ff, int: 0.28, sky: 0x243a6b, ground: 0x101820, amb: 0.13, night: 1, fire: 1, stars: 1 },
+  { h: 5, top: 0x182a55, hor: 0x3a4a7a, key: 0xa0b0ff, int: 0.3, sky: 0x2c4270, ground: 0x14202a, amb: 0.15, night: 1, fire: 0.6, stars: 0.8 },
+  { h: 6.5, top: 0x5a6fb0, hor: 0xffc9a0, key: 0xffb070, int: 1.5, sky: 0x7f8fc0, ground: 0x5a4a3a, amb: 0.26, night: 0.55, fire: 0, stars: 0 },
+  { h: 8, top: 0x6fb2e8, hor: 0xe8f3ff, key: 0xfff0d0, int: 2.6, sky: 0xbfe0ff, ground: 0x7a8a5a, amb: 0.36, night: 0, fire: 0, stars: 0 },
+  { h: 12, top: 0x5ea6e6, hor: 0xdcefff, key: 0xfff8ea, int: 3.0, sky: 0xbfe0ff, ground: 0x8f8a60, amb: 0.4, night: 0, fire: 0, stars: 0 },
+  // Late afternoon is the hour the island is meant to be looked at, so it carries the
+  // warmth: a goldener key, a little more of it, and a horizon that has already turned.
+  // `ground` is the light the meadow throws back up - warm here, which is what keeps a
+  // north wall from going flat grey now that the sun sits so low that it never reaches one.
+  { h: 17, top: 0x6fa8e0, hor: 0xffd7a2, key: 0xffc98a, int: 2.6, sky: 0xb0c8e8, ground: 0x8a7850, amb: 0.38, night: 0.15, fire: 0, stars: 0 },
+  { h: 18.5, top: 0x3d4f8a, hor: 0xff8f46, key: 0xff8f52, int: 1.7, sky: 0x705a80, ground: 0x53402f, amb: 0.28, night: 0.7, fire: 0.3, stars: 0.1 },
+  { h: 20, top: 0x141f45, hor: 0x3a3560, key: 0x8fa6ff, int: 0.32, sky: 0x2a3a6a, ground: 0x141c28, amb: 0.15, night: 1, fire: 1, stars: 0.8 },
+  { h: 24, top: 0x0b1430, hor: 0x1c2a55, key: 0x8fa6ff, int: 0.28, sky: 0x243a6b, ground: 0x101820, amb: 0.13, night: 1, fire: 1, stars: 1 },
+];
+
+function dayAt(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  let a = DAY[0], b = DAY[DAY.length - 1];
+  for (let i = 0; i < DAY.length - 1; i++) {
+    if (h >= DAY[i].h && h <= DAY[i + 1].h) { a = DAY[i]; b = DAY[i + 1]; break; }
+  }
+  const t = b.h === a.h ? 0 : (h - a.h) / (b.h - a.h);
+  return {
+    top: tmpColor.setHex(a.top).lerp(new THREE.Color(b.top), t).clone(),
+    hor: new THREE.Color(a.hor).lerp(new THREE.Color(b.hor), t),
+    key: new THREE.Color(a.key).lerp(new THREE.Color(b.key), t),
+    sky: new THREE.Color(a.sky).lerp(new THREE.Color(b.sky), t),
+    ground: new THREE.Color(a.ground).lerp(new THREE.Color(b.ground), t),
+    int: lerp(a.int, b.int, t),
+    amb: lerp(a.amb, b.amb, t),
+    night: lerp(a.night, b.night, t),
+    fire: lerp(a.fire, b.fire, t),
+    stars: lerp(a.stars, b.stars, t),
+  };
+}
+
+export function sunDirection(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  const day = h >= 6 && h <= 18;
+  const p = day ? (h - 6) / 12 : (((h + 6) % 24) / 12);
+  // How high the sun climbs at noon. It used to reach 1.15 rad - 66 degrees, a sun over
+  // the tropics - and at that angle a roof casts a shadow shorter than its own eaves at
+  // midday and the island reads as a flat map at every hour. 0.85 rad tops out at 49
+  // degrees and puts the sun at about 13 degrees at five in the afternoon, which is where
+  // the long raking light of the reference picture comes from. The clamp below stays: it
+  // is what keeps the shadow frustum's own maths out of trouble when the sun is on the
+  // horizon, not a lighting choice.
+  const el = Math.sin(Math.PI * p) * (day ? 0.85 : 0.9);
+  const az = Math.PI * p + 3.5;
+  return new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.max(0.06, Math.sin(el)), Math.cos(el) * Math.cos(az)).normalize();
+}
+
+// The shadow frustum as [tightest, widest] half-width, and the share of the camera's
+// distance it tries to cover. It used to be a fixed 42 - 84 units across, chosen when a
+// whole island fitted inside it - and from the distance this one is framed at, two thirds
+// of the picture came out shadowless. Widening it for good instead would spend the same
+// shadow map on nine times the ground and blur every eave you zoom in on, so it breathes:
+// tight when you are down among the houses, wide enough for the coast when you pull back.
+//
+// The ceiling was 130, which covers 260 units: the whole of one island with room to spare,
+// and rather less than the whole of an archipelago. Pulling back far enough to see both a
+// berth and home asked for more than 130 and silently stopped getting it, so the far half
+// of the neighbour lost its shadows. Since the span breathes, raising the ceiling costs
+// nothing at any zoom that does not need it - at 130 the map is 2048/260 = 7.9 texels per
+// unit, at 190 it is 5.4 - and on foot it still clamps to 42, so nothing you look at
+// closely changed.
+const SHADOW_SPAN = [42, 190];
+const SHADOW_OF_DIST = 0.48;
+
+// The sea's cloud layer (createWorld, "clouds"): one tile, repeated over the whole sea. As
+// dense as the nine clouds over 180 by 140 units it replaces, and wide enough that a cloud
+// wrapping from one edge of the drawn three by three to the other does it 430 units out.
+const CLOUD_TILE = 288;
+const CLOUDS_PER_TILE = 30;
+// How high the layer hangs, world units over the sea. It was 24 to 33 - a lovely height for
+// a 128 island and straight through the volcano, whose rim is 38 up and summit 41, so clouds
+// drifted through the mountain. Now clear of it with room for the weather to lower it (rain
+// takes it down ten, weather.js `drop`) and the smoke that rises from the crater. Puffs are
+// CLOUD_SIZE larger to stay the size they looked from the ground.
+export const CLOUD_Y = [54, 66];
+const CLOUD_SIZE = 1.4;
+// Where the clouds fade out of sight, in world units across the sea from the eye, less the eye's
+// own height. From the beach the layer runs to the horizon in hundreds of grey specks, a wall
+// of debris that reads as busy rather than as sky (issue #91), however far the haze itself has
+// been let out; so the clouds fade out on their own, sooner than the haze takes everything else.
+// The near three by three (cloudShown's 350) is left as it was, and a camera high over the sea
+// pushes the fade out with it, so a look down at the archipelago keeps its sky.
+export const CLOUD_FADE = [350, 1100];
+// A whole number of periods of every wave term in the water shader - see update().
+export const WAVE_LOOP = 20 * Math.PI;
+export const WAVE_RATES = [1.1, 0.9, 1.3];
+
+// Where one cloud is along one axis of the sea, in world units: the image of it nearest
+// `focus`, from where it started in its tile (`start`, 0..CLOUD_TILE) and how far the wind
+// has carried it by `seconds` of sea time. Nothing here depends on who is asking - that is
+// what puts a cloud in the same place on every screen. The two other images drawn are this
+// one a tile either side.
+export function cloudNearest(start, speed, seconds, focus, tile = CLOUD_TILE) {
+  const lo = focus - tile / 2;
+  const v = start + speed * seconds - lo;
+  return lo + (v - Math.floor(v / tile) * tile);
+}
+export { CLOUD_TILE };
+
+// A stable 0..1 for a cloud's image, from which cloud it is and which tile-shift of it (so it
+// does not change as the wind carries the cloud, nor as the camera moves).
+export function cloudHash(a, b, c) {
+  let x = (a * 374761393 + b * 668265263 + c * 1274126177) | 0;
+  x = Math.imul(x ^ (x >>> 13), 1274126177);
+  x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+// How much of an outer image is drawn, 0..1 (its size, so it grows in rather than popping): a
+// carpet of evenly spaced specks out to the horizon reads as debris on the sea, not as sky, so
+// past the near three by three the sky thins out and gathers. `d` is how far the image lies from
+// the camera; `m` says how much of a 2 x 2 block of tiles is kept - blocks are wholly full or
+// mostly empty, which is what makes clumps. Near enough (`d` under 350) everything stays, so the
+// sky over the island is the one it always was.
+export function cloudShown(cloud, mx, mz, d, salt = 0) {
+  const ramp = d <= 350 ? 0 : d >= 900 ? 1 : ((d - 350) / 550) ** 2 * (3 - 2 * (d - 350) / 550);
+  if (ramp <= 0) return 1;
+  const block = cloudHash(Math.floor(mx / 2), Math.floor(mz / 2), 977 + salt) < 0.45 ? 0.62 : 0.05;
+  const keep = 1 - (1 - block) * ramp;
+  const v = (keep - cloudHash(cloud, mx, mz + salt)) / 0.12;
+  return v <= 0 ? 0 : v >= 1 ? 1 : v;
+}
+
+// Where the sand gives up and the meadow takes over. The bands below still change on a
+// line at 0.35 - the height `terrain.mjs` calls the top of a beach, and the height the
+// Node layout decides where a house may stand by - but the *drawing* crossfades across
+// this range instead, which on this island's gradients is two to six cells of dune grass
+// rather than a contour line running round the island like a coastline on a map.
+// `terrain.mjs` is untouched on purpose: what moved is the painting, not the rule, so
+// `isBeach` answers exactly what it did and Node and the browser still agree.
+export const SHORE = [0.25, 0.6];
+export const SHORE_SAND = 0xefddb2;
+
+// What height reads as what ground. Exported so a guest island's ground is painted by
+// this function and not by a second copy of these numbers: two islands in one frame that
+// disagree about where sand becomes meadow is a seam you cannot unsee.
+export function bandColour(h, season) {
+  const s = SEASON[season];
+  if (h < -0.6) return 0x3f6a7c;
+  if (h < 0) return 0x8f9f7a;
+  if (h < 0.35) return SHORE_SAND;
+  if (h < 1.6) return s.meadow;
+  if (h < 3.4) return s.upland;
+  if (h < 5.2) return 0x8f8a80;
+  return s.summit;
+}
+
+// The volcano's ground, by height, and what it is instead of a season: a mountain that is
+// warm all the way through does not go green in spring or white in winter. Blended rather
+// than banded, because on a cone every contour runs round the whole island and a hard band
+// reads as a ring painted on it. Grey-brown sand, a fringe of hardy olive scrub on the
+// coastal flat, dark ash and rock up the flank, and a paler weathered top; inside the
+// crater it goes dark and then scorched towards the pool. The basalt either side of a flow
+// is painted separately, in paintGround, and so are the cliffs and the old lava fields,
+// which need the ground round a vertex and not only its height.
+//
+// The bands are shares of the rim's height (`crater.top`, shared/terrain.mjs), not units:
+// the mountain went from 15 to nearly 40 high, and bands measured in units put the pale top
+// a third of the way up and left the upper cone one colour. The scrub is kept to the apron,
+// the foothills the houses stand on, and a pale ash cap sits on the last tenth.
+const VOLCANO = {
+  deep: new THREE.Color(0x2f4c58), wet: new THREE.Color(0x5b574e), sand: new THREE.Color(0x9a8c77),
+  scrub: new THREE.Color(0x6a6a48), ash: new THREE.Color(0x5f5852), top: new THREE.Color(0x7b736b),
+  cap: new THREE.Color(0xb3aa9c), cliff: new THREE.Color(0x35302c), field: new THREE.Color(0x2b2624),
+  crater: new THREE.Color(0x3a302b), scorch: new THREE.Color(0x5a2c1c), basalt: new THREE.Color(0x1f1c1b),
+};
+export function volcanoColour(h, out, r = Infinity, crater = null) {
+  if (h < -0.6) return out.copy(VOLCANO.deep);
+  if (h < 0) return out.copy(VOLCANO.wet);
+  // A terrain from before `top` existed was 15.3 at the rim, and that is what the bands
+  // below were first drawn for.
+  const P = crater && crater.top > 0 ? crater.top : 15.3;
+  out.copy(VOLCANO.sand).lerp(VOLCANO.scrub, smoothstep(SHORE[0], SHORE[1], h));
+  out.lerp(VOLCANO.ash, smoothstep(P * 0.08, P * 0.17, h));
+  out.lerp(VOLCANO.top, smoothstep(P * 0.42, P * 0.66, h));
+  out.lerp(VOLCANO.cap, 0.8 * smoothstep(P * 0.86, P * 0.98, h));
+  if (crater && r < crater.r) {
+    out.lerp(VOLCANO.crater, smoothstep(crater.r, crater.r * 0.8, r));
+    out.lerp(VOLCANO.scorch, smoothstep(crater.pool * 1.9, crater.pool, r));
+  }
+  return out;
+}
+
+// The sheets the island is drawn on, and the one place that knows how to fetch one.
+// Everything here is optional: a sheet that does not arrive leaves the surface exactly
+// as it was drawn before there were any, which is why nothing below waits on one.
+const texLoader = new THREE.TextureLoader();
+function sheet(name, onLoad) {
+  texLoader.load(textureUrl(name), (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;              // the renderer clamps this to whatever the card allows
+    onLoad(tex);
+  }, undefined, () => {
+    console.warn(`[island] no texture at web/textures/${name}.png; that surface stays as it was`);
+  });
+}
+
+// A plant's two materials, bark and foliage, for plants the landscape does not scatter
+// itself (web/js/islets.js): the same recipe as the forest's own in createLandscape, so a
+// palm out on a sandbank is drawn on the same sheets as a pine on the island.
+export function plantMaterials() {
+  const base = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const bark = base.clone();
+  const foliage = base.clone();
+  base.dispose();
+  sheet('bark', (tex) => { tex.repeat.set(2, 1); bark.map = tex; bark.needsUpdate = true; });
+  sheet('foliage', (tex) => { tex.repeat.set(2, 2); foliage.map = tex; foliage.needsUpdate = true; });
+  return { bark, foliage };
+}
+
+// The heightfield ends on a square, often while its seabed is still shallow.
+// Let the optical depth reach open sea before that boundary without moving the
+// actual seabed (which boats, terrain hashes and saved plots depend on).
+export function waterColourDepth(height, x, z, half) {
+  const edge = half - Math.max(Math.abs(x), Math.abs(z));
+  const offshore = (1 - smoothstep(0, Math.min(24, half * 0.3), edge))
+    * (1 - smoothstep(-0.25, -0.02, height));
+  return height + (Math.min(height, -2.5) - height) * offshore;
+}
+
+// The outline of the water patch: where it stops and fades into the open-ocean disc.
+// Exported and pure so it can be asserted without a WebGL context -
+// tests/water-span.test.mjs.
+//
+// `gridBounds` is the union of every island's own square, or null for one island at the
+// origin. The margin is what a lone island of this size always had - 130 out from a
+// 64-grid, 60 for the largest - so an island on its own fades out exactly where it always
+// did. A rectangle rather than a square over the longest side: two 64-grids a berth apart
+// come out 372x260 instead of 372x372.
+//
+// `segX`/`segZ` are what this outline would cost at the patch's full density - a vertex per
+// unit, every other one on integrated graphics. The patch was once built exactly like that,
+// one PlaneGeometry over the whole outline, and with the volcano and the starters in the sea
+// that was 2.53M of the page's 2.75M triangles, nearly all of it open sea where the depth is
+// one number. It is no longer built from these (waterPatchPlan, below); they are kept as the
+// ceiling the plan is measured against.
+export function waterPatchSpan(half, gridBounds, modest = false) {
+  const margin = Math.max(60, 130 - half);
+  const gb = gridBounds || { minX: -half, maxX: half, minZ: -half, maxZ: half };
+  const minX = gb.minX - margin, maxX = gb.maxX + margin;
+  const minZ = gb.minZ - margin, maxZ = gb.maxZ + margin;
+  const width = maxX - minX, depth = maxZ - minZ;
+  return {
+    minX, maxX, minZ, maxZ, width, depth,
+    cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2,
+    // A vertex per unit, or every other one on integrated graphics. The rivers are what
+    // ask for it: a channel two cells across had barely a vertex in it on the old two-unit
+    // grid, so the depth it shaded by came from the bank.
+    segX: Math.max(1, Math.round(modest ? width / 2 : width)),
+    segZ: Math.max(1, Math.round(modest ? depth / 2 : depth)),
+  };
+}
+
+// What the patch inside that outline is made of: rectangles on one lattice, dense only near
+// an island and as coarse as the fade allows everywhere else. Pure, like the span, so
+// tests/water-patch.test.mjs can hold the triangle budget to the islands rather than to the
+// box around them.
+//
+// Why the open sea can be coarse without looking any different: past every island's grid
+// the depth the water shades by is one number (OPEN_SEA, which is also what the open-ocean
+// disc carries), so the colour, the surf (none) and the opacity (whole) are the same
+// whatever the vertex spacing - and the normal the light uses and the fog's distance are
+// both worked out per pixel from the world position, never from the mesh (the fog on
+// purpose: see the end of the water shader). What a vertex per unit does buy out there is
+// the swell's tenth of a unit of height, which nothing out there is close enough to show. So:
+//
+//   - within WATER_REACH of an island's own square: a vertex per unit (every other one on
+//     `modest`), exactly the density the patch always had there - the rivers, the quay
+//     basin and the shallows all lie inside the grid, and the swell runs on out past it;
+//   - in the last WATER_FADE of the outline: a vertex every WATER_FADE_STEP, enough to draw
+//     the fade into the ocean disc (a smoothstep over 40) to within 3% of what it was;
+//   - everything else: one quad per run of tiles along a row.
+//
+// Why one mesh of disjoint rectangles and not a patch per island: the patch is transparent
+// and writes no depth, so two patches overlapping in a channel would blend twice; and the
+// swell is `sin(position.x ...)`, so one mesh at the origin is one wave clock with no seam.
+// Tiles on one lattice cannot overlap by construction. Where a dense tile meets a coarse one
+// the edges do not share every vertex; the swell is faded out to nothing before that seam
+// (`waveAt`, 0 on every vertex WATER_REACH or more from any grid, which is every vertex of
+// a coarse tile and every vertex a dense tile shares with one), so both sides lie flat on
+// y = 0 there and the seam is a straight line in deep, opaque water over an ocean disc of the
+// same colour.
+//
+// Leaving the empty sea between islands to the ocean disc outright was the other way, and it
+// is not invisible: the disc sits at y = -0.2 so the patch's troughs never dip under it, and
+// a boat or an islet out there would suddenly stand 0.8 m proud of its waterline.
+export const WATER_TILE = 16;
+export const WATER_REACH = 16;
+export const WATER_FADE = 40;
+export const WATER_FADE_STEP = 8;
+
+export function waterPatchPlan(half, regions, modest = false) {
+  const list = regions && regions.length ? regions : [{ origin: [0, 0], half }];
+  // `reach` is how far dense water lies round a square: an island's grid holds the whole
+  // WATER_REACH, an islet's few cells (shared/islets.mjs) a good deal less - forty islets at
+  // sixteen a side was a tile-field of their own. The swell fades over the same number, so
+  // the flat seam between a dense tile and a coarse one still lies beyond every wave.
+  const squares = list.map((r) => ({
+    minX: r.origin[0] - r.half, maxX: r.origin[0] + r.half,
+    minZ: r.origin[1] - r.half, maxZ: r.origin[1] + r.half,
+    reach: r.reach ?? WATER_REACH,
+    // Units between vertices, for a square that asks for less than an island's grid does.
+    step: r.step ?? 0,
+  }));
+  // The same union shared/regions.mjs gridBounds() makes, so the outline is the old one.
+  const gb = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (const s of squares) {
+    gb.minX = Math.min(gb.minX, s.minX); gb.maxX = Math.max(gb.maxX, s.maxX);
+    gb.minZ = Math.min(gb.minZ, s.minZ); gb.maxZ = Math.max(gb.maxZ, s.maxZ);
+  }
+  const span = waterPatchSpan(half, gb, modest);
+
+  // Tile edges on multiples of WATER_TILE in the page's frame, clipped to the outline, so
+  // the outline itself does not move by a unit.
+  const cuts = (lo, hi) => {
+    const out = [lo];
+    for (let v = Math.floor(lo / WATER_TILE) * WATER_TILE + WATER_TILE; v < hi; v += WATER_TILE) out.push(v);
+    out.push(hi);
+    return out;
+  };
+  const xs = cuts(span.minX, span.maxX), zs = cuts(span.minZ, span.maxZ);
+  const fine = modest ? 2 : 1;
+  // The vertex spacing a tile wants from the squares it is near: an island's grid asks for
+  // `fine`, an islet's for its own `step` (doubled on `modest`, like the grid's). Infinity when
+  // it is near none of them, and the finest of what it is near when it is near several.
+  const stepOf = (x0, x1, z0, z1) => {
+    let best = Infinity;
+    for (const s of squares) {
+      if (x0 < s.maxX + s.reach && x1 > s.minX - s.reach && z0 < s.maxZ + s.reach && z1 > s.minZ - s.reach) {
+        best = Math.min(best, s.step ? s.step * (modest ? 2 : 1) : fine);
+      }
+    }
+    return best;
+  };
+  const near = (x0, x1, z0, z1) => stepOf(x0, x1, z0, z1) !== Infinity;
+  const inland = (x0, x1, z0, z1) =>
+    x0 >= span.minX + WATER_FADE && x1 <= span.maxX - WATER_FADE
+    && z0 >= span.minZ + WATER_FADE && z1 <= span.maxZ - WATER_FADE;
+
+  // Two dense tiles that share an edge share its vertices (`vertex`, below), so they have to
+  // want the same spacing or the coarser one leaves a T-junction along it: each dense tile
+  // takes the finest step among the dense tiles it touches, spread until nothing changes.
+  const stepGrid = [];
+  for (let j = 0; j + 1 < zs.length; j++) {
+    const row = [];
+    for (let i = 0; i + 1 < xs.length; i++) row.push(stepOf(xs[i], xs[i + 1], zs[j], zs[j + 1]));
+    stepGrid.push(row);
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let j = 0; j < stepGrid.length; j++) {
+      for (let i = 0; i < stepGrid[j].length; i++) {
+        if (stepGrid[j][i] === Infinity) continue;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = stepGrid[j + dj]?.[i + di];
+          if (n !== undefined && n < stepGrid[j][i]) { stepGrid[j][i] = n; changed = true; }
+        }
+      }
+    }
+  }
+  const quads = [];
+  let triangles = 0;
+  const put = (x0, x1, z0, z1, step, dense = false) => {
+    const segX = Math.max(1, Math.round((x1 - x0) / step));
+    const segZ = Math.max(1, Math.round((z1 - z0) / step));
+    quads.push({ minX: x0, maxX: x1, minZ: z0, maxZ: z1, segX, segZ, dense });
+    triangles += 2 * segX * segZ;
+  };
+  for (let j = 0; j + 1 < zs.length; j++) {
+    const z0 = zs[j], z1 = zs[j + 1];
+    let run = null;   // where a run of open sea along this row started
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const x0 = xs[i], x1 = xs[i + 1];
+      const want = stepGrid[j][i];
+      const close = want !== Infinity;
+      if (!close && inland(x0, x1, z0, z1)) { if (run === null) run = x0; continue; }
+      if (run !== null) { put(run, x0, z0, z1, Infinity); run = null; }
+      put(x0, x1, z0, z1, close ? want : WATER_FADE_STEP, close);
+    }
+    if (run !== null) put(run, span.maxX, z0, z1, Infinity);
+  }
+
+  // How much of the swell a vertex carries: all of it up to half WATER_REACH past a grid,
+  // none from WATER_REACH on (see above for why that is the seam's whole trick).
+  const waveAt = (x, z) => {
+    let w = 0;
+    for (const s of squares) {
+      const e = Math.max(0, s.minX - x, x - s.maxX, s.minZ - z, z - s.maxZ);
+      w = Math.max(w, 1 - smoothstep(s.reach / 2, s.reach, e));
+    }
+    return w;
+  };
+  // The fade into the ocean disc, over the last WATER_FADE of the outline - the formula the
+  // single PlaneGeometry always used, now asked of wherever the vertices happen to be.
+  const blendAt = (x, z) => smoothstep(0, WATER_FADE,
+    Math.min(x - span.minX, span.maxX - x, z - span.minZ, span.maxZ - z));
+  // What decides whether a sea that changed needs a new patch: the outline and every square
+  // in it, in no particular order. An island that joins inside the old outline needs its
+  // dense tiles, which comparing the outline alone - as reshapeWater used to - would miss.
+  const key = [modest ? 'm' : 'f', span.minX, span.maxX, span.minZ, span.maxZ,
+    ...squares.map((s) => `${s.minX},${s.minZ},${s.maxX}${s.reach === WATER_REACH && !s.step ? '' : ',' + s.reach + ',' + s.step}`).sort()].join('|');
+  return { span, quads, triangles, waveAt, blendAt, key, dense: near, fine };
+}
+
+// The fine water that sails with you. The plan above leaves the open sea between islands to
+// flat coarse tiles, and past its outline there is only the ocean disc, 0.2 below the water
+// line - so a boat far enough from any island floated: the dense water with its swell had
+// stopped under it and the disc it sat over was lower (seen in play before the tiling, when
+// the outline was the only edge; the tiling moved that edge in to 16 units off every coast).
+// This is a small patch of the same water, dense and swelling, round a focus - your boat, or
+// whatever the orbit camera looks at - snapped to the plan's own lattice so the swell, which
+// is anchored to the world, never slides under it.
+//
+// It never overlaps the plan: it is made only of the lattice cells round the focus that the
+// plan draws coarse, and the plan's coarse fragments inside its square are discarded
+// (`uNear` in the water shader; dense ones never are). So every pixel is drawn once. Its
+// swell is faded to nothing over NEAR_RIM from its edge - its own square's, and every dense
+// cell it leaves out, whose seam is flat on the plan's side too - so it meets flat water flat.
+// Past the outline, where the ocean disc is all there is, its rim sinks the OCEAN_DROP down to
+// the disc over the same NEAR_RIM: a slope of 0.2 in 8 units of deep water, instead of a step.
+export const NEAR_CELLS = 2;       // cells each side of the focus's own: 5 x 5, 80 units across
+export const NEAR_RIM = 8;
+export const OCEAN_DROP = 0.2;     // how far below the water line the ocean disc lies
+
+// How high the swell stands over the water line at (x, z), in the page's frame and on the
+// sea's clock `t` (waterMat.uniforms.uTime): the water shader's vertex term, written a second
+// time for the one reader that is not a shader - web/js/underwater.js asks where the surface
+// is to know whether the lens has gone under it. `wave` is how much of the swell the water
+// carries there (waterPatchPlan's waveAt, 0 on the flat coarse sea). The two are kept
+// together by tests/underwater.test.mjs, which reads the shader for the same coefficients.
+export const SWELL_MAX = 0.09;
+export function swellAt(x, z, t, wave = 1) {
+  return (0.05 * Math.sin(x * 1.3 + t * 1.1) + 0.04 * Math.sin(z * 1.7 - t * 0.9)) * wave;
+}
+
+export function nearWaterPlan(plan, fx, fz) {
+  const T = WATER_TILE;
+  const cx = Math.floor(fx / T), cz = Math.floor(fz / T);
+  const rect = {
+    minX: (cx - NEAR_CELLS) * T, maxX: (cx + NEAR_CELLS + 1) * T,
+    minZ: (cz - NEAR_CELLS) * T, maxZ: (cz + NEAR_CELLS + 1) * T,
+  };
+  const cells = [], left = [];
+  for (let j = -NEAR_CELLS; j <= NEAR_CELLS; j++) {
+    for (let i = -NEAR_CELLS; i <= NEAR_CELLS; i++) {
+      const c = { minX: (cx + i) * T, maxX: (cx + i + 1) * T, minZ: (cz + j) * T, maxZ: (cz + j + 1) * T };
+      (plan.dense(c.minX, c.maxX, c.minZ, c.maxZ) ? left : cells).push(c);
+    }
+  }
+  const { span } = plan;
+  const rimDist = (x, z) => Math.min(x - rect.minX, rect.maxX - x, z - rect.minZ, rect.maxZ - z);
+  // How far (x, z) is from where this patch stops: its square's edge or a dense cell it
+  // leaves to the plan.
+  const edgeDist = (x, z) => {
+    let d = rimDist(x, z);
+    for (const c of left) {
+      const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ);
+      d = Math.min(d, Math.hypot(dx, dz));
+    }
+    return d;
+  };
+  const inSpan = (x, z) => x >= span.minX && x <= span.maxX && z >= span.minZ && z <= span.maxZ;
+  return {
+    rect, cells,
+    key: `${cx},${cz}|${plan.key}`,
+    waveAt: (x, z) => smoothstep(0, NEAR_RIM, edgeDist(x, z)),
+    baseAt: (x, z) => (inSpan(x, z) ? 0 : OCEAN_DROP * (smoothstep(0, NEAR_RIM, rimDist(x, z)) - 1)),
+  };
+}
+
+// Trees between the camera and the walker are seen through (see-through.js).
+function seeThrough(mat) {
+  mat.onBeforeCompile = patchSeeThrough;
+  mat.customProgramCacheKey = () => 'tree-see-through';
+}
+
+
+// Everything an island is made of that stands still: its ground, the colour of that
+// ground, the wood on it, the fields, the walls between them, the paving worn into it and
+// the withies down its channel.
+//
+// Split out of createWorld, and the seam is where it is for one reason: **a neighbour's
+// island is a place, and a place is all of this.** web/js/guest-island.js drew a
+// heightfield and a set of buildings and nothing else, so an island across the water was a
+// bare green hill with houses on it - no wood, no hedges, no ploughing, no district
+// colour. Everything needed to draw it properly was already in the bundle it sent
+// (`cleared`, `paths`, `bridges`, `districts` with their lobes and hues, `lattice`,
+// `polders`, `fairway`): the data had been arriving for as long as there have been two
+// islands, and there was simply no code on this side that read it.
+//
+// What stayed behind in createWorld is everything there is exactly one of however many
+// islands are in the water: the sky, the sea, the three lights, the clouds, the fireflies
+// and the passage of the day. That is the honest line between the two, and it is not the
+// line guest-island.js's own header draws - that one is about *state*, about the chronicle
+// and the dossier and the filters, and it still holds. This is about pixels, and pixels
+// were never the reason to keep the two apart.
+//
+// Drawn in the island's OWN coordinates, inside a group the caller has positioned. That is
+// the rule from shared/regions.mjs: a module that builds its positions out of `half` wants
+// the raw local terrain and an offset group, not the world facade. Handed the facade,
+// every tree and every furrow would sink by the height of somebody else's coast.
+export function createLandscape({
+  parent, terrain: initialTerrain, village, season,
+  modest = false,
+  // A guest island does not draw its own seabed. Ours gets away with drawing the lot
+  // because the water plane reaches further than it does - and a berth is inside that same
+  // plane, so the trick would work there too. It is just not a trick worth a quarter of a
+  // million triangles per neighbour. See guest-island.js, which has always done this.
+  skipSeabed = false,
+  // What the raycast finds, and what it calls this. Both islands have a `civic:board`, so
+  // a guest's ids are namespaced by whoever raised it - an id that is not would quietly
+  // open our own town hall's dossier when somebody clicks theirs.
+  groundName = 'ground', pickId = null,
+} = {}) {
+  let terrain = initialTerrain;
+  const size = terrain.size, half = terrain.half, N = terrain.N;
+  let currentSeason = season;
+  const group = new THREE.Group();
+  parent.add(group);
+
+  // The textures that are this landscape's alone: the wear, plaza, bank and quay masks it
+  // paints, and the sheets it asks for. `sheet()` loads a new Texture on every call, so the
+  // grass under a neighbour is not the grass under us - and Material.dispose() does not
+  // touch a map, let alone a texture handed to a shader through onBeforeCompile. Kept here
+  // so dispose() can give them back. Before this every raise and lowering of a region left
+  // nine behind (tests/guest-leak.test.mjs): four sheets, and five masks, three of them
+  // min(2048, size * 8) squared - 2.25 MB apiece for the volcano, whose every raise in the
+  // browser left about 7 MB of textures on the GPU. A sheet that lands after the region has
+  // gone is given back on arrival.
+  const ownTextures = [];
+  let disposed = false;
+  const ownSheet = (name, onLoad) => sheet(name, (tex) => {
+    if (disposed) { tex.dispose(); return; }
+    ownTextures.push(tex);
+    onLoad(tex);
+  });
+
+  // ---- ground -------------------------------------------------------------
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(N * N * 3);
+  const col = new Float32Array(N * N * 3);
+  // Grass is a nap rather than a pattern, so the sheet is tiled small and often. Three
+  // units - twelve metres - is about as large as it can be before the eye starts to read
+  // the sheet itself instead of the ground.
+  const GRASS_UNITS = 3;
+  const uv = new Float32Array(N * N * 2);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const k = i + j * N;
+      pos[k * 3] = i - half;
+      pos[k * 3 + 1] = terrain.H[k];
+      pos[k * 3 + 2] = j - half;
+      uv[k * 2] = (i - half) / GRASS_UNITS;
+      uv[k * 2 + 1] = (j - half) / GRASS_UNITS;
+    }
+  }
+  const idx = new Uint32Array(size * size * 6);
+  let p = 0;
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const a = i + j * N, b = a + 1, c = a + N, d = c + 1;
+      // A quad with all four corners under water is seabed. Ours is drawn anyway and
+      // hidden under a water plane that reaches further than the island does; a guest
+      // island is inside that same plane, so the same trick would work - and it would
+      // cost a quarter of a million triangles per neighbour to hide something nobody can
+      // see. Without this a berth arrives as a raft: a flat sheet of sand out to the
+      // corners of its own map.
+      if (skipSeabed && terrain.H[a] < 0 && terrain.H[b] < 0 && terrain.H[c] < 0 && terrain.H[d] < 0) continue;
+      idx[p++] = a; idx[p++] = c; idx[p++] = b;
+      idx[p++] = b; idx[p++] = c; idx[p++] = d;
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(new THREE.BufferAttribute(p === idx.length ? idx : idx.slice(0, p), 1));
+
+  // Whose land a ground vertex stands on, and how far inside it. A vertex touches up to
+  // four cells, and `inset` already ramps over three of them, so the tint feathers over
+  // about three world units for free - farmland fading into heath rather than a border
+  // drawn on a political map.
+  const tintHue = new Float32Array(N * N);
+  const tintAmt = new Float32Array(N * N);
+  function computeTint(owner, inset, hues) {
+    tintAmt.fill(0);
+    if (!owner) return;
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        let best = NONE, depth = 0;
+        for (const [dx, dz] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+          const gx = i + dx, gz = j + dz;
+          if (gx < 0 || gz < 0 || gx >= size || gz >= size) continue;
+          const o = owner[gx + gz * size];
+          if (o === NONE) continue;
+          const d = inset[gx + gz * size];
+          if (best === NONE || d > depth || (d === depth && o < best)) { best = o; depth = d; }
+        }
+        const k = i + j * N;
+        if (best === NONE || hues[best] == null) continue;
+        tintHue[k] = hues[best];
+        tintAmt[k] = Math.min(1, depth / 3);
+      }
+    }
+  }
+
+  const TINT = 0.11;          // past about 0.14 the hue reads as a category, not as soil
+  // The island's own seed, which the village carries under `island` and not on itself.
+  // `village.seed` is undefined, so the `|| 0` that used to stand here quietly handed
+  // every island the same mottling - and the same shingle, sand and plaza wear below.
+  // `terrain.seed` is the copy the rest of this file already draws from, and it is left
+  // without a fallback on purpose: the next one of these should break rather than blend in.
+  const meadowNoise = makeSimplex2D(hash32(`meadow:${terrain.seed}`));
+
+  // Reclaimed land, which is not a beach however low it lies. A polder floor is stamped
+  // at exactly POLDER_H - 0.375, chosen over in terrain.mjs so that it clears the beach
+  // line by four hundredths rather than falling under it - and the soft shore above would
+  // read seven tenths of it as sand: a village that had just drained a bay would be handed
+  // a sandpit. The sea wall put that ground there, and the heightfield is the record of
+  // it: a cell all four of whose corners sit exactly on the reclamation height is polder
+  // floor, and polder floor is the lowest meadow on the island rather than its highest
+  // beach. Derived from the terrain rather than from `village.polders` so that it follows
+  // `reshape`, which is handed a new heightfield and no village at all.
+  const reclaimed = new Uint8Array(N * N);
+  function findReclaimed() {
+    reclaimed.fill(0);
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const k = gx + gz * N;
+        if (terrain.H[k] !== POLDER_H || terrain.H[k + 1] !== POLDER_H
+          || terrain.H[k + N] !== POLDER_H || terrain.H[k + N + 1] !== POLDER_H) continue;
+        reclaimed[k] = 1; reclaimed[k + 1] = 1; reclaimed[k + N] = 1; reclaimed[k + N + 1] = 1;
+      }
+    }
+  }
+
+  // The basalt either side of a lava flow, per vertex, and how black: full at the lava's
+  // edge and for half a cell past it, gone a cell and a half beyond that. Measured from the line the lava is drawn along
+  // (lava.js) rather than painted cell by cell, which came out as a staircase of black
+  // squares beside a smooth ribbon. Only vertices that touch a lava or bank cell are
+  // measured at all, so the rest of the mountain costs nothing. Off the terrain, so it
+  // follows `reshape` like `reclaimed` does.
+  const basalt = new Float32Array(N * N);
+  function findBasalt() {
+    basalt.fill(0);
+    const lines = lavaLines(terrain);
+    const near = new Uint8Array(N * N);
+    for (const [gx, gz] of [...(terrain.lavaCells || []), ...(terrain.lavaBankCells || [])]) {
+      const k = gx + gz * N;
+      near[k] = 1; near[k + 1] = 1; near[k + N] = 1; near[k + N + 1] = 1;
+    }
+    for (let k = 0; k < N * N; k++) {
+      if (!near[k]) continue;
+      const x = (k % N) - half, z = Math.floor(k / N) - half;
+      let best = 0;
+      for (const { points, widths } of lines) {
+        for (let s = 0; s < points.length; s++) {
+          const dx = x - points[s][0], dz = z - points[s][1];
+          const d = Math.sqrt(dx * dx + dz * dz);
+          const b = 1 - smoothstep(widths[s] + 0.6, widths[s] + 2.2, d);
+          if (b > best) best = b;
+        }
+      }
+      basalt[k] = best;
+    }
+  }
+
+  function paintVolcano() {
+    findBasalt();
+    const H = terrain.H;
+    const at = (i, j) => H[Math.min(N - 1, Math.max(0, i)) + Math.min(N - 1, Math.max(0, j)) * N];
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const k = i + j * N;
+        const x = i - half, z = j - half;
+        const h = H[k];
+        volcanoColour(h, tmpColor, Math.sqrt(x * x + z * z), terrain.crater);
+        if (h >= 0.6) {
+          // The cliffs: the steepest drop to any neighbour, per unit across. A riser in a
+          // cliff band or the wall of a ravine goes to dark bare rock, which is most of
+          // what makes the relief read from across the water - lit alone, a sharp crease
+          // and a gentle one are nearly the same grey.
+          const steep = Math.max(Math.abs(at(i + 1, j) - at(i - 1, j)), Math.abs(at(i, j + 1) - at(i, j - 1))) * 0.5;
+          tmpColor.lerp(VOLCANO.cliff, 0.75 * smoothstep(1.5, 3.2, steep));
+          // The old lava fields, dark and rough where shared/terrain.mjs made them rough.
+          if (terrain.oldLava && terrain.oldLava[k]) tmpColor.lerp(VOLCANO.field, 0.7 * (terrain.oldLava[k] / 255));
+        }
+        // Mottled like the meadow is, and a little harder: ash is patchier than grass.
+        if (h >= 0) tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.1);
+        if (basalt[k] > 0) tmpColor.lerp(VOLCANO.basalt, basalt[k]);
+        col[k * 3] = tmpColor.r; col[k * 3 + 1] = tmpColor.g; col[k * 3 + 2] = tmpColor.b;
+      }
+    }
+    geo.attributes.color.needsUpdate = true;
+  }
+
+  function paintGround(seasonName) {
+    if (terrain.volcano) { paintVolcano(); return; }
+    findReclaimed();
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const k = i + j * N;
+        const h = terrain.H[k];
+        tmpColor.setHex(bandColour(h, seasonName));
+        // The shore, crossfaded rather than stepped. See SHORE above.
+        if (h > SHORE[0] && h < SHORE[1] && !reclaimed[k]) {
+          tmpColor.setHex(SHORE_SAND).lerp(tmpTint.setHex(SEASON[seasonName].meadow), smoothstep(SHORE[0], SHORE[1], h));
+        }
+        // Broad, stable patches of colour soften the grid without textures or geometry.
+        // They start where the sand starts to go, not on the old line at 0.35, or the
+        // last trace of that line would be the edge of the mottling.
+        if (h >= SHORE[0] && h < 3.4) {
+          tmpColor.multiplyScalar(1 + meadowNoise(i * 0.12, j * 0.12) * 0.065);
+        }
+        const a = tintAmt[k];
+        // Meadow and upland only: tinting the sand or the summit is what would make this
+        // look like an overlay rather than like farmland.
+        if (a > 0 && h >= 0.35 && h < 3.4) {
+          tmpTint.setHSL(tintHue[k] / 360, 0.3, 0.5);
+          tmpColor.lerp(tmpTint, TINT * a);
+          tmpColor.offsetHSL(0, 0, 0.015 * a);
+        }
+        col[k * 3] = tmpColor.r; col[k * 3 + 1] = tmpColor.g; col[k * 3 + 2] = tmpColor.b;
+      }
+    }
+    geo.attributes.color.needsUpdate = true;
+  }
+
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+
+  // Faceted on the volcano: a mountain of broken rock wants its planes, and smooth normals
+  // rounded every ravine and cliff band back into the pudding it was before it had them.
+  // Every other island keeps its rolling meadow.
+  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    vertexColors: true, flatShading: !!terrain.volcano, roughness: 0.96, metalness: 0,
+  }));
+  const wearResolution = Math.min(2048, size * 8);
+  const wearTexture = new THREE.DataTexture(new Uint8Array(wearResolution * wearResolution), wearResolution, wearResolution, THREE.RedFormat);
+  wearTexture.magFilter = wearTexture.minFilter = THREE.LinearFilter;
+  wearTexture.needsUpdate = true;
+  const plazaTexture = wearTexture.clone();
+  plazaTexture.image = {data:new Uint8Array(wearResolution*wearResolution),width:wearResolution,height:wearResolution};
+  plazaTexture.needsUpdate = true;
+  const bank = riverBankField(size, terrain.seed, terrain.riverBankCells, wearResolution);
+  const bankTexture = new THREE.DataTexture(bank.data, bank.resolution, bank.resolution, THREE.RedFormat);
+  bankTexture.magFilter = bankTexture.minFilter = THREE.LinearFilter;
+  bankTexture.needsUpdate = true;
+  const blankRiverSheet = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  blankRiverSheet.needsUpdate = true;
+  ownTextures.push(wearTexture, plazaTexture, bankTexture, blankRiverSheet);
+  const riverSheet = { value: blankRiverSheet };
+  dressGroundWear(ground.material, wearTexture, size, THREE, plazaTexture,
+    { texture: bankTexture, sheet: riverSheet });
+  ownSheet('river-shingle', (tex) => { riverSheet.value = tex; });
+  ground.receiveShadow = true;
+  ground.name = groundName;
+  // So the existing raycast finds it and hovering says whose island this is.
+  if (pickId) ground.userData.id = pickId;
+  group.add(ground);
+  // The harbour's stone quay (`works.kade`): the ground is the quay already, and this is its wall's
+  // face and stairs (web/js/quay-basin.js), one mesh. Built again when the village changes, since
+  // the stairs keep off whatever the water in front of the wall carries.
+  let kadeMesh = null;
+  let basinVillage = village;
+  function dressBasin(v) {
+    basinVillage = v;
+    if (kadeMesh) {
+      group.remove(kadeMesh);
+      kadeMesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+      kadeMesh = null;
+    }
+    const kade = quayKade(v, terrain);
+    if (!kade) return;
+    kadeMesh = buildQuayKade(kade, terrain);
+    group.add(kadeMesh);
+  }
+
+  // The bands, the season, the district tint and the meadow noise are all already in the
+  // vertex colours. The sheet is brightness only, so it grains the ground without having
+  // an opinion about any of them.
+  ownSheet('grass', (tex) => {
+    ground.material.map = tex; ground.material.needsUpdate = true;
+  });
+
+  // ---- vegetation ----------------------------------------------------------
+  // Two sets, and the difference matters. `clearedBase` is ground that buildings, roads
+  // and squares have taken - that is what decides where a field may go. `cleared` is that
+  // plus the fields themselves, which is what keeps the forest from growing on top of
+  // them. Planning fields against `cleared` would find nothing the second time round,
+  // because the first plan's own cells would have ruled every candidate out.
+  const baseCleared = (v) => {
+    const out = new Set((v.cleared || []).map(([gx, gz]) => gx + gz * size));
+    // The wire clears the paths but not every paved cell of a square, and a field
+    // planned over paving comes out as furrows running across the stones. It never
+    // showed while the paving was a flat sandy colour and the furrows were sandy too;
+    // against cobbles it is the first thing you see.
+    for (const [gx, gz] of squareCells(v)) out.add(gx + gz * size);
+    // A bridge is a road that happens to be off the ground, and nothing grows on a
+    // deck. Without this the scatter plants a wood straight through the planks - which
+    // is exactly what it was doing, because the wire does not clear a bridge either.
+    for (const b of v.bridges || []) for (const [gx, gz] of b.cells || []) out.add(gx + gz * size);
+    // A dike is a wall and a causeway is a road. Neither is ground that grows anything,
+    // and both are flat and high enough that the scatter below would otherwise plant
+    // trees along the top of the sea wall.
+    for (const p of v.polders || []) {
+      for (const [gx, gz] of [...(p.dike || []), ...(p.road || [])]) out.add(gx + gz * size);
+    }
+    for (const b of v.buildings || []) {
+      if (!b.plot) continue;
+      for (let z = -1; z <= b.plot.d; z++) for (let x = -1; x <= b.plot.w; x++) out.add((b.plot.gx + x) + (b.plot.gz + z) * size);
+    }
+    return out;
+  };
+  // How much of the countryside is under the plough. The chronicle hands down a share so
+  // the fields arrive with the village that works them; a live village has none and gets
+  // the full spread.
+  //
+  // The square goes in with it. A parcel that runs up against the paving hems the village
+  // in where it is meant to open out: the one piece of ground everybody crosses ends in a
+  // fence and a furrow instead of in grass, and from the air the heart of the island reads
+  // as a farmyard. So the survey is told where the paving lies and leaves it a verge.
+  const fieldOpts = (v) => ({
+    square: townSquare(v),
+    ...(v.farmShare == null ? {} : { coverage: FIELD_COVERAGE * v.farmShare }),
+  });
+
+  // Which cells the settlers walk on. The boundaries have always needed this to know
+  // where to leave a gate; the fields and the forest now need it too, because how far a
+  // cell is from a road is most of what decides whether anybody ploughs it or nobody has
+  // ever cleared it. Built once here rather than three times over.
+  const roadSet = (v) => {
+    const out = new Set();
+    for (const p of v.paths || []) for (const c of p.cells) out.add(c[0] + c[1] * size);
+    for (const d of v.districts || []) for (const c of d.deck || []) out.add(c[0] + c[1] * size);
+    for (const c of squareCells(v)) out.add(c[0] + c[1] * size);
+    return out;
+  };
+
+  // The paved heart of the village and nothing else. `squareCells` also hands back every
+  // district's paving, and that is a different kind of place - a hamlet's own yard, which
+  // has its fields right up against it because that is what a hamlet is.
+  const townSquare = (v) => {
+    const out = new Set();
+    const town = v.island && v.island.town;
+    if (town?.paved) for (const [gx, gz] of town.paved) out.add(gx + gz * size);
+    else if (town?.square) {
+      const n = town.size || 3;
+      for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) out.add((town.square[0] + x) + (town.square[1] + z) * size);
+    }
+    return out;
+  };
+
+  let clearedBase = baseCleared(village);
+  const cleared = new Set(clearedBase);
+  // Reclaimed land is farmland, not heath. It sits at POLDER_H, just under the height
+  // the scatter treats as shore, so without this every polder comes out strewn with
+  // boulders - about one cell in ten. It stays out of `clearedBase` so that a hamlet
+  // which settles a polder still gets its fields.
+  for (const p of village.polders || []) {
+    for (const [gx, gz] of p.cells || []) cleared.add(gx + gz * size);
+  }
+
+  let own = decodeOwnership(village, size);
+  let hues = village.districts.map((d) => d.hue);
+  // Before the fields are planned, not after: clearedBase is what planFields reads to
+  // decide where a patch may go.
+  wallVerge(own.owner, clearedBase);
+  wallVerge(own.owner, cleared);
+  let roads = roadSet(village);
+  let settled = settledDistance(terrain, own.owner, roads);
+  // Nobody ploughs a volcano. Planned against, the ash on its lower flank would pass for
+  // farmland to planFields as soon as the sea puts a hamlet of houses on it.
+  const surveyFields = (v) => (terrain.volcano
+    ? { patches: [], orchards: [], gardens: [] }
+    : planFields(v, terrain, own.owner, clearedBase, { ...fieldOpts(v), settled, paved: roads }));
+  let fieldPlan = surveyFields(village);
+  computeTint(own.owner, own.inset, hues);
+  paintGround(season);
+  dressBasin(village);
+  // Tilled ground is cleared ground: without this the forest is scattered straight on
+  // top of the fields.
+  for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
+    for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
+  }
+
+  // A tree is dropped at its cell's middle give or take 0.38, and an oak's canopy is
+  // 0.45 across, so it reaches 0.83 from the middle - a third of a cell past its own
+  // edge. A boundary wall stands on that edge and is up to 0.5 thick, so a tree beside
+  // one goes straight through it. There is no offset that fixes this: half a cell minus
+  // half a wall leaves 0.25, and the canopy alone is 0.44. So the wall gets a verge, and
+  // a cell that touches a boundary is simply not planted.
+  //
+  // It began as a rule about trees, on the reasoning that a field may run right up to a
+  // wall. It may not: a patch is a rectangle laid over whole cells and it will happily
+  // take the cells either side of a boundary, so the ploughing ran under the wall and out
+  // into the next hamlet's land. The verge is now the same for both - nothing is planted
+  // and nothing is tilled on a cell that touches a boundary, which also gives every wall
+  // the strip of grass along it that a wall in a field has anyway.
+  //
+  // This mirrors the test in buildBorders(): the town puts up nothing of its own and the
+  // coast is a boundary already, so neither of those earns a verge.
+  function wallVerge(ownerArr, into) {
+    const at = (gx, gz) => (gx < 0 || gz < 0 || gx >= size || gz >= size ? NONE : ownerArr[gx + gz * size]);
+    const walled = (o) => o !== NONE && o !== TOWN;
+    for (let gz = 0; gz < size; gz++) {
+      for (let gx = 0; gx < size; gx++) {
+        const k = at(gx, gz);
+        if (!walled(k)) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = at(gx + dx, gz + dz);
+          if (n === k || !terrain.isLand(gx + dx, gz + dz)) continue;
+          into.add(gx + gz * size);
+          if (walled(n) || n === NONE) into.add((gx + dx) + (gz + dz) * size);
+        }
+      }
+    }
+  }
+
+  const rng = makeRng(terrain.seed).fork('flora');
+  const forest = makeSimplex2D(hash32(terrain.seed + ':forest'));
+
+  // ---- what a tree is made of ----------------------------------------------
+  // One material, twice, with a sheet each. Clones rather than new materials so that a
+  // tree on a checkout with no textures at all is pixel for pixel the tree the island
+  // always drew.
+  const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  const barkMat = treeMat.clone();
+  const foliageMat = treeMat.clone();
+  // Grass blades have no thickness in the Blender bake. Their own material shows the
+  // same foliage sheet from both sides without making every closed tree canopy double-sided.
+  const grassMat = treeMat.clone();
+  grassMat.side = THREE.DoubleSide;
+  ownSheet('bark', (tex) => { tex.repeat.set(2, 1); barkMat.map = tex; barkMat.needsUpdate = true; });
+  ownSheet('foliage', (tex) => {
+    tex.repeat.set(2, 2);
+    foliageMat.map = tex; foliageMat.needsUpdate = true;
+    grassMat.map = tex; grassMat.needsUpdate = true;
+  });
+  // Which material draws which group. A plant is asked for by its slots and gets its
+  // materials back in the same order, so the two can never be listed apart: handing an
+  // InstancedMesh [bark, foliage] for a geometry grouped foliage-first is a tree with a
+  // wooden canopy, and nothing in three will say so.
+  seeThrough(barkMat);
+  seeThrough(foliageMat);
+  const SLOT_MAT = { bark: barkMat, foliage: foliageMat, plain: treeMat };
+  const CANOPY = ['bark', 'foliage'];
+
+  // A plant's geometry and the materials for its groups - from Blender if the set has
+  // been baked, and from the shapes world.js grew by hand if it has not.
+  //
+  // The fallback is the point of the shape of this function. `flora-mesh.js` is
+  // committed, so the branch below is not a loading state; it is what the island draws
+  // on a checkout where the bake has been renamed or has yet to happen, and it is the
+  // only reason a missing .blend cannot take the forest with it. Both branches have to
+  // answer with their own material list, because the hand-built pine is three merged
+  // shapes and three groups where the baked one is two.
+  //
+  // `_lo` is the modest GPU's copy of the same plant - two skirts instead of four, one
+  // lobe instead of two - asked for by name rather than through variants(), which would
+  // offer it as a third kind of pine for the rng to pick.
+  function plant(name, slots, fallback) {
+    const want = modest && models.hasAsset(`${name}_lo`) ? `${name}_lo` : name;
+    if (models.hasAsset(want)) {
+      const geo = models.grouped(want, slots);
+      if (geo) return { geo, mats: slots.map((s) => SLOT_MAT[s]) };
+    }
+    const grown = fallback();
+    return { geo: grown.geo, mats: grown.mats };
+  }
+
+  // The trunk runs 0 to 0.5 and the first cone starts at 0.42, so its skirt closes over
+  // the wood instead of hanging above it. The tree loses a little height by it, which
+  // the trunk takes back: a conifer is mostly stem at the bottom anyway.
+  const pine = plant('flora_pine_a', CANOPY, () => ({
+    geo: merge([
+      cyl(0.06, 0.09, 0.62, 5, 0x6b4a2f, 0.31),
+      cone(0.42, 0.8, 6, 0x3f7d47, 0.42),
+      cone(0.3, 0.7, 6, 0x478950, 0.85),
+    ], true),
+    mats: [barkMat, foliageMat, foliageMat],
+  }));
+  const oak = plant('flora_oak_a', CANOPY, () => ({
+    geo: merge([
+      cyl(0.07, 0.09, 0.5, 5, 0x6b4a2f, 0.25),
+      ico(0.45, 0x5c9a3f, 0.72, 0.85),
+    ], true),
+    mats: [barkMat, foliageMat],
+  }));
+  const rock = plant('flora_rock_a', ['plain'], () => {
+    const geo = dodeca(0.22, 0x7f7a72, 0.1);
+    geo.computeVertexNormals();
+    return { geo, mats: [treeMat] };
+  });
+  // The coast's own shape, and the one plant with no fallback: a flat shelf is new, and
+  // the island drew nothing there before, so without the bake there is simply nothing to
+  // put on the shore rather than a wrong thing.
+  const slab = models.hasAsset('flora_rock_b')
+    ? { geo: models.grouped('flora_rock_b', ['plain']), mats: [treeMat] } : null;
+  const bush = models.hasAsset('flora_bush_a')
+    ? { geo: models.grouped('flora_bush_a', ['foliage']), mats: [foliageMat] } : null;
+  const grass = plant('flora_grass_a', ['foliage'], () => {
+    const geo = cone(0.08, 0.18, 3, 0x7fb64d, 0.09);
+    geo.computeVertexNormals();
+    return { geo, mats: [treeMat] };
+  });
+
+  // ---- where the forest stands ---------------------------------------------
+  // It used to be noise alone, which put the same even spatter of trees on the town
+  // square's doorstep as on the far headland - nowhere was a clearing and nowhere was a
+  // wood. The same distance field the fields are surveyed against shapes it now: inside
+  // six cells of a door or a lane the canopy is pulled open, from eight out to twenty-four
+  // it thins into heath with copses standing in it, and past that it closes into the dark
+  // pine edge the island is meant to be ringed by. `cleared` is still the hard line, so a
+  // polder stays bare grass however far from anybody it lies.
+  const NEAR_CLEARING = 0.15;   // canopy a doorstep takes away
+  const FAR_CANOPY = 0.35;      // canopy the wilderness adds back
+  // Past CLOSED the third stem on a cell is bought and never seen: the canopy over it is
+  // already shut. Past DEEP one stem to a cell is a wood from any distance the camera can
+  // get to. Neither is a saving for its own sake - the trees are instanced and cost one
+  // draw call between them - but the shadow pass walks every instance on the island, and
+  // that is the bill `?stats` cannot show you, because three resets renderer.info after
+  // the shadow pass and before the colour one.
+  const CLOSED = 20, DEEP = 36;
+  const TREE_CAP = modest ? 9000 : 25000;
+
+  // How many stems this cell wants. Noise and distance only - not one random number in
+  // it - which is what makes the counting pass below affordable.
+  // How much canopy this cell wants, before anything is counted. Split out of stems()
+  // because the undergrowth is surveyed against the same number: a bush belongs in the
+  // band just under the threshold a tree needs, which is only a meaningful place to
+  // stand if both read it off one function.
+  const density = (gx, gz, wx, wz) => {
+    const d = settled.dist[gx + gz * size];
+    return fbm2(forest, wx * 0.09, wz * 0.09, { octaves: 3 })
+      - NEAR_CLEARING * (1 - smoothstep(0, 6, d))
+      + FAR_CANOPY * smoothstep(8, 24, d);
+  };
+  const stems = (gx, gz, wx, wz) => {
+    const d = settled.dist[gx + gz * size];
+    const dens = density(gx, gz, wx, wz);
+    if (dens < 0.12) return 0;
+    let n = 1 + (dens > 0.3 ? 1 : 0) + (dens > 0.45 ? 1 : 0);
+    if (d > CLOSED) n = Math.min(n, 2);
+    if (d > DEEP) n = 1;
+    return n;
+  };
+  const plantable = (gx, gz, h) =>
+    !cleared.has(gx + gz * size) && h >= 0.45 && !terrain.isBeach(gx, gz)
+    && terrain.slope(gx, gz) <= 1.3 && h <= 5.0;
+
+  // Count first, plant second. Stopping dead once the budget is full would plant in the
+  // order `landCells` happens to come in and leave one whole side of the island bald; a
+  // ratio takes the same number of stems off evenly, and which cell loses one is decided
+  // by that cell's own hash rather than by where the loop had got to. One extra noise
+  // lookup per cell is the whole price.
+  let wanted = 0;
+  for (const [gx, gz] of terrain.landCells) {
+    const h = terrain.heightAt(gx, gz);
+    if (!plantable(gx, gz, h)) continue;
+    const [wx, wz] = terrain.cellWorld(gx, gz);
+    wanted += stems(gx, gz, wx, wz);
+  }
+  const thin = wanted > TREE_CAP ? TREE_CAP / wanted : 1;
+
+  const trees = [];
+  const treeCells = new Map();
+  const pines = [], oaks = [], rocks = [], tufts = [], bushes = [];
+  const kadeCells = new Set((village.works?.kade?.cells || []).map(([gx, gz]) => gx + gz * size));
+  // How much undergrowth there may be. Four thousand bushes is forty triangles apiece
+  // either side of the shadow pass, which is the same order as a thousand extra trees -
+  // so it gets a ceiling of its own rather than riding on the forest's.
+  const BUSH_CAP = modest ? 1500 : 4000;
+  // The band of canopy noise that is too thin for a wood and too green for bare heath:
+  // the shoulder under the 0.12 a tree needs. Read off the same noise the trees are, so
+  // a bush stands where the wood peters out rather than in a ring of its own.
+  //
+  // The lower edge is well under nothing on purpose. The plan asked for 0.06 to 0.12 and
+  // that band was drawn for an island of 31,296 land cells; on the 7,556 this one has it
+  // came to 133 bushes, which is not undergrowth but a rounding error. Reaching down to
+  // -0.06 takes in the heath either side of the forest edge and gives 365 - about one
+  // bush to six trees - for nine thousand triangles. Widening the band rather than
+  // raising the chance is deliberate: the same number of bushes spread over more ground
+  // reads as heath, and concentrated in a narrow ring reads as a hedge round the wood.
+  const BUSH_LO = -0.06, BUSH_HI = 0.12;
+  // Its own stream, so that adding undergrowth does not move a single tree. Every draw
+  // taken from `rng` inside the loop below shifts every draw after it, and one extra
+  // chance() per cell would have reshuffled the whole forest between pine and oak and
+  // shuffled the trunks sideways - which would have made the before and after pictures
+  // of this card unreadable for a change that is meant to be about shape.
+  const bushRng = makeRng(terrain.seed).fork('bush');
+  // A volcano grows nothing: no wood, no grass, no undergrowth - only boulders, thrown out
+  // of the crater and lying where they came down, a few more of them on the steep ground
+  // and none in a flow, where they would stand up out of the lava.
+  const barren = !!terrain.volcano;
+  for (const [gx, gz] of terrain.landCells) {
+    const k = gx + gz * size;
+    const h = terrain.heightAt(gx, gz);
+    const [wx, wz] = terrain.cellWorld(gx, gz);
+    if (barren) {
+      if (cleared.has(k) || terrain.isLava(gx, gz)) continue;
+      // More of them, and bigger, the higher and the steeper: scree under the cliff bands,
+      // blocks the size of a house on the upper cone, and hardly any on the apron where
+      // the houses go. `up` is the share of the way to the rim, off the rim's own height.
+      const s = terrain.slope(gx, gz);
+      const top = terrain.crater && terrain.crater.top > 0 ? terrain.crater.top : 15.3;
+      const up = smoothstep(top * 0.12, top * 0.7, h);
+      const steep = smoothstep(0.7, 2.2, s);
+      const field = terrain.oldLava ? terrain.oldLava[gx + gz * N] / 255 : 0;
+      if (rng.chance(0.03 + 0.07 * steep + 0.06 * up + 0.05 * field)) {
+        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3),
+          rng.range(0.45, 1.0) * (1 + 1.2 * up + 0.4 * steep),
+          // Some stand up as crags rather than lying as boulders - from the cell's hash, so
+          // not one draw is added to `rng` and nothing after it on the island moves.
+          1 + up * ((hash32(`crag:${gx},${gz}`) % 100) / 100) * 1.4]);
+      }
+      continue;
+    }
+    if (h < 0.45 || terrain.isBeach(gx, gz)) {
+      // Not on the stone quay (`works.kade`, at 0.44 - under this band's 0.45), which is paving.
+      // The draws are taken all the same, so no boulder or tree after it on the island moves.
+      if (h >= 0.05 && rng.chance(0.1)) {
+        const boulder = [wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.4, 0.9)];
+        if (!kadeCells.has(k)) rocks.push(boulder);
+      }
+      continue;
+    }
+    if (cleared.has(k)) continue;
+    if (terrain.slope(gx, gz) > 1.3 || h > 5.0) {
+      if (rng.chance(0.3)) {
+        rocks.push([wx + rng.range(-0.3, 0.3), wz + rng.range(-0.3, 0.3), rng.range(0.6, 1.6)]);
+        // In the lee of a boulder, which is where one grows: sheltered from the wind and
+        // never ploughed. Anything past this point is already known not to be `cleared`,
+        // so no bush can land on a field, a lane or a plot.
+        if (bush && bushes.length < BUSH_CAP && bushRng.chance(0.3)) {
+          bushes.push([wx + bushRng.range(-0.34, 0.34), wz + bushRng.range(-0.34, 0.34), bushRng.range(0.7, 1.25)]);
+        }
+      }
+      continue;
+    }
+    let n = stems(gx, gz, wx, wz);
+    if (rng.chance(0.5)) tufts.push([wx + rng.range(-0.45, 0.45), wz + rng.range(-0.45, 0.45), rng.range(0.7, 1.3)]);
+    // Undergrowth where the canopy noise is not quite a wood. A cell that grows a tree
+    // does not also grow a bush: a stem is already the thing you look at there, and the
+    // bush would be under it and invisible from anywhere but inside the branches.
+    if (bush && !n && bushes.length < BUSH_CAP) {
+      const dens = density(gx, gz, wx, wz);
+      if (dens >= BUSH_LO && dens < BUSH_HI && bushRng.chance(0.5)) {
+        bushes.push([wx + bushRng.range(-0.4, 0.4), wz + bushRng.range(-0.4, 0.4), bushRng.range(0.65, 1.3)]);
+      }
+    }
+    if (thin < 1) {
+      // Stochastic rounding on a spatial hash: the expected count is exactly `n * thin`,
+      // and it is the same on every reload and the same for every viewer.
+      const want = n * thin;
+      n = Math.floor(want);
+      if ((hash32(`thin:${gx},${gz}`) % 1000) / 1000 < want - n) n += 1;
+    }
+    if (!n) continue;
+    const highland = h > 3.0;
+    for (let t = 0; t < n; t++) {
+      const x = wx + rng.range(-0.38, 0.38), z = wz + rng.range(-0.38, 0.38);
+      // A wider spread of sizes than the old 0.6-0.98, which put every tree within a
+      // third of every other and gave the canopy a mown look from the air. One draw
+      // either way, so the forest stands where it stood - only the heights change.
+      const item = { x, z, s: rng.range(0.55, 1.15), rot: rng.range(0, 6.283), cell: k, kind: highland || rng.chance(0.45) ? 'pine' : 'oak' };
+      (item.kind === 'pine' ? pines : oaks).push(item);
+      trees.push(item);
+      if (!treeCells.has(k)) treeCells.set(k, []);
+      treeCells.get(k).push(item);
+    }
+  }
+
+  const orchard = orchardTrees(fieldPlan, terrain);
+  let solidsNow = null;              // walk mode's copy of the wood, the stones and the boundaries: solids()
+  const ORCHARD_CAP = 1500;
+  const pineMesh = new THREE.InstancedMesh(pine.geo, pine.mats, Math.max(1, pines.length));
+  const oakMesh = new THREE.InstancedMesh(oak.geo, oak.mats, Math.max(1, oaks.length));
+  const rockMesh = new THREE.InstancedMesh(rock.geo, rock.mats, Math.max(1, rocks.length));
+  const grassMesh = new THREE.InstancedMesh(grass.geo, grassMat, Math.max(1, tufts.length));
+  const orchardMesh = new THREE.InstancedMesh(oak.geo, oak.mats, ORCHARD_CAP);
+  for (const m of [pineMesh, oakMesh, rockMesh, orchardMesh]) { m.castShadow = true; m.receiveShadow = true; }
+  // A tuft of grass is two hand spans high and its shadow would be a smudge under
+  // itself, which is not worth walking twelve thousand instances through the depth pass
+  // for. A bush is knee high and casts the contact shadow that stops it looking pasted
+  // onto the grass, so that one does.
+  grassMesh.castShadow = false;
+  group.add(pineMesh, oakMesh, rockMesh, grassMesh, orchardMesh);
+
+  // The seventh and eighth: undergrowth, and the shelf along the waterline. Both only
+  // exist when the flora set has been baked - see `plant()` - and both are left out of
+  // the scene entirely when it has not, rather than added empty.
+  const bushMesh = bush ? new THREE.InstancedMesh(bush.geo, bush.mats, Math.max(1, bushes.length)) : null;
+  const slabMesh = slab ? new THREE.InstancedMesh(slab.geo, slab.mats, Math.max(1, terrain.coastCells.length)) : null;
+  // Math.max(1, …) keeps each buffer allocatable, but an empty list must still draw nothing:
+  // left at count 1, its one untouched identity instance stood a tree on the origin - seen
+  // on the open-sea home a phone stands on, which has no land to grow anything on at all.
+  for (const [m, n] of [[pineMesh, pines.length], [oakMesh, oaks.length], [rockMesh, rocks.length],
+    [grassMesh, tufts.length], [bushMesh, bushes.length], [slabMesh, terrain.coastCells.length]]) {
+    if (m && !n) m.count = 0;
+  }
+  for (const m of [bushMesh, slabMesh]) {
+    if (!m) continue;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+  }
+
+  // Planted rather than scattered: a grid, one size, barely any rotation.
+  let orchardNow = [];
+  function placeOrchard(list, seasonName) {
+    orchardMesh.count = Math.min(ORCHARD_CAP, list.length);
+    orchardNow = list.slice(0, orchardMesh.count);
+    solidsNow = null;
+    const autumn = seasonName === 'autumn';
+    for (let i = 0; i < orchardMesh.count; i++) {
+      const [x, z, sc] = list[i];
+      tmpObj.position.set(x, terrain.worldHeight(x, z) - 0.02, z);
+      tmpObj.rotation.set(0, ((hash32(`o${x},${z}`) % 12) / 12) * 0.5, 0);
+      tmpObj.scale.set(sc, sc * 1.05, sc);
+      tmpObj.updateMatrix();
+      orchardMesh.setMatrixAt(i, tmpObj.matrix);
+      const tint = autumn ? 0xd7a24a : 0x6fae4a;
+      orchardMesh.setColorAt(i, tmpColor.setHex(tint).multiplyScalar(0.9 + ((hash32(`t${x},${z}`) % 20) / 100)));
+    }
+    orchardMesh.instanceMatrix.needsUpdate = true;
+    if (orchardMesh.instanceColor) orchardMesh.instanceColor.needsUpdate = true;
+  }
+  placeOrchard(orchard, season);
+
+  function placeTrees(list, mesh, seasonName) {
+    const autumn = seasonName === 'autumn';
+    const mul = SEASON[seasonName].canopyMul;
+    list.forEach((it, i) => {
+      it.mesh = mesh; it.index = i; it.scale = it.s;
+      tmpObj.position.set(it.x, terrain.worldHeight(it.x, it.z) - 0.05, it.z);
+      tmpObj.rotation.set(0, it.rot, 0);
+      tmpObj.scale.setScalar(it.s);
+      tmpObj.updateMatrix();
+      mesh.setMatrixAt(i, tmpObj.matrix);
+      let tint = 0.86 + ((hash32(i + ':' + it.x) % 100) / 100) * 0.3;
+      tmpColor.setScalar(tint * mul);
+      if (autumn && mesh === oakMesh && (hash32('a' + i) % 100) < 42) {
+        tmpColor.setHex((hash32('b' + i) % 2) ? 0xd68a3a : 0xc9553a).multiplyScalar(1.05);
+      }
+      mesh.setColorAt(i, tmpColor);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  placeTrees(pines, pineMesh, season);
+  placeTrees(oaks, oakMesh, season);
+  rocks.forEach((r, i) => {
+    tmpObj.position.set(r[0], terrain.worldHeight(r[0], r[1]) - 0.04, r[1]);
+    tmpObj.rotation.set(rng.range(0, 1), rng.range(0, 6.28), rng.range(0, 1));
+    tmpObj.scale.set(r[2], r[2] * (r[3] || 1), r[2]);
+    tmpObj.updateMatrix();
+    rockMesh.setMatrixAt(i, tmpObj.matrix);
+    // Basalt on a volcano: the same stone, most of the light taken out of it.
+    rockMesh.setColorAt(i, tmpColor.setScalar((0.85 + ((hash32('r' + i) % 100) / 100) * 0.3) * (barren ? 0.42 : 1)));
+  });
+  rockMesh.instanceMatrix.needsUpdate = true;
+  tufts.forEach((g, i) => {
+    tmpObj.position.set(g[0], terrain.worldHeight(g[0], g[1]) - 0.02, g[1]);
+    tmpObj.rotation.set(0, hash32('g' + i) % 6, 0);
+    tmpObj.scale.set(g[2], g[2] * 1.2, g[2]);
+    tmpObj.updateMatrix();
+    grassMesh.setMatrixAt(i, tmpObj.matrix);
+    grassMesh.setColorAt(i, tmpColor.setScalar(0.8 + ((hash32('h' + i) % 100) / 100) * 0.4));
+  });
+  grassMesh.instanceMatrix.needsUpdate = true;
+
+  // The undergrowth. Turned and sized off its own hash rather than off `rng`, the way
+  // the orchard is: everything below this point in the function runs after the last tree
+  // has been decided, but a hash keeps it that way even if something is inserted above.
+  function placeBushes(seasonName) {
+    if (!bushMesh) return;
+    const mul = SEASON[seasonName].canopyMul;
+    bushMesh.count = Math.max(1, bushes.length);
+    bushes.forEach((b, i) => {
+      tmpObj.position.set(b[0], terrain.worldHeight(b[0], b[1]) - 0.04, b[1]);
+      tmpObj.rotation.set(0, ((hash32(`bu${i}`) % 64) / 64) * 6.283, 0);
+      // Wider than tall by a little, and never the same twice: a bush is a spreading
+      // thing and a row of identical hemispheres is the one way to make it look planted.
+      const s = b[2];
+      tmpObj.scale.set(s * (0.94 + (hash32(`bw${i}`) % 22) / 100), s * (0.8 + (hash32(`bh${i}`) % 30) / 100), s);
+      tmpObj.updateMatrix();
+      bushMesh.setMatrixAt(i, tmpObj.matrix);
+      bushMesh.setColorAt(i, tmpColor.setScalar((0.82 + ((hash32(`bc${i}`) % 100) / 100) * 0.32) * mul));
+    });
+    bushMesh.instanceMatrix.needsUpdate = true;
+    if (bushMesh.instanceColor) bushMesh.instanceColor.needsUpdate = true;
+  }
+  placeBushes(season);
+
+  // The shelf along the waterline. Not on every cell of the coast: a plate on all of
+  // them is a kerb round the island, and what the shore wants is a broken line with sand
+  // showing through the gaps. Which cells get one is the cell's own hash, so the same
+  // headland is rocky for every viewer and stays rocky across a reload.
+  const COAST_FILL = 0.62;
+  if (slabMesh) {
+    let i = 0;
+    for (const [gx, gz] of terrain.coastCells) {
+      if ((hash32(`coast:${gx},${gz}`) % 100) / 100 >= COAST_FILL) continue;
+      // A stone quay's edge is a wall, not a shelf of bedrock (`works.kade`).
+      if (kadeCells.has(gx + gz * size)) continue;
+      const [wx, wz] = terrain.cellWorld(gx, gz);
+      const jx = ((hash32(`cx:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
+      const jz = ((hash32(`cz:${gx},${gz}`) % 100) / 100 - 0.5) * 0.7;
+      // Sunk further than a boulder is. A shelf is bedrock the sea has worn down to the
+      // waterline, not a stone dropped on the sand, so it wants its edge in the ground.
+      tmpObj.position.set(wx + jx, terrain.worldHeight(wx + jx, wz + jz) - 0.09, wz + jz);
+      tmpObj.rotation.set(0, ((hash32(`cr:${gx},${gz}`) % 64) / 64) * 6.283, 0);
+      const s = 0.7 + (hash32(`cs:${gx},${gz}`) % 90) / 100;
+      tmpObj.scale.set(s, s * (0.7 + (hash32(`ct:${gx},${gz}`) % 60) / 100), s);
+      tmpObj.updateMatrix();
+      slabMesh.setMatrixAt(i, tmpObj.matrix);
+      slabMesh.setColorAt(i, tmpColor.setScalar((0.8 + ((hash32(`cc:${gx},${gz}`) % 100) / 100) * 0.34) * (barren ? 0.45 : 1)));
+      i++;
+    }
+    slabMesh.count = Math.max(1, i);
+    slabMesh.instanceMatrix.needsUpdate = true;
+    if (slabMesh.instanceColor) slabMesh.instanceColor.needsUpdate = true;
+  }
+
+  // ---- paths and worn yards, painted into the terrain -----------------------
+  // A single coverage texture joins every sandy surface. It uses the terrain's
+  // own normals, lighting and shadows: no raised strips and no colour-matched
+  // skirts that turn into visible borders when the grass texture arrives.
+  // The bridge stone is on the list for the same reason the statue is: it is a marker
+  // rather than a door, so nobody wears a patch of grass bare walking up to it. And the ship
+  // lies out on the roads: a worn yard of four by sixteen on the sea bed would be sand showing
+  // through the shallows round her.
+  const NO_WEAR = new Set(['bench', 'lamp', 'planter', 'terrace', 'tables', 'board', 'issues',
+    'statue', 'well', 'fountain', 'watertower', 'bridge', 'ship', 'shipyard']);
+  let wearVillage = village, wearGraph = null;
+  let frontages = new Map(), frontageKey = '';
+  function setHouseFrontages(records) {
+    const entries = [...records].filter(r=>r.spec.kind==='house' || (r.spec.kind==='civic' && r.spec.plot?.w===3)).map(r=>
+      [r.id, {x:r.group.position.x,z:r.group.position.z,yaw:r.group.rotation.y}]);
+    const key=JSON.stringify(entries);
+    if(key===frontageKey)return;
+    frontageKey=key;frontages=new Map(entries);buildGroundWear();
+  }
+  function buildGroundWear() {
+    if (!wearGraph) return;
+    const centre = (c) => terrain.cellWorld(c[0], c[1]);
+    const strokes = [], yards = [];
+    for (const chain of wearGraph.chains) {
+      const line = [centre(chain.from), ...chain.run.map(centre)];
+      if (chain.to) line.push(centre(chain.to));
+      strokes.push({ points: smoothLane(line, .18) });
+    }
+    for (const tile of wearGraph.tiles) {
+      if (tile.kind === 'plaza') continue;
+      const at = centre([tile.gx, tile.gz]);
+      strokes.push({ points: [at] });
+      // Adjacent junctions have no chain between them. These short connectors
+      // also carry sand right up to the edge of the square.
+      for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        if (tile.gx+dx >= 0 && tile.gx+dx < size && tile.gz+dz >= 0 && tile.gz+dz < size
+          && wearGraph.kind.has(tile.gx+dx+(tile.gz+dz)*size))
+          strokes.push({ points: [at, centre([tile.gx+dx,tile.gz+dz])] });
+      }
+    }
+    for (const b of wearVillage.buildings || []) {
+      if (!b.plot || b.harbour || (b.kind === 'civic' && NO_WEAR.has(b.civicType))) continue;
+      const p = b.plot;
+      const at = frontages.get(b.id);
+      const [x,z] = at ? [at.x,at.z] : centre([p.gx+(p.w-1)/2,p.gz+(p.d-1)/2]);
+      yards.push({x,z,rx:Math.max(.38,p.w/2-.35),rz:Math.max(.38,p.d/2-.35)});
+      if (b.door) {
+        const points=[[x,z]];
+        if(at)points.push([x+Math.sin(at.yaw)*.9,z+Math.cos(at.yaw)*.9]);
+        points.push(centre(b.door));
+        strokes.push({ points: smoothLane(points,.18), radius:.34, feather:.42 });
+      }
+    }
+    const field = groundWearField(size, terrain.seed, strokes, yards, wearResolution);
+    const plazaYards = wearGraph.tiles.filter(t=>t.kind==='plaza').map(t=>{
+      const [x,z]=centre([t.gx,t.gz]);return {x,z,rx:.84,rz:.84};
+    });
+    const plaza = groundWearField(size, terrain.seed, [], plazaYards, wearResolution);
+    for(let i=0;i<field.data.length;i++)field.data[i]=Math.max(field.data[i],plaza.data[i]);
+    plazaTexture.image.data=plaza.data;plazaTexture.needsUpdate=true;
+    wearTexture.image.data = field.data;
+    wearTexture.needsUpdate = true;
+  }
+
+
+  function squareCells(v) {
+    const out = [], town = v.island && v.island.town;
+    if (town?.paved) out.push(...town.paved);
+    else if (town?.square) {
+      const n=town.size || 3;
+      for(let z=0;z<n;z++)for(let x=0;x<n;x++)out.push([town.square[0]+x,town.square[1]+z]);
+    }
+    for(const d of v.districts || [])for(const c of d.paved || [])out.push(c);
+    // The stone quay is paved like the square: its setts are painted into the ground here (the
+    // plaza sheet), it is kept clear of trees and fields by the same list, and its wall's face is
+    // web/js/quay-basin.js.
+    for(const c of v.works?.kade?.cells || [])out.push(c);
+    return out;
+  }
+  function buildPaths(paths, squares = squareCells(wearVillage)) {
+    wearGraph=roadGraph(paths,squares,size);
+    buildGroundWear();
+  }
+  buildPaths(village.paths);
+
+  // ---- riverbanks ----------------------------------------------------------
+  // Shingle is painted into the terrain above, along with the paths and yards. Only the
+  // reeds need geometry of their own here. Keeping them separate stops a texture meant
+  // for stones from being stretched over every blade.
+  function buildRiverReeds() {
+    if (!terrain.riverBankCells || !terrain.riverBankCells.length) return null;
+    const pos = [], col = [], idx = [];
+    let v = 0;
+    const tri = (a, b, c, hex) => {
+      tmpColor.setHex(hex);
+      for (const p of [a, b, c]) { pos.push(p[0], p[1], p[2]); col.push(tmpColor.r, tmpColor.g, tmpColor.b); }
+      idx.push(v, v + 1, v + 2, v, v + 2, v + 1);      // both faces: a blade has no back
+      v += 3;
+    };
+    for (const [gx, gz] of terrain.riverBankCells) {
+      const [x, z] = terrain.cellWorld(gx, gz);
+      const h = hash32(`bank:${gx},${gz}`);
+      // Reeds only where the bank is close to the waterline; the top of a ravine is dry.
+      if (terrain.worldHeight(x, z) > 0.9) continue;
+      const clumps = 1 + (h % 3);
+      for (let n = 0; n < clumps; n++) {
+        const g = hash32(`reed:${gx},${gz},${n}`);
+        const rx = x + ((g % 100) / 100 - 0.5) * 0.8;
+        const rz = z + (((g >>> 7) % 100) / 100 - 0.5) * 0.8;
+        const y = terrain.worldHeight(rx, rz);
+        const tall = 0.3 + ((g >>> 14) % 100) / 400;
+        const hue = (g >>> 21) & 1 ? 0x6f7f46 : 0x86924f;
+        for (let b = 0; b < 3; b++) {
+          const a = ((g >>> (b * 3)) % 8) / 8 * 6.2832;
+          const lx = Math.cos(a) * 0.13, lz = Math.sin(a) * 0.13;
+          tri([rx - 0.035, y, rz], [rx + 0.035, y, rz], [rx + lx, y + tall, rz + lz], hue);
+        }
+      }
+    }
+    if (!pos.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  }
+  {
+    const bg = buildRiverReeds();
+    if (bg) {
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+      mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      const bm = new THREE.Mesh(bg, mat);
+      bm.receiveShadow = true;
+      group.add(bm);
+    }
+  }
+
+  // ---- the volcano ----------------------------------------------------------
+  // Lava down its gullies, a pool in the crater, smoke out of the top and steam where the
+  // flows reach the sea: web/js/lava.js, two draw calls between them. Here rather than in
+  // createWorld because the volcano is somebody else's island far more often than it is
+  // ours - the sea keeps it in the middle and everybody sees it as a region at a berth,
+  // drawn by guest-island.js through this same call - and createWorld only ever draws home.
+  let volcanoDressing = terrain.volcano ? createVolcanoDressing({ parent: group, terrain }) : null;
+
+  // ---- the betonning --------------------------------------------------------
+  // Blender buoys down both sides of the dredged channel. A fairway is a hole in a bar and looks
+  // from the water exactly like the bar it was cut through - the whole of it is under the
+  // surface - so an unmarked one is a channel nobody can find, which is the problem it was
+  // dug to solve wearing a different hat.
+  //
+  // Read off `terrain.fairway` and not the village, so a guest island's channel marks
+  // itself from the same ground everyone agrees on, and so this survives a `reshape`: the
+  // chronicle rebuilds the terrain as it was on the day being looked at, and on a day
+  // before the dredging there is no channel and therefore no buoys.
+  //
+  // IALA region A, which is the sea this island is in: entering from seaward, red cans to
+  // port and green cones to starboard. The direction is the centreline's own - `planFairway`
+  // lays it down from the sea inwards precisely so that "port" has a meaning here - and
+  // the handedness is walk.js's: with forward (fx, fz), starboard is (-fz, fx).
+  // The asset base is immersed so the broad belt sits on the waterline. All copies
+  // are merged: a richer silhouette still costs one draw call for the whole channel.
+  const BEACON_EVERY = 3;
+  const BEACON_OUT = 2.0;
+  const BUOY_DRAFT = 0.09;
+  let beaconMesh = null;
+
+  function buildBeacons() {
+    const f = terrain.fairway;
+    if (!f || !f.line || f.line.length < 2) return null;
+    const pieces = [];
+    const shapes = [models.grouped('prop_buoy_green', ['plain']), models.grouped('prop_buoy_red', ['plain'])];
+    for (const { x, z, side } of placeBuoys(terrain)) {
+      pieces.push(shapes[side === 1 ? 0 : 1].clone().translate(x, -BUOY_DRAFT, z));
+    }
+    for (const shape of shapes) shape.dispose();
+    if (!pieces.length) return null;
+    const geometry = mergeGeometries(pieces);
+    for (const piece of pieces) piece.dispose();
+    return geometry;
+  }
+
+  function dressBeacons() {
+    if (beaconMesh) { group.remove(beaconMesh); beaconMesh.geometry.dispose(); beaconMesh.material.dispose(); beaconMesh = null; }
+    const bg = buildBeacons();
+    if (!bg) return;
+    beaconMesh = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
+    beaconMesh.castShadow = true;
+    group.add(beaconMesh);
+  }
+  dressBeacons();
+
+  // ---- boundaries and fields -----------------------------------------------
+  let borderMesh = null, fieldMesh = null;
+  let borderSolids = [], borderClosed = new Set();
+  let dressed = village;               // the village the boundaries were last drawn for
+  let bridgeRoads = new Set();         // cells of hand-built bridges and their banks, as `gx + gz * size`
+  const groundMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+
+  function buildHamletDressing(v, seasonName) {
+    if (borderMesh) { group.remove(borderMesh); borderMesh.geometry.dispose(); borderMesh.material.dispose(); borderMesh = null; }
+    if (fieldMesh) { group.remove(fieldMesh); fieldMesh.geometry.dispose(); fieldMesh.material.dispose(); fieldMesh = null; }
+
+    // A boundary opens where a road crosses it, and the road set is the one the settlers
+    // already walk on, so no extra data is needed to know where the gates are. The field
+    // plan goes in with it: a parcel is fenced and gated by the same pass, out of the
+    // same merged geometry, for no extra draw call.
+    dressed = v;
+    // The gates in a boundary are where a road crosses it, and a bridge the keeper built by hand
+    // (a prop, so not in the village's paths) is a road for that: without it the fence ran
+    // straight across the bridge's foot.
+    const gates = bridgeRoads.size ? new Set([...roads, ...bridgeRoads]) : roads;
+    const walls = {};
+    const bg = buildBorders(v, terrain, own.owner, gates, fieldPlan, walls);
+    borderSolids = walls.solids || [];
+    borderClosed = walls.closed || new Set();
+    solidsNow = null;
+    if (bg) {
+      // Rail, palings, hedge and wall all come back welded into one geometry, so the sheet
+      // cannot be chosen per mesh: hamlets.js writes which one each vertex wants and its own
+      // material reads that, projecting from three axes so nothing needs a UV. It dresses
+      // itself when the sheets land, and draws the flat colours until they do.
+      borderMesh = new THREE.Mesh(bg, createBoundaryMaterial());
+      borderMesh.castShadow = true;
+      borderMesh.receiveShadow = true;
+      group.add(borderMesh);
+    }
+    // The hues go in with it: every parcel knows which hamlet works it, and a field that
+    // carries a breath of its owner's colour tells two estates apart where their
+    // headlands meet - the same trick the meadow under them already plays.
+    const fg = buildFieldDecals(fieldPlan, terrain, seasonName, hues);
+    if (fg) {
+      const mat = groundMat();
+      mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      // The fields are drawn here but dressed there: hamlets.js hands back bare geometry
+      // and owns the ploughed-soil sheet, so it is the only place that knows the tiling
+      // and the brightness the sheet has to be corrected for. It handles the wait itself -
+      // a sheet that lands after this material was made still reaches it.
+      dressFieldMaterial(mat);
+      fieldMesh = new THREE.Mesh(fg, mat);
+      fieldMesh.receiveShadow = true;
+      group.add(fieldMesh);
+    }
+  }
+  buildHamletDressing(village, season);
+
+  // The land register changed: a parcel grew, a hamlet was founded, a boundary moved out.
+  function setOwnership(v, seasonName = currentSeason) {
+    own = decodeOwnership(v, size);
+    hues = v.districts.map((d) => d.hue);
+    clearedBase = baseCleared(v);
+
+    wallVerge(own.owner, clearedBase);
+    roads = roadSet(v);
+    settled = settledDistance(terrain, own.owner, roads);
+    fieldPlan = surveyFields(v);
+    for (const p of [...fieldPlan.patches, ...fieldPlan.orchards, ...fieldPlan.gardens]) {
+      for (const [gx, gz] of p.cells) cleared.add(gx + gz * size);
+    }
+    wallVerge(own.owner, cleared);
+    computeTint(own.owner, own.inset, hues);
+    paintGround(seasonName);
+    dressBasin(v);
+    placeOrchard(orchardTrees(fieldPlan, terrain), seasonName);
+    buildHamletDressing(v, seasonName);
+    // A new house has a new yard, and every yard's feather is the colour of the ground
+    // `paintGround` has just rewritten - so this goes after both, not before either.
+    wearVillage = v;
+    buildGroundWear();
+  }
+
+
+  const falling = [];
+  function fellTrees(cells, animate = true) {
+    const out = [];
+    for (const [gx, gz] of cells) {
+      const list = treeCells.get(gx + gz * size);
+      if (!list) continue;
+      for (const it of list) {
+        if (it.felled) continue;
+        it.felled = true;
+        solidsNow = null;
+        out.push([it.x, it.z]);
+        if (animate) falling.push({ it, t: 0 });
+        else {
+          tmpObj.position.set(0, -999, 0); tmpObj.scale.setScalar(0.0001); tmpObj.rotation.set(0, 0, 0); tmpObj.updateMatrix();
+          it.mesh.setMatrixAt(it.index, tmpObj.matrix);
+          it.mesh.instanceMatrix.needsUpdate = true;
+        }
+      }
+      treeCells.delete(gx + gz * size);
+    }
+    return out;
+  }
+  // anything already cleared at load time is simply not planted, so nothing to do here
+
+  // One call a frame for everything on the ground that changes by itself: the season it is
+  // drawn in, and whatever is falling over. Taken whole out of createWorld's update so that
+  // a neighbour's wood turns with ours and a tree felled over there falls rather than
+  // vanishing between two frames.
+  function update(dt, month) {
+    const s = seasonOf(month);
+    if (s !== currentSeason) {
+      currentSeason = s;
+      paintGround(s);
+      placeTrees(pines, pineMesh, s);
+      placeTrees(oaks, oakMesh, s);
+      placeBushes(s);
+      placeOrchard(orchardTrees(fieldPlan, terrain), s);
+      buildHamletDressing(village, s);      // ploughed earth in spring, stubble after the harvest
+      buildGroundWear();                    // and the feather round a yard follows the meadow
+    }
+    // felling animation
+    for (let i = falling.length - 1; i >= 0; i--) {
+      const f = falling[i];
+      f.t += dt;
+      const k = clamp(f.t / 0.7, 0, 1);
+      tmpObj.position.set(f.it.x, terrain.worldHeight(f.it.x, f.it.z) - 0.05, f.it.z);
+      tmpObj.rotation.set(k * 1.4, f.it.rot, 0);
+      tmpObj.scale.setScalar(f.it.s * (1 - k));
+      tmpObj.updateMatrix();
+      f.it.mesh.setMatrixAt(f.it.index, tmpObj.matrix);
+      f.it.mesh.instanceMatrix.needsUpdate = true;
+      if (k >= 1) falling.splice(i, 1);
+    }
+    if (volcanoDressing) volcanoDressing.update(dt);
+  }
+
+  // The coast of another moment. Polders are stamped into the heightfield rather than
+  // drawn on top of it, so replaying the island's history means moving the ground
+  // itself - there is no visibility flag that can put the sea back. Everything else is
+  // already incremental: the colour attribute is written in place by `paintGround`, and
+  // the scatter never touches a polder or its dike, so nothing is left hanging in the
+  // air when the water returns.
+  function reshape(next) {
+    terrain = next;
+    solidsNow = null;                 // the stones' tops stand on the ground
+    const pa = geo.attributes.position;
+    for (let k = 0; k < N * N; k++) pa.array[k * 3 + 1] = terrain.H[k];
+    pa.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    paintGround(currentSeason);
+    dressBasin(basinVillage);
+    // The decals stand on the heightfield, so a coast that has moved takes them with it.
+    buildGroundWear();
+    // And the withies go with the channel they mark. Cheap enough to rebuild outright -
+    // a dozen buoys - and the alternative is a buoyed fairway on a day before it was dug.
+    dressBeacons();
+    // The lava stands on the ground it was routed down, so it goes with the ground too.
+    if (volcanoDressing) { volcanoDressing.dispose(); volcanoDressing = null; }
+    if (terrain.volcano) volcanoDressing = createVolcanoDressing({ parent: group, terrain });
+  }
+
+  // Everything this landscape put on the GPU, given back. Ours never needed it - our
+  // island lasts as long as the page does - but a berth empties when a neighbour leaves,
+  // and a region that came and went four times leaving its woods behind is four forests
+  // of buffers nobody can reach.
+  function dispose() {
+    disposed = true;
+    for (const t of ownTextures) t.dispose();
+    ownTextures.length = 0;
+    parent.remove(group);
+    group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      // The wood, the rocks, the grass and the hedges are InstancedMeshes, and their
+      // instanceMatrix and instanceColor buffers are the mesh's own, not the geometry's: the
+      // renderer frees them on the mesh's dispose() and on nothing else.
+      if (o.isInstancedMesh) o.dispose();
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) m.dispose();
+    });
+  }
+
+  // Where the work is, for the sea (Plans/DONE/inwoners-aan-het-werk.md). The settlers walk in
+  // Node off the island's bundle, and nothing in a bundle says where a field was laid or a
+  // tree was planted - both are this file's own survey. So the keeper's page writes it down
+  // the way it writes down where the houses really stand (reportPlacements in main.js).
+  //
+  // Cells for the fields and the kitchen gardens, positions for the trees. Only the trees
+  // within FIELD_REACH of a door or a road, which is the edge of the wood rather than the
+  // middle of it - nobody walks to the far side of the island for kindling - and at most
+  // WORK_TREES of those, taken by a spatial hash so the choice does not move when the
+  // forest is thinned somewhere else.
+  function workSites() {
+    const WORK_TREES = 500;
+    const rect = (p) => [p.gx, p.gz, p.w, p.d];
+    const edge = [];
+    for (const it of trees) {
+      if (it.felled || settled.dist[it.cell] > FIELD_REACH) continue;
+      edge.push([hash32(`work:${it.cell}:${Math.round(it.x * 100)}`), it]);
+    }
+    edge.sort((a, b) => a[0] - b[0]);
+    return {
+      fields: fieldPlan.patches.map(rect),
+      gardens: fieldPlan.gardens.map(rect),
+      trees: edge.slice(0, WORK_TREES).map(([, it]) => [Math.round(it.x * 1000) / 1000, Math.round(it.z * 1000) / 1000]),
+    };
+  }
+
+  // The bridges the keeper has built by hand, as cells: the fence opens for them like for any
+  // road. Only the boundaries are drawn again, and only when the set really changed.
+  function setBridgeRoads(cells) {
+    const next = new Set((cells || []).map(([gx, gz]) => gx + gz * size));
+    if (next.size === bridgeRoads.size && [...next].every((k) => bridgeRoads.has(k))) return;
+    bridgeRoads = next;
+    buildHamletDressing(dressed, currentSeason);
+  }
+
+  // What walk mode meets of all this (Plans/hitboxes-en-looppaden.md), in the island's own frame:
+  // a trunk where a tree stands (measured off the bake: an oak's foot is 0.08 across its middle and
+  // its crown starts at 0.38, a pine's lowest cone reaches out 0.4 from 0.28 up, both under a
+  // settler's head), a stone where a boulder lies with its top to stand on, and the boundaries as
+  // hamlets.js buildBorders hands them. Bushes and grass are walked through, as they always were.
+  // Worked out when asked and kept until a tree falls, the orchard is replanted or the boundaries
+  // are drawn again; the order of `rng` is not touched - this only reads what was placed.
+  function solids() {
+    if (solidsNow) return solidsNow;
+    const out = [];
+    for (const it of trees) {
+      if (it.felled) continue;
+      out.push({ x: it.x, z: it.z, r: (it.kind === 'pine' ? 0.2 : 0.1) * it.s, tree: true });
+    }
+    for (const [x, z, sc] of orchardNow) out.push({ x, z, r: 0.1 * sc, tree: true });
+    // flora_rock_a: 0.27 out at its foot and 0.35 high, stood in the ground by 0.04 and stretched
+    // upright by the fourth number on a volcano's crags.
+    for (const [x, z, sc, up] of rocks) {
+      const g = terrain.worldHeight(x, z) - 0.04;
+      out.push({ x, z, r: 0.27 * sc, y0: g - 0.2, y1: g + 0.35 * sc * (up || 1), top: true });
+    }
+    for (const b of borderSolids) out.push(b);
+    solidsNow = out;
+    return out;
+  }
+
+  // Every crown as an upright cylinder, for the one question nothing else asks of a tree: does it
+  // stand between the camera and the walker (main.js seeThroughFrame, see-through.js). Measured off
+  // the bake: an oak's crown from 0.38 to 0.80 of its height and 0.38 out, a pine's lowest cone
+  // from 0.28 up to its 1.18 tip and 0.40 out - a little less, since a cone narrows as it rises.
+  // Rebuilt whenever solids() is, which already knows when a tree was felled or the orchard moved.
+  let crownsNow = null, crownsOf = null;
+  function crowns() {
+    const s = solids();
+    if (crownsOf === s) return crownsNow;
+    const out = [];
+    const crown = (x, z, sc, sy, lo, hi, r) => {
+      const g = terrain.worldHeight(x, z);
+      out.push({ x, z, r: r * sc, y0: g + lo * sc * sy, y1: g + hi * sc * sy });
+    };
+    for (const it of trees) {
+      if (it.felled) continue;
+      if (it.kind === 'pine') crown(it.x, it.z, it.s, 1, 0.28, 1.18, 0.34);
+      else crown(it.x, it.z, it.s, 1, 0.38, 0.8, 0.38);
+    }
+    for (const [x, z, sc] of orchardNow) crown(x, z, sc, 1.05, 0.38, 0.8, 0.38);
+    crownsNow = out; crownsOf = s;
+    return out;
+  }
+
+  return {
+    group, ground, update, reshape, fellTrees, dispose, workSites, solids, crowns,
+    // The cell pairs a boundary closes to a route that cannot jump it (hamlets.js edgeKey).
+    closedEdges: () => borderClosed,
+    triangles: p / 3 + (volcanoDressing ? volcanoDressing.triangles : 0),
+    // The flora stream, handed out rather than kept, and this is load-bearing. The clouds
+    // and the fireflies in createWorld have always drawn from it *after* the forest had
+    // taken its draws, and their own comments say so: "the random draws happen in the same
+    // order as before, so the clouds look the same and the fireflies further down still
+    // land where they did". Splitting this file in two would have given them a stream
+    // rewound to the start and moved every cloud and every firefly on every island.
+    //
+    // A fork of their own would be tidier and is not free: it is a visible change to a
+    // sky nobody asked to have redrawn. If it is ever worth making, make it deliberately.
+    rng,
+    buildPaths, squareCells, setOwnership, setHouseFrontages, setBridgeRoads,
+    ownership: () => own, season: () => currentSeason,
+  };
+}
+
+
+export function createWorld(scene, terrain, village, opts = {}) {
+  const size = terrain.size, half = terrain.half, N = terrain.N;
+  // Without a month - the workbench pages - this machine's own calendar, which is all a
+  // page with no sea has.
+  const season = seasonOf(opts.month ?? worldTime(Date.now(), localZone(Date.now())).month);
+  const group = new THREE.Group();
+  scene.add(group);
+
+
+  // The island itself - ground, wood, fields, walls, paving, withies - in a group of its
+  // own under this one. Ours and a neighbour's are built by the same call now; see the
+  // header of createLandscape for where the seam is and why it is there.
+  const land = createLandscape({ parent: group, terrain, village, season, modest: opts.modest });
+  const ground = land.ground;
+
+  // ---- sea, the lake and the rivers ---------------------------------------
+  // One surface for all the water there is: everything below SEA_LEVEL is under this
+  // plane and the ground mesh hides it everywhere else, which is how the lake has always
+  // been drawn and is now how the rivers are drawn too. A river is only about two cells
+  // across, though, and the old two-unit grid put barely a vertex in the channel - the
+  // depth it shaded by came from the bank. Hence a vertex per unit here.
+  //
+  // 260 was a fixed number that happened to fit a grid of 140 with room to spare. A grid
+  // can be 512, and then the detailed patch stopped at 130 while the coast ran on to 256:
+  // half the island's own water had no rivers shaded into it. It follows the island now,
+  // with the same margin - which on a small island is less to draw than before, not more.
+  //
+  // And now it follows the whole archipelago, as ONE surface rather than one per island.
+  // Three reasons, in the order they bite:
+  //
+  //   - A second island at a berth is 112 out with its coast at 144, and a patch that
+  //     stopped at 130 left most of its water on the open-ocean disc: no shallows, no
+  //     surf, no depth colour, a hard line where its beach met the deep.
+  //   - Two patches would overlap in the channel between the islands - two transparent
+  //     depthWrite:false planes at y=0 - and blend twice and flicker.
+  //   - The wave is `sin(p.x * 1.3 + uTime)` on the LOCAL position, while vWorld comes off
+  //     the modelMatrix. A patch translated to a berth therefore carries a wave that is out
+  //     of phase with ours, and the swell would visibly jump at the seam. One surface has
+  //     one wave clock, which is the same reason the ocean disc shares these uniforms.
+  //
+  // A rectangle over the union of the grids rather than a square over its longest side: on
+  // two 64-grids side by side that is 372x260 instead of 372x372. The margin is what it
+  // always was for an island of this size - 130 out from a 64-grid, 60 for the largest - so
+  // an island on its own fades out where it always did.
+  //
+  // One surface, but no longer one density. With the volcano and the starters in the sea the
+  // rectangle is over a thousand units across, and at a vertex per unit it was 2.53M of the
+  // page's 2.75M triangles - almost all of it open sea whose depth is one number. It is dense
+  // now only round each island's own grid and coarse everywhere else; waterPatchPlan has the
+  // tiles and the argument for why nothing drawn changes.
+  //
+  // This lives in `group`, which is the only createWorld that draws the decor and is always
+  // the one at the origin; a region at a berth is drawn by a world that makes no water.
+  // Depth in world coordinates, from the archipelago: inside a region it is that island's
+  // own heightfield, and everywhere else it is open sea. Without the archipelago - which is
+  // every caller that has not been given one - it is this island and the old flat -2.5
+  // past its edge, exactly as before.
+  const naturalDepthAt = opts.sea
+    ? (x, z) => opts.sea.height(x, z)
+    : (x, z) => ((Math.abs(x) > half || Math.abs(z) > half) ? -2.5 : terrain.worldHeight(x, z));
+
+  const depthAt = (x, z) => {
+    const r = opts.sea?.regionAt(x, z);
+    if (opts.sea && !r) return naturalDepthAt(x, z);
+    const t = r?.terrain || terrain;
+    const local = r ? r.toLocal(x, z) : [x, z];
+    return waterColourDepth(naturalDepthAt(x, z), local[0], local[1], t.half);
+  };
+
+  // Built in a function rather than inline because the span is no longer settled once and
+  // for all: an island that joins after the page has booted makes the archipelago wider,
+  // and a patch that still reaches only as far as our own coast leaves the newcomer sitting
+  // on the flat open-ocean disc - no shallows, no surf, and a hard line where its beach
+  // meets the deep. `water.geometry` is swapped rather than the mesh replaced, so nothing
+  // that holds a reference to the mesh has to know.
+  let waterGeo = null, wp = null, wplan = null;
+  // The islands' grids and whatever the sea bed is raised round (the islets) - each a square
+  // the water is dense round. `regions()` for a sea that has no bed to speak of.
+  const seaRegions = () => (opts.sea ? (opts.sea.waterSquares ? opts.sea.waterSquares() : opts.sea.regions()) : null);
+  function buildWaterGeometry() {
+    wplan = waterPatchPlan(half, seaRegions(), opts.modest);
+    let most = 0, cells = 0;
+    for (const q of wplan.quads) { most += (q.segX + 1) * (q.segZ + 1); cells += q.segX * q.segZ; }
+    const pos = new Float32Array(most * 3);
+    const index = most > 65535 ? new Uint32Array(cells * 6) : new Uint16Array(cells * 6);
+    // Neighbouring dense tiles share their edge vertices rather than each carrying a copy:
+    // the same positions either way (and so the same depth and blend - no crack), a ninth
+    // fewer vertices through the shader. Keyed on an eighth of a unit, finer than any step.
+    //
+    // Dense and coarse keep their own copies, though: a coarse vertex carries aCoarse = 1 so
+    // the water that sails with you can take its place (nearWaterPlan), and a vertex shared
+    // with a dense tile would smear that across the dense tile's edge. The seam is at the
+    // same positions either way.
+    const seen = [new Map(), new Map()];
+    const coarse = new Uint8Array(most);
+    let count = 0, k = 0;
+    let dense = false;
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      const map = seen[dense ? 1 : 0];
+      let n = map.get(key);
+      if (n === undefined) {
+        n = count++;
+        pos[n * 3] = x; pos[n * 3 + 2] = z;
+        coarse[n] = dense ? 0 : 1;
+        map.set(key, n);
+      }
+      return n;
+    };
+    for (const q of wplan.quads) {
+      dense = q.dense;
+      const w = q.maxX - q.minX, d = q.maxZ - q.minZ;
+      let prev = null;
+      for (let j = 0; j <= q.segZ; j++) {
+        const z = j === q.segZ ? q.maxZ : q.minZ + (j / q.segZ) * d;
+        const row = new Array(q.segX + 1);
+        for (let i = 0; i <= q.segX; i++) row[i] = vertex(i === q.segX ? q.maxX : q.minX + (i / q.segX) * w, z);
+        // Counter-clockwise seen from above, which is the side a FrontSide material draws:
+        // (x0,z0) (x0,z1) (x1,z0), then (x0,z1) (x1,z1) (x1,z0).
+        if (prev) {
+          for (let i = 0; i < q.segX; i++) {
+            index[k++] = prev[i]; index[k++] = row[i]; index[k++] = prev[i + 1];
+            index[k++] = row[i]; index[k++] = row[i + 1]; index[k++] = prev[i + 1];
+          }
+        }
+        prev = row;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    const p = new THREE.BufferAttribute(pos.slice(0, count * 3), 3);
+    geo.setAttribute('position', p);
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    const depth = new Float32Array(count);
+    const blend = new Float32Array(count);
+    const wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      depth[i] = depthAt(x, z);
+      // The patch always extends at least sixty units past every island grid.
+      // Fade within that spare water, never across a beach or a river.
+      blend[i] = wplan.blendAt(x, z);
+      wave[i] = wplan.waveAt(x, z);
+    }
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+    geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(Float32Array.from(coarse.subarray(0, count)), 1));
+    waterGeo = geo;
+    wp = geo.attributes.position;
+    return geo;
+  }
+  buildWaterGeometry();
+
+  const waterMat = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: true,
+    depthWrite: false,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uTime: { value: 0 },
+        uDeep: { value: new THREE.Color(0x215e78) },
+        uShallow: { value: new THREE.Color(0x65c4b5) },
+        uFoam: { value: new THREE.Color(0xeaf6f8) },
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uSunColor: { value: new THREE.Color(0xffffff) },
+        uNight: { value: 0 },
+        uNear: { value: new THREE.Vector4(1e9, 1e9, -1e9, -1e9) },
+      },
+    ]),
+    vertexShader: `
+      #include <fog_pars_vertex>
+      attribute float aDepth;
+      attribute float aBlend;
+      // 1 wherever the swell is drawn, 0 on the coarse open sea and the seam into it
+      // (waterPatchPlan): a wave sampled every sixteen units is a tilting slab, not a wave.
+      attribute float aWave;
+      // 1 on the plan's coarse tiles: the ones the water that sails with you replaces.
+      attribute float aCoarse;
+      uniform float uTime;
+      varying float vDepth;
+      varying vec3 vWorld;
+      varying float vBlend;
+      varying float vCoarse;
+      void main() {
+        vDepth = aDepth;
+        vBlend = aBlend;
+        vCoarse = aCoarse;
+        vec3 p = position;
+        float w1 = sin(p.x * 1.3 + uTime * 1.1);
+        float w2 = sin(p.z * 1.7 - uTime * 0.9);
+        float lift = (0.05 * w1 + 0.04 * w2) * aWave;
+        // Over ground above the sea the swell may sink the surface but never lift it out
+        // through the ground: the water mesh is a vertex per corner, triangulated like the
+        // ground, so a crest of 0.09 on a corner of a wide low beach broke through the sand
+        // as a dotted row of puddles - the troughs between them dry - wherever a grown ring
+        // left a plain within a wave's height of the sea (issue #95, measured on the live
+        // island: 539 corners under 0.09 more than three cells from any water). Capped at
+        // sea level, and a little clear of the ground where it is higher, so the still
+        // waterline - every coast - is where it always was; only the run-up past the first
+        // dry corner is gone.
+        if (aDepth >= 0.0) lift = min(lift, max(aDepth - 0.05, 0.0));
+        p.y += lift;
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+        vWorld = (modelMatrix * vec4(p, 1.0)).xyz;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: `
+      #include <fog_pars_fragment>
+      uniform vec3 uDeep, uShallow, uFoam, uSunColor;
+      uniform vec3 uSunDir;
+      uniform float uTime, uNight;
+      // The square the water that sails with you covers (minX, minZ, maxX, maxZ): the plan's
+      // coarse tiles step aside inside it, so the two are never drawn over each other.
+      uniform vec4 uNear;
+      varying float vDepth;
+      varying vec3 vWorld;
+      varying float vBlend;
+      varying float vCoarse;
+      void main() {
+        if (vCoarse > 0.5 && vWorld.x > uNear.x && vWorld.x < uNear.z && vWorld.z > uNear.y && vWorld.z < uNear.w) discard;
+        float shallow = smoothstep(-2.0, -0.1, vDepth);
+        vec3 col = mix(uDeep, uShallow, shallow);
+        // The surf. It used to fade in over three tenths of a unit of depth, which on
+        // this island's shelf is barely two cells across: a white hairline drawn round
+        // the coast rather than water breaking on a beach. Two terms now. A broad band
+        // of foaming shallow water, squared so that widening its reach does not simply
+        // wash the whole bay pale - the far half of the band stays water that happens to
+        // be light. And the line where the sea actually runs up the sand, which is the
+        // part the eye reads as surf and which the broad band on its own smeared away.
+        // The swell is slower across the band as well: sixteen cycles over three times
+        // the depth range, so it reads as two or three rows of breakers instead of a
+        // fine corduroy.
+        float shore = smoothstep(-0.65, 0.02, vDepth);
+        float swell = 0.55 + 0.45 * sin(uTime * 1.3 + vDepth * 16.0 + sin(vWorld.x * 0.7 + vWorld.z * 0.5));
+        float foam = shore * shore * swell + smoothstep(-0.14, 0.0, vDepth) * 0.5;
+        col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.66);
+        // Evaluate the normal here, in world coordinates: interpolating it from
+        // the ocean disc's handful of vertices painted giant wedges of light,
+        // while the dense coastal mesh shimmered right up to its hard edge.
+        // Calmer with distance: these ripples are a few units across, and a pixel a few hundred
+        // units out spans many of them - the sun's glint on them aliased into a lattice of dots
+        // over the open sea as soon as the haze no longer hid it (View Distance up).
+        float calm = 1.0 - smoothstep(150.0, 450.0, distance(vWorld, cameraPosition));
+        vec3 n = normalize(vec3(
+          -0.065 * calm * cos(vWorld.x * 1.3 + uTime * 1.1), 1.0,
+          -0.068 * calm * cos(vWorld.z * 1.7 - uTime * 0.9)));
+        vec3 v = normalize(cameraPosition - vWorld);
+        float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        col = mix(col, uShallow, fresnel * 0.18);
+        vec3 r = reflect(-normalize(uSunDir), n);
+        float spec = pow(max(dot(r, v), 0.0), 60.0);
+        col += uSunColor * spec * 0.55 * (1.0 - uNight * 0.8);
+        col *= mix(1.0, 0.34, uNight);
+        // Only the shallows reveal the seabed. At depth its rectangular mesh
+        // boundary must disappear beneath the water, not tint an entire tile.
+        float opacity = mix(1.0, 0.88, smoothstep(-1.8, -0.35, vDepth));
+        gl_FragColor = vec4(col, opacity * vBlend);
+        // three's fog_fragment, but with the distance taken here rather than handed down
+        // from the vertices. The fog is radial (radial-fog.js: vFogDepth is the length of
+        // mvPosition), and a length interpolated across a triangle is always longer than the
+        // real one in between - by nothing on the patch's dense vertices, and by a lot on the
+        // ocean disc, whose triangles run from under the camera to 1500 out: from 250 up with
+        // the fog closing at 550 (modest) the disc was fogged as if half as far again, and
+        // the patch showed through it as a darker rectangle inside the haze. vWorld is exact
+        // at every pixel, so the two agree now, and a coarse patch fogs like a dense one.
+        #ifdef USE_FOG
+          float fogDist = distance(vWorld, cameraPosition);
+          #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp(- fogDensity * fogDensity * fogDist * fogDist);
+          #else
+            float fogFactor = smoothstep(fogNear, fogFar, fogDist);
+          #endif
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif
+      }
+    `,
+  });
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.position.y = 0;
+  water.renderOrder = 1;
+  group.add(water);
+
+  // The water that sails with you (nearWaterPlan): the same material, so the same clock, sun,
+  // fog and night; rebuilt only when the focus crosses into another lattice cell or the plan
+  // changes - a few thousand vertices, never the whole patch.
+  const sailWater = new THREE.Mesh(new THREE.BufferGeometry(), waterMat);
+  sailWater.renderOrder = 1;
+  sailWater.visible = false;
+  group.add(sailWater);
+  let nearKey = null;
+  // The plan the water that sails with you was built from, or null while it has nothing to
+  // draw: surfaceAt reads the swell off it, because that patch is where the swell is under a
+  // boat far from any island.
+  let nearPlan = null;
+  // The lens is under the surface (setUnderwater, below). The three sea meshes that draw the
+  // top of the water are hidden for as long as it is - see the note there - and this is what
+  // setWaterFocus has to respect when it decides whether the sailing patch shows.
+  let underNow = false;
+  function buildNearWater(np) {
+    const fine = wplan.fine;
+    const n = Math.round(WATER_TILE / fine);
+    const pos = [], idx = [];
+    const seen = new Map();
+    const vertex = (x, z) => {
+      const key = (Math.round(x * 8) + 65536) * 131072 + (Math.round(z * 8) + 65536);
+      let v = seen.get(key);
+      if (v === undefined) { v = pos.length / 3; pos.push(x, np.baseAt(x, z), z); seen.set(key, v); }
+      return v;
+    };
+    for (const c of np.cells) {
+      let prev = null;
+      for (let j = 0; j <= n; j++) {
+        const z = c.minZ + j * fine;
+        const row = [];
+        for (let i = 0; i <= n; i++) row.push(vertex(c.minX + i * fine, z));
+        if (prev) {
+          for (let i = 0; i < n; i++) idx.push(prev[i], row[i], prev[i + 1], row[i], row[i + 1], prev[i + 1]);
+        }
+        prev = row;
+      }
+    }
+    const count = pos.length / 3;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setIndex(idx);
+    const depth = new Float32Array(count), blend = new Float32Array(count).fill(1), wave = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const x = pos[i * 3], z = pos[i * 3 + 2];
+      depth[i] = depthAt(x, z);
+      wave[i] = np.waveAt(x, z);
+    }
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(depth, 1));
+    geo.setAttribute('aBlend', new THREE.BufferAttribute(blend, 1));
+    geo.setAttribute('aWave', new THREE.BufferAttribute(wave, 1));
+    geo.setAttribute('aCoarse', new THREE.BufferAttribute(new Float32Array(count), 1));
+    geo.computeBoundingSphere();
+    return geo;
+  }
+  // Where the water that sails with you is: your boat, or what the camera looks at. Cheap to
+  // call every frame - it does nothing until the focus changes cell.
+  function setWaterFocus(x, z) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !wplan) return;
+    const np = nearWaterPlan(wplan, x, z);
+    if (np.key === nearKey) return;
+    nearKey = np.key;
+    const old = sailWater.geometry;
+    sailWater.geometry = np.cells.length ? buildNearWater(np) : new THREE.BufferGeometry();
+    old.dispose();
+    nearPlan = np.cells.length ? np : null;
+    sailWater.visible = !!nearPlan && !underNow;
+    const r = np.rect;
+    if (np.cells.length) waterMat.uniforms.uNear.value.set(r.minX, r.minZ, r.maxX, r.maxZ);
+    else waterMat.uniforms.uNear.value.set(1e9, 1e9, -1e9, -1e9);
+  }
+
+  // The open sea, beyond the detailed patch. It used to be a flat blue card of radius 500,
+  // which was enough while nothing stood on it. The neighbours do: they lie at 150 to 190
+  // and an island of the largest grid reaches 256 further again, so the far water is
+  // something you look at rather than past. It is the same shader now, sharing the same
+  // uniforms so there is one clock and one sun over the whole sea, and it runs out past
+  // the camera's far plane (below).
+  //
+  // A handful of segments is all it needs. Out here `aDepth` is the same -2.5 the patch
+  // gives everything past its own edge, so the colour is constant and there is nothing to
+  // interpolate; the waves are 5 cm on a surface a kilometre across.
+  //
+  // Opaque, unlike the patch, because there is nothing underneath it to show through.
+  //
+  // Now past the far plane (1400) rather than inside it. The patch above is a rectangle over
+  // every island's grid, fixed in the world, and with the volcano and the starters it runs
+  // well past 1200 from the eye: beyond a 1200 rim it stood up against the sky as a pale
+  // slab of sea. With the rim out of reach the far plane cuts both in the same place, in
+  // full haze. That the rim is now outside the sky (r1340) does not matter: the sky writes no
+  // depth, so the sea draws over it wherever the two overlap.
+  const OCEAN_R = 1500;
+  const oceanGeo = new THREE.CircleGeometry(OCEAN_R, 128);
+  oceanGeo.rotateX(-Math.PI / 2);
+  const oceanDepth = new Float32Array(oceanGeo.attributes.position.count).fill(-2.5);
+  oceanGeo.setAttribute('aDepth', new THREE.BufferAttribute(oceanDepth, 1));
+  oceanGeo.setAttribute('aBlend', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  // The swell it always had, which on a vertex at the middle and 128 at the rim is nothing.
+  oceanGeo.setAttribute('aWave', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count).fill(1), 1));
+  oceanGeo.setAttribute('aCoarse', new THREE.BufferAttribute(
+    new Float32Array(oceanGeo.attributes.position.count), 1));
+  const oceanMat = waterMat.clone();
+  oceanMat.uniforms = waterMat.uniforms;   // one clock, one sun, one nightfall
+  oceanMat.transparent = false;
+  oceanMat.depthWrite = true;
+  // Pushed back in depth, in proportion to the depth buffer's own resolution: 0.2 under the
+  // patch is a hair at a thousand units (the buffer's step there is about 0.3), and with the far
+  // plane out past 1400 the two started to fight there as a moire of dots over the open sea.
+  oceanMat.polygonOffset = true;
+  oceanMat.polygonOffsetFactor = 4;
+  oceanMat.polygonOffsetUnits = 16;
+  const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+  // Wave troughs reach -0.09. Keep the backdrop underneath them to avoid blue tiles: this
+  // disc carries the same wave, but with a vertex only at its centre and its rim it is
+  // flat where the patch is not, so the two do not dip together.
+  ocean.position.y = -OCEAN_DROP;
+  ocean.renderOrder = 0;
+  group.add(ocean);
+
+  // ---- sky ----------------------------------------------------------------
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      uTop: { value: new THREE.Color(0x5ea6e6) },
+      uHor: { value: new THREE.Color(0xdcefff) },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunColor: { value: new THREE.Color(0xffffff) },
+      uStars: { value: 0 },
+      // The fog's colour as it lands on screen, for the band along the horizon: written just
+      // before the dome is drawn (sky.onBeforeRender, below). See the fragment shader.
+      uFog: { value: new THREE.Color(0xdcefff) },
+    },
+    // On the far plane, whatever the far plane is: z = w puts every vertex at depth 1, the
+    // same trick three's own background cube uses. The dome used to be a sphere of r1340
+    // sitting inside a far plane fixed at 1400; once View Distance could bring the far plane
+    // in to 250, the whole dome was past it and the sky was the clear colour - a black void
+    // over a sea that the fog had already closed. The colour only ever read the direction
+    // (vDir), so where the geometry is drawn is free to be wherever depth says is furthest.
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
+    fragmentShader: `
+      uniform vec3 uTop, uHor, uSunColor, uFog; uniform vec3 uSunDir; uniform float uStars;
+      varying vec3 vDir;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+      void main(){
+        vec3 d = normalize(vDir);
+        vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.45, d.y));
+        // Along the horizon the sky is the fog's colour exactly. A house is taken out of the
+        // picture only once the fog has closed over it (main.js fogCeiling), and fully fogged
+        // it *is* the fog colour - which matched fogged ground and sea, but not the sky: a
+        // mast or a castle standing up against the horizon was a fog-coloured shape on a
+        // slightly different blue, and went at the cut. Anything that far off stands only a
+        // few degrees above the horizon, so the band is narrow and the gradient above it
+        // untouched; the sun's halo goes on top of it, so a low sun still warms the horizon.
+        col = mix(uFog, col, smoothstep(0.0, 0.14, d.y));
+        float halo = pow(max(dot(d, normalize(uSunDir)), 0.0), 48.0);
+        col += uSunColor * halo * 0.5;
+        if (uStars > 0.01 && d.y > 0.0) {
+          vec2 g = floor(d.xz * 260.0 + d.y * 40.0);
+          float s = step(0.9975, hash(g));
+          col += vec3(s) * uStars * (0.6 + 0.4 * hash(g + 3.0)) * smoothstep(0.0, 0.35, d.y);
+        }
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1340, 26, 16), skyMat);   // outside the sea; drawn on the far plane (see the vertex shader)
+  sky.frustumCulled = false;
+  group.add(sky);
+
+  const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(11, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }));
+  // The moon has a phase: lit from a direction worked out from `worldTime`'s `moon` every
+  // frame (moonAt), so a new moon is a dark disc with the faintest earthshine and a full one
+  // the whole face. The sun's actual direction is no use for it - at night it is under the
+  // sea, and a moon lit from there is a new moon every night.
+  const moonMat = new THREE.ShaderMaterial({
+    uniforms: { uLight: { value: new THREE.Vector3(0, 0, 1) } },
+    vertexShader: `
+      varying vec3 vN;
+      void main() {
+        vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uLight;
+      varying vec3 vN;
+      void main() {
+        float lit = smoothstep(-0.06, 0.06, dot(normalize(vN), uLight));
+        gl_FragColor = vec4(mix(vec3(0.10, 0.12, 0.17), vec3(0.902, 0.925, 1.0), lit), 1.0);
+      }
+    `,
+  });
+  const moonDisc = new THREE.Mesh(new THREE.SphereGeometry(8, 20, 14), moonMat);
+  // Phase 0 lights the far side (new), 0.5 the side facing us (full), and the light swings
+  // round through the horizontal in between: from the right while it waxes, as seen from
+  // the northern hemisphere, from the left while it wanes. `dir` points from us to the moon.
+  const moonSide = new THREE.Vector3();
+  const moonAt = (dir, phase) => {
+    const a = phase * Math.PI * 2;
+    moonSide.set(-dir.z, 0, dir.x);
+    if (moonSide.lengthSq() < 1e-6) moonSide.set(1, 0, 0);
+    moonSide.normalize();
+    moonMat.uniforms.uLight.value.copy(dir).multiplyScalar(Math.cos(a)).addScaledVector(moonSide, Math.sin(a)).normalize();
+  };
+  group.add(sunDisc, moonDisc);
+
+  // Where the backdrop is parked. The sky, the open sea and the sun are the horizon, and a
+  // horizon is a direction rather than a place - so all four ride with the camera and none
+  // of them is anchored to this island.
+  //
+  // Not cosmetic. The sky sphere is r1340 and the ocean disc was r1200 (r1500 now), both
+  // centred here, and the camera's far plane is 1400 (main.js:331). Before they rode along: stand a hundred and seventy units east -
+  // which is where a neighbour's island is - look away from home, and the far side of the
+  // sky is at 1510 and the ocean rim at 1370: both past the far plane, so the clear colour
+  // cuts a straight line through the horizon. Invisible until somebody is over there, and
+  // then unmistakable. Raising the far plane and the radii instead would buy the same thing
+  // with depth precision, which is a real cost for no gain.
+  //
+  // `recentre` only stores it; `update` is what puts the sun and moon in their places, so
+  // it adds this to their direction rather than being overwritten by it every frame. The
+  // clouds are deliberately NOT parked on it: they cast shadows, and a cloud shadow that
+  // slides as you pan is worse than no cloud at all. They lie over the whole sea in the
+  // world frame instead, and the camera only picks which of them are drawn (placeClouds).
+  const horizonAt = new THREE.Vector3();
+  //
+  // The sky rides the eye's height as well, and the ocean does not. Parked at sea level, the
+  // sky's underside is R + h from an eye at height h, and with the leash an archipelago
+  // allows (hundreds up) that went past the far plane: the clear colour showed through as a
+  // black polygon in the sphere's own low-poly shape. Centred on the eye it is the same in
+  // every direction, drawn on the far plane whatever that is (the vertex shader), and below
+  // eye level it is the horizon colour - the fog's.
+  // The sun and moon hang off the same centre so the disc stays inside its own halo.
+  // How far out the sun and moon hang. 430 for as long as the far plane was 1400; they are
+  // fog-free discs, so a far plane nearer than that would cut them off and leave the halo in
+  // the sky with nothing in it. View Distance hands the far plane in (setFar) and they are
+  // drawn inside it, scaled down with the distance so the disc is the same size on screen.
+  const CELESTIAL = 430;
+  let celestial = CELESTIAL;
+  const setFar = (far) => {
+    celestial = Math.min(CELESTIAL, far * 0.8);
+    const k = celestial / CELESTIAL;
+    sunDisc.scale.setScalar(k);
+    moonDisc.scale.setScalar(k);
+    // The open sea has to reach past the far plane, or with the haze pushed out (View Distance
+    // over the default) its rim shows as a line against the dome. 1500 is the disc for a far
+    // plane of 1400, so nothing changes until the slider goes past that; its shading is per
+    // pixel from the world position, so a wider disc looks the same.
+    const spread = Math.max(1, far / 1400);
+    ocean.scale.set(spread, 1, spread);
+  };
+  const recentre = (x, y, z) => {
+    horizonAt.set(x, y, z);
+    sky.position.set(x, y, z);
+    ocean.position.x = x; ocean.position.z = z;
+  };
+
+  // The haze exists here because every material has to compile knowing there is fog, but
+  // the two distances are set from main.js and nowhere else. They used to be set in both
+  // places - scaled to the island here, overwritten with a fixed 235 on every neighbour
+  // sync there - and the fixed pair always won. Colour still follows the sky, below.
+  scene.fog = new THREE.Fog(0xdcefff, terrain.half * 1.1, terrain.half * 3.4);
+  // The dome's horizon band is the fog exactly as a fogged thing shows it: taken at render
+  // time (after the hour has tinted the fog below and the weather has dulled it, weather.js)
+  // and converted the way three converts the fog for every other material - into the output
+  // colour space, because fog_fragment runs after colorspace_fragment
+  // (WebGLMaterials.refreshFogUniforms). This shader writes its colours as they are, so a
+  // band given the fog's linear value showed ~171,206,243 against the fogged sea's
+  // 214,232,249: the same number, a different colour, and a hard line at the horizon.
+  sky.onBeforeRender = (renderer) => {
+    if (scene.fog) scene.fog.color.getRGB(skyMat.uniforms.uFog.value, renderer.getRenderTarget() ? THREE.ColorManagement.workingColorSpace : renderer.outputColorSpace);
+  };
+
+  // ---- lights --------------------------------------------------------------
+  const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x8f8a60, 0.85);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+  const key = new THREE.DirectionalLight(0xfff8ea, 3.0);
+  key.castShadow = true;
+  key.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
+  // Half-width of the shadow frustum. `followShadow` moves it with the zoom, so this is
+  // only the tightest it ever gets; SHADOW_SPAN below says what the numbers mean.
+  key.shadow.camera.left = -SHADOW_SPAN[0]; key.shadow.camera.right = SHADOW_SPAN[0];
+  key.shadow.camera.top = SHADOW_SPAN[0]; key.shadow.camera.bottom = -SHADOW_SPAN[0];
+  // key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  // NOT opts.shadowDistance. See setShadowDistance below: the slider is the width the
+  // frustum may grow to, and the depth follows from the width. Putting the number straight
+  // into `far` looks like it works until you zoom out, at which point the box is wider than
+  // the depth that reaches it and shadows get sliced off at an invisible plane.
+  key.shadow.camera.near = 10; key.shadow.camera.far = 2 * SHADOW_SPAN[0] + 90;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.03;
+  // One step softer, now that the sun is low enough for a shadow to run the length of a
+  // lane: a hard edge that far from its caster reads as a painted stripe. PCFSoft only,
+  // so `modest` (PCFShadowMap, which ignores the radius) is untouched.
+  key.shadow.radius = 4;
+  scene.add(hemi, ambient, key, key.target);
+
+  // The forest's stream, exactly where it had got to - see the note on `rng` in
+  // createLandscape. Everything below this line draws from it in the order it always did.
+  const rng = land.rng;
+
+  // ---- clouds --------------------------------------------------------------
+  // One layer over the whole sea, the same for everybody on it. A cloud is a function of
+  // the sea's clock and its own place in the WORLD frame - `x = x0 + speed * t` in world
+  // seconds, wrapped - never a drift accumulated since this tab loaded, and never drawn off
+  // this island's seed: two players on one island used to see different skies, and a
+  // cloud's shadow fell on the town hall for one and on the sea for the other.
+  //
+  // "The whole sea" is a tile of CLOUD_TILE units repeated edge to edge, so a cloud that
+  // drifts out of one tile is already drifting into the next. Only the images near the
+  // camera are drawn: each cloud is placed at its image nearest the camera and the ones a
+  // tile either side of it, three by three, so the layer reaches 1.5 tiles out whichever
+  // way you look and anything that wraps does so out past the haze. The images are fixed
+  // in the world, so the camera moving only changes which ones are drawn, never where a
+  // cloud or its shadow is. One InstancedMesh over a unit icosahedron, so still two draw
+  // calls (colour and shadow) for all of it.
+  //
+  // The island's stream is still spent exactly as the nine clouds of old spent it: the
+  // fireflies below draw from it next and have to land where they always did.
+  for (let i = 0; i < 9; i++) {
+    const parts = 3 + rng.int(3);
+    for (let k = 0; k < parts * 5 + 4; k++) rng.next();
+  }
+  const cloudRng = makeRng('sea:clouds');
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xfbfbf7, flatShading: true, roughness: 1, transparent: true });
+  // CLOUD_FADE: by the horizontal distance of each puff from the eye, out of sight rather than
+  // into the fog's colour - the haze is the horizon's colour and the far clouds hang above it,
+  // against a darker sky, so tinted they stayed a band of pale specks. Transparent for that, but
+  // depth is still written: a near puff is whole, and a faint far one behind it is not seen.
+  cloudMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying float vCloudFar;\n' + shader.vertexShader.replace('#include <fog_vertex>', `#include <fog_vertex>
+      vec4 cloudAt = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        cloudAt = instanceMatrix * cloudAt;
+      #endif
+      cloudAt = modelMatrix * cloudAt;
+      vCloudFar = length(cloudAt.xz - cameraPosition.xz) - max(0.0, cameraPosition.y);`);
+    shader.fragmentShader = 'varying float vCloudFar;\n' + shader.fragmentShader.replace('#include <fog_fragment>', `#include <fog_fragment>
+      gl_FragColor.a *= 1.0 - smoothstep(${CLOUD_FADE[0].toFixed(1)}, ${CLOUD_FADE[1].toFixed(1)}, vCloudFar);`);
+  };
+  cloudMat.customProgramCacheKey = () => 'sea-clouds-fade';
+  const cloudGeo = new THREE.IcosahedronGeometry(1, 0);
+  const cloudPuffs = []; // one per puff: which cloud it belongs to, its offset and its size
+  const cloudDrift = []; // one per cloud: where it starts in the tile, and how fast it drifts
+  for (let i = 0; i < CLOUDS_PER_TILE; i++) {
+    const parts = 3 + cloudRng.int(3);
+    for (let k = 0; k < parts; k++) {
+      const r = cloudRng.range(1.6, 3.2) * CLOUD_SIZE;
+      const ox = cloudRng.range(-3, 3) * CLOUD_SIZE, oy = cloudRng.range(-0.4, 0.4), oz = cloudRng.range(-2, 2) * CLOUD_SIZE;
+      const squash = cloudRng.range(0.4, 0.6);
+      cloudPuffs.push({ cloud: i, ox, oy, oz, sx: r, sy: r * squash, sz: r });
+    }
+    cloudDrift.push({ x: cloudRng.range(0, CLOUD_TILE), y: cloudRng.range(CLOUD_Y[0], CLOUD_Y[1]), z: cloudRng.range(0, CLOUD_TILE), speed: cloudRng.range(0.35, 0.75) });
+  }
+  const IMAGES = 9;
+  const clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * IMAGES);
+  clouds.castShadow = true;
+  // The instances move with the camera's tile, so a bounding sphere taken at boot would go
+  // stale and cull clouds that are plainly in view.
+  clouds.frustumCulled = false;
+  // Past the three by three the layer is cut off in a square 1.5 tiles out, and with the haze
+  // that far in nobody saw it. Once the fog lets the eye reach past it (View Distance up, see
+  // setCloudReach) the same tiles go on in further rings, a second mesh hung on the first - so
+  // it inherits the weather's drop, its colour (the same material) and the underwater hide -
+  // that casts no shadow: the shadow box is a few hundred units wide and would only draw them
+  // twice. CLOUD_RING_MAX caps the cost (13 by 13 images), not the sky: beyond it the layer ends.
+  const CLOUD_RING_MAX = 6;
+  const farImages = (2 * CLOUD_RING_MAX + 1) ** 2 - IMAGES;
+  const farClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * farImages);
+  farClouds.frustumCulled = false;
+  farClouds.count = 0;
+  farClouds.visible = false;
+  clouds.add(farClouds);
+  let cloudRing = 1;
+  // And past those, a coarser layer of the same sky: the same clouds at FAR_SCALE times the size
+  // and the spacing (so as much of the sea covered, in a sixteenth of the clouds), which a
+  // cloud that far off cannot tell from the small ones. It starts where the fine rings end
+  // (their reach, (CLOUD_RING_MAX + 1/2) tiles) and goes on as far as the haze does, up to
+  // FAR_RING_MAX rings of its own tiles - the layer ends beyond that, on a horizon that far.
+  const FAR_SCALE = 4, FAR_TILE = CLOUD_TILE * FAR_SCALE, FAR_RING_MAX = 6;
+  const coarseImages = (2 * FAR_RING_MAX + 1) ** 2 - IMAGES;
+  const coarseClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudPuffs.length * coarseImages);
+  coarseClouds.frustumCulled = false;
+  coarseClouds.count = 0;
+  coarseClouds.visible = false;
+  clouds.add(coarseClouds);
+  let coarseRing = 0;
+  // How far out the clouds must go: as far as the haze lets anybody see. Rings of tiles, the
+  // image nearest the camera being within half a tile of it, so ring r reaches (r + 1/2) tiles.
+  const setCloudReach = (dist) => {
+    const r = Math.min(CLOUD_RING_MAX, Math.max(1, Math.ceil(dist / CLOUD_TILE - 0.5)));
+    if (r !== cloudRing) {
+      cloudRing = r;
+      farClouds.count = cloudPuffs.length * ((2 * r + 1) ** 2 - IMAGES);
+      farClouds.visible = r > 1;
+    }
+    // Its own 3 x 3 is inside the fine rings' reach, so it needs a second ring to add anything.
+    const c = dist <= (CLOUD_RING_MAX + 0.5) * CLOUD_TILE ? 0
+      : Math.min(FAR_RING_MAX, Math.max(2, Math.ceil(dist / FAR_TILE - 0.5)));
+    if (c !== coarseRing) {
+      coarseRing = c;
+      coarseClouds.count = c ? cloudPuffs.length * ((2 * c + 1) ** 2 - IMAGES) : 0;
+      coarseClouds.visible = c > 0;
+    }
+  };
+  // Where the page's own island is in the sea (`state.homeOrigin`): the page draws it at
+  // the scene origin and translates the world, so a world position is scene + home.
+  const seaHome = [0, 0];
+  // Scale and translation only, written straight into the matrix array: over a thousand
+  // instances a frame, and a compose through Object3D for each is most of the cost.
+  function placeClouds(seconds) {
+    const m = clouds.instanceMatrix.array;
+    const fx = horizonAt.x + seaHome[0], fz = horizonAt.z + seaHome[1];
+    let n = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      // The image of this cloud nearest the camera, in world coordinates, then its eight
+      // neighbours a tile away.
+      const wx = cloudNearest(c.x, c.speed, seconds, fx);
+      const wz = cloudNearest(c.z, 0, 0, fz);
+      for (let i = -1; i <= 1; i++) {
+        for (let j = -1; j <= 1; j++) {
+          const o = n * 16;
+          m[o] = p.sx; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
+          m[o + 4] = 0; m[o + 5] = p.sy; m[o + 6] = 0; m[o + 7] = 0;
+          m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = p.sz; m[o + 11] = 0;
+          m[o + 12] = wx + i * CLOUD_TILE + p.ox - seaHome[0];
+          m[o + 13] = c.y + p.oy;
+          m[o + 14] = wz + j * CLOUD_TILE + p.oz - seaHome[1];
+          m[o + 15] = 1;
+          n++;
+        }
+      }
+    }
+    clouds.instanceMatrix.needsUpdate = true;
+    if (cloudRing < 2) return;
+    // The rings round it, written the same way: every image of every cloud that is not one
+    // of the nine above.
+    const fm = farClouds.instanceMatrix.array;
+    let f = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      const wx = cloudNearest(c.x, c.speed, seconds, fx);
+      const wz = cloudNearest(c.z, 0, 0, fz);
+      // Which tile-shift of the cloud the nearest image is, so an image keeps its number.
+      const kx = Math.round((wx - c.x - c.speed * seconds) / CLOUD_TILE), kz = Math.round((wz - c.z) / CLOUD_TILE);
+      for (let i = -cloudRing; i <= cloudRing; i++) {
+        for (let j = -cloudRing; j <= cloudRing; j++) {
+          if (i >= -1 && i <= 1 && j >= -1 && j <= 1) continue;
+          const x = wx + i * CLOUD_TILE, z = wz + j * CLOUD_TILE;
+          const k = cloudShown(p.cloud, kx + i, kz + j, Math.hypot(x - fx, z - fz));
+          if (k === 0) continue;
+          const o = f * 16;
+          fm[o] = p.sx * k; fm[o + 1] = 0; fm[o + 2] = 0; fm[o + 3] = 0;
+          fm[o + 4] = 0; fm[o + 5] = p.sy * k; fm[o + 6] = 0; fm[o + 7] = 0;
+          fm[o + 8] = 0; fm[o + 9] = 0; fm[o + 10] = p.sz * k; fm[o + 11] = 0;
+          fm[o + 12] = x + p.ox - seaHome[0];
+          fm[o + 13] = c.y + p.oy;
+          fm[o + 14] = z + p.oz - seaHome[1];
+          fm[o + 15] = 1;
+          f++;
+        }
+      }
+    }
+    farClouds.count = f;
+    farClouds.instanceMatrix.needsUpdate = true;
+  }
+  // The coarse layer, written the same way at FAR_SCALE times everything but the height, which
+  // keeps its own (a cloud four times as big is twice as thick, not four times as high).
+  function placeCoarseClouds(seconds) {
+    if (!coarseRing) return;
+    const cm = coarseClouds.instanceMatrix.array;
+    const fx = horizonAt.x + seaHome[0], fz = horizonAt.z + seaHome[1];
+    let n = 0;
+    for (const p of cloudPuffs) {
+      const c = cloudDrift[p.cloud];
+      const sx = c.x * FAR_SCALE, sv = c.speed * FAR_SCALE;
+      const wx = cloudNearest(sx, sv, seconds, fx, FAR_TILE);
+      const wz = cloudNearest(c.z * FAR_SCALE, 0, 0, fz, FAR_TILE);
+      const kx = Math.round((wx - sx - sv * seconds) / FAR_TILE), kz = Math.round((wz - c.z * FAR_SCALE) / FAR_TILE);
+      for (let i = -coarseRing; i <= coarseRing; i++) {
+        for (let j = -coarseRing; j <= coarseRing; j++) {
+          if (i >= -1 && i <= 1 && j >= -1 && j <= 1) continue;
+          const x = wx + i * FAR_TILE, z = wz + j * FAR_TILE;
+          // Always as thinned as the far end of the fine rings (a distance of 900 or more).
+          const k = cloudShown(p.cloud, kx + i, kz + j, 900, 31);
+          if (k === 0) continue;
+          const o = n * 16;
+          cm[o] = p.sx * FAR_SCALE * k; cm[o + 1] = 0; cm[o + 2] = 0; cm[o + 3] = 0;
+          cm[o + 4] = 0; cm[o + 5] = p.sy * FAR_SCALE / 2 * k; cm[o + 6] = 0; cm[o + 7] = 0;
+          cm[o + 8] = 0; cm[o + 9] = 0; cm[o + 10] = p.sz * FAR_SCALE * k; cm[o + 11] = 0;
+          cm[o + 12] = x + p.ox * FAR_SCALE - seaHome[0];
+          cm[o + 13] = c.y + p.oy * 2;
+          cm[o + 14] = z + p.oz * FAR_SCALE - seaHome[1];
+          cm[o + 15] = 1;
+          n++;
+        }
+      }
+    }
+    coarseClouds.count = n;
+    coarseClouds.instanceMatrix.needsUpdate = true;
+  }
+  group.add(clouds);
+
+  // ---- the surface, from underneath ---------------------------------------------------
+  // The sea meshes above are one-sided on purpose - the patch and the sailing patch are
+  // FrontSide, the disc is opaque and 0.2 down - so a camera under them sees no water at all,
+  // and worse sees *through* it: the sky, the sun, the far islands and every fog:false
+  // landmark (a lighthouse beam, a campfire) hang in the void over its head, and the ocean
+  // disc, opaque, hides the sea bed from anybody within 0.2 of the surface.
+  //
+  // What replaces them while the lens is under (`setUnderwater`, from web/js/underwater.js) is
+  // ONE full-screen quad and not a second set of meshes on the same geometry, and the reason
+  // is measured, not taste. A BackSide copy of the patch is a surface, and a surface has
+  // edges: the camera's near plane is half a cell out (main.js keeps it there for depth
+  // precision at the horizon), so with the lens 0.3 under the water - which is where a diver
+  // swims for the first seconds - the surface within half a unit is cut away and the town
+  // above shows through a round hole in the ceiling; the swell is +-0.09, so a lens between a
+  // trough and the mean sees the trough's back faces from the wrong side and the ceiling has
+  // holes in it at the horizon; and three meshes have to follow every reshapeWater and
+  // setWaterFocus swap. A quad has none of that. Every pixel of it works out where its own ray
+  // meets the plane y = the surface at the camera, shades that point (Snell's window, below),
+  // and writes the DEPTH of that point - so everything above the surface is behind it and
+  // everything under is in front of it, per pixel, exactly, whatever the near plane is: a hit
+  // closer than the near plane writes depth 0 and covers what the geometry would have clipped.
+  // It is drawn first (renderOrder), so the depth it leaves is what the rest of the frame is
+  // rejected against, early. Rays that never reach the surface - looking down or along it -
+  // are discarded, and belong to the scene: the sea bed, or the fog's own colour behind it.
+  //
+  // What it looks like, for the record. The water is 1.33 times as dense as air, so a ray from
+  // an eye under it leaves through the surface only inside a cone 48.75 degrees off vertical -
+  // Snell's window - and inside it the sky is squeezed into that circle, horizon at its rim;
+  // outside it the surface is a mirror of the water, and so it is drawn as the water's own
+  // colour, the fog's, a little darker. The ripples that break the sun's glint up are the
+  // swell's own terms and a second set of smaller ones, all of them on the sea's clock and on
+  // the three rates WAVE_LOOP folds seamlessly (WAVE_RATES): a rate of its own would jump once
+  // every sixty seconds when uTime folds.
+  //
+  // Nothing of this exists above water: the quad is `visible = false` and not in the render
+  // list, so it costs nothing until the lens goes under.
+  const ceilingMat = new THREE.ShaderMaterial({
+    fog: true,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uSurfaceY: { value: 0 },
+        // The projection, for the depth. The fragment stage is not handed one by three (the
+        // vertex stage is), and the quad lives in clip space, so it is copied in per frame.
+        uProj: { value: new THREE.Matrix4() },
+      },
+    ]),
+    vertexShader: `
+      #include <fog_pars_vertex>
+      varying vec3 vDir;
+      void main() {
+        // A ray through this corner of the screen, in the world: the far plane's point in view
+        // space, turned by the camera. The quad's four corners are all there is - the ray is
+        // linear in the screen, so the interpolation between them is exact.
+        vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+        vDir = (inverse(viewMatrix) * vec4(view.xyz / view.w, 0.0)).xyz;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+        #ifdef USE_FOG
+          vFogDepth = 0.0;
+        #endif
+      }
+    `,
+    fragmentShader: `
+      #include <fog_pars_fragment>
+      uniform vec3 uSkyTop, uSkyHor, uSunColor;
+      uniform vec3 uSunDir;
+      uniform float uTime, uNight, uSurfaceY;
+      uniform mat4 uProj;
+      varying vec3 vDir;
+      void main() {
+        vec3 I = normalize(vDir);
+        // Nothing to see of the surface when looking down or along it, and none at all from a
+        // camera that is above it.
+        float rise = uSurfaceY - cameraPosition.y;
+        if (I.y < 0.0004 || rise <= 0.0) discard;
+        float dist = rise / I.y;
+        vec3 hit = cameraPosition + I * dist;
+
+        // The ripples: the swell's own slopes, and a smaller pair, each at a rate WAVE_LOOP
+        // folds. Amplified - the true slope is a few degrees and a window that barely moves
+        // reads as a hole in the ceiling, not as water.
+        float t = uTime;
+        vec2 sl = vec2(
+          -0.065 * cos(hit.x * 1.3 + t * 1.1) - 0.05 * cos(hit.x * 2.9 + hit.z * 2.3 + t * 1.3),
+          -0.068 * cos(hit.z * 1.7 - t * 0.9) - 0.05 * cos(hit.z * 3.3 - hit.x * 2.1 - t * 0.9));
+        vec3 N = -normalize(vec3(sl.x * 2.2, 1.0, sl.y * 2.2));
+
+        // Snell's window: k is what is left under the root when the ray is taken across into
+        // air (1.3333 squared is 1.7778) - below zero the ray never leaves the water and the
+        // surface is a mirror.
+        float cosI = -dot(N, I);
+        float k = 1.0 - 1.7778 * (1.0 - cosI * cosI);
+        float win = smoothstep(0.0, 0.07, k);
+        vec3 A = k > 0.0 ? normalize(refract(I, N, 1.3333)) : vec3(0.0, 1.0, 0.0);
+        vec3 sky = mix(uSkyHor, uSkyTop, smoothstep(-0.05, 0.45, A.y));
+        // The sun through the ripples: a tight glint and a wide halo, both broken up by N.
+        float sd = max(dot(A, normalize(uSunDir)), 0.0);
+        sky += uSunColor * (pow(sd, 90.0) * 2.6 + pow(sd, 9.0) * 0.22);
+        sky *= exp(-0.1 * dist);
+
+        #ifdef USE_FOG
+          vec3 mirror = fogColor * 0.78;
+        #else
+          vec3 mirror = vec3(0.05, 0.26, 0.31);
+        #endif
+        float rip = 0.5 + 0.5 * sin(hit.x * 2.3 + hit.z * 1.9 + t * 1.1 + 2.5 * sin(hit.z * 0.9 - t * 0.9));
+        // Fading with distance: at a grazing angle the ripples are a fine corduroy that crawls
+        // as the camera moves, and the haze is the better picture of it.
+        mirror *= 1.0 + (rip - 0.5) * 0.2 * exp(-0.07 * dist);
+        // The window is seen through water: a third of the way to the water's own colour.
+        vec3 col = mix(mirror, mix(sky, mirror * 1.6, 0.3), win);
+        col *= mix(1.0, 0.75, uNight);
+
+        gl_FragColor = vec4(col, 1.0);
+        // The same fog as the water's, by the distance to the point (the fog is radial,
+        // radial-fog.js): a surface seen at a grazing angle is a long way off and is the
+        // haze's colour, which is what the murk behind an unfinished sea bed is too.
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp(- fogDensity * fogDensity * dist * dist);
+          #else
+            float fogFactor = smoothstep(fogNear, fogFar, dist);
+          #endif
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif
+
+        vec4 clip = uProj * (viewMatrix * vec4(hit, 1.0));
+        gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+      }
+    `,
+  });
+  // The clock, the sun and the sky's own colours, by reference: the very objects world.update
+  // and weather.js write every frame, so the window shows the sky as it is now (dulled by
+  // cloud, dark at night) with nothing copied.
+  Object.assign(ceilingMat.uniforms, {
+    uTime: waterMat.uniforms.uTime,
+    uSunDir: waterMat.uniforms.uSunDir,
+    uSunColor: waterMat.uniforms.uSunColor,
+    uNight: waterMat.uniforms.uNight,
+    uSkyTop: skyMat.uniforms.uTop,
+    uSkyHor: skyMat.uniforms.uHor,
+  });
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), ceilingMat);
+  ceiling.frustumCulled = false;
+  // First of everything: what it leaves in the depth buffer is what the rest is tested against.
+  ceiling.renderOrder = -1000;
+  ceiling.visible = false;
+  ceiling.onBeforeRender = (renderer, scn, cam) => { ceilingMat.uniforms.uProj.value.copy(cam.projectionMatrix); };
+  group.add(ceiling);
+
+  // The lens has gone under, or come back. `amount` is the eased 0..1 of underwater.js and is
+  // only ever a fade for the fog and the light, which are the caller's; what THIS decides is
+  // which meshes exist, and that follows the boolean `under`, immediately - a sea drawn wrong
+  // for a tenth of a second is a flash. `surfaceY` is where the water is at the camera.
+  //
+  // Going under: the ceiling on; the three meshes that draw the top of the water off (their
+  // top faces are culled from below anyway, but the patch is tens of thousands of triangles
+  // and the disc, being opaque and 0.2 down, would hide the sea bed from the top 0.2 of
+  // every dive); the dome, the clouds and the sun and moon off - they are behind the ceiling
+  // and would only cost vertices. The clouds are put back to how they were found, not to
+  // "visible": the planner hides them too and owns that.
+  //
+  // world.update turns the sun and moon on again every frame, so they are turned off again
+  // every frame; nothing else here is written more than once per crossing.
+  let cloudsWere = true;
+  function setUnderwater(amount, isUnder = amount > 0, surfaceY = 0) {
+    ceilingMat.uniforms.uSurfaceY.value = surfaceY;
+    if (isUnder !== underNow) {
+      underNow = isUnder;
+      ceiling.visible = isUnder;
+      water.visible = !isUnder;
+      ocean.visible = !isUnder;
+      sailWater.visible = !isUnder && !!nearPlan;
+      sky.visible = !isUnder;
+      if (isUnder) { cloudsWere = clouds.visible; clouds.visible = false; } else clouds.visible = cloudsWere;
+    }
+    if (underNow) { sunDisc.visible = false; moonDisc.visible = false; }
+  }
+
+  // Where the water's surface is at (x, z), for whatever needs to know whether something is
+  // under it: the swell where the sea has one, and the sailing patch's slope down to the
+  // ocean disc where it stops (baseAt). It is the same arithmetic the vertices do, evaluated
+  // at one point - so within a few centimetres of the drawn surface, and exact on the flat.
+  function surfaceAt(x, z) {
+    const t = waterMat.uniforms.uTime.value;
+    const r = nearPlan && nearPlan.rect;
+    if (r && x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ) {
+      return nearPlan.baseAt(x, z) + swellAt(x, z, t, nearPlan.waveAt(x, z));
+    }
+    const sp = wplan && wplan.span;
+    if (sp && x >= sp.minX && x <= sp.maxX && z >= sp.minZ && z <= sp.maxZ) {
+      return swellAt(x, z, t, wplan.waveAt(x, z));
+    }
+    // Past the patch and the sailing water: the ocean disc, and its own swell is a few
+    // centimetres on a surface a kilometre across.
+    return -OCEAN_DROP;
+  }
+
+  // ---- fireflies -----------------------------------------------------------
+  // Fireflies gather near the lake and along the edge of the forest, not out at sea.
+  const nearWater = terrain.landCells.filter(([gx, gz]) => {
+    const [x, z] = terrain.cellWorld(gx, gz);
+    const dl = Math.hypot(x - terrain.lakeCentre[0], z - terrain.lakeCentre[1]);
+    return dl < 9 || (terrain.heightAt(gx, gz) > 0.6 && terrain.heightAt(gx, gz) < 2.6);
+  });
+  // A terrain with no land at all (the open-sea home a phone stands on) still gets its
+  // points, one cell's worth under the water where nobody sees them, rather than a
+  // pick from an empty list taking the whole world down with it.
+  const pool = nearWater.length > 40 ? nearWater : terrain.landCells.length ? terrain.landCells : [[0, 0]];
+  const FF = 190;
+  const ffPos = new Float32Array(FF * 3);
+  const ffCol = new Float32Array(FF * 3);
+  const ffBase = [];
+  for (let i = 0; i < FF; i++) {
+    const c = pool[rng.int(pool.length)];
+    const [x, z] = terrain.cellWorld(c[0], c[1]);
+    const bx = x + rng.range(-0.5, 0.5), bz = z + rng.range(-0.5, 0.5);
+    ffBase.push({ x: bx, z: bz, y: terrain.worldHeight(bx, bz) + rng.range(0.35, 1.1), ph: rng.range(0, 6.28) });
+    ffPos[i * 3] = bx; ffPos[i * 3 + 1] = ffBase[i].y; ffPos[i * 3 + 2] = bz;
+  }
+  const ffGeo = new THREE.BufferGeometry();
+  ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
+  ffGeo.setAttribute('color', new THREE.BufferAttribute(ffCol, 3));
+  // They go out in the haze rather than being hazed over: additive light blended towards the
+  // fog colour would *add* fog colour and glow grey, so the fog here scales their alpha down
+  // to nothing instead. Before this they were fog: false and shone at full strength through
+  // any haze - and since Object Distance takes houses out behind a closed fog, cutting a
+  // fully fogged house showed the fireflies it had been hiding, a few pixels at dusk and
+  // night that were the one measurable break of "a house is cut in full fog". vFogDepth is
+  // the distance, like everything else's (radial-fog.js).
+  const fireflies = new THREE.Points(ffGeo, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
+    vertexColors: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uScale: { value: window.innerHeight * 0.5 } }]),
+    vertexShader: `varying vec3 vC; uniform float uScale;
+      #include <fog_pars_vertex>
+      void main(){ vC = color; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = 0.13 * uScale / max(0.001, -mvPosition.z); gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `varying vec3 vC;
+      #include <fog_pars_fragment>
+      void main(){ float d = length(gl_PointCoord - 0.5);
+        float m = smoothstep(0.5, 0.0, d); if (m <= 0.01) discard;
+        float a = m * m;
+        #ifdef USE_FOG
+          #ifdef FOG_EXP2
+            a *= exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+          #else
+            a *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);
+          #endif
+        #endif
+        gl_FragColor = vec4(vC, a); }`,
+  }));
+  fireflies.frustumCulled = false;
+  fireflies.renderOrder = 2;
+  group.add(fireflies);
+
+  // ---- update --------------------------------------------------------------
+  let time = 0;
+  const state = { night: 0, fire: 0, sun: new THREE.Vector3() };
+  // The shadow frustum follows what you are looking at, and now also how far away you are
+  // standing: anchored and fixed it covered 84 units of a 234-unit island, so from the
+  // boot camera most of the coast cast nothing at all. Following the target alone was not
+  // enough, because the whole point of pulling back is to see all of it at once. So the
+  // half-width comes from the camera distance - and only the half-width, so zoomed in you
+  // keep today's 24 shadow-map pixels per unit and today's crisp eaves.
+  //
+  // The light rides out with it. It sat a flat 90 units up the sun ray, which is fine for
+  // a 42-unit frustum but puts everything on the sunward half of a 130-unit one *behind*
+  // the lamp, where the shadow camera cannot see it - the coast would have gone dark-free
+  // again for a subtler reason. Near and far follow for the same reason, and because a
+  // depth range no wider than it needs to be is what keeps `shadow.bias` honest: tight
+  // when you are close, which is exactly when a millimetre of peter-panning shows.
+  const shadowFocus = new THREE.Vector3();
+  let shadowSpan = SHADOW_SPAN[0];
+  let lightRange = shadowSpan + 60;
+  // Shadow Distance, as the widest the shadow box is allowed to get. Half of it, because
+  // the frustum is built from a half-width and a distance is a full one.
+  let shadowLimit = Math.max(0, opts.shadowDistance || 150) / 2;
+  const applyShadowSpan = (f) => {
+    shadowSpan = f;
+    lightRange = f + 60;
+    const cam = key.shadow.camera;
+    cam.left = -f; cam.right = f; cam.top = f; cam.bottom = -f;
+    cam.near = 10; cam.far = 2 * f + 90;
+    cam.updateProjectionMatrix();
+  };
+  let followDist = 0;
+  const followShadow = (x, z, dist) => {
+    shadowFocus.set(x, 0, z);
+    if (!(dist > 0)) return;
+    followDist = dist;
+    // Zoom still decides, and still tightens as you come in - the box follows the camera
+    // exactly as it always has. Shadow Distance is only a ceiling on how far it follows.
+    const wanted = clamp(dist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]);
+    const f = Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit));
+    if (Math.abs(f - shadowSpan) < 0.5) return;   // a matrix rebuild per frame of zoom, not per frame
+    applyShadowSpan(f);
+  };
+  // Shadow Distance, live. Rebuilt here rather than left for the next followShadow so that
+  // the shadows change under the slider instead of on the next camera move. Zoomed in, where
+  // the box is narrower than the limit anyway, moving the slider changes nothing, and that is
+  // what a ceiling means.
+  //
+  // Both ways from the zoom it was last given, not from the box as it stands: taking the
+  // smaller of the box and the new limit only ever pulled it in, so raising the slider left
+  // the shadows short until the camera next moved.
+  const setShadowDistance = (range) => {
+    shadowLimit = Math.max(0, range) / 2;
+    const wanted = followDist > 0 ? clamp(followDist * SHADOW_OF_DIST, SHADOW_SPAN[0], SHADOW_SPAN[1]) : shadowSpan;
+    applyShadowSpan(Math.min(wanted, Math.max(SHADOW_SPAN[0], shadowLimit)));
+  };
+
+  // `sea` is the sea's own clock, `{ t, moon }`: t in epoch milliseconds as the sea has it
+  // (`Date.now()` plus the page's skew), moon the phase from `worldTime`. Without it - the
+  // workbench pages - the tab's own clock stands in and the moon is full.
+  function update(dt, hour, month, sea = null) {
+    time += dt;
+    const seaSeconds = sea && Number.isFinite(sea.t) ? sea.t / 1000 : time;
+    const moon = sea && Number.isFinite(sea.moon) ? sea.moon : 0.5;
+    const d = dayAt(hour);
+    const dir = sunDirection(hour);
+    state.sun.copy(dir);
+    state.night = d.night;
+
+    key.target.position.lerp(shadowFocus, Math.min(1, dt * 4));
+    key.position.copy(key.target.position).addScaledVector(dir, lightRange);
+    key.color.copy(d.key);
+    key.intensity = d.int;
+    hemi.color.copy(d.sky); hemi.groundColor.copy(d.ground);
+    hemi.intensity = lerp(0.5, 0.9, 1 - d.night);
+    ambient.intensity = d.amb + d.night * 0.09;
+
+    skyMat.uniforms.uTop.value.copy(d.top);
+    skyMat.uniforms.uHor.value.copy(d.hor);
+    skyMat.uniforms.uSunDir.value.copy(dir);
+    skyMat.uniforms.uSunColor.value.copy(d.key);
+    skyMat.uniforms.uStars.value = d.stars;
+    // The haze is the horizon seen through more of itself, with a quarter of the sky's own
+    // blue mixed back in. Less of that blue than before and a breath of the sun's colour
+    // on top, so the far coast goes gold in the afternoon instead of grey-blue - the
+    // distance in the reference picture is warm, not cold. Distances: see main.js.
+    scene.fog.color.copy(d.hor).lerp(d.top, 0.15).lerp(d.key, 0.12);
+
+    // The sea's seconds, not the tab's, so every screen has the same swell - folded into
+    // 20π, which is a whole number of periods of all three wave terms in the shader (1.1,
+    // 0.9 and 1.3 go 11, 9 and 13 times round in it), so the fold is seamless and the value
+    // stays small enough for a float32. A new wave term has to keep that true.
+    waterMat.uniforms.uTime.value = seaSeconds % WAVE_LOOP;
+    waterMat.uniforms.uSunDir.value.copy(dir);
+    waterMat.uniforms.uSunColor.value.copy(d.key);
+    waterMat.uniforms.uNight.value = d.night;
+    // The open sea used to be a plain colour that had to be dimmed by hand to follow the
+    // rest of the water into the evening. It shares these uniforms now, so it darkens on
+    // its own - one nightfall over the whole sea rather than two kept in step.
+
+    const isDay = hour >= 6 && hour <= 18;
+    sunDisc.visible = isDay; moonDisc.visible = !isDay;
+    (isDay ? sunDisc : moonDisc).position.copy(dir).multiplyScalar(celestial).add(horizonAt);
+
+    placeClouds(seaSeconds);
+    placeCoarseClouds(seaSeconds);
+    moonAt(dir, moon);
+
+    // None over a volcano: they gather by the lake and the forest edge, and it has neither.
+    fireflies.visible = d.fire > 0.02 && !terrain.volcano;
+    if (fireflies.visible) {
+      const arr = ffGeo.attributes.position.array, ca = ffGeo.attributes.color.array;
+      for (let i = 0; i < FF; i++) {
+        const b = ffBase[i];
+        arr[i * 3] = b.x + 0.2 * Math.sin(time * 0.7 + b.ph);
+        arr[i * 3 + 1] = b.y + 0.25 * Math.sin(time * 1.3 + b.ph * 1.7);
+        arr[i * 3 + 2] = b.z + 0.2 * Math.cos(time * 0.6 + b.ph * 0.7);
+        const g = (0.3 + 0.7 * Math.max(0, Math.sin(time * 3 + b.ph))) * d.fire;
+        ca[i * 3] = 1.0 * g; ca[i * 3 + 1] = 0.78 * g; ca[i * 3 + 2] = 0.22 * g;
+      }
+      ffGeo.attributes.position.needsUpdate = true;
+      ffGeo.attributes.color.needsUpdate = true;
+    }
+
+
+    // The ground and everything standing on it: the season it is drawn in, and the tree
+    // somebody is felling. It keeps its own clock for both - see createLandscape.
+    land.update(dt, month);
+  }
+
+  // The depths only. Cheap - one pass over the attribute already allocated - and right
+  // whenever the coasts have moved but the archipelago has not grown.
+  function resampleWater() {
+    const wa = waterGeo.attributes.aDepth;
+    for (let i = 0; i < wp.count; i++) wa.array[i] = depthAt(wp.getX(i), wp.getZ(i));
+    wa.needsUpdate = true;
+  }
+
+  // The whole patch, for when the archipelago itself has changed shape: an island joined, or
+  // left, or grew its grid. Rebuilding is only worth it when the plan actually changed, so
+  // this compares first and usually does nothing. It compares the plan's key - the outline
+  // and every island's square - rather than the outline alone, because the dense water now
+  // follows the islands: one that joins inside the old outline still needs its shallows.
+  function reshapeWater() {
+    const next = waterPatchPlan(half, seaRegions(), opts.modest);
+    if (wplan && next.key === wplan.key) {
+      resampleWater();
+      return false;
+    }
+    const old = waterGeo;
+    water.geometry = buildWaterGeometry();
+    old.dispose();
+    return true;
+  }
+
+  function reshape(next) {
+    terrain = next;
+    land.reshape(next);
+    // Resampled through the same function the patch was built with, so a coast that moves
+    // during a chronicle replay takes the shallows with it wherever it is - and so that
+    // there is one place, not two, that knows what the water over a region looks like.
+    resampleWater();
+  }
+
+  return {
+    group, ground, water, sky, key, hemi, ambient, clouds, fireflies, update,
+    // Where this page's island lies in the sea, so the cloud layer can be in the sea's frame.
+    setSeaHome: (origin) => { seaHome[0] = origin ? origin[0] : 0; seaHome[1] = origin ? origin[1] : 0; },
+    // The landscape's own, forwarded rather than wrapped: main.js has always called these
+    // on the world and there is no reason for it to learn a second object.
+    fellTrees: land.fellTrees, solids: land.solids, crowns: land.crowns, closedEdges: land.closedEdges, buildPaths: land.buildPaths, squareCells: land.squareCells, workSites: land.workSites,
+    setOwnership: (v) => { village = v; land.setOwnership(v); resampleWater(); }, setHouseFrontages: land.setHouseFrontages, setBridgeRoads: land.setBridgeRoads,
+    ownership: land.ownership, season: land.season,
+    followShadow, setShadowDistance, setFar, setCloudReach, recentre, reshapeWater, setWaterFocus, state, reshape,
+    // The sea's own uniforms - the clock, the sun, the night - by reference, for whatever else
+    // is drawn under the water and has to move with it (the sea bed's caustics).
+    waterUniforms: waterMat.uniforms,
+    // Under the surface (web/js/underwater.js): the lens has gone under or come back, and where
+    // the water is at a point. See the note above setUnderwater.
+    setUnderwater, surfaceAt,
+  };
+}
+
+
+
+// ---- the road, as a graph --------------------------------------------------
+// Which cells of paving are a junction and which are a stretch of lane between two of
+// them. Pure, and exported, because the one hard requirement on the drawing is measurable
+// and tests/paths.test.mjs measures it: a settler walks from cell middle to cell middle
+// and `hamletEntrances` (hamlet-sign-placement.js) looks a road cell up by its middle, so wherever the paving ends
+// up drawn it has to still be under those middles.
+//
+// A junction, a dead end and every cell of a plaza keep a tile of their own. The plaza is
+// the interesting one: the corner cell of a five-by-five square has exactly two
+// neighbours, so by degree alone it would be taken for a stretch of lane and the square
+// would come out with a bite out of each corner.
+const ROAD_N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+export function roadGraph(paths, squares, size) {
+  const kind = new Map();
+  const at = (gx, gz) => gx + gz * size;
+  const inside = (gx, gz) => gx >= 0 && gz >= 0 && gx < size && gz < size;
+  const put = (gx, gz, k) => { if (inside(gx, gz) && !kind.has(at(gx, gz))) kind.set(at(gx, gz), k); };
+  for (const p of paths || []) {
+    // Every route is trodden earth; only explicitly paved plaza cells are stone.
+    const k = 'sand';
+    for (const c of p.cells) put(c[0], c[1], k);
+  }
+  // The plaza wins where a path enters it, so sand never cuts stripes through its paving.
+  const plaza = new Set();
+  for (const c of squares || []) {
+    if (!inside(c[0], c[1])) continue;
+    plaza.add(at(c[0], c[1]));
+    kind.set(at(c[0], c[1]), 'plaza');
+  }
+  const has = (gx, gz) => inside(gx, gz) && kind.has(at(gx, gz));
+  const nbs = (gx, gz) => {
+    const out = [];
+    for (const [dx, dz] of ROAD_N4) if (has(gx + dx, gz + dz)) out.push([gx + dx, gz + dz]);
+    return out;
+  };
+  const cells = [];
+  for (const k of kind.keys()) cells.push([k % size, (k - (k % size)) / size]);
+
+  const nodes = new Set();
+  for (const [gx, gz] of cells) if (plaza.has(at(gx, gz)) || nbs(gx, gz).length !== 2) nodes.add(at(gx, gz));
+  const isNode = (gx, gz) => nodes.has(at(gx, gz));
+
+  const chains = [];
+  const taken = new Set();
+  const walk = (from, first) => {
+    const run = [];
+    let prev = from, cur = first;
+    while (cur && !isNode(cur[0], cur[1]) && !taken.has(at(cur[0], cur[1]))) {
+      run.push(cur);
+      taken.add(at(cur[0], cur[1]));
+      const next = nbs(cur[0], cur[1]).find((q) => q[0] !== prev[0] || q[1] !== prev[1]);
+      prev = cur;
+      cur = next;
+    }
+    if (!run.length) return;
+    chains.push({ from, run, to: cur || null, kind: 'sand' });
+  };
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // A ring of degree-two cells has no junction to be cut at, so it is cut anywhere: the
+  // cell we happen to reach first becomes a tile and the rest of the loop a lane that
+  // starts and ends on it.
+  for (const [gx, gz] of cells) {
+    if (isNode(gx, gz) || taken.has(at(gx, gz))) continue;
+    nodes.add(at(gx, gz));
+    for (const n of nbs(gx, gz)) if (!isNode(n[0], n[1]) && !taken.has(at(n[0], n[1]))) walk([gx, gz], n);
+  }
+  // Last, so that a cell promoted above still gets its tile.
+  const tiles = [];
+  for (const [gx, gz] of cells) {
+    if (!isNode(gx, gz)) continue;
+    tiles.push({
+      gx, gz, kind: kind.get(at(gx, gz)),
+      west: has(gx - 1, gz), east: has(gx + 1, gz), north: has(gx, gz - 1), south: has(gx, gz + 1),
+    });
+  }
+  return { cells, kind, tiles, chains };
+}
+
+// A chain of cell middles, turned into a curve. The straights stay straight and every
+// corner is replaced by a circular fillet tangent to both legs.
+//
+// A fillet rather than a spline, and that is the whole of the argument. Chaikin or
+// Catmull-Rom would be shorter, but neither can promise how far it wanders from the points
+// it was built from, and here that promise is the requirement: two passes of Chaikin cut a
+// single right angle by 0.177, which fits inside 0.18, and a staircase of right angles by
+// twice as much, which does not - and a staircase is exactly what a meandering router
+// produces. A fillet's depth is arithmetic: for an interior angle a and radius r it is
+// r (1/sin(a/2) - 1), so the radius can be solved for the depth that is allowed. The
+// bound then holds at every corner on the island by construction rather than by
+// measurement, and the radius is capped at half of the shorter leg so two fillets on
+// neighbouring corners never eat into each other.
+export function smoothLane(pts, maxDev, arcStep = 0.5) {
+  if (pts.length < 3) return pts.slice();
+  const leg = (p, v) => {
+    const x = p[0] - v[0], z = p[1] - v[1];
+    const len = Math.hypot(x, z) || 1;
+    return { x: x / len, z: z / len, len };
+  };
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const v = pts[i];
+    const a = leg(pts[i - 1], v), b = leg(pts[i + 1], v);
+    const angle = Math.acos(clamp(a.x * b.x + a.z * b.z, -1, 1));
+    if (angle > Math.PI - 0.02) { out.push(v); continue; }       // straight: nothing to cut
+    const h = angle / 2;
+    const r = Math.min(maxDev / (1 / Math.sin(h) - 1), Math.min(a.len, b.len) * 0.5 * Math.tan(h));
+    const t = r / Math.tan(h);
+    const bl = Math.hypot(a.x + b.x, a.z + b.z) || 1;
+    const cx = v[0] + ((a.x + b.x) / bl) * (r / Math.sin(h));
+    const cz = v[1] + ((a.z + b.z) / bl) * (r / Math.sin(h));
+    const a0 = Math.atan2(v[1] + a.z * t - cz, v[0] + a.x * t - cx);
+    let d = Math.atan2(v[1] + b.z * t - cz, v[0] + b.x * t - cx) - a0;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const seg = Math.max(1, Math.ceil(Math.abs(d) / arcStep));
+    for (let k = 0; k <= seg; k++) {
+      const ang = a0 + (d * k) / seg;
+      out.push([cx + Math.cos(ang) * r, cz + Math.sin(ang) * r]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// How far the furthest of `pts` ends up from the polyline `curve`. The measurement the
+// bound above is stated in, and the reason `smoothLane` is a separate function at all.
+export function offCurve(pts, curve) {
+  let worst = 0;
+  for (const p of pts) {
+    let best = Infinity;
+    for (let i = 0; i + 1 < curve.length; i++) {
+      const [ax, az] = curve[i], [bx, bz] = curve[i + 1];
+      const dx = bx - ax, dz = bz - az;
+      const l2 = dx * dx + dz * dz;
+      const t = l2 ? clamp(((p[0] - ax) * dx + (p[1] - az) * dz) / l2, 0, 1) : 0;
+      best = Math.min(best, Math.hypot(p[0] - (ax + dx * t), p[1] - (az + dz * t)));
+    }
+    if (best > worst) worst = best;
+  }
+  return worst;
+}
+
+// ---- tiny geometry helpers (vertex-coloured, flat shaded) -----------------
+function paint(g, hex) {
+  const c = new THREE.Color(hex);
+  const n = g.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  // The UV stays: three's own cylinder and cone wrap sensibly, which is all a trunk or a
+  // cone of needles needs. (The normal goes because merge() recomputes it flat.)
+  g.deleteAttribute('normal');
+  return g;
+}
+function cyl(rt, rb, h, seg, hex, y) {
+  const g = new THREE.CylinderGeometry(rt, rb, h, seg);
+  g.translate(0, y, 0);
+  return paint(g, hex);
+}
+function cone(r, h, seg, hex, y) {
+  const g = new THREE.ConeGeometry(r, h, seg);
+  g.translate(0, y + h / 2, 0);
+  return paint(g, hex);
+}
+function ico(r, hex, y, sy) {
+  const g = new THREE.IcosahedronGeometry(r, 0);
+  g.scale(1, sy || 1, 1);
+  g.translate(0, y, 0);
+  return paint(g, hex);
+}
+function dodeca(r, hex, y) {
+  const g = new THREE.DodecahedronGeometry(r, 0);
+  g.translate(0, y, 0);
+  return paint(g, hex);
+}
+function merge(geos, groups = false) {
+  const flat = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  const out = mergeGeometries(flat, groups);
+  out.computeVertexNormals();
+  return out;
+}

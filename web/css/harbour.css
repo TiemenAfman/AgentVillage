@@ -1,0 +1,239 @@
+/* The island's brass-and-evergreen HUD. No filters or extra compositing layers. */
+:root {
+  --ink: #f6f0df;
+  --ink-dim: #b7c5ba;
+  --panel: rgba(18, 37, 36, .95);
+  --panel-solid: #122524;
+  --edge: rgba(221, 205, 157, .22);
+  --accent: #e8c17c;
+  --accent-2: #93d0c3;
+  --radius: 16px;
+  --shadow: 0 8px 24px rgba(5, 22, 24, .24), inset 0 1px rgba(255, 244, 208, .06);
+}
+.card, .panel, .chip {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.card, .panel {
+  background: linear-gradient(145deg, rgba(32, 53, 49, .97), var(--panel));
+}
+.titlecard { padding: 17px 19px 14px; min-width: 250px; }
+.titlecard::before {
+  content: "THE LIVING ISLAND";
+  display: block;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .24em;
+  margin-bottom: 6px;
+}
+.titlecard h1 { font-size: 27px; font-weight: 500; letter-spacing: -.025em; }
+.titlecard #founded { margin-top: 5px; font-size: 10px; }
+.counts { padding-top: 10px; border-top: 1px solid var(--edge); gap: 7px; }
+.counts span { border: 0; background: rgba(236, 219, 176, .06); padding: 4px 8px; }
+.counts b { color: #f0ce92; }
+.live { font-size: 9px; letter-spacing: .12em; }
+.live i { background: #a4ce97; box-shadow: 0 0 5px #a4ce9750; }
+.topright { gap: 9px; }
+.topright .chips {
+  padding: 4px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 4px 15px #061b2020;
+  gap: 3px;
+}
+.chip { padding: 7px 11px; font-size: 11px; transition: background .15s, color .15s, border-color .15s; }
+.topright .chips .chip { background: transparent; border-color: transparent; border-radius: 8px; }
+.topright .chips .chip.on { background: #e8c17c; color: #203530; }
+.chip:hover, .topright .chips .chip:hover { background: #ffffff12; color: var(--ink); border-color: var(--edge); }
+.topright .chips .chip.on:hover { background: #f4d79d; color: #203530; }
+#walk-btn { color: var(--accent); font-weight: 650; }
+/* Icons only, unless This screen -> Names on the buttons is on (body.chip-names, ui.js), and even
+   then the word goes below 1100px (media block below). The word is always the chip's title and
+   aria-label. The line between the two groups is what says which is which: doing on the left,
+   looking on the right. */
+.chip.nav { display: inline-flex; align-items: center; gap: 6px; }
+body:not(.chip-names) .chip.nav .lbl { display: none; }
+body:not(.chip-names) .topright .chips .chip.nav { padding: 7px 8px; }
+.chip .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* The chip's key, in the corner: `data-key` in index.html (ui.js empties it while the key does
+   not work, e.g. Walk on foot). The icon sits a little high to leave the corner free. Not on a
+   touch screen, where there is no keyboard to press it on. */
+.topright .chips .chip[data-key]:not([data-key=""]) { position: relative; padding-bottom: 10px; }
+.chip[data-key]:not([data-key=""])::after {
+  content: attr(data-key);
+  position: absolute; right: 3px; bottom: 1px;
+  font-size: 8px; font-weight: 700; line-height: 1; letter-spacing: 0;
+  opacity: .65; pointer-events: none;
+}
+.chip[data-key]:hover::after, .chip[data-key]:focus-visible::after { opacity: 1; }
+body.touch .chip[data-key]::after { display: none; }
+@media (pointer: coarse) { .chip[data-key]::after { display: none; } }
+/* The two boxes (what you do | the clock and the menu) are one system: same border, radius and
+   padding, and the handle that folds the buttons away lives in the first, so a folded bar is
+   the handle alone in its box rather than a loose pill. */
+.topright .chips-row { align-items: stretch; }
+#nav-box, #sys-chips { align-items: center; }
+.nav-group { display: flex; align-items: center; gap: 3px; align-self: stretch; }
+#nav-collapse-btn { display: inline-flex; align-items: center; padding: 7px 5px; }
+#nav-collapse-btn .ico { width: 14px; height: 14px; }
+/* Walk and Plan change into the thing they turn into (Fly up, Done) - the icon says so too,
+   not only the tooltip. */
+.chip.nav .ico-on { display: none; }
+.chip.nav.on .ico-on { display: inline-block; }
+.chip.nav.on .ico-off { display: none; }
+/* Icons at rest were --ink-dim on the panel: barely there next to the gold one. */
+.topright .chips .chip.nav:not(.on):not(:hover), .topright .chips #sysmenu-btn:not(:hover) { color: #e2e9dc; }
+/* The clock is a button that previews an hour on this screen. A sun or moon says it is about the
+   time of day; the lens (a preview, the sea keeps its own clock) is tinted, not just a word. */
+#clock-chip { display: inline-flex; align-items: center; gap: 7px; padding-right: 22px; }
+#clock-chip .ico { width: 14px; height: 14px; }
+#clock-chip[data-key]::after { top: 50%; bottom: auto; transform: translateY(-50%); right: 8px; font-size: 9px; }
+#clock-chip.lens { background: rgba(127, 199, 217, .12); }
+#clock-chip.lens:hover { background: rgba(127, 199, 217, .2); }
+.chips-sep { align-self: stretch; width: 1px; margin: 5px 4px; background: var(--edge); }
+#sysmenu-btn { display: inline-flex; align-items: center; padding: 7px 9px; border-radius: 8px; }
+#sysmenu-btn .ico { width: 16px; height: 16px; }
+#walk-btn.on { color: #203530; }
+.right-column, .building-now, .panel { top: 160px; }
+/* The planner's tools sit on the left, under the title card - which runs to about 192px
+   here, so the 160px every right-hand panel clears by put the tools over its last row. The
+   draft grows with what is in it instead of standing screen-tall around one line. */
+.panel.left { top: 206px; }
+.panel.plan-ledger { bottom: auto; max-height: calc(100vh - 256px); }
+/* The graphics distances in the menu (web/js/sysmenu.js): a label and its slider a line. The
+   settings used to be a 316px side panel, then a screen-wide one; they are the menu now, whose
+   card holds the tabs on the left and this on the right. */
+.sysmenu .setting-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  align-items: center;
+  column-gap: 20px;
+  margin-bottom: 12px;
+}
+
+/* 12.5px is what the label inherited from .panel-body; the menu's body sets no size of its own. */
+.sysmenu .setting-row label {
+  font-size: 12.5px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.sysmenu .setting-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The controls: one action a line, its two keys and its controller button in columns. The
+   controller column is dimmed and dead while no pad is connected (Plans/toetsen-en-bindings.md). */
+.bindtable { display: grid; grid-template-columns: minmax(92px, 1.5fr) repeat(3, minmax(56px, 1fr));
+  gap: 3px 4px; align-items: center; margin: 0 0 8px; }
+.bindrow { display: contents; }
+.bindrow .act { padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bindrow.head span { font-size: .78em; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim);
+  text-align: center; padding-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bindrow.head .act { text-align: left; }
+.bind { display: block; width: 100%; padding: 4px 6px; border: 1px solid var(--edge); border-radius: 7px;
+  background: #ffffff08; color: inherit; font: inherit; text-align: center; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bind:hover { background: #ffffff12; }
+.bind.on { border-color: var(--accent); background: #e8c17c14; }
+.bind.fixed { cursor: default; font-style: italic; }
+.bind.fixed:hover { background: #ffffff08; }
+.bind.off, .bindrow.head span.off, .chip.off { opacity: .38; }
+.bind.off, .chip.off { pointer-events: none; cursor: default; }
+@media (max-width: 480px) { .bindtable { font-size: 12px; grid-template-columns: minmax(64px, 1.2fr) repeat(3, minmax(44px, 1fr)); } }
+#clock-chip { border-radius: 8px; padding-top: 7px; padding-bottom: 7px; letter-spacing: .05em; }
+.btn { box-shadow: inset 0 1px #ffffff08; }
+.btn:hover { border-color: #e8c17c70; }
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+}
+.panel-head { padding: 16px; }
+.panel-head h2 { font-size: 19px; font-weight: 500; }
+.panel-body { padding: 15px 16px; line-height: 1.65; }
+.chronicle { border-radius: 14px; padding: 11px 15px; gap: 14px; }
+#play-btn { background: #e8c17c; color: #203530; border-color: transparent; }
+#chronicle-speed { background: #ffffff09; padding: 5px 8px; }
+select option { color: var(--ink); background: var(--panel-solid); }
+.toast { border-left: 2px solid var(--accent); padding: 12px 15px; line-height: 1.6; }
+/* The animals' teal is this theme's accent-2, not ui.css's. */
+.animal-summary, .an-mystery { border-color: rgba(147, 208, 195, .3); }
+.an-mystery { background: rgba(147, 208, 195, .06); }
+.an-mystery.solved { border-color: rgba(232, 193, 124, .4); background: rgba(232, 193, 124, .07); }
+.an-rels li { border-radius: 10px; }
+/* The sea not answering, alone in the skew box (web/js/ui.js renderSkew): where the skew
+   stands and as long as it lasts, but a toast's colours - it ends by itself and breaks
+   nothing, it only says why nobody is walking. */
+.skew.quiet {
+  background: linear-gradient(145deg, rgba(32, 53, 49, .97), var(--panel));
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--accent);
+  color: var(--ink);
+  font-size: 12px;
+  max-width: min(520px, calc(100vw - 32px));
+}
+.skew.quiet b { color: var(--accent); }
+.walk-prompt { padding: 11px 18px; border-radius: 12px; }
+.walk-keys { padding: 7px 12px; border-radius: 8px; background: var(--panel); }
+.boot { background: radial-gradient(ellipse at 50% 42%, #31534c, #102826 70%); }
+.boot-inner { padding: 34px; }
+.boot-mark { font-size: 56px; }
+#boot-text { color: #e5d8b7; letter-spacing: .07em; line-height: 1.8; }
+@media (max-width: 1100px) {
+  #toasts { bottom: 80px; max-width: calc(100vw - 80px); }
+  .chip.nav .lbl { display: none; }
+  .topright .chips .chip.nav { padding: 7px 8px; }
+}
+@media (max-width: 780px) {
+  .titlecard { min-width: 0; padding: 12px; max-width: 190px; }
+  .titlecard h1 { font-size: 22px; }
+  .titlecard::before { font-size: 8px; letter-spacing: .16em; }
+  .topright { max-width: calc(100vw - 225px); }
+  .topright .chips { flex-wrap: wrap; justify-content: flex-end; }
+  .chips-row { flex-wrap: wrap; justify-content: flex-end; }
+  .topright .chip { padding: 6px 8px; }
+  .right-column, .panel { top: 230px; }
+}
+@media (max-width: 480px) {
+  .titlecard { max-width: 155px; }
+  .titlecard h1 { font-size: 20px; }
+  .titlecard .row { flex-wrap: wrap; gap: 5px; }
+  .topright { max-width: calc(100vw - 183px); }
+  .chronicle { padding: 8px; gap: 8px; }
+  .right-column, .panel { top: 285px; }
+  /* Measured at 390 wide: the HUD took the top 55% of the screen before a single panel
+     was open, the title card alone four rows of counts. It keeps the name and the head
+     count. A panel is a sheet from the bottom rather than a column hung under the HUD,
+     which left the dossier 40% of the height to scroll in. */
+  .titlecard { padding: 10px 12px; }
+  #founded { display: none; }
+  .counts { padding-top: 6px; margin-top: 6px; }
+  .counts span:nth-child(n+2) { display: none; }
+  .chips-label { display: none; }
+  .right-column { top: 215px; }
+  .panel { top: auto; height: min(62vh, calc(100vh - 190px)); bottom: 80px; }
+  /* A slider under its label: 180px of label beside it leaves the slider a thumb's width. */
+  .sysmenu .setting-row { grid-template-columns: 1fr; row-gap: 4px; }
+  /* The animals' panels are .panel and so bottom sheets already. The return card stays in
+     the right column, but short: three lines, not a third of the island. */
+  .animal-summary { max-height: 32vh; padding: 9px 11px; }
+  #animal-summary-list li { font-size: 11.5px; }
+  .an-rels li { padding: 5px 8px; }
+  .an-about { font-size: 13px; }
+  /* To the left and narrower. At 390 wide, centred, the bars ran from x 103 to 287
+     at 92px up, straight across the touchpad's X button - which reads as the bar being part
+     of the button. The left edge is the stick's side, but that stick floats wherever the
+     thumb lands and is drawn over whatever is there. 140 since the buttons became a cluster
+     (touchpad.js): its X sits from x 164 at 390 wide. */
+  .vitals { align-self: flex-start; margin-left: 16px; width: min(140px, 36vw); gap: 3px; }
+  .vital b { height: 6px; }
+  .vital span { width: 12px; font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

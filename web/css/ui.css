@@ -1,0 +1,1497 @@
+:root {
+  --ink: #f4ece0;
+  --ink-dim: #bfae97;
+  --panel: rgba(28, 24, 20, 0.82);
+  --panel-solid: #1c1814;
+  --edge: rgba(244, 236, 224, 0.14);
+  --accent: #e8b45c;
+  --accent-2: #7fc7d9;
+  --radius: 14px;
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.42);
+  --font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --ui: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+/* Every list that scrolls sits on a dark panel; the native scrollbar is a white bar down the
+   side of it. Inherited, so this one line covers the dossier, the legend, the town hall... */
+html { scrollbar-color: rgba(244,236,224,.22) transparent; scrollbar-width: thin; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: #0d1420; overscroll-behavior: none; }
+/* A game, not a page: no pinch zoom (lists still scroll with a finger), no blue flash under a tapped
+   button, no picture to drag off as a ghost. page-keys.js holds the keys and ctrl+wheel. */
+html { touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+img, svg, a { -webkit-user-drag: none; }
+body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
+/* Nothing on the island is text to copy, so a drag or double-click never paints a selection over it - except in
+   a field, where the caret and a selection are how you type. */
+input, textarea, select, [contenteditable="true"] { user-select: text; -webkit-user-select: text; }
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+/* The sea over the lens (web/js/underwater.js). Opacity is the eased amount times 0.35, so
+   the gradient is strong and the layer is not: a clear turquoise from the light above to a
+   green-black below, and the corners closed in. No z-index on purpose - it follows the canvas
+   in the document, so it lies over the picture and under every card, chip and the touch pad.
+   Never a filter on #stage: vitals.js writes the beer's blur there. */
+#underwater {
+  position: fixed; inset: 0; pointer-events: none; opacity: 0;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgba(40, 170, 185, 0) 32%, rgba(2, 34, 48, .92) 100%),
+    linear-gradient(to bottom, rgba(96, 214, 220, .85), rgba(6, 74, 92, .9));
+}
+
+/* Sent home (main.js respawnFade): black at once, then the island fades in once its people stand
+   where they are. Same layer rules as #underwater. */
+#respawn { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 1; }
+#respawn.out { opacity: 0; transition: opacity .25s ease-out; }
+
+.card, .panel {
+  background: var(--panel);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* --- boot ------------------------------------------------------------- */
+.boot { position: fixed; inset: 0; display: grid; place-items: center; background: #0d1420; z-index: 50; transition: opacity .6s ease; }
+.boot.gone { opacity: 0; pointer-events: none; }
+.boot-inner { text-align: center; }
+.boot-mark { font-size: 46px; animation: bob 2.4s ease-in-out infinite; }
+#boot-text { margin-top: 10px; color: var(--ink-dim); font-size: 13px; letter-spacing: .04em; }
+@keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
+
+/* --- title card ------------------------------------------------------- */
+.titlecard { position: fixed; top: 14px; left: 14px; padding: 12px 15px; min-width: 218px; max-width: 300px; z-index: 10; }
+.titlecard h1 { font-family: var(--font); font-size: 21px; margin: 0; letter-spacing: .015em; }
+.row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.muted { color: var(--ink-dim); font-size: 11.5px; margin-top: 2px; }
+.counts { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 5px 7px; font-size: 11.5px; }
+.counts b { font-weight: 650; color: var(--accent); font-variant-numeric: tabular-nums; }
+.counts span { background: rgba(255,255,255,.05); border: 1px solid var(--edge); border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+.live { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; }
+.live i { width: 7px; height: 7px; border-radius: 50%; background: #6fce7a; box-shadow: 0 0 9px #6fce7a; animation: pulse 2.2s infinite; }
+.live.off i { background: #d08a53; box-shadow: none; animation: none; }
+.live.replay i { background: var(--accent-2); box-shadow: 0 0 9px var(--accent-2); animation: none; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+/* --- top right -------------------------------------------------------- */
+.topright { position: fixed; top: 14px; right: 14px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.chips { display: flex; gap: 6px; }
+/* The nav chips and the clock share a row - the clock sits beside the menu, not below it. */
+.chips-row { display: flex; align-items: center; gap: 7px; }
+/* A row of chips inside a panel has 288px to work with, not a screen. */
+.chips.wrap { flex-wrap: wrap; }
+.chip {
+  font: inherit; font-size: 11.5px; color: var(--ink-dim); cursor: pointer;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 99px; padding: 5px 11px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: .16s;
+}
+.chip:hover { color: var(--ink); border-color: rgba(244,236,224,.3); }
+.chip.on { color: #1c1814; background: var(--accent); border-color: transparent; font-weight: 600; }
+.chips-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
+  text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+#clock-chip { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+#clock-chip.lens { color: var(--accent-2); border-color: rgba(127,199,217,.45); }
+/* The sea's clock is nobody's to change but the host's (Plans/zeetijd-van-de-host.md): for
+   everybody else the chip is a read-out, not a button. */
+#clock-chip:not(.host) { cursor: default; }
+.sea-clock { display: grid; gap: 4px; min-width: 180px; }
+.sea-clock p { margin: 0 0 4px; font: 600 10px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); }
+.sea-clock-btn { padding: 6px 10px; border: 0; background: rgba(255,255,255,.04); color: var(--ink); text-align: left;
+  font: 12px var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; }
+.sea-clock-btn:hover, .sea-clock-btn:focus-visible { background: rgba(232,193,124,.14); outline: 1px solid var(--accent); }
+.sea-clock-btn.real { margin-top: 4px; }
+.sea-clock-btn:disabled { opacity: .45; cursor: default; outline: none; background: rgba(255,255,255,.02); }
+#nav-collapse-btn { padding: 5px 9px; font-size: 13px; line-height: 1; transition: transform .16s, color .16s, border-color .16s; }
+#nav-collapse-btn.collapsed { transform: rotate(180deg); }
+
+/* --- now building ----------------------------------------------------- */
+.building-now { position: fixed; right: 14px; top: 108px; width: 232px; padding: 11px 13px; z-index: 9; max-height: 34vh; overflow: auto; }
+.building-now h2, .panel h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-dim); }
+#building-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+#building-list li { font-size: 12px; cursor: pointer; padding: 5px 7px; border-radius: 8px; border: 1px solid transparent; line-height: 1.35; }
+#building-list li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+#building-list li .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; animation: pulse 1.6s infinite; }
+#building-list li small { color: var(--ink-dim); display: block; margin-left: 12px; }
+#building-list .empty { color: var(--ink-dim); font-style: italic; cursor: default; }
+
+/* --- panels ----------------------------------------------------------- */
+.panel { position: fixed; right: 14px; top: 108px; bottom: 96px; width: 316px; z-index: 12; display: flex; flex-direction: column; animation: slidein .22s ease; }
+@keyframes slidein { from { opacity: 0; transform: translateX(14px) } }
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 8px; border-bottom: 1px solid var(--edge); }
+.panel-head h2 { font-size: 15px; text-transform: none; color: var(--ink); margin: 0; }
+.panel-body { padding: 12px 14px 16px; overflow: auto; font-size: 12.5px; line-height: 1.5; }
+.x { background: none; border: 0; color: var(--ink-dim); font-size: 13px; cursor: pointer; padding: 3px 5px; border-radius: 6px; }
+.x:hover { color: var(--ink); background: rgba(255,255,255,.07); }
+
+.kv { display: grid; grid-template-columns: 84px 1fr; gap: 3px 10px; margin: 0 0 12px; }
+.kv dt { color: var(--ink-dim); font-size: 11.5px; }
+.kv dd { margin: 0; word-break: break-word; }
+.tagrow { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.tag { font-size: 10.5px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--edge); background: rgba(255,255,255,.05); }
+.tag.style { border-color: transparent; color: #1c1814; font-weight: 600; }
+h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); margin: 15px 0 7px; font-weight: 600; }
+.bars { display: grid; gap: 4px; }
+.bar { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 7px; font-size: 11.5px; }
+.bar i { display: block; height: 7px; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #d0894a); }
+.bar b { font-weight: 500; color: var(--ink-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.bar span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.list li { font-size: 12px; }
+.list li b { font-weight: 600; }
+.list li small { color: var(--ink-dim); }
+.clickable { cursor: pointer; text-decoration: underline dotted var(--ink-dim); text-underline-offset: 3px; }
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10.5px; color: var(--ink-dim); word-break: break-all; }
+.btn { font: inherit; font-size: 12px; color: var(--ink); background: rgba(255,255,255,.07); border: 1px solid var(--edge); border-radius: 9px; padding: 6px 11px; cursor: pointer; }
+.btn:hover { background: rgba(255,255,255,.13); }
+.dossier-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+.dossier-actions.end { margin: 18px 0 0; }
+.ask { border: 1px solid var(--edge); border-radius: 10px; padding: 8px 11px 9px; margin: 0 0 10px; background: rgba(255,255,255,.04); }
+.ask.asked { border-color: rgba(232,180,92,.5); background: rgba(232,180,92,.08); }
+.ask h3.sec { margin: 0 0 4px; }
+.ask.asked h3.sec { color: var(--accent); }
+.ask p { margin: 0; font-size: 13px; line-height: 1.45; }
+/* A bare text field: the sea address in Settings, the world picker. Without this it was the
+   browser's white box in the middle of a dark panel. */
+.field { font: inherit; font-size: 12px; min-width: 0; background: rgba(255,255,255,.07); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 9px; padding: 6px 9px; }
+.field:focus, .ho-input:focus { outline: none; border-color: rgba(232,180,92,.5); }
+.field::placeholder, .ho-input::placeholder { color: #8d7f6c; }
+.sea-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 9px; align-items: center; margin: 6px 0;
+  padding: 7px 9px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+/* A saved sea has a fourth column, its forget cross. */
+.sea-row:has([data-forgetsea]) { grid-template-columns: 8px 1fr auto auto; }
+.sea-row.here { border-color: rgba(232,180,92,.45); }
+.sea-row.down { opacity: .6; }
+.sea-dot { width: 8px; height: 8px; border-radius: 50%; background: #7fd08a; }
+.sea-row.down .sea-dot { background: #8d7f6c; }
+.sea-what { min-width: 0; line-height: 1.35; }
+.sea-what b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sea-what small { color: var(--ink-dim); font-size: 11px; }
+.tag.here { border-color: transparent; background: var(--accent); color: #1c1814; font-weight: 600; white-space: nowrap; }
+.chip:disabled { opacity: .4; cursor: default; }
+.legend-item { display: grid; grid-template-columns: 22px 1fr; gap: 9px; align-items: start; margin-bottom: 7px; }
+.sw { width: 13px; height: 13px; border-radius: 4px; margin-top: 3px; border: 1px solid rgba(0,0,0,.3); }
+.legend-item div b { display: block; font-weight: 600; }
+.legend-item div small { color: var(--ink-dim); }
+
+/* --- chronicle -------------------------------------------------------- */
+.chronicle { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 10; display: flex; align-items: center; gap: 11px; padding: 9px 13px; width: min(620px, calc(100vw - 28px)); }
+.play { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--edge); background: rgba(255,255,255,.07); color: var(--ink); cursor: pointer; font-size: 12px; }
+.play:hover { background: rgba(255,255,255,.14); }
+#chronicle-range { flex: 1; accent-color: var(--accent); height: 3px; cursor: pointer; }
+.chronicle-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; }
+#chronicle-date { font-variant-numeric: tabular-nums; min-width: 152px; text-align: right; }
+#chronicle-speed { font: inherit; font-size: 11px; background: rgba(255,255,255,.07); color: var(--ink); border: 1px solid var(--edge); border-radius: 7px; padding: 3px 5px; }
+
+/* --- labels & toasts -------------------------------------------------- */
+#labels { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+.label { position: absolute; transform: translate(-50%, -100%); font-size: 10.5px; letter-spacing: .02em; padding: 2px 7px; border-radius: 99px; background: rgba(20,16,12,.72); border: 1px solid var(--edge); color: var(--ink); white-space: nowrap; }
+.label.build { color: var(--accent); border-color: rgba(232,180,92,.4); }
+/* A neighbour that is somebody's working copy names the work over its own name. The text
+   comes off the network, so it arrives as an attribute and is drawn with attr(): that puts
+   text on the page and never markup. */
+.label.over { text-align: center; white-space: normal; }
+.label.over::before { content: attr(data-above); display: block; font-size: 9px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent); opacity: .9; }
+.label.build::before { content: "🔨 "; }
+/* A hamlet name reads as a caption on a map, not as a tooltip: no pill, no border,
+   just letterspaced small caps with enough shadow to survive a bright meadow. */
+.hamlet-label { position: absolute; transform: translate(-50%, -100%); font-size: 11px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none; text-shadow: 0 1px 2px rgba(12,10,8,.9), 0 0 10px rgba(12,10,8,.7); }
+.hover-label { position: fixed; z-index: 8; pointer-events: none; transform: translate(-50%, -140%); background: rgba(20,16,12,.86); border: 1px solid var(--edge); border-radius: 9px; padding: 5px 9px; font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); }
+.hover-label small { display: block; color: var(--ink-dim); font-size: 10.5px; }
+#toasts { position: fixed; left: 14px; bottom: 16px; z-index: 11; display: grid; gap: 7px; width: 288px; }
+
+/* An island's name as you come into its waters: a dark ribbon across the top with swallow-
+   tailed ends, the name in gold capitals and its keeper underneath. */
+.arrival { position: fixed; top: 14%; left: 50%; z-index: 12; transform: translateX(-50%);
+  pointer-events: none; text-align: center; min-width: min(460px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px); padding: 12px 56px 13px; color: var(--ink);
+  background: rgba(14,11,9,.9); filter: drop-shadow(0 6px 18px rgba(0,0,0,.45));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 26px) 50%, 100% 100%, 0 100%, 26px 50%); }
+.arrival b { display: block; font-family: var(--font); font-weight: 600; font-size: 26px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arrival small { display: block; margin-top: 3px; font-family: var(--font); font-size: 13.5px;
+  font-style: italic; color: var(--ink-dim); }
+.arrival small:empty { display: none; }
+.arrival.show { animation: unfurl .5s cubic-bezier(.2,.8,.2,1); }
+.arrival.fade { opacity: 0; transition: opacity .7s ease; }
+@keyframes unfurl { from { opacity: 0; clip-path: polygon(50% 0, 50% 0, 50% 50%, 50% 100%, 50% 100%, 50% 50%); } }
+@media (max-width: 520px) { .arrival { padding: 10px 40px 11px; } .arrival b { font-size: 20px; } }
+@media (prefers-reduced-motion: reduce) { .arrival.show { animation: none; } }
+
+/* The water closing over the screen on the way to a neighbour's island. */
+#veil { position: fixed; inset: 0; z-index: 40; background: #0d1420; opacity: 0; pointer-events: none; }
+
+/* A toast that asks something rather than only saying something. */
+.toast .act {
+  font: inherit; font-size: 11.5px; cursor: pointer; margin-left: 4px;
+  color: #1c1814; background: var(--accent); border: 1px solid transparent;
+  border-radius: 99px; padding: 3px 9px; font-weight: 600;
+}
+.toast .act.ghost { background: transparent; border-color: var(--edge); color: var(--ink-dim); font-weight: 400; }
+.toast .act:hover { filter: brightness(1.08); }
+
+.toast { padding: 9px 12px; font-size: 12px; line-height: 1.4; animation: risein .3s ease; }
+.toast b { color: var(--accent); }
+.toast.fade { opacity: 0; transition: opacity .5s ease; }
+@keyframes risein { from { opacity: 0; transform: translateY(9px) } }
+
+@media (max-width: 780px) {
+  .building-now { display: none; }
+  .panel { left: 14px; width: auto; }
+  .titlecard { max-width: 190px; }
+  .chronicle-meta select { display: none; }
+  #chronicle-date { min-width: 0; }
+}
+
+/* --- walking ---------------------------------------------------------- */
+/* The strip along the bottom of the screen, centred by spanning the full width rather than
+   by a transform: a transformed element becomes the containing block for anything fixed
+   inside it, and the prompt below needs its offsets measured against the window. */
+.walk-hud { position: fixed; left: 0; right: 0; bottom: 66px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 7px; pointer-events: none; }
+/* 66px is just over the fullscreen button (16px up, 44 tall) - on foot the chronicle bar is
+   hidden, so that button is all that is left under the strip. It used to sit at the 92px the
+   chronicle needed, with an empty band beneath it. Narrower screens keep 92: the buttons
+   step up to 74px there, and on a phone the touchpad's own buttons were measured against
+   it (harbour.css). */
+@media (max-width: 760px) { .walk-hud { bottom: 92px; } }
+/* Over the settler's head, not under his feet. The camera aims at his eyes, so he sits in
+   the middle of the frame however it is turned - the centre of the screen is the one band
+   that is reliably his, and this is the card that has to stay out of it. He stands about a
+   seventh of the screen tall with his crown a shade above the middle, so an underside at 56%
+   of the window height leaves a clear gap over the hat whatever the window is doing.
+
+   It used to ride at the top of the bottom strip, and that is how the island's own settler
+   ended up hidden behind his interface: every line the strip grew - the purse, the key
+   legend, a confirmation - pushed this card up into him. Centred without a transform on
+   purpose, because `risein` animates one and would otherwise throw the card in from the
+   left on its way up. */
+.walk-prompt {
+  position: fixed; left: 0; right: 0; bottom: 56%; margin-inline: auto;
+  width: fit-content; max-width: min(460px, calc(100vw - 28px)); text-align: center;
+  padding: 8px 14px; font-size: 13px; border-radius: 99px; animation: risein .2s ease;
+}
+.walk-prompt b { color: var(--accent); }
+/* ui.js setWalkPrompt: a standing offer takes its place in the bottom strip instead. */
+.walk-prompt.low { position: static; }
+/* What a keeper says (web/js/ui.js setSpeech): a card in the walk HUD's own column, so it
+   sits under the face in the middle of the screen and above the key row, like a subtitle. */
+.speech { max-width: min(520px, calc(100vw - 28px)); padding: 10px 16px; display: grid; gap: 4px; text-align: center; font-size: 14px; line-height: 1.45; animation: risein .2s ease; }
+.speech-who { color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.speech-key { font-size: 11px; color: var(--ink-dim); }
+.speech-key kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+/* In a conversation the offer of one is beside the point. */
+.walk-hud:has(.speech:not([hidden])) .walk-prompt { display: none; }
+/* The beer offer, one card's height under the prompt (web/index.html #walk-give). */
+.walk-give { bottom: calc(56% - 46px); }
+.walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
+.walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* Health over stamina over air over beer (web/js/vitals.js), each an emoji and a track. The fill is
+   a scaleX of a full-width bar rather than a width, so the frame loop writes one custom
+   property and nothing reflows; the rounded ends belong to the track (`b`), which clips it.
+   A bar with nothing to say - full for the first three, empty for the beer - fades out on a
+   delay, emoji and all, and one that moves comes straight back: the transition that applies
+   is the one on the state being entered, so `.full`/`.empty` carry the slow one and the
+   plain rule the quick one. */
+.vitals { display: flex; flex-direction: column; gap: 4px; width: 204px; }
+.vital { display: flex; align-items: center; gap: 6px; opacity: 1; transition: opacity .1s ease; }
+.vital span { flex: none; width: 14px; font-size: 11px; line-height: 1; text-align: center;
+  filter: drop-shadow(0 1px 2px rgba(5, 22, 24, .45)); }
+.vital b { flex: 1; display: block; height: 7px; border-radius: 99px; overflow: hidden;
+  background: rgba(8, 16, 18, .62); border: 1px solid var(--edge); box-shadow: 0 2px 8px rgba(5, 22, 24, .25); }
+.vital i { display: block; height: 100%; transform-origin: left center; transform: scaleX(var(--f, 1)); }
+.vital.health i { background: linear-gradient(#ea7a68, #b93c30); }
+.vital.stamina i { background: linear-gradient(#f5d98a, #d9a441); }
+.vital.air i { background: linear-gradient(#a6e0fa, #3f8fd0); }
+.vital.tipsy i { background: linear-gradient(#c79cf2, #7b3fc4); }
+/* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
+.vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
+.vital.full, .vital.empty { opacity: 0; transition: opacity 1.2s ease 1.5s; }
+/* A hit: the red bar flares and its track flushes for a moment (web/js/vitals.js). Two names
+   for one animation, taken in turn, so a second blow restarts it without a reflow. */
+.vital.health.hurt-a b { animation: vital-hurt-a .45s ease-out; }
+.vital.health.hurt-b b { animation: vital-hurt-b .45s ease-out; }
+@keyframes vital-hurt-a { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
+@keyframes vital-hurt-b { 0% { background: rgba(185, 60, 48, .75); filter: brightness(1.8); } 100% { filter: none; } }
+
+/* --- the walk-mode minimap ---------------------------------------------- */
+.minimap {
+  /* Measured against .topright's own bottom edge (chips + nav buttons), which runs
+     deeper than the 108px other right-column panels clear by - those are narrower
+     (232-316px) and sit further from the edge, so they miss .topright's wide chip
+     row on the right; a full-width-adjacent circle at 14px does not. */
+  position: fixed; top: 152px; right: 14px; z-index: 10;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: var(--panel); border: 1px solid rgba(232,180,92,.35); box-shadow: var(--shadow);
+  pointer-events: none;   /* a HUD, not a click target, same as .walk-hud */
+}
+.minimap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
+/* The second press of M: the whole sea on one sheet. Still a HUD - the walk keeps the
+   keyboard and the mouse underneath it - so no pointer events either. */
+/* A sheet of parchment (minimap.js paints it, torn edge and all), so no box of its own:
+   the shadow follows the torn outline because it is a filter on what was drawn. */
+.worldmap {
+  position: fixed; inset: 40px; z-index: 12;
+  background: none;
+  pointer-events: none;
+}
+.worldmap canvas { width: 100%; height: 100%; display: block; filter: drop-shadow(0 12px 22px rgba(0,0,0,.5)); }
+/* The phone's way out of the chart (minimap.js createWorldMap `phone`): the sheet itself
+   lets touches through to the stick underneath, so only this takes them. */
+.worldmap-close { position: absolute; top: 8px; right: 8px; pointer-events: auto;
+  background: rgba(14,18,24,.75); color: rgba(244,236,224,.95); border-radius: 50%; }
+body.standalone .worldmap { inset: calc(var(--st) + 50px) var(--sr) var(--sb) var(--sl); }
+/* What the pointer is over. Placed by minimap.js with a transform from the sheet's corner. */
+.worldmap-tip {
+  position: absolute; left: 0; top: 0; max-width: 260px;
+  padding: 7px 10px; border-radius: 8px;
+  background: rgba(14,18,24,.92); border: 1px solid rgba(232,180,92,.45); box-shadow: var(--shadow);
+  font: 12px/1.35 sans-serif; color: rgba(244,236,224,.95); white-space: nowrap;
+}
+.worldmap-tip b { display: block; font-weight: 600; font-size: 13px; color: #e8b45c; }
+.worldmap-tip span { display: block; color: rgba(244,236,224,.75); white-space: normal; }
+.pad-dot { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-2); }
+.pad-dot i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
+
+/* --- the sprint board ------------------------------------------------- */
+.board-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(8, 10, 14, .72); backdrop-filter: blur(3px); animation: fadein .2s ease; }
+@keyframes fadein { from { opacity: 0 } }
+.board-frame { width: min(1180px, calc(100vw - 40px)); height: min(84vh, 880px); display: flex; flex-direction: column;
+  border-radius: 18px; overflow: hidden; box-shadow: 0 30px 90px rgba(0,0,0,.6); border: 10px solid #6b4a2f;
+  background: #b98d55; }
+.board-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 13px 18px;
+  background: linear-gradient(#5a3c28, #4a3022); color: #f4ece0; border-bottom: 2px solid #3a2519; }
+.board-head h2 { font-family: var(--font); font-size: 19px; margin: 0; letter-spacing: .01em; }
+.board-head .muted { margin-top: 2px; }
+.board-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.cork { flex: 1; overflow: auto; padding: 18px 20px 26px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255,255,255,.06), transparent 45%),
+    radial-gradient(circle at 80% 70%, rgba(0,0,0,.08), transparent 50%),
+    repeating-conic-gradient(rgba(0,0,0,.035) 0% 25%, transparent 0% 50%) 0 0 / 7px 7px,
+    #b98d55; }
+.cork-group { margin-bottom: 22px; }
+.cork-group h3 { font-family: var(--font); font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
+  color: #4a3022; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.cork-group h3 span { background: rgba(74,48,34,.18); border-radius: 99px; padding: 1px 8px; font-size: 11px; letter-spacing: 0; }
+.cards { display: flex; flex-wrap: wrap; gap: 14px; }
+.card-pin { position: relative; width: 224px; padding: 15px 13px 11px; cursor: pointer;
+  background: #fdf8ec; color: #2b2419; border-radius: 3px; transform: rotate(var(--tilt));
+  box-shadow: 0 6px 14px rgba(0,0,0,.28); transition: transform .14s ease, box-shadow .14s ease; }
+.card-pin:hover { transform: rotate(0deg) translateY(-4px) scale(1.03); box-shadow: 0 14px 26px rgba(0,0,0,.36); z-index: 2; }
+.card-pin .pin { position: absolute; top: -7px; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,.45), inset 0 -2px 3px rgba(0,0,0,.25); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.card-top b { font-size: 12px; letter-spacing: .03em; }
+.card-top .type { font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 99px;
+  background: var(--t); color: #fff; }
+.card-sum { margin: 0 0 9px; font-size: 12.5px; line-height: 1.4; min-height: 34px; }
+.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #6d6152; }
+.card-foot .status { background: rgba(0,0,0,.06); border-radius: 99px; padding: 1px 7px; }
+.card-pin.taken { opacity: .82; }
+.card-pin .ribbon { position: absolute; right: -6px; bottom: 10px; background: #d94f3d; color: #fff; font-size: 9.5px;
+  padding: 2px 9px; border-radius: 3px; box-shadow: 0 3px 7px rgba(0,0,0,.3); text-transform: uppercase; letter-spacing: .05em; }
+.board-empty { color: #4a3022; font-style: italic; }
+.board-note { padding: 9px 18px; background: #4a3022; color: #f0ddc0; font-size: 12px; }
+
+/* --- handing a card over ---------------------------------------------- */
+.handover { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; background: rgba(8,10,14,.6); }
+.handover-panel { position: relative; width: min(560px, calc(100vw - 32px)); max-height: 82vh; overflow: auto;
+  background: var(--panel-solid); border: 1px solid var(--edge); border-radius: 16px; padding: 20px 22px; box-shadow: var(--shadow); }
+.handover-panel h3 { font-family: var(--font); font-size: 20px; margin: 0 0 4px; }
+.handover-panel h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); margin: 18px 0 8px; }
+.handover-panel .x { position: absolute; top: 12px; right: 12px; }
+.ho-sum { margin: 0 0 8px; font-size: 13.5px; line-height: 1.45; }
+.handover-panel a { color: var(--accent-2); }
+.ho-warn { font-size: 12px; color: #e8b45c; background: rgba(232,180,92,.1); border: 1px solid rgba(232,180,92,.28);
+  border-radius: 9px; padding: 8px 11px; }
+.ho-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ho-list li { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--edge); cursor: pointer; background: rgba(255,255,255,.03); }
+.ho-list li:hover { background: rgba(255,255,255,.08); }
+.ho-list li.picked { border-color: var(--accent); background: rgba(232,180,92,.12); }
+.ho-list b { font-size: 13px; }
+.ho-list small { display: block; color: var(--ink-dim); font-size: 11px; margin-top: 1px; }
+.ho-list em { display: block; font-style: normal; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; color: #8d7f6c; margin-top: 3px; }
+.ho-confirm { margin-top: 16px; border-top: 1px solid var(--edge); padding-top: 14px; }
+.ho-confirm p { font-size: 12.5px; line-height: 1.5; margin: 0 0 10px; }
+.ho-confirm code { font-size: 11.5px; background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
+.ho-confirm dl { display: grid; grid-template-columns: 82px 1fr; gap: 3px 10px; margin: 0 0 14px; font-size: 12px; }
+.ho-confirm dt { color: var(--ink-dim); }
+.ho-confirm dd { margin: 0; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+.ho-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.primary { background: var(--accent); color: #1c1814; border-color: transparent; font-weight: 600; }
+.btn.primary:hover { background: #f0c273; }
+.ho-out { margin-top: 12px; font-size: 12px; min-height: 18px; }
+.ho-out code { display: block; margin-top: 6px; word-break: break-all; white-space: pre-wrap; font-size: 11px; }
+.ho-out .good { color: #7fd08a; }
+.ho-out .bad { color: #e8705c; }
+.tag.ok { color: #7fd08a; border-color: rgba(127,208,138,.35); background: rgba(127,208,138,.1); font-size: 9.5px; margin-left: 6px; vertical-align: middle; }
+
+/* --- assignee filter and the controller cursor -------------------------- */
+.who { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #e6d6c0; }
+.who select { font: inherit; font-size: 11.5px; background: rgba(0,0,0,.28); color: #f4ece0; border: 1px solid rgba(244,236,224,.22); border-radius: 99px; padding: 4px 9px; max-width: 190px; }
+.vcursor { position: fixed; left: 0; top: 0; width: 26px; height: 26px; z-index: 45; pointer-events: none; will-change: transform;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cpath d='M6 3 L6 21 L10.5 16.5 L14 24 L17 22.5 L13.5 15 L20 15 Z' fill='%23fff' stroke='%23000' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); transition: scale .12s ease; }
+.vcursor.press { scale: .82; }
+.vhover { outline: 3px solid var(--accent) !important; outline-offset: 2px; }
+.card-pin.vhover { transform: rotate(0deg) translateY(-4px) scale(1.03); box-shadow: 0 14px 26px rgba(0,0,0,.36); z-index: 2; }
+.board-hint { padding: 7px 18px; background: #4a3022; color: #d9c4a4; font-size: 11px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.board-hint kbd { font-family: inherit; font-size: 10px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; margin-right: 2px; }
+.kfocus { outline: 3px solid var(--accent) !important; outline-offset: 2px; }
+.card-pin.kfocus { transform: rotate(0deg) translateY(-4px) scale(1.03); box-shadow: 0 14px 26px rgba(0,0,0,.36); z-index: 2; }
+#boot-text .btn { margin-top: 12px; }
+#boot-text .muted { display: inline-block; margin-top: 4px; }
+
+/* --- talking to a settler ---------------------------------------------- */
+.chat-panel { position: fixed; right: 14px; top: 14px; bottom: 14px; width: min(430px, calc(100vw - 28px));
+  z-index: 26; display: flex; flex-direction: column; animation: slidein .22s ease; }
+.chat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--edge); }
+.chat-head h2 { font-family: var(--font); font-size: 17px; margin: 0; }
+.chat-head-right { display: flex; align-items: center; gap: 6px; }
+.chat-head select { font: inherit; font-size: 11px; background: rgba(255,255,255,.07); color: var(--ink-dim);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 4px 8px; max-width: 140px; }
+.chat-log { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.chat-msg .who { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); margin-bottom: 4px; }
+.chat-msg .body { font-size: 13px; line-height: 1.5; }
+.chat-msg .body p { margin: 0 0 8px; }
+.chat-msg .body p:last-child { margin-bottom: 0; }
+.chat-msg .body code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: rgba(255,255,255,.09); padding: 1px 4px; border-radius: 4px; }
+.chat-msg .body pre { margin: 8px 0; padding: 9px 11px; background: rgba(0,0,0,.32); border: 1px solid var(--edge);
+  border-radius: 9px; overflow-x: auto; }
+.chat-msg .body pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
+.chat-msg.user { align-self: flex-end; max-width: 88%; background: rgba(232,180,92,.13); border: 1px solid rgba(232,180,92,.28);
+  border-radius: 12px 12px 3px 12px; padding: 9px 12px; }
+.chat-msg.user .who { color: var(--accent); }
+.chat-msg.assistant { max-width: 96%; }
+.chat-tools { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
+.chat-tools .tool { font-size: 10.5px; color: var(--ink-dim); background: rgba(255,255,255,.05);
+  border: 1px solid var(--edge); border-radius: 7px; padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tools .tool b { color: var(--accent-2); font-weight: 600; }
+.chat-tools .tool.more { font-style: italic; opacity: .75; }
+.chat-foot.read-only { color: var(--accent); }
+.chat-note { font-size: 11.5px; color: var(--ink-dim); font-style: italic; text-align: center; padding: 3px 0; }
+.chat-compose { display: flex; gap: 7px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--edge); }
+.chat-compose textarea { flex: 1; font: inherit; font-size: 13px; resize: none; color: var(--ink);
+  background: rgba(255,255,255,.07); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; line-height: 1.4; }
+.chat-compose textarea:focus { outline: none; border-color: rgba(232,180,92,.5); }
+.chat-foot { margin: 0; padding: 0 14px 11px; font-size: 10.5px; color: var(--ink-dim); }
+.chat-panel.busy .chat-log { opacity: .92; }
+.ho-list li.newcomer { border-style: dashed; border-color: rgba(232,180,92,.45); }
+.ho-list li.newcomer b { color: var(--accent); }
+.ho-confirm select { font: inherit; font-size: 12px; width: 100%; background: rgba(255,255,255,.07); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 9px; padding: 7px 9px; margin-bottom: 10px; }
+.ho-input { font: inherit; font-size: 12px; width: 100%; background: rgba(255,255,255,.07); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 9px; padding: 7px 9px; font-family: ui-monospace, Consolas, monospace; }
+.ho-confirm .ho-warn { display: block; margin: 0 0 10px; }
+.walk-confirm { padding: 9px 15px; font-size: 13px; border-color: rgba(217,79,61,.5); animation: risein .18s ease; }
+.walk-confirm b { color: #e8705c; }
+.btn.danger { color: #e8705c; border-color: rgba(232,112,92,.35); }
+.btn.danger:hover { background: rgba(232,112,92,.15); }
+.btn.tiny { font-size: 11px; padding: 3px 8px; margin-left: 6px; }
+.chat-head-right .btn.danger.tiny { white-space: nowrap; }
+.btn.danger.armed { background: rgba(232,112,92,.22); border-color: #e8705c; color: #ffd9d2; }
+.tag.visiting { border-color: rgba(127,199,217,.45); color: var(--accent-2); }
+textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
+
+/* --- the town hall register -------------------------------------------- */
+.handover-panel.wide { width: min(720px, calc(100vw - 32px)); }
+.th-new-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; }
+.th-new-row .muted { margin: 0; }
+/* The foot only says how an invite went; with the newcomer button gone from it, an empty
+   one is just a rule under the list. */
+.th-foot:has(#th-out:empty) { display: none; }
+.th-controls { display: flex; gap: 10px; align-items: center; margin: 14px 0 10px; flex-wrap: wrap; }
+.th-controls .ho-input { flex: 1; min-width: 200px; font-family: inherit; }
+.th-list { max-height: 46vh; overflow: auto; display: grid; gap: 6px; padding-right: 4px; }
+.th-row { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto; gap: 2px 12px;
+  align-items: center; padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.th-row:hover { background: rgba(255,255,255,.07); }
+.th-row.here { border-color: rgba(127,199,217,.3); }
+.th-who { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.th-who b { font-size: 13px; }
+.th-title { grid-column: 1; margin: 0; font-size: 12px; color: var(--ink-dim); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.th-meta { grid-column: 1; display: flex; gap: 12px; font-size: 10.5px; color: #8d7f6c; }
+.th-row .btn { grid-column: 2; grid-row: 1 / span 3; }
+.btn.tiny { font-size: 11px; padding: 4px 10px; }
+.muted.tiny { grid-column: 2; grid-row: 1 / span 3; font-size: 10.5px; }
+.th-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge); flex-wrap: wrap; }
+.th-foot .muted { font-size: 12px; }
+.th-foot .good { color: #7fd08a; }
+.th-foot .bad { color: #e8705c; }
+.tag.ok { border-color: rgba(127,208,138,.4); color: #7fd08a; }
+.tag.style-fable { border-color: rgba(207,196,230,.5); color: #cfc4e6; }
+.tag.style-opus { border-color: rgba(168,165,158,.5); color: #c9c6bf; }
+.tag.style-sonnet { border-color: rgba(240,226,200,.5); color: #f0e2c8; }
+.tag.style-haiku { border-color: rgba(217,185,140,.5); color: #d9b98c; }
+
+/* --- the village office ------------------------------------------------ */
+.office-panel { position: fixed; inset: 5vh 4vw; z-index: 30; display: flex; flex-direction: column; overflow: hidden; animation: fadein .18s ease; }
+.office-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 13px 18px; border-bottom: 1px solid var(--edge); }
+.office-head h2 { font-family: var(--font); font-size: 19px; margin: 0; }
+.office-head .muted { margin-top: 3px; }
+.office-head .muted b { color: var(--accent); font-weight: 600; }
+.office-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.office-actions #office-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.office-actions a.chip { text-decoration: none; }
+.office-body { flex: 1; display: grid; grid-template-columns: minmax(280px, 34%) 1fr; gap: 0; overflow: hidden; }
+.office-lists { overflow: auto; border-right: 1px solid var(--edge); padding: 12px 14px 18px; }
+.office-lists section + section { margin-top: 18px; }
+.office-lists h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); margin: 0 0 8px; font-weight: 600; }
+.office-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.office-list li { padding: 6px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; font-size: 12px; line-height: 1.35; }
+.office-list li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+.office-list li.on { background: rgba(232,180,92,.14); border-color: rgba(232,180,92,.4); }
+.office-list li.empty { color: var(--ink-dim); font-style: italic; cursor: default; }
+.office-list li.conflict .path { color: #e8705c; }
+.office-list .code { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; padding: 1px 5px; border-radius: 4px; margin-right: 7px;
+  background: rgba(255,255,255,.08); color: var(--ink-dim); }
+.office-list .code.staged { background: rgba(111,206,122,.18); color: #8fd89a; }
+.office-list .code.dirty { background: rgba(232,180,92,.18); color: var(--accent); }
+.office-list .code.new { background: rgba(125,180,232,.18); color: #8fc4e8; }
+.office-list .sha { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--accent-2); margin-right: 7px; }
+.office-list .path { word-break: break-all; }
+.office-list small { display: block; color: var(--ink-dim); font-size: 10.5px; margin-top: 1px; }
+.office-list .refs { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.office-list .refs i { font-style: normal; font-size: 9.5px; padding: 0 6px; border-radius: 99px; background: rgba(127,199,217,.16); color: var(--accent-2); }
+.office-detail { overflow: auto; padding: 14px 16px 20px; }
+.office-detail h4 { font-family: var(--font); font-size: 15px; margin: 0 0 4px; word-break: break-all; }
+.office-detail .commit-message { white-space: pre-wrap; font-family: inherit; font-size: 12.5px; line-height: 1.5; color: var(--ink); background: rgba(255,255,255,.04); border-left: 2px solid var(--edge); padding: 8px 11px; border-radius: 0 8px 8px 0; margin: 10px 0; }
+.office-detail .commit-stat { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ink-dim); margin: 10px 0; white-space: pre-wrap; }
+.diff { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 11.5px; line-height: 1.45; white-space: pre; overflow-x: auto;
+  background: rgba(0,0,0,.25); border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; margin: 10px 0 0; }
+.diff span { display: block; }
+.diff .add { color: #8fd89a; background: rgba(111,206,122,.09); }
+.diff .del { color: #e8988a; background: rgba(232,112,92,.09); }
+.diff .hunk { color: var(--accent-2); margin-top: 6px; }
+.diff .meta { color: var(--ink-dim); }
+.office-foot { margin: 0; padding: 8px 18px; border-top: 1px solid var(--edge); font-size: 11px; color: var(--ink-dim); }
+.office-foot .good { color: #7fd08a; }
+.office-foot .bad { color: #e8705c; }
+
+/* the office merge bar */
+.office-merge { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 18px; border-bottom: 1px solid var(--edge); background: rgba(255,255,255,.03); font-size: 12.5px; }
+.office-merge-lead { color: var(--ink-dim); }
+.office-merge-lead b { color: var(--accent); font-weight: 600; }
+.office-merge select { font: inherit; font-size: 12px; background: rgba(255,255,255,.07); color: var(--ink); border: 1px solid var(--edge); border-radius: 8px; padding: 4px 8px; max-width: 260px; }
+.office-merge-noff { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-dim); font-size: 11.5px; }
+.office-merge-note { color: #e8b45c; }
+.office-merge .chip.armed { background: var(--accent); color: #1c1814; border-color: transparent; font-weight: 600; }
+#office-merge-ref { font: inherit; font-size: 11.5px; background: rgba(255,255,255,.07); color: var(--ink);
+  border: 1px solid var(--edge); border-radius: 8px; padding: 4px 8px; font-family: ui-monospace, Consolas, monospace; }
+#office-merge-ref:focus { outline: none; border-color: var(--accent); }
+
+/* --- talking to the people on the island -------------------------------- */
+/* Bottom left, which is also where the toasts land. This sits over them on purpose: a
+   toast is gone in five seconds and a conversation is not, so covering one is better
+   than having a notice drop on the line somebody is reading. */
+.islandchat { position: fixed; left: 14px; bottom: 16px; z-index: 12;
+  width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 7px; }
+.islandchat-log { max-height: 34vh; overflow: auto; display: flex; flex-direction: column; gap: 3px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 9px 11px; backdrop-filter: blur(5px); }
+.islandchat-log p { margin: 0; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.islandchat-log p b { color: var(--accent-2); font-weight: 600; }
+.islandchat-log p.mine b { color: var(--accent); }
+/* Who the island belongs to, so a visitor can tell whose house they are standing in. */
+.islandchat-home { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 0 5px; margin-left: 5px; white-space: nowrap; }
+.islandchat-note { color: var(--ink-dim); font-style: italic; }
+.islandchat-input { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 7px 13px; box-shadow: var(--shadow); }
+.islandchat-input:focus { outline: none; border-color: rgba(127,199,217,.5); }
+.islandchat-input::placeholder { color: var(--ink-dim); }
+/* Peeking is the log on its own: what was said stays readable, and the keyboard stays
+   with whoever is walking somewhere. */
+.islandchat.peeking .islandchat-input { display: none; }
+.islandchat.peeking .islandchat-log { background: rgba(28, 24, 20, 0.62); }
+
+/* The keys on the walking strip that are about where you are standing rather than what
+   is in front of you: sitting down, sowing, opening the catalogue. */
+.walk-keys .lit { color: var(--accent-2); }
+.walk-keys .lit kbd { background: rgba(127,199,217,.17); border-color: rgba(127,199,217,.4); }
+
+/* --- the inventory ------------------------------------------------------ */
+/* The one settler you steer, dressed from a screen laid out the way an RPG lays out what a
+   character wears: a bronze-framed stone panel, the figure in a dark alcove in the middle,
+   four slots down each pillar, two dye flasks at its feet. Deliberately darker stone than the
+   HUD's evergreen, meeting it only in the brass (--accent) wherever something is chosen.
+   Every ornament is CSS or an inline SVG - no image of its own, nothing fetched at boot; the
+   one bitmap is the island's own stone tile, as veining on the pillars. The popover shares
+   the palette because it floats in body, outside the frame these variables would cascade from. */
+.inv-frame, .inv-popover {
+  --inv-stone: #26252a; --inv-well: #0c0b0e; --inv-bronze: #c99a4e; --inv-bronze-dark: #23160a;
+  --inv-rim: #5a4326; --inv-label: #a89468;
+}
+.inv-frame {
+  position: relative; width: min(760px, calc(100vw - 20px)); max-height: calc(100vh - 20px);
+  display: flex; flex-direction: column; color: var(--ink); user-select: none;
+  background: var(--inv-stone);
+  /* A gradient border-image squares the corners off, which is what a stone frame wants; the
+     inset hairlines are the bevel where bronze meets stone. */
+  border: 10px solid transparent;
+  border-image: linear-gradient(160deg, #f0d28a, #8a6a34 28%, #d9b46a 50%, #5a3d1c 76%, #c9a75c) 1;
+  box-shadow: inset 0 0 0 1px #2a1a0c, inset 0 0 0 2px rgba(255,230,170,.35), inset 0 0 0 3px #3a2410,
+              0 0 0 1px #1a1008, 0 30px 70px rgba(0,0,0,.65);
+}
+.inv-scroll { overflow: auto; min-height: 0; padding: 26px 18px 16px; }
+.inv-frame > .x { position: absolute; top: 4px; right: 6px; z-index: 2; color: #d9c08a; }
+.inv-frame > .x:hover { color: #fff; background: rgba(255,255,255,.08); }
+
+/* One bronze flourish, flipped into each corner. */
+.inv-corner { position: absolute; width: 48px; height: 48px; pointer-events: none; z-index: 1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M6 46V15q0-9 9-9h31' fill='none' stroke='%233a2410' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M6 46V15q0-9 9-9h31' fill='none' stroke='%23d9b46a' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M13 41V20q0-7 7-7h21' fill='none' stroke='%23f6e2a8' stroke-width='1.3' opacity='.7'/%3E%3Cpath d='M13 29c5-2 8 2 6 7M29 13c-2 5 2 8 7 6' fill='none' stroke='%23f6e2a8' stroke-width='1.3'/%3E%3Ccircle cx='13' cy='13' r='3.2' fill='%23f0d28a'/%3E%3Ccircle cx='13' cy='13' r='1.4' fill='%233a2410'/%3E%3C/svg%3E") no-repeat; }
+.inv-corner.tl { top: -11px; left: -11px; }
+.inv-corner.tr { top: -11px; right: -11px; transform: scaleX(-1); }
+.inv-corner.bl { bottom: -11px; left: -11px; transform: scaleY(-1); }
+.inv-corner.br { bottom: -11px; right: -11px; transform: scale(-1); }
+
+/* A brass plate over the top edge with the title engraved into it: dark lettering with a
+   light lower edge and a dark upper one is what an engraving looks like lit from above.
+   Two rivets hold it on. */
+.inv-title {
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%); z-index: 2; margin: 0;
+  padding: 9px 40px; font: 600 13px/1 var(--font); letter-spacing: .32em; text-transform: uppercase; color: #2a1a0c; white-space: nowrap;
+  background: linear-gradient(180deg, #ecca82, #a67c3b 55%, #d4ae64);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 12px 100%, 0 50%);
+  text-shadow: 0 1px 0 rgba(255,240,200,.55), 0 -1px 0 rgba(0,0,0,.55);
+  box-shadow: inset 0 1px 0 rgba(255,245,210,.6), inset 0 -1px 0 rgba(0,0,0,.4);
+}
+.inv-title::before, .inv-title::after { content: ""; position: absolute; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff2c8, #6b4a1e 70%); box-shadow: 0 1px 1px rgba(0,0,0,.5); }
+.inv-title::before { left: 20px; }
+.inv-title::after { right: 20px; }
+
+.inv-body { display: grid; grid-template-columns: 100px minmax(0, 1fr) 100px; grid-template-areas: "left stage right"; }
+.inv-col.left { grid-area: left; }
+.inv-stage { grid-area: stage; }
+.inv-col.right { grid-area: right; }
+
+/* The pillars: fluting from a repeating gradient, a capital and a base as darker bands, and
+   the island's own stone tile multiplied in faintly as veining - on a pseudo-element, because
+   a background layer has no opacity of its own. The url() resolves against css/, so it holds
+   under a subpath the same way the module bases do. */
+.inv-col { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; padding: 22px 10px;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 2px, transparent 2px 13px),
+              linear-gradient(90deg, #17161a, #4a484e 16%, #35343a 50%, #4a484e 84%, #17161a);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), inset 0 8px 0 rgba(0,0,0,.35), inset 0 -8px 0 rgba(0,0,0,.35); }
+.inv-col::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: url(../textures/stone-stacked.png) 0 0 / 160px 160px; opacity: .16; mix-blend-mode: multiply; }
+.inv-col > * { position: relative; }
+
+/* A slot is a well sunk into the pillar with a bronze rim, lit gold when the piece is worn. A
+   piece not worn still shows, dimmed, so the well says what would go there. Both states are
+   static properties, never animations: harbour.css switches animation off under
+   prefers-reduced-motion, and what is worn may not depend on one. */
+.inv-slotwrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.inv-slot { display: block; width: 66px; height: 66px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
+  background: radial-gradient(circle at 50% 40%, #1d1c22, var(--inv-well) 85%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.9), inset 0 -1px 0 rgba(255,255,255,.05),
+              0 0 0 1px var(--inv-rim), 0 0 0 2px var(--inv-bronze-dark), 0 1px 0 2px rgba(255,255,255,.04);
+  transition: box-shadow .15s; }
+.inv-slot:hover { box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-bronze), 0 0 0 2px var(--inv-bronze-dark); }
+.inv-slot.on { box-shadow: inset 0 0 14px rgba(232,193,124,.2), inset 0 3px 9px rgba(0,0,0,.8),
+              0 0 0 1px var(--accent), 0 0 0 2px var(--inv-bronze-dark), 0 0 16px rgba(232,193,124,.45); }
+.inv-slot:focus-visible { outline-offset: 2px; }
+.inv-icon { display: block; width: 100%; height: 100%; pointer-events: none; border-radius: inherit; }
+.inv-slot:not(.on) .inv-icon { opacity: .32; filter: grayscale(.7) brightness(.85); }
+.inv-label { font: 600 9.5px var(--ui); letter-spacing: .14em; text-transform: uppercase; color: var(--inv-label); }
+
+/* The dye button: a ring of every hue around the colour currently worn. On a slot it hangs
+   off the bottom-right corner of the well; the two flasks at the foot of the alcove are the
+   same button, larger and standing on their own. */
+.inv-dye { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  background: radial-gradient(circle, var(--dye, #888) 0 50%, transparent 55%),
+              conic-gradient(#e33, #ea3, #dd3, #4c4, #3cc, #36e, #a3e, #e33);
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px rgba(255,220,150,.35), 0 2px 4px rgba(0,0,0,.6); transition: transform .12s; }
+.inv-dye:hover { transform: scale(1.12); }
+.inv-slotwrap > .inv-dye { position: absolute; right: -6px; top: 50px; }
+.inv-flask { position: absolute; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 5px; z-index: 1; }
+.inv-flask.left { left: 14px; }
+.inv-flask.right { right: 14px; }
+.inv-flask .inv-dye { width: 38px; height: 38px;
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 3px rgba(255,220,150,.3), 0 0 0 4px var(--inv-bronze-dark), 0 4px 10px rgba(0,0,0,.7); }
+
+/* The alcove: a vignette behind the figure and a pool of shadow under its feet. The preview
+   renderer is alpha: true, so all of this shows through the canvas. */
+.inv-stage { position: relative; min-height: 430px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 22%, #2d3346, #0a0c11 74%);
+  box-shadow: inset 0 0 0 1px var(--inv-rim), inset 0 0 70px 12px rgba(0,0,0,.8); }
+.inv-stage::before { content: ""; position: absolute; left: 26%; right: 26%; bottom: 7%; height: 7%; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0,0,0,.75), transparent 70%); }
+.inv-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+/* The choice of body: two portraits in wells like the slots', side by side over the alcove,
+   the worn one lit the way a worn piece is. */
+.inv-chars { display: flex; justify-content: center; gap: 14px; margin: 0 0 12px; }
+.inv-char { display: flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border: 0; border-radius: 6px; cursor: pointer;
+  background: radial-gradient(circle at 30% 40%, #1d1c22, var(--inv-well) 85%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-rim), 0 0 0 2px var(--inv-bronze-dark); transition: box-shadow .15s; }
+.inv-char .inv-icon { width: 52px; height: 52px; }
+.inv-char:hover { box-shadow: inset 0 3px 9px rgba(0,0,0,.9), 0 0 0 1px var(--inv-bronze), 0 0 0 2px var(--inv-bronze-dark); }
+.inv-char.on { box-shadow: inset 0 0 14px rgba(232,193,124,.2), inset 0 3px 9px rgba(0,0,0,.8),
+  0 0 0 1px var(--accent), 0 0 0 2px var(--inv-bronze-dark), 0 0 16px rgba(232,193,124,.45); }
+.inv-char.on .inv-label { color: var(--ink); }
+.inv-char:not(.on) .inv-icon { opacity: .55; filter: grayscale(.5); }
+.inv-slot:disabled { cursor: default; }
+
+.inv-note { margin: 12px 0 10px; text-align: center; font-size: 12px; font-style: italic; color: var(--inv-label); }
+.inv-actions { justify-content: center; }
+
+/* The popover: pickers and palettes float in body at position: fixed, one layer above the
+   .handover scrim (31), because the panel they belong to scrolls and would clip them. Own
+   tile class rather than .chip/.btn, which harbour.css restyles. */
+.popover { position: fixed; z-index: 32; padding: 10px; background: #1a191d; border: 1px solid #6b4a2a;
+  box-shadow: inset 0 0 0 1px rgba(255,225,160,.18), 0 18px 40px rgba(0,0,0,.65); max-width: min(320px, calc(100vw - 16px)); }
+.inv-pop { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.inv-tile { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; padding: 4px 2px; border: 0; cursor: pointer;
+  background: rgba(255,255,255,.03); color: var(--inv-label); font: 600 8.5px var(--ui); letter-spacing: .08em; text-transform: uppercase; touch-action: manipulation; }
+.inv-tile .inv-icon { width: 52px; height: 52px; }
+.inv-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-tile:hover, .inv-tile.on { background: rgba(232,193,124,.12); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); }
+.inv-tile.locked { cursor: not-allowed; }
+.inv-tile.locked .inv-icon { filter: brightness(0) opacity(.55); }
+.inv-tile.locked span { white-space: normal; text-align: center; line-height: 1.2; }
+.inv-tile.locked:hover { background: rgba(255,255,255,.03); box-shadow: none; color: var(--inv-label); }
+.inv-tile.dye { width: 30px; height: 30px; padding: 0; border-radius: 50%; background: var(--sw);
+  box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px rgba(255,255,255,.14); }
+.inv-tile.dye:hover { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 2px var(--inv-bronze); }
+.inv-tile.dye.on { background: var(--sw); box-shadow: 0 0 0 1px var(--inv-bronze-dark), 0 0 0 3px var(--accent); }
+/* A colour not found yet (shared/palette.mjs PLAYER_SWATCHES): a dull disc with a question mark. */
+.inv-tile.dye.locked { justify-content: center; opacity: .8; cursor: not-allowed; }
+.inv-tile.dye.locked::after { content: "?"; color: rgba(255,255,255,.5); font: 700 13px var(--ui); }
+
+/* Narrow: the alcove on top, the two pillars laid flat beneath it, side by side. */
+@media (max-width: 720px) {
+  .inv-body { grid-template-columns: 1fr 1fr; grid-template-areas: "stage stage" "left right"; }
+  .inv-stage { min-height: 300px; }
+  .inv-col { flex-direction: row; flex-wrap: wrap; gap: 10px 12px; padding: 14px 8px; }
+  .inv-slot { width: 56px; height: 56px; }
+  .inv-slotwrap > .inv-dye { top: 42px; }
+}
+@media (max-width: 420px) {
+  .inv-frame { width: calc(100vw - 8px); max-height: calc(100vh - 8px); border-width: 6px; }
+  .inv-scroll { padding: 22px 8px 12px; }
+  .inv-slot { width: 48px; height: 48px; }
+  .inv-slotwrap > .inv-dye { top: 34px; }
+  .inv-title { padding: 7px 24px; font-size: 11px; letter-spacing: .2em; }
+  .inv-corner { display: none; }
+}
+
+/* --- who is waiting on you ---------------------------------------------- */
+.waiting-now { position: fixed; right: 14px; top: 108px; width: 246px; padding: 11px 13px; z-index: 11; max-height: 40vh; overflow: auto; border-color: rgba(224,72,58,.35); }
+.waiting-now h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #e8a33c; }
+#waiting-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+#waiting-list li { font-size: 12px; cursor: pointer; padding: 5px 7px; border-radius: 8px; border: 1px solid transparent; line-height: 1.35; }
+#waiting-list li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+#waiting-list li small { color: var(--ink-dim); display: block; margin-left: 14px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+#waiting-list .pennant { display: inline-block; width: 8px; height: 8px; margin-right: 6px; background: #e8a33c; clip-path: polygon(0 0, 100% 35%, 0 70%); }
+#waiting-list li.asked .pennant { background: #e0483a; animation: pulse 1.6s infinite; }
+#waiting-list li.asked { color: #ffd9d2; }
+/* The two right-hand lists share one column, so a raised flag pushes the builders down
+   instead of covering them. */
+.right-column { position: fixed; right: 14px; top: 108px; width: 246px; z-index: 11; display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
+.right-column > * { position: static !important; right: auto !important; top: auto !important; width: 100% !important; pointer-events: auto; }
+.right-column > [hidden] { display: none !important; }
+
+/* --- the island's animals (web/js/animal-dossier.js) -------------------- */
+/* The "while you were away" card, in the right column under the waiting list. Teal rather
+   than the waiting list's red: nothing in it is owed. */
+.animal-summary { padding: 11px 13px; max-height: 40vh; overflow: auto; border-color: rgba(127,199,217,.32); }
+.animal-summary .row { align-items: flex-start; }
+.animal-summary h2 { font-family: var(--font); font-size: 13px; margin: 0 0 7px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-2); }
+#animal-summary-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+#animal-summary-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.4; padding: 6px 0; border-top: 1px solid var(--edge); }
+#animal-summary-list li:first-child { border-top: 0; padding-top: 0; }
+#animal-summary-list li span { flex: 1; min-width: 0; }
+#animal-summary-list li b { color: var(--ink); font-weight: 600; }
+.an-show { flex: none; padding: 2px 9px; font-size: 10.5px; }
+
+/* One animal. The about line is the animal's own voice, so it is set in the island's serif. */
+.an-species { background: var(--accent-2); }
+.an-about { margin: 0 0 10px; font-family: var(--font); font-size: 13.5px; line-height: 1.45; }
+.an-now { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 7px 10px; font-size: 12.5px;
+  border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.04); }
+.an-now i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); animation: pulse 2.2s infinite; }
+/* A camera link inside running text: smaller than a chip, and never on its own line. */
+.an-go { font: inherit; font-size: 11px; color: var(--accent-2); background: none; border: 0; padding: 0 2px; margin-left: 2px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px; white-space: nowrap; }
+.an-go:hover { color: var(--ink); }
+
+/* Relationships: a name and a word, never a number. */
+.an-rels { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.an-rels li { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; align-items: baseline; padding: 6px 9px;
+  border: 1px solid var(--edge); border-radius: 9px; background: rgba(255,255,255,.03); }
+.an-rels li small { grid-column: 1 / -1; color: var(--ink-dim); font-size: 11px; }
+.an-who { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-label { font-size: 10.5px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--edge); white-space: nowrap; color: var(--ink-dim); }
+.an-label.bonded { color: #a9dca0; border-color: rgba(169,220,160,.4); background: rgba(169,220,160,.1); }
+.an-label.suspicious { color: var(--accent); border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.08); }
+.an-label.nemesis { color: #ef8a78; border-color: rgba(239,138,120,.45); background: rgba(239,138,120,.1); }
+.an-ties .an-label { margin-left: 4px; }
+
+/* The life story and the diary: a thread down the left, a bead per entry, a filled bead for
+   the ones that changed something. */
+.an-story { list-style: none; margin: 0 0 0 4px; padding: 0; border-left: 1px solid var(--edge); }
+.an-story li { position: relative; padding: 0 0 10px 14px; font-size: 12px; line-height: 1.45; }
+.an-story li:last-child { padding-bottom: 2px; }
+.an-story li::before { content: ""; position: absolute; left: -4px; top: 4px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--panel-solid); border: 1px solid var(--ink-dim); }
+.an-story li.big::before { background: var(--accent); border-color: var(--accent); }
+.an-story li b { font-weight: 600; }
+.an-story time { display: block; font-size: 10.5px; color: var(--ink-dim); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.an-times { color: var(--ink-dim); font-size: 11px; white-space: nowrap; }
+.an-earlier { margin: 6px 0 0; }
+
+/* The journal: the cast first, each one a way into its dossier. */
+.an-cast { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 4px; }
+.an-cast li { cursor: pointer; padding: 6px 9px; border-radius: 9px; border: 1px solid transparent; line-height: 1.35; }
+.an-cast li:hover { background: rgba(255,255,255,.06); border-color: var(--edge); }
+.an-cast li b { font-size: 13px; font-weight: 600; }
+.an-cast li small { display: block; color: var(--ink-dim); font-size: 11px; }
+.an-marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.an-marks li { font-size: 12px; line-height: 1.4; }
+.an-marks li small { color: var(--ink-dim); }
+.an-marks li p { margin: 2px 0 0; color: var(--ink); opacity: .85; }
+/* The mystery: found things and a hint. Nothing in here counts. */
+.an-mystery { margin: 14px 0 4px; padding: 9px 11px 10px; border: 1px solid rgba(127,199,217,.32); border-radius: 10px; background: rgba(127,199,217,.06); }
+.an-mystery h3.sec { margin: 0 0 5px; color: var(--accent-2); }
+.an-mystery.solved { border-color: rgba(232,180,92,.4); background: rgba(232,180,92,.07); }
+.an-mystery.solved h3.sec { color: var(--accent); }
+.an-hint { margin: 0 0 7px; font-family: var(--font); font-style: italic; font-size: 13px; line-height: 1.45; }
+.an-finds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.an-finds li { font-size: 12px; line-height: 1.4; }
+.an-finds li b { font-weight: 600; }
+.an-finds li small { color: var(--ink-dim); }
+.an-foot { margin-top: 14px; }
+/* What kind of news a toast is, over the islander's own line. */
+.toast .an-kick { display: block; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 2px; }
+/* --- the seed stall, and the pouch you carry round the island ---------- */
+.market .ho-sum { max-width: 62ch; }
+.mk-purse { display: flex; align-items: baseline; gap: 12px; margin: 14px 0 2px;
+  padding: 9px 13px; border: 1px solid var(--edge); border-radius: 11px; background: rgba(232,180,92,.08); }
+.mk-coins { font-family: var(--font); font-size: 22px; color: var(--accent); }
+.mk-coins i { font-style: normal; font-size: 11px; color: var(--ink-dim); margin-left: 5px; letter-spacing: .06em; text-transform: uppercase; }
+.mk-purse .muted { margin: 0; }
+.mk-rows { display: grid; gap: 6px; }
+.mk-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 11px; align-items: center;
+  padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.mk-row.held { border-color: rgba(232,180,92,.5); background: rgba(232,180,92,.09); }
+.mk-swatch { width: 15px; height: 15px; border-radius: 50%; border: 2px solid; }
+.mk-what b { font-size: 13px; }
+.mk-what p { margin: 2px 0 3px; font-size: 12px; line-height: 1.4; color: var(--ink); opacity: .82; max-width: 56ch; }
+.mk-what small { display: block; font-size: 11px; color: var(--ink-dim); }
+.mk-what small b { color: var(--accent); font-size: 11px; }
+.mk-what small i { font-style: italic; }
+.mk-buy { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.mk-buy .btn.tiny { margin-left: 0; }
+.btn.off { opacity: .38; cursor: default; }
+.mk-sellall { margin-top: 10px; }
+.mk-empty { margin-top: 4px; }
+.mk-empty kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.mk-ledger { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--edge); }
+.ho-out kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* What is in the purse and the pouch, while walking. Sits above the key strip. */
+.walk-pouch { padding: 5px 13px; font-size: 12px; border-radius: 99px; display: flex; gap: 10px; align-items: center; }
+.walk-pouch .coins { color: var(--accent); font-weight: 600; }
+.walk-pouch .held { color: var(--ink); }
+.walk-pouch .held b { color: var(--accent-2); }
+.walk-pouch .none { color: var(--ink-dim); }
+.walk-pouch .ripe { color: #7fd08a; }
+.walk-pouch kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+/* --- the build menu ---------------------------------------------------- */
+/* Modelled on the seed stall's rows (.mk-row above), so the two panels read as the same
+   island rather than two designs. */
+.bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 7px; }
+.bd-grid.one { grid-template-columns: 1fr; }
+.bd-tile {
+  padding: 9px 12px; border: 1px solid var(--edge); border-radius: 10px;
+  background: rgba(255,255,255,.03); cursor: pointer; transition: .14s;
+}
+.bd-tile:hover { border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.09); }
+.bd-tile.open { border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.06); }
+.bd-tile b { font-size: 13px; display: flex; justify-content: space-between; align-items: baseline; }
+.bd-tile b i { font-style: normal; font-size: 10px; opacity: .45; }
+.bd-tile p { margin: 2px 0 5px; font-size: 11.5px; line-height: 1.35; color: var(--ink); opacity: .78; }
+.bd-hint { font-size: 10.5px; color: var(--ink-dim); }
+.bd-hint kbd { font-size: 9.5px; }
+.bd-faces { display: flex; gap: 5px; margin-top: 7px; }
+/* The one question the menu asks: which site a billboard carries. It takes the place of
+   the face row inside the same tile, so the answer is given where it was asked. */
+.bd-url { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; cursor: default; }
+.bd-url label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.bd-url input {
+  display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 11.5px;
+  padding: 5px 8px; color: var(--ink); background: rgba(0,0,0,.35);
+  border: 1px solid var(--edge); border-radius: 7px;
+}
+.bd-url input:focus { outline: none; border-color: rgba(232,180,92,.75); }
+/* Not an error worth a sentence: the field simply will not take that, and says so by
+   colour the moment you try to leave with it. */
+.bd-url input.bad { border-color: #e8705c; }
+.bd-url .btn { align-self: flex-start; }
+/* The one tile that takes something away wears the island's warning red, the same as
+   .btn.danger above - it should never be mistaken for another shape to place. */
+.bd-tile.take { cursor: pointer; border-color: rgba(232,112,92,.35); }
+.bd-tile.take:hover { border-color: #e8705c; background: rgba(232,112,92,.15); }
+.bd-tile.take b { color: #e8705c; letter-spacing: .05em; }
+
+/* --- what is in your hand ---------------------------------------------- */
+/* Bottom centre, above the walk keys but clear of the pouch, and visible from the sky as
+   well as on foot - which is why it is not inside .walk-hud. */
+.build-hud {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 76px; z-index: 11;
+  padding: 7px 13px; font-size: 12px; display: flex; gap: 9px; align-items: center;
+  white-space: nowrap; pointer-events: none;
+}
+.build-hud b { color: var(--accent); font-weight: 650; }
+.build-hud .why { color: #e0574a; }
+.build-hud kbd { font-size: 10px; }
+.build-hud .muted { opacity: .62; }
+
+/* --- the postbox on the town hall pavement ----------------------------- */
+/* Built out of the same pieces as the seed stall (.mk-row above): a row is a bordered
+   card, the accent is the island's gold, and nothing here invents a new shape. What it
+   adds is the one thing an inbox needs and a market stall does not - a line that reads
+   as unread until it has been read. */
+.mailbox .ho-sum { max-width: 64ch; }
+.mb-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.mb-tab { font: inherit; font-size: 12px; color: var(--ink); background: rgba(255,255,255,.05);
+  border: 1px solid var(--edge); border-radius: 99px; padding: 5px 13px; cursor: pointer; }
+.mb-tab:hover { background: rgba(255,255,255,.12); }
+.mb-tab.on { border-color: rgba(232,180,92,.6); background: rgba(232,180,92,.13); color: var(--accent); }
+.mb-tab.quiet { color: var(--ink-dim); margin-left: auto; }
+.mb-tab i { font-style: normal; font-size: 10px; margin-left: 7px; padding: 1px 6px; border-radius: 99px; }
+.mb-new { background: var(--accent); color: #1c1814; font-weight: 700; }
+.mb-warn { background: rgba(232,112,92,.2); color: #e8705c; border: 1px solid rgba(232,112,92,.45); }
+.mb-said { font-size: 12px; margin: 0 0 10px; color: var(--ink); }
+.mb-said .bad { color: #e8705c; }
+
+.mb-list { display: grid; gap: 5px; max-height: 46vh; overflow: auto; }
+.mb-item { display: grid; grid-template-columns: 10px 1fr auto; gap: 11px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--edge); border-radius: 10px;
+  background: rgba(255,255,255,.03); cursor: pointer; transition: .14s; }
+.mb-item:hover, .mb-item:focus { outline: none; border-color: rgba(232,180,92,.55); background: rgba(232,180,92,.08); }
+.mb-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+.mb-item.unread .mb-dot { background: var(--accent); }
+.mb-item.unread .mb-what b { color: var(--accent); }
+.mb-what b { font-size: 13px; }
+.mb-what p { margin: 2px 0 0; font-size: 12px; line-height: 1.35; color: var(--ink); opacity: .8;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.mb-when { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+.mb-row-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+.mb-row-keys .btn.tiny { margin-left: 0; }
+
+.mb-head { padding-bottom: 8px; border-bottom: 1px solid var(--edge); }
+.mb-head b { font-size: 14px; display: block; }
+.mb-head small { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-dim); }
+.mb-clips { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Somebody else's writing, shown as what it is: a preformatted block that wraps rather
+   than a paragraph, so a plain-text mail keeps the shape it was written in. */
+.mb-body { margin: 10px 0 0; padding: 11px 13px; max-height: 42vh; overflow: auto;
+  font: inherit; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  color: var(--ink); background: rgba(0,0,0,.28); border: 1px solid var(--edge); border-radius: 10px; }
+
+.mb-write { display: grid; gap: 8px; }
+.mb-write label, .mb-form label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.mb-write input, .mb-write textarea, .mb-form input {
+  display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 12.5px;
+  padding: 6px 9px; color: var(--ink); background: rgba(0,0,0,.35);
+  border: 1px solid var(--edge); border-radius: 7px; box-sizing: border-box;
+}
+.mb-write textarea { margin-top: 0; resize: vertical; line-height: 1.5; }
+.mb-write input:focus, .mb-write textarea:focus, .mb-form input:focus { outline: none; border-color: rgba(232,180,92,.75); }
+
+.mb-accounts { display: grid; gap: 5px; }
+.mb-account { display: grid; grid-template-columns: 1fr auto; gap: 11px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(255,255,255,.03); }
+.mb-account .mb-row-keys { margin-top: 0; }
+.mb-account small { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-dim); }
+.mb-form { display: grid; gap: 8px; margin-top: 12px; padding: 12px 14px;
+  border: 1px solid var(--edge); border-radius: 11px; background: rgba(255,255,255,.03); }
+.mb-form h4 { margin: 0; }
+.mb-form fieldset { margin: 0; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 9px; display: grid; gap: 7px; }
+.mb-form legend { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); padding: 0 5px; }
+.mb-form .mb-check { display: flex; gap: 7px; align-items: center; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+.mb-form .mb-check input { width: auto; margin: 0; }
+
+/* --- the main menu ----------------------------------------------------- */
+/* Over the island rather than in front of a black screen: by the time this opens the
+   world is built and the camera is framed on it, so the choice is made looking at the
+   place it is about. The scrim is thin for the same reason - you should be able to see
+   what you are choosing for. */
+.mainmenu {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center;
+  padding: 24px;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(13, 20, 32, .32), rgba(13, 20, 32, .78));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  transition: opacity .45s ease;
+}
+.mainmenu.gone { opacity: 0; pointer-events: none; }
+
+/* The menu behind Esc and the ☰, which is the settings too (web/js/sysmenu.js,
+   Plans/DONE/esc-menu-en-knoppenbalk.md). A window rather than the side panel it replaced: the
+   settings were a 316px column, scrolled past the house signs to reach the keys. Tabs on the
+   left, the open tab's sections on the right, `data-tab` on the root saying which. Over every
+   side panel, under the main menu. */
+.sysmenu {
+  position: fixed; inset: 0; z-index: 30;
+  display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(13, 20, 32, .22), rgba(13, 20, 32, .66));
+}
+.sysmenu[hidden] { display: none; }
+.sysmenu-card {
+  width: min(780px, 100%); height: min(600px, 100%);
+  display: grid; grid-template-columns: 214px 1fr; padding: 0; overflow: hidden;
+  animation: slidein .18s ease;
+}
+.sysmenu-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 12px 12px; border-right: 1px solid var(--edge); background: rgba(0, 0, 0, .12); }
+.sysmenu-nav h2 { font-family: var(--font); font-size: 21px; margin: 0 6px 12px; letter-spacing: .015em; }
+.sysmenu-tabs { display: flex; flex-direction: column; gap: 3px; }
+.sysmenu-tab {
+  font: inherit; font-size: 13px; text-align: left; color: var(--ink-dim); cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 8px 11px;
+}
+.sysmenu-tab:hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
+.sysmenu-tab.on { color: #1c1814; background: var(--accent); font-weight: 600; }
+.sysmenu-tab[hidden] { display: none; }
+.sysmenu-back { margin-top: auto; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 11px; font-size: 12.5px; }
+.sysmenu-build { margin: 8px 6px 0; font-size: 10.5px; min-height: 1em; }
+/* Under Back, only on foot (issue #74): the way home for somebody adrift with no boat. */
+.sysmenu-respawn { margin-top: 6px; white-space: nowrap; padding: 8px 11px; font-size: 12.5px; text-align: left; }
+.sysmenu-body { overflow: auto; padding: 16px 22px 20px; }
+.sysmenu-body section { display: none; }
+.sysmenu-body section > h3.sec:first-child { margin-top: 0; }
+.sysmenu-body #settings-body section > h3.sec:first-child { margin-top: 15px; }
+.sysmenu[data-tab="screen"] .sysmenu-body section[data-tab="screen"]:not([hidden]),
+.sysmenu[data-tab="audio"] .sysmenu-body section[data-tab="audio"]:not([hidden]),
+.sysmenu[data-tab="controls"] .sysmenu-body section[data-tab="controls"]:not([hidden]),
+.sysmenu[data-tab="island"] .sysmenu-body section[data-tab="island"]:not([hidden]),
+.sysmenu[data-tab="help"] .sysmenu-body section[data-tab="help"]:not([hidden]) { display: block; }
+/* The first section of a tab starts at the top whichever of the two containers it is in. */
+.sysmenu[data-tab="controls"] #touch-controls[hidden] + #settings-body section[data-tab="controls"] > h3.sec:first-child,
+.sysmenu[data-tab="island"] #settings-body section[data-tab="island"] > h3.sec:first-child { margin-top: 0; }
+.sysmenu kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+.sysmenu-keys { font-size: 11.5px; line-height: 1.9; }
+/* A phone, or any window too narrow for two columns: the tabs become a row along the top. */
+@media (max-width: 620px) {
+  .sysmenu { padding: 10px; }
+  .sysmenu-card { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: 100%; }
+  .sysmenu-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 12px; border-right: 0; border-bottom: 1px solid var(--edge); }
+  .sysmenu-nav h2 { display: none; }
+  .sysmenu-tabs { flex-direction: row; flex-wrap: wrap; flex: 1; }
+  .sysmenu-tab { padding: 7px 10px; font-size: 12.5px; }
+  .sysmenu-back { margin-top: 0; }
+  .sysmenu-respawn { margin-top: 0; }
+  .sysmenu-back kbd, .sysmenu-build { display: none; }
+  .sysmenu-body { padding: 14px 16px 18px; }
+}
+
+.menu-card { width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 22px 24px 18px; }
+.menu-head { text-align: center; }
+.menu-kicker {
+  font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-dim); opacity: .8;
+}
+.menu-card h1 { font-family: var(--font); font-size: 30px; margin: 4px 0 0; letter-spacing: .015em; }
+.menu-sub { color: var(--ink-dim); font-size: 12.5px; margin: 7px 0 0; line-height: 1.5; }
+
+.menu-modes { display: grid; gap: 8px; margin: 18px 0 0; }
+.menu-mode {
+  display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto;
+  gap: 1px 12px; align-items: baseline; text-align: left;
+  padding: 11px 13px; border-radius: 11px; cursor: pointer;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid var(--edge);
+  color: var(--ink); font: inherit;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.menu-mode:hover:not([disabled]) { background: rgba(255, 255, 255, .07); transform: translateY(-1px); }
+.menu-mode[disabled] { cursor: default; opacity: .6; }
+/* `on` is the world this island is already in; `open` is the card you have unfolded. Two
+   different things, and allowed to be the same card. */
+.menu-mode.on { border-color: var(--accent); background: rgba(232, 180, 92, .08); }
+.menu-mode.open { border-color: var(--accent-2); }
+.menu-mode-name em {
+  font-style: normal; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); opacity: .85; margin-left: 8px; vertical-align: 1px;
+}
+.menu-mark { grid-row: 1 / span 2; font-size: 19px; text-align: center; opacity: .9; }
+.menu-mode-name { font-size: 14px; font-weight: 600; }
+.menu-mode-blurb { font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; }
+
+/* The seas to join. Each row says whether anybody is home before you pick rather than
+   after, which is the whole reason /api/seas probes them. */
+.menu-seas { margin: 12px 0 0; display: grid; gap: 6px; }
+.menu-sea {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 9px 12px; border-radius: 9px; cursor: pointer; text-align: left;
+  background: rgba(255, 255, 255, .03);
+  border: 1px solid var(--edge);
+  color: var(--ink); font: inherit;
+}
+.menu-sea:hover:not([disabled]) { background: rgba(255, 255, 255, .07); }
+.menu-sea[disabled] { opacity: .45; cursor: default; }
+.menu-sea.on { border-color: var(--accent-2); }
+.menu-sea-name { font-size: 12.5px; font-weight: 600; }
+.menu-sea-said { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+
+/* A saved address, and the way back out of the list. The row is a row now rather than one
+   button, because the cross is a button too and a button inside a button is not a thing.
+   Kept faint: it is housekeeping, not one of the choices, and the picker is already a
+   page with enough to press on it. */
+.menu-sea-row { display: flex; align-items: stretch; gap: 4px; }
+.menu-sea-row .menu-sea { flex: 1; }
+.menu-forget {
+  flex: 0 0 26px;
+  border: 0; border-radius: 9px; cursor: pointer;
+  background: transparent; color: var(--ink-dim);
+  font-size: 16px; line-height: 1;
+  opacity: .55; transition: opacity .12s, background .12s, color .12s;
+}
+/* Faint rather than invisible: hidden until hovered, nobody found it at all - and a phone
+   or a touchscreen has no hover to find it with. */
+.menu-sea-row:hover .menu-forget, .menu-forget:focus-visible { opacity: 1; }
+.menu-forget:hover { background: rgba(224, 138, 106, .16); color: #e08a6a; }
+.menu-forget[disabled] { opacity: .3; cursor: default; }
+
+.menu-add { display: flex; gap: 6px; margin-top: 2px; align-items: center; }
+.menu-add .field { flex: 1; }
+/* The key row: a narrower box than the address, with the explanation beside it rather than
+   under it, so the two rows read as one thing to fill in and not as a second question. */
+.menu-add #menu-key { flex: 0 0 150px; }
+.menu-add .menu-note { flex: 1; margin: 0; }
+.menu-note { font-size: 11.5px; color: var(--ink-dim); margin: 6px 2px; }
+.menu-bad { color: #e08a6a; }
+
+
+@media (max-width: 520px) {
+  .menu-card { padding: 18px 16px 14px; }
+  .menu-card h1 { font-size: 24px; }
+  .menu-sea { flex-direction: column; gap: 2px; }
+  .menu-sea-said { white-space: normal; }
+}
+
+/* --- somebody in this world is running different code ------------------------------
+   Not a toast. Three machines make a world, and when their shared/terrain.mjs disagree an
+   island is drawn in the wrong shape - houses in the sea, a coast where a field was -
+   with nothing crashing and nothing logged where anybody looks. So it stays up until it
+   is fixed, and it names who rather than saying that somebody. */
+.skew {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(70, 30, 18, .94);
+  border: 1px solid rgba(233, 160, 90, .5);
+  color: #f2ddc8;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.skew b { color: #ffc98a; }
+/* One paragraph per thing that is wrong: out of step, and the sea not answering. As wide as
+   its text up to max-width: left 50% alone shrinks a box to the half of the screen right of
+   the middle, which at 375 wide was a column 187px across. */
+#skew { width: max-content; }
+.skew p { margin: 0; }
+.skew p + p { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(233, 160, 90, .25); }
+
+/* Somebody is behind: this page or the sea (web/js/update.js). Up top, so it never sits on
+   the skew banner, but under the chip row and between the title card and the minimap -
+   at 14px it covered Avatar and Sound. Dismissable: unlike a skew it breaks nothing today. */
+.skew.update { top: 64px; bottom: auto; max-width: min(460px, calc(100vw - 340px));
+  display: flex; gap: 12px; align-items: flex-start; }
+.skew.update a { color: #ffc98a; }
+.update-close { background: none; border: 0; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+/* The self-update (lib/selfupdate.mjs): one button on the same line as the words. */
+.update-install { margin-left: 6px; padding: 2px 10px; border-radius: 6px; border: 1px solid #ffc98a;
+  background: rgba(255, 201, 138, .15); color: #ffc98a; font: inherit; cursor: pointer; }
+.update-install:disabled { opacity: .6; cursor: default; }
+
+/* The app's update gate (web/js/update.js updateGate): the whole screen, over the touch
+   buttons and every banner, because a refused app has nothing behind it to reach. Sized for
+   a phone first - it only ever shows in the app. */
+.update-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(6, 12, 16, .82);
+  backdrop-filter: blur(3px);
+  font-family: var(--ui);
+}
+.update-gate[hidden] { display: none; }
+.update-gate-card {
+  width: min(440px, 100%);
+  padding: 22px 20px 18px;
+  border-radius: 14px;
+  background: #1c1410;
+  border: 1px solid rgba(233, 160, 90, .55);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+  color: #f2ddc8;
+  text-align: center;
+}
+.update-gate-card h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.25; color: #ffc98a; }
+.update-gate-card p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
+.update-gate-primary {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #e0894a;
+  color: #1c1410;
+  font-weight: 700;
+  font-size: 17px;
+  text-decoration: none;
+}
+.update-gate-primary:active { background: #f09a5a; }
+.update-gate-card .update-gate-steps { margin: 12px 0 14px; font-size: 12px; color: #c9b39d; }
+.update-gate-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.update-gate-row a { color: #ffc98a; font-size: 13px; }
+.update-gate-row button {
+  padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(233, 160, 90, .45);
+  background: none; color: #f2ddc8; font: inherit; font-size: 13px; cursor: pointer;
+}
+.update-gate-row button[hidden] { display: none; }
+
+@media (max-width: 520px) {
+  .skew { bottom: 120px; font-size: 12px; }
+}
+/* Too narrow for a gap between the title card and the minimap: down to just above the
+   touch buttons instead, full width. */
+@media (max-width: 700px) {
+  .skew.update { top: auto; bottom: 150px; max-width: calc(100vw - 32px); }
+}
+
+/* --- the planner (web/js/plan-mode.js, web/js/plan-panel.js) ---------------- */
+/* The same panel as the legend and the dossier, on the other side: the tools sit left
+   so the draft can keep the right where every other panel lives. */
+.panel.left { left: 14px; right: auto; width: 196px; bottom: auto; max-height: calc(100vh - 220px); animation: slideinl .22s ease; }
+@keyframes slideinl { from { opacity: 0; transform: translateX(-14px) } }
+.plan-tools .chip.tool { display: block; width: 100%; text-align: left; margin: 0 0 6px; }
+.plan-tools kbd, .plan-hud kbd, .plan-ops kbd { font-size: 10px; }
+.plan-sel { margin: 8px 0 4px; font-size: 11.5px; }
+.plan-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.plan-ops { margin: 0 0 8px; padding-left: 18px; font-size: 12px; }
+.plan-ops li { margin: 0 0 6px; }
+.plan-ops .ok, .plan-hud .ok, .plan-verdict.ok { color: #6fce7a; }
+.plan-ops .bad, .plan-verdict.refused, .plan-verdict.unreachable { color: #e0574a; }
+.plan-ops .why { color: #e0574a; font-size: 11px; }
+.plan-ops .small { font-size: 11px; }
+.plan-verdict { font-size: 11.5px; margin-bottom: 6px; min-height: 1.2em; }
+.plan-band { position: fixed; z-index: 9; pointer-events: none; border: 1px dashed var(--accent); background: rgba(232,180,92,.12); }
+
+/* The app on a phone (see setStandalone in web/js/ui.js and web/js/touchpad.js). */
+body.standalone #walk-btn, body.standalone #build-btn, body.standalone #plan-btn,
+body.standalone #reset-btn, body.standalone #found-btn,
+body.standalone #walk-keys, body.standalone #topright > .chips { display: none !important; }
+/* The chronicle replays *our* island's history, and on a phone there is no our: a thumb
+   brushing its slider took the borrowed island back in time and its houses with it. The
+   live dot and the counts belong to the same story. */
+body.standalone #chronicle, body.standalone #live-dot, body.standalone #founded,
+body.standalone #counts { display: none !important; }
+body.standalone .titlecard { min-width: 0; padding: 8px 12px; }
+/* Held sideways a phone is ~400px tall: the desktop's 180px circle at 152px ran into the
+   X button. Tucked up under the single chip row instead. */
+body.standalone .minimap { top: 64px; width: 128px; height: 128px; }
+.touchpad { position: fixed; inset: 0; z-index: 1; touch-action: none; user-select: none; -webkit-user-select: none; }
+.touchpad[hidden] { display: none; }
+.tp-stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); background: rgba(20,24,30,.18); pointer-events: none; }
+.tp-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,.55); transform: translate(-50%, -50%); }
+/* The buttons, after Xbox Cloud Gaming's touch layout: a faint circle for the thumb with the
+   commonest buttons inside it and the rest on an arc round it, each an outline icon with the
+   pad's letter as a coloured badge (touchpad.js). Every button is placed by its --x/--y from
+   the circle's middle, and --flip mirrors the lot for the left-handed. The box itself takes
+   no touch - between the buttons is still the look side. */
+.tp-cluster { position: absolute; right: 18px; bottom: 30px; width: 212px; height: 178px;
+  --cx: 96px; --cy: 68px; --flip: 1; pointer-events: none; }
+.tp-ring { position: absolute; left: var(--cx); top: var(--cy); width: 136px; height: 136px;
+  transform: translate(-50%, -50%); border-radius: 50%; border: 1.5px solid rgba(255,255,255,.22);
+  background: rgba(10,12,16,.12); }
+.tp-btn { position: absolute; left: calc(var(--cx) + var(--x) * var(--flip)); top: calc(var(--cy) + var(--y));
+  width: 48px; height: 48px; transform: translate(-50%, -50%); padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: #fff; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.75)); }
+.tp-btn[hidden] { display: none; }
+.tp-btn svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round; }
+.tp-btn.on { background: rgba(255,255,255,.16); }
+.tp-btn.on svg { transform: scale(.9); }
+.tp-badge { position: absolute; left: 60%; top: 60%; min-width: 15px; height: 15px; padding: 0 2px;
+  border-radius: 8px; font: 700 9px/15px system-ui, sans-serif; font-style: normal; text-align: center; color: #fff; }
+.tp-badge-A { background: #3fa535; }
+.tp-badge-B { background: #d8363a; }
+.tp-badge-X { background: #2a7fd6; }
+.tp-badge-Y { background: #e2a81c; color: #1b1b1b; }
+.tp-badge-LS { background: #6b7280; font-size: 8px; }
+/* What X would do, under the letter ("Board", "Land", "Talk"), from main.js touchHud. */
+.tp-say { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 1px;
+  font: 600 12px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  white-space: nowrap; pointer-events: none; }
+
+/* ---- the phone, fitted to the glass ----------------------------------------------------
+   The APK draws into the notch (MainActivity.kt, LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES),
+   so every edge is kept at least the cutout away: the four --s* below are the one place. */
+body.standalone {
+  --sl: max(14px, env(safe-area-inset-left)); --sr: max(14px, env(safe-area-inset-right));
+  --st: max(14px, env(safe-area-inset-top));  --sb: max(14px, env(safe-area-inset-bottom));
+  /* No double-tap zoom on a HUD chip: a game is not a page. */
+  touch-action: manipulation;
+}
+body.standalone .titlecard { top: var(--st); left: var(--sl); }
+body.standalone .titlecard::before { display: none; }
+body.standalone .titlecard h1 { font-size: 17px; }
+/* Over the radar: opened, the menu wraps down across it, and its chips have to take the tap. */
+body.standalone .topright { top: var(--st); right: var(--sr); z-index: 11; }
+/* Tappable: it opens the sea chart (main.js onMinimapTap). */
+body.standalone .minimap { top: calc(var(--st) + 50px); right: var(--sr); width: 144px; height: 144px;
+  pointer-events: auto; cursor: pointer; }
+/* What follows up to the Controls panel is for thumbs, and so under body.touch rather than
+   body.standalone: the web is a page with no islander too, and somebody at it may be at a
+   keyboard (main.js showInputMode, web/js/device.js). The app always carries both classes.
+   Toasts and the island chat used to sit bottom-left, which is exactly where a left thumb
+   lands for the stick - and they took the touch. Top middle, and see-through to fingers. */
+body.touch #toasts { left: 50%; right: auto; bottom: auto; top: calc(var(--st) + 50px); transform: translateX(-50%);
+  width: min(340px, calc(100vw - 200px)); pointer-events: none; }
+body.touch #toasts .act, body.touch #toasts button, body.touch #toasts a { pointer-events: auto; }
+body.touch .islandchat { left: var(--sl); bottom: auto; top: calc(var(--st) + 64px); max-width: min(300px, 42vw); }
+/* Fingers are wider than a cursor: 44px is the least a tap target should be. */
+body.touch .chip { min-height: 40px; padding: 10px 12px; font-size: 13px; }
+body.touch .x, body.touch .update-close { min-width: 44px; min-height: 44px; font-size: 18px; }
+body.touch .speech { pointer-events: auto; cursor: pointer; }
+body.touch .skew { bottom: calc(var(--sb) + 170px); }
+body.standalone .tp-cluster { right: var(--sr); bottom: var(--sb); }
+/* The Controls panel (ui.js openPhone): one setting a row, big enough for a thumb. */
+.phone-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.phone-row input[type="range"] { flex: 1; }
+.phone-row input[type="checkbox"] { width: 22px; height: 22px; }
+.phone-row select { font-size: 14px; min-height: 36px; margin-left: auto; }
+.phone-row output { min-width: 3.2em; text-align: right; color: var(--ink-dim); }
+/* Left-handed (phoneprefs.js lefty): the stick on the right, the buttons mirrored left. */
+body.standalone .touchpad.lefty .tp-cluster { right: auto; left: var(--sl); --cx: 116px; --flip: -1; }
+/* Held sideways a phone is under 480px tall, and the desktop layout hung panels 108-230px
+   down with 96px kept free at the foot: a Legend of 64px. A sheet down the right instead. */
+@media (max-height: 480px) {
+  body.standalone .panel { top: var(--st); bottom: var(--sb); right: var(--sr); height: auto; width: min(360px, 46vw); }
+  body.standalone .walk-hud { bottom: calc(var(--sb) + 10px); }
+  body.standalone .minimap { width: 120px; height: 120px; }
+}
+
+/* The director's caption (web/js/director.js, Plans/DONE/regisseur.md): what the camera went to look
+   at while nobody was touching the island. Low in the middle, above the timeline, and never in
+   the way of a click. */
+#director-caption {
+  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 999px;
+  background: rgba(16, 28, 32, 0.72); color: #f1e6c8;
+  font: 500 13px/1.3 system-ui, sans-serif; letter-spacing: 0.01em;
+  pointer-events: none; z-index: 5; white-space: nowrap;
+}
+#director-caption[hidden] { display: none; }
+
+/* The noclip camera's readout (web/js/noclip.js, Plans/noclip-camera.md): where it is, for a ?cam= link.
+   `noclip-clean` (__noclip.hud(false)) takes everything but the picture away for a screenshot. */
+#noclip-readout {
+  position: fixed; left: 12px; bottom: 12px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(16, 28, 32, 0.72); color: #f1e6c8;
+  font: 12px/1.3 ui-monospace, monospace;
+  pointer-events: none; z-index: 50; white-space: nowrap;
+}
+#noclip-readout[hidden] { display: none; }
+body.noclip-clean > :not(#stage):not(#panels):not(#underwater):not(script) { visibility: hidden !important; }
+
+/* --- the quest log (web/js/quest-panel.js) and the pirate (web/js/pirate.js) -------------- */
+.ql-h { font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); margin: 16px 0 6px; }
+.ql-h:first-child { margin-top: 0; }
+.ql-quest h4 { font-family: var(--font); font-size: 15px; margin: 0 0 4px; }
+.ql-tag { font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
+.ql-text { margin: 0 0 8px; color: var(--ink-dim); font-style: italic; }
+.ql-steps { margin: 0 0 8px; padding-left: 20px; }
+.ql-steps li { padding: 2px 0; color: var(--ink-dim); }
+.ql-steps li.done { text-decoration: line-through; opacity: .6; }
+.ql-steps li.now { color: var(--ink); font-weight: 600; }
+.ql-note { margin: 6px 0; padding: 6px 9px; border-left: 3px solid #ffd24a; background: rgba(255, 210, 74, .08); }
+.ql-card { border: 1px solid var(--edge); border-radius: 8px; padding: 8px 10px; }
+.ql-card b { color: #ff8a70; }
+.ql-card.asleep b { color: var(--ink-dim); }
+.ql-card p { margin: 4px 0 0; }
+.ql-done { list-style: none; margin: 0; padding: 0; }
+.ql-done li { padding: 5px 0; border-top: 1px solid var(--edge); }
+.ql-done li:first-child { border-top: 0; }
+#quests-btn.ping::after { content: '!'; position: absolute; top: -5px; right: -3px; min-width: 14px; height: 14px; border-radius: 7px; background: #ffd24a; color: #2a1c08; font: 800 10px/14px var(--font); text-align: center; }
+#quests-btn { position: relative; }
+.handover-panel.pirate { width: min(460px, calc(100vw - 32px)); }
+.pi-say { font-family: Georgia, serif; font-size: 15px; line-height: 1.5; margin: 8px 0; }
+.pi-earned { margin: 8px 0; padding-left: 18px; color: var(--accent-2); }
+.pi-hint { margin: 8px 0; }
+.pi-actions { display: flex; gap: 8px; justify-content: flex-end; margin: 14px 0 0; }
+
+/* Nothing that opens pops (Plans/minder-browser-meer-spel.md): the menus and full-screen sheets fade
+   in, what sits on them rises a few pixels. Only opacity and transform, so it costs no layout. The
+   side panels have their own slide (.panel above). Closing stays instant - a closed thing is gone. */
+@keyframes fadein { from { opacity: 0 } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.985) } }
+.sysmenu:not([hidden]), .update-gate { animation: fadein .16s ease-out; }
+.worldmap:not([hidden]), .inv-frame, .update-gate-card { animation: rise .2s cubic-bezier(.2, .8, .2, 1); }
+.popover:not([hidden]) { animation: fadein .1s ease-out; }
+
+/* Our own tooltip (web/js/tooltip.js) in place of the browser's grey box. */
+.tip {
+  position: fixed; z-index: 60; pointer-events: none; max-width: 280px;
+  padding: 6px 10px; border-radius: 8px;
+  background: var(--panel-solid); color: var(--ink); border: 1px solid rgba(232, 180, 92, .32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .45);
+  font: 500 12px/1.35 var(--ui); letter-spacing: .01em;
+  opacity: 0; transform: translateY(-3px); transition: opacity .12s ease, transform .12s ease;
+}
+.tip.show { opacity: 1; transform: none; }
+.tip kbd {
+  display: inline-block; margin-left: 6px; padding: 0 5px; min-width: 16px; text-align: center;
+  border: 1px solid rgba(232, 180, 92, .45); border-radius: 4px; color: var(--accent);
+  font: 600 10.5px/1.5 var(--ui);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sysmenu, .update-gate, .worldmap, .inv-frame, .update-gate-card, .popover, .panel, .tip { animation: none !important; transition: none !important; }
+}
+
+/* One set of chips per mode (ui.js syncSidebar writes body[data-mode]). From the sky: everything. On foot
+   (and in a room): Fly up, Say, Map, Inventory, Quests - the rest either does nothing down there or
+   throws you back up, and its key still works where it means something. In the planner: Done alone,
+   its tools are its own panel. The island's card (settlers, districts) is a view from above. */
+body[data-mode="foot"] :is(#found-btn, #plan-btn, #build-btn, #animals-btn, #reset-btn),
+body[data-mode="plan"] #nav-chips > .chip:not(#plan-btn),
+body[data-mode="plan"] #nav-chips > .chips-sep,
+body[data-mode="plan"] #nav-collapse-btn,
+body[data-mode="foot"]:not(.foot-card) #titlecard,
+body[data-mode="plan"] #titlecard { display: none !important; }
+/* With the island's card gone the planner's tools take its place at the top left. */
+body[data-mode="plan"] .panel.left { top: 14px; max-height: calc(100vh - 28px); }

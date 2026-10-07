@@ -1,0 +1,19 @@
+{
+  "name": "promptholm-destillaat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Promptholm distilled: the island growing as you work, a camera director, the planner. Nothing to play.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node start.mjs --open",
+    "serve": "node start.mjs",
+    "vendor": "node scripts/vendor.mjs",
+    "postinstall": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "three": "0.170.0"
+  }
+}
