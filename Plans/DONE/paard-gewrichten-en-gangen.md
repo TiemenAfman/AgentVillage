@@ -129,9 +129,9 @@ De nek met kop reikt vanaf het nekgewricht (0,435 hoog) maar 0,42. Een eerste ve
 het paard voorover te kantelen (0,3 rad), te laten zakken en nek en hoofd ver te knikken: de nek wees
 recht omlaag, het hoofd draaide mee voorbij loodrecht tot de snuit naar de voorbenen wees, en de voorknieën
 vouwden alsof hij knielde. De test keek naar het laagste punt van de kop, en dat was de kuif. Nu
-( in fauna.js) buigt de nek omlaag en draait het hoofd ertegenin terug, zodat het gezicht
+(`HORSE_GRAZE` in fauna.js) buigt de nek omlaag en draait het hoofd ertegenin terug, zodat het gezicht
 loodrecht hangt; geen kanteling en geen zakken, dus de voorbenen blijven recht. De lippen stoppen ~0,07
 boven het gras: deze nek is korter dan die van een paard. Wie het gras wil raken, maakt de nek in het model
-langer.  meet de snuitpunt en het achterhoofd (gezichtshoek 75-100 graden), de
+langer. `tests/horse-graze.test.mjs` meet de snuitpunt en het achterhoofd (gezichtshoek 75-100 graden), de
 voorknieën en de hoeven. Een bereden paard graast als het stilstaat en de ruiter het laat
-(); in de bewegingsstudio is het de derde stand van de knop Paard.
+(`mountPose({ graze })`); in de bewegingsstudio is het de derde stand van de knop Paard.
