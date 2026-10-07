@@ -15,7 +15,7 @@ import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
-import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown } from 'shared/deck.mjs';
+import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown, ladderHolding } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT } from './stamina.js';
@@ -313,6 +313,9 @@ export function createWalkMode({
     // and land on top of the thing they were swimming under.
     floor: 0,
     swimming: false,
+    // On the rungs of a rope ladder: { rise } (how far the feet went up this frame, down negative),
+    // for the rig's climb (classic-avatar.js); null off them, and on a climb's reach and step-over.
+    climbing: null,
     // Diving (web/js/diving.js, Plans/onderwater-zwemmen.md). `dive`: the feet are free of the
     // surface - `pos.y` is stepDive's, not WATER_Y - SWIM_SINK - and a diver is still
     // `swimming` (grounded, in the water, no fight, no dance), so every reader of that word,
@@ -1424,9 +1427,20 @@ export function createWalkMode({
   // down, and with no push you hang where you are. Off the top is the deck, off the bottom the
   // water, and a jump lets go where you hang. The sea hears of it at the two ends
   // (`onBoarded`, `onLeftDeck`): before the top you are not crew, and after the foot you are not.
-  const CLIMB_SPEED = 1.8;
+  // 0.45, not the 1.8 it was: a rope ladder is climbed by Mixamo's Climbing Up A Ladder on the
+  // Adventurer, a cycle per 0.12 of height, and at 1.8 that was fifteen cycles a second (the keeper
+  // chose slower over a body gliding past its hands, 6 Oct 2026). The ship's side now takes ~4 s.
+  const CLIMB_SPEED = 0.45;
   const CLIMB_DEAD = 0.3;
-  const climbAt = { x: 0, z: 0, y: 0 };
+  const climbAt = { x: 0, z: 0, y: 0 }, climbWas = { x: 0, z: 0, y: 0 };
+  // Whether `d` along a climb's path is on the rungs - a stretch going more up than along - rather
+  // than the reach from where you stood to the foot or the step over the top: only there does the
+  // rig climb (classic-avatar.js `climbing`, Mixamo's Climbing Up A Ladder on the Adventurer).
+  const rungA = { x: 0, z: 0, y: 0 }, rungB = { x: 0, z: 0, y: 0 };
+  function onRungs(path, d) {
+    const a = pathAt(path, d - 0.02, rungA), b = pathAt(path, d + 0.02, rungB);
+    return Math.abs(b.y - a.y) > Math.hypot(b.x - a.x, b.z - a.z);
+  }
   // How hard the stick pushes along the hull's own x (+ to starboard), from where the camera
   // looks: the one number a ladder asks of it, since a ladder is on the side of the hull. What
   // takes you onto a ladder and what moves you on it are the same reading, or approaching one
@@ -1510,8 +1524,10 @@ export function createWalkMode({
     // Towards what it hangs on is up, whichever way you are looking.
     const toward = -pushOut(l, ix, iz);
     const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
+    const was = pathAt(c.path, c.d, climbWas).y;
     c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
     const p = pathAt(c.path, c.d, climbAt);
+    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was } : null;
     state.pos.set(p.x, p.y, p.z);
     state.yaw = Math.atan2(-l.out[0], -l.out[1]);
     state.moving = wish !== 0;
@@ -1554,6 +1570,31 @@ export function createWalkMode({
     }
     return null;
   }
+  // Whether somebody standing at x, y, z (scene coordinates, the feet) is hanging on a rope ladder
+  // this page knows - a ship's or a fixed one - and which way they face it, or null. peers.js asks it
+  // of every other player: a climber is a walker at a height (no pose bit), and it is the one place
+  // a walker is drawn at the height they sent rather than on the ground under them.
+  function ladderAt(x, y, z) {
+    for (const l of fixedLadders) {
+      if (Math.hypot(x - l.lo.x, z - l.lo.z) > 0.2) continue;
+      if (y < l.lo.y + 0.15 || y > l.hi.y + 0.08) continue;
+      return { yaw: Math.atan2(-l.out[0], -l.out[1]) };
+    }
+    const sea = (WATER_Y - SWIM_SINK) - DECK_Y;
+    for (const b of boatsOf()) {
+      const spec = specOf(b);
+      if (!spec || !spec.ladders || !spec.ladders.length) continue;
+      if (Math.hypot(x - b.x, z - b.z) > 7) continue;
+      const frame = frameOf(b);
+      const [lx, lz] = toLocal(frame, x, z);
+      const ly = y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
+      const l = ladderHolding(spec, lx, lz, ly, sea);
+      if (!l) continue;
+      const [fx, fz] = dirToWorld(frame, l.x < 0 ? 1 : -1, 0);
+      return { yaw: Math.atan2(fx, fz) };
+    }
+    return null;
+  }
   // Onto the rope: `dir` 1 to climb it from the water, -1 to go down it from the deck. The path
   // starts (or, on the way down, ends) where the body actually is, so the first step is a reach for
   // the rung and not a jump to it.
@@ -1585,8 +1626,11 @@ export function createWalkMode({
     // Towards the hull is up: the way you were pushing to get on, whichever way you are looking.
     const toward = -c.side * pushOnHull(frame, ix, iz);
     const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
+    // The rise along the rope in the hull's frame, so her swell is not a climb.
+    const was = pathAt(c.path, c.d, climbWas).y;
     c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
     const p = pathAt(c.path, c.d, climbAt);
+    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was } : null;
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
     const x = state.pos.x, z = state.pos.z;
@@ -2642,6 +2686,7 @@ export function createWalkMode({
       horseback: !!state.mount,
       dancing: dancingNow(),
       dying: state.dying,
+      climbing: climb ? state.climbing : null,
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');
@@ -2982,7 +3027,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },
