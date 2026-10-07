@@ -38,13 +38,14 @@ import * as models from './models.js';
 import { bindHorse, poseHorse } from './horse-rig.js';
 import { horseCadence } from './horse-gait.js';
 
-// How a grazing horse gets its muzzle onto the grass (stepPose, horse-rig.js poseHorse): the body
-// pitched forward and lowered, and the neck and the head nodded further than `graze` alone -
-// together they bring the muzzle to 5 mm over the grass, a hand ahead of the fore hooves, with all
-// four hooves down - the neck out forward and the face hanging, not the neck straight down and the
-// head curled in between the forelegs, which is what a bigger neck nod reached the grass with
-// (tests/horse-graze.test.mjs).
-export const HORSE_GRAZE = { lean: 0.3, drop: 0.09, neck: 1.0, head: 0.4 };
+// How a grazing horse puts its head down (stepPose, horse-rig.js poseHorse): the neck nodded
+// further than `graze` alone and the head turned back against it, so the face hangs plumb with the
+// lips towards the grass. The head hangs off the neck, so a neck bowed far down takes the head past
+// plumb unless the head bone turns back; a first version that pitched the body forward and nodded
+// both bent the face round to point at the forelegs and folded the fore knees as if kneeling
+// (7 Oct 2026). With the forelegs straight and no lean the lips stop ~0.07 over the grass: this
+// horse's neck is shorter than a horse's (tests/horse-graze.test.mjs).
+export const HORSE_GRAZE = { lean: 0, drop: 0, neck: 1.3, head: -1.2 };
 
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.
@@ -471,9 +472,8 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   // else from how fast the heading is changing.
   if (bank != null) bodyZ = bank;
   else if (inFlight || pose.flying) bodyZ = clamp(-turn * 0.3, -0.5, 0.5);
-  // A horse grazing reaches the grass: its neck and head alone are a hand short of it (neck joint
-  // 0.435 up, neck and head 0.42 long), so it also leans onto its forehand and sinks a little -
-  // `graze` eases that in and out, and horse-rig.js bends neck and head the rest of the way.
+  // A horse grazing (HORSE_GRAZE): `graze` eases the head down and up again, horse-rig.js bows the
+  // neck and turns the head back against it; any lean onto the forehand or sinking is added here.
   if (kind === 'horse') {
     pose.graze = damp(pose.graze || 0, a === 'feed' ? 1 : 0, 2.5, step);
     bodyX += HORSE_GRAZE.lean * pose.graze;
