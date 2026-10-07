@@ -219,6 +219,15 @@ export const HORSEBACK_OF = {
   adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 40 * DEG, shin: 0, armIn: 20 * DEG, perch: 0.045 },
 };
 export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
+const seated = { ...HORSEBACK };
+function seatFit(fit, motion) {
+  if (typeof motion !== 'object') return fit;
+  Object.assign(seated, fit);
+  seated.lean = fit.lean + (motion.lean || 0);
+  seated.arm = fit.arm + (motion.arm || 0);
+  seated.elbow = fit.elbow + (motion.elbow || 0);
+  return seated;
+}
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -1293,7 +1302,9 @@ function buildRig(spec, material) {
     if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
     // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
-    const horse = !ride && pose.horseback ? horsebackOf(character) : null;
+    // `horseback` may be the rider's own motion from mount.js (carry/stepRider): his lean into
+    // the half seat and his hands following the horse's head, added to the seat's fixed angles.
+    const horse = !ride && pose.horseback ? seatFit(horsebackOf(character), pose.horseback) : null;
     // On a rope ladder (pose.climbing = { rise }): no gait, no swim, no seat - the climb's own pose,
     // moved along by the height gained, not by the distance walked.
     const ladder = pose.climbing && !ride && !horse && !pose.dying && !pose.swimming && !pose.sitting && !pose.lying ? pose.climbing : null;

@@ -525,7 +525,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
         riding: riding && !onHorse ? { crank: p.ride.crank, standing: false } : null,
-        horseback: onHorse,
+        horseback: onHorse ? p.riderMotion || true : false,
         dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
         climbing,
       }, dt);
@@ -618,9 +618,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.horse.visible = true;
     p.horse.place(x, y, z, yaw);
     p.horse.pose({ speed: g.v, rate: g.rate, air }, dt);
-    p.horse.seat(seat, p.avatar.hipY, horsebackOf(p.avatar.character).perch);
-    p.mesh.position.copy(seat);
-    p.mesh.quaternion.copy(p.horse.object.quaternion);
+    // Seated as walk.js seats our own rider (mount.js carry), so both screens ride alike.
+    p.riderMotion = p.horse.carry(p.mesh, p.avatar.hipY, horsebackOf(p.avatar.character).perch, dt);
   }
 
   // Somebody else's arm (net.js `swung`, `drank`): a swing coming down on the hand it was, a

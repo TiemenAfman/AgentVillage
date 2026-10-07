@@ -2631,16 +2631,13 @@ export function createWalkMode({
       avatar.rotation.set(RIDE_PITCH - b.pitch, b.yaw, b.lean + roll * 0.3);
     } else if (state.mount) {
       // In the saddle, on the horse's own back: posed first (its rock, its bob), then the rider's
-      // hips put on the seat through the horse's matrix, so the horse carries him - and he takes
-      // its pitch and bank whole, the lean forward being in the riding pose itself.
+      // hips put on the seat and the rest of him riding it (mount.js carry: part of the pitch in
+      // the pelvis, the torso steady and on springs, a half seat in the gallop).
       const m = state.mount;
       horse.place(m.x, m.y, m.z, m.yaw);
       horse.pose({ speed: m.v, rate: m.rate, air: m.air }, dt);
       const fit = horsebackOf(classicAvatar.character);
-      horse.seat(seatAt, classicAvatar.hipY, fit.perch);
-      avatar.position.copy(seatAt);
-      avatar.quaternion.copy(horse.object.quaternion);
-      if (roll) avatar.rotateZ(roll * 0.3);
+      state.riderMotion = horse.carry(avatar, classicAvatar.hipY, fit.perch, dt, roll * 0.3);
     } else if (state.sitting) {
       // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
@@ -2683,7 +2680,7 @@ export function createWalkMode({
       crouching: stoop, sitting: !!state.sitting, lying: state.lying,
       swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
-      horseback: !!state.mount,
+      horseback: state.mount ? state.riderMotion || true : false,
       dancing: dancingNow(),
       dying: state.dying,
       climbing: climb ? state.climbing : null,
