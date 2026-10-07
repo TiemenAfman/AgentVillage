@@ -122,3 +122,15 @@ Zelfs dan staat zijn been zo ver naar buiten dat een openende knie de voet maar 
 de halve zit komt 3 mm op en de vering mag 3 mm, en daarbinnen werken de knieën zichtbaar mee
 (ruim 20 graden per 6 mm). Open: een vage naad waar hals en benen uit de romp komen (aparte gesloten
 schillen, het oude paard had hem ook), en het zadel is nog de oude blokken.
+
+## Grazen tot op het gras (7 oktober 2026)
+
+De nek met kop reikt vanaf het nekgewricht (0,435 hoog) maar 0,42: de snuit bleef ~1,2 m boven het
+gras hangen. Nu leunt een grazend paard op zijn voorhand (`HORSE_GRAZE` in fauna.js: 0,3 rad
+voorover, 0,09 lager) en buigen nek en hoofd verder dan `graze` alleen (horse-rig.js). Een grotere
+nekknik haalde het gras ook, maar dan wees de nek recht omlaag en krulde het hoofd tussen de
+voorbenen; nu steekt de nek schuin vooruit en hangt het gezicht, met de snuit 5 mm boven het gras en
+een hand vóór de voorhoeven, alle vier hoeven op de grond. Het ingaan en uitgaan loopt via
+`pose.graze`. Een bereden paard graast ook als het stilstaat en de berijder het laat
+(`mountPose({ graze })`); in de bewegingsstudio is het de derde stand van de knop Paard.
+`tests/horse-graze.test.mjs`.

@@ -34,7 +34,7 @@ const figures = CHARACTERS.map((c, i) => {
 // steps out of the picture meanwhile. Seated as walk.js seats him: the horse placed and posed
 // first, then the outer group (here `stand`, there `avatar`) on its saddle through its matrix and
 // turned with it, the rig told `horseback`. Paard toggles stand/trot; Sprint or Shift selects gallop.
-const HORSE_GAITS=[['stilstaan',0],['draf',MOUNT_TOP],['galop',MOUNT_TOP*MOUNT_GALLOP]];
+const HORSE_GAITS=[['stilstaan',0],['draf',MOUNT_TOP],['galop',MOUNT_TOP*MOUNT_GALLOP],['grazen',0]];
 // Use the island material, including the horse's exported smooth skin normals.
 const horseMat=createBuildingMaterial();
 let horse=null, horseGait=1, horseHelper=null;
@@ -142,7 +142,7 @@ let close=-1;
 document.querySelector('#motion-close').onclick=e=>{close=close+1<figures.length?close+1:-1;e.target.textContent=close<0?'Dichtbij':CHARACTERS[close].name;};
 document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time;};
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
-const horseNote=()=>{const[name,speed]=HORSE_GAITS[horseGait];return`Paard · ${name}${speed?` op ${speed.toFixed(1)} per seconde`:''} · alleen de Avonturier rijdt (F); Sprint of Shift is galop; Paard wisselt draf en stilstaan`;};
+const horseNote=()=>{const[name,speed]=HORSE_GAITS[horseGait];return`Paard · ${name}${speed?` op ${speed.toFixed(1)} per seconde`:''} · alleen de Avonturier rijdt (F); Sprint of Shift is galop; Paard wisselt stilstaan, draf en grazen`;};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
   if(button.dataset.gait==='sprint'&&mode==='horse') {
     horseGait=horseGait===2?1:2;
@@ -150,7 +150,8 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
     syncHorseControls();
     return;
   }
-  if(button.dataset.gait==='horse'&&mode==='horse')horseGait=horseGait===0?1:0;
+  // Paard goes round standing, the trot and grazing (the head down to the grass, fauna.js HORSE_GRAZE).
+  if(button.dataset.gait==='horse'&&mode==='horse')horseGait=horseGait===0?1:horseGait===1?3:0;
   if(button.dataset.gait==='horse')button.textContent=`Paard · ${HORSE_GAITS[horseGait][0]}`;
   mode=button.dataset.gait;
   deathAt=time;
@@ -207,7 +208,7 @@ function tick(dt){
       const speed=HORSE_GAITS[horseGait][1];
       f.distance+=speed*dt;
       horse.place(0,0,f.distance,0);
-      horse.pose({speed},dt);
+      horse.pose({speed,graze:horseGait===3},dt);
       const motion=horse.carry(f.stand,f.rig.hipY,horsebackOf(f.id).perch,dt);
       f.rig.update({moving:false,grounded:true,horseback:motion,distance:0},dt);
       continue;

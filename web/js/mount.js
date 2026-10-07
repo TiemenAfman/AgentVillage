@@ -195,7 +195,7 @@ export function createRide({phase=0}={}) {
   return {pose:createPose('horse',{phase}),idle:createPose('horse',{phase}),
     cycle:0,gait:'stand',go:0,hz:0,lean:0,transition:0,offsets:[],speed:0};
 }
-export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
+export function mountPose(r,{speed=0,rate=0,air=false,graze=false}={},dt=0) {
   const step=Number.isFinite(dt)&&dt>0?Math.min(dt,.1):0;
   const v=Number.isFinite(speed)?speed:0;
   const old=r.gait;
@@ -204,7 +204,8 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   r.cycle=frac(r.cycle+r.hz*step);
   r.speed=v;
   r.go=damp(r.go,r.gait==='stand'&&!air?0:1,8,step);
-  stepPose('horse',r.idle,{act:'still'},step);
+  // Standing, a horse may put its head down and graze (fauna.js HORSE_GRAZE), rider or not.
+  stepPose('horse',r.idle,{act:graze&&r.gait==='stand'?'feed':'still'},step);
   const P=r.pose,I=r.idle;
   P.hooves ||= Array.from({length:4},()=>({z:0,y:0,flex:0,contact:true}));
   if(old!==r.gait) {
@@ -223,7 +224,8 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   // turn, most compressed in the suspension and most stretched over the fores.
   const B=horseBody(r.cycle,r.gait==='stand'?'trot':r.gait,body);
   P.bodyY=I.bodyY*(1-r.go)+B.bodyY*r.go;
-  P.bodyX=B.bodyX*r.go;
+  P.bodyX=I.bodyX*(1-r.go)+B.bodyX*r.go;
+  P.graze=(I.graze||0)*(1-r.go);
   r.lean=damp(r.lean,clamp(-rate*Math.abs(v)*.055,-.09,.09),6,step);
   P.bodyZ=I.bodyZ*(1-r.go)+r.lean;
   P.headX=I.headX*(1-r.go)+B.headX*r.go;

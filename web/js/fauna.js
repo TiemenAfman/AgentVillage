@@ -38,6 +38,14 @@ import * as models from './models.js';
 import { bindHorse, poseHorse } from './horse-rig.js';
 import { horseCadence } from './horse-gait.js';
 
+// How a grazing horse gets its muzzle onto the grass (stepPose, horse-rig.js poseHorse): the body
+// pitched forward and lowered, and the neck and the head nodded further than `graze` alone -
+// together they bring the muzzle to 5 mm over the grass, a hand ahead of the fore hooves, with all
+// four hooves down - the neck out forward and the face hanging, not the neck straight down and the
+// head curled in between the forelegs, which is what a bigger neck nod reached the grass with
+// (tests/horse-graze.test.mjs).
+export const HORSE_GRAZE = { lean: 0.3, drop: 0.09, neck: 1.0, head: 0.4 };
+
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.
 export const KINDS = {
@@ -463,6 +471,14 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   // else from how fast the heading is changing.
   if (bank != null) bodyZ = bank;
   else if (inFlight || pose.flying) bodyZ = clamp(-turn * 0.3, -0.5, 0.5);
+  // A horse grazing reaches the grass: its neck and head alone are a hand short of it (neck joint
+  // 0.435 up, neck and head 0.42 long), so it also leans onto its forehand and sinks a little -
+  // `graze` eases that in and out, and horse-rig.js bends neck and head the rest of the way.
+  if (kind === 'horse') {
+    pose.graze = damp(pose.graze || 0, a === 'feed' ? 1 : 0, 2.5, step);
+    bodyX += HORSE_GRAZE.lean * pose.graze;
+    bodyY -= HORSE_GRAZE.drop * pose.graze;
+  }
   pose.bodyY = bodyY;
   pose.bodyX = damp(pose.bodyX, bodyX, 10, step);
   pose.bodyZ = bank != null ? bodyZ : damp(pose.bodyZ, bodyZ, 8, step);
