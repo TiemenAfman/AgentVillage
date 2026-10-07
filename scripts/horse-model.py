@@ -35,13 +35,20 @@ bones = []
 
 
 def joint(name, point, parent):
-    bones.append(dict(name=name, at=list(point), parent=parent))
+    bones.append(dict(name=name, at=[round(c, 6) for c in point], parent=parent))
     return len(bones) - 1
 
 
+# How much longer the neck is than it was drawn first: the head - skull, ears, eyes, bridle, the
+# head bone itself - is carried this far further up and forward, and the neck's stations ease out to
+# it from the withers. At (0.17, 0.125) the neck was 0.21 long against a foreleg of 0.31, and a horse
+# grazing with its forelegs straight stopped with its lips 7 cm over the grass; a horse's neck is
+# about as long as its foreleg. Mostly forward, a little up: the head is carried a touch higher, not
+# a giraffe's (tests/horse-graze.test.mjs, fauna.js HORSE_GRAZE).
+NECK_REACH = Vector((0, .035, .1))
 joint('body', (0, .39, 0), -1)
 joint('neck', (0, .435, .16), 0)
-joint('head', (0, .605, .285), 1)
+joint('head', Vector((0, .605, .285)) + NECK_REACH, 1)
 joint('tail', (0, .424, -.246), 0)
 joint('tailTip', (0, .26, -.305), 3)
 legs = []
@@ -163,7 +170,10 @@ def body_shape(p):
         + .007 * blob(p, (.072, .42, -.14), .035)) # the point of the hip
     up = (.016 * blob(p, (0, .452, .168), .05)     # the withers, in front of the saddle
           + .009 * blob(p, (0, .44, -.215), .06)   # the croup
-          - .012 * smoothstep(.335, .29, p.y) * blob(p, (0, .3, -.15), .075, mirror=False))  # flank tucked up
+          - .012 * smoothstep(.335, .29, p.y) * blob(p, (0, .3, -.15), .075, mirror=False)  # flank tucked up
+          # In front of the withers the barrel's top falls away into the neck: standing the neck
+          # covers it, but grazing, with the neck bowed down, a square corner stood up there.
+          - .03 * smoothstep(.17, .235, p.z) * smoothstep(.41, .47, p.y))
     # The breast: two rounded pectorals either side of a shallow groove.
     fore = .011 * blob(p, (.036, .35, .228), .045) - .004 * blob(p, (0, .35, .236), .02)
     # Behind, the quarters part either side of a groove under the tail.
@@ -185,8 +195,12 @@ finish(body, lambda p: {0: 1})
 
 # ---- the head and neck ---------------------------------------------------------------------
 head = Part(a, 'head', bones[1]['at'])
-NECK = [(0,.385,.13),(0,.425,.165),(0,.458,.188),(0,.506,.224),(0,.553,.253),
-        (0,.595,.282),(0,.605,.311),(0,.59,.344),(0,.568,.377),(0,.54,.416)]
+# The stations as first drawn, each carried by its share of NECK_REACH: none in the body, all of it
+# from the poll on, easing between, so the crest runs in one line from the withers to the poll.
+NECK_SHARE = [0, 0, .22, .52, .8, 1, 1, 1, 1, 1]
+NECK = [tuple(Vector(p) + NECK_REACH * s) for p, s in zip(
+        [(0,.385,.13),(0,.425,.165),(0,.458,.188),(0,.506,.224),(0,.553,.253),
+         (0,.595,.282),(0,.605,.311),(0,.59,.344),(0,.568,.377),(0,.54,.416)], NECK_SHARE)]
 NECK_W = [.145,.133,.128,.113,.092,.08,.079,.073,.062,.063]
 NECK_H = [.17,.178,.17,.147,.122,.112,.112,.103,.082,.07]
 # The neck alone, to the poll: the skull is a shell of its own laid over the neck's end. The last
@@ -197,8 +211,8 @@ NECK_END = (.066, .088)
 rows = refine([(*p, w, h) for p, w, h in zip(NECK[:6], NECK_W[:5] + [NECK_END[0]], NECK_H[:5] + [NECK_END[1]])])
 loft(head, along([r[:3] for r in rows], [r[3] for r in rows], [r[4] for r in rows]), BAY, sides=20)
 # The crest of the neck carries a little muscle under the mane.
-reshape(head, 0, lambda p: Vector((0, .006 * blob(p, (0, .55, .2), .07, mirror=False)
-                                   * smoothstep(-.01, .02, p.y - .45 - (p.z - .14) * 1.1), 0)))
+reshape(head, 0, lambda p: Vector((0, .006 * blob(p, Vector((0, .55, .2)) + NECK_REACH * .6, .08, mirror=False)
+                                   * smoothstep(-.01, .02, p.y - .45 - (p.z - .14) * .8), 0)))
 
 # The skull. A straight line from behind the poll (HA) to the end of the nose (HB), and round it
 # sections that are no ellipse: a superellipse whose upper half is as wide as the forehead and lower
@@ -207,7 +221,7 @@ reshape(head, 0, lambda p: Vector((0, .006 * blob(p, (0, .55, .2), .07, mirror=F
 # narrow face, swells again at the muzzle and closes at the lips. The top of every section lies on one
 # straight line: a straight profile from the forehead down the nose. The first head was the neck's own
 # loft carried on round the bend: an ellipse all the way, a tube with a muzzle stuck on.
-HA, HB = Vector((0, .612, .292)), Vector((0, .533, .452))
+HA, HB = Vector((0, .612, .292)) + NECK_REACH, Vector((0, .533, .452)) + NECK_REACH
 HD, HL = (HB - HA).normalized(), (HB - HA).length
 HV = HD.cross(Vector((1, 0, 0))).normalized()   # up off the face: the forehead's own normal
 X = Vector((1, 0, 0))
@@ -452,13 +466,22 @@ for deg, reach in [(0, 1), (-14, .8), (14, .85)]:
 # hand behind the poll too - and anything under y 0.515 partly stayed on the body, which the old
 # muzzle never reached but the new lips and chin do: grazing (headX 0.95) they hung back, the face
 # stretched four times over the mouth and the blaze stood off the nose. Now the head is the head
-# whatever its height, and the neck's share of the rest is still its height up the neck.
+# whatever its height, and the neck's share of the rest goes up the neck (NECK_BLEND).
 HEAD_PLANE = Vector((0, .25, .968)).normalized()
 
 
+# How far the bend is spread: the neck bone's share grows along the neck's own line from its joint
+# (it was the height, over 8 cm), the head's across the plane over 7.5 cm (it was 4). Grazing bows the
+# neck 1.7 rad at its root and turns the head back 0.7 against it; over the narrow bands the crest
+# stretched 3.2 times at the withers and the throatlatch folded to an eighth.
+NECK_BLEND = (-.04, .18)
+HEAD_BLEND = (-.065, .01)
+
+
 def head_weights(p):
-    neck = smoothstep(.432,.515,p.y)
-    skull = smoothstep(-.035, .005, (p - Vector(bones[2]['at'])).dot(HEAD_PLANE))
+    up_neck = (p - Vector(bones[1]['at'])).dot((Vector(bones[2]['at']) - Vector(bones[1]['at'])).normalized())
+    neck = smoothstep(NECK_BLEND[0], NECK_BLEND[1], up_neck)
+    skull = smoothstep(HEAD_BLEND[0], HEAD_BLEND[1], (p - Vector(bones[2]["at"])).dot(HEAD_PLANE))
     return {0: (1-neck)*(1-skull), 1: neck*(1-skull), 2: skull}
 
 
@@ -598,14 +621,14 @@ def shade(label, q, n, leg_part):
         f *= 1 + .1 * max(0, -n.y) - .04 * max(0, n.y)                   # lighter underneath
         if leg_part:
             f *= .74 + .26 * smoothstep(.14, .28, q.y)                    # darkening into the points
-        if q.z > .37:
-            f *= 1 - .16 * smoothstep(.38, .43, q.z)                      # and into the muzzle
+        if q.z > .37 + NECK_REACH.z:
+            f *= 1 - .16 * smoothstep(.38 + NECK_REACH.z, .43 + NECK_REACH.z, q.z)    # and into the muzzle
         if q.y > .27 and q.z < .3:
             # A few faint dapples on the barrel and the quarters.
             f *= 1 + .08 * smoothstep(.25, .55, noise.noise(q * 36)) * smoothstep(.3, .36, q.y)
         return f * (1 + .035 * grain)
     if 'muzzle' in label:
-        return (1 + .3 * smoothstep(.53, .508, q.y)) * (1 + .04 * grain)   # the lips paler
+        return (1 + .3 * smoothstep(.53 + NECK_REACH.y, .508 + NECK_REACH.y, q.y)) * (1 + .04 * grain)   # the lips paler
     if 'mane' in label:
         streak = noise.noise(Vector((q.x * 140, q.y * 10, q.z * 140)))
         f = .88 + .16 * streak

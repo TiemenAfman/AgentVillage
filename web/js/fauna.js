@@ -43,9 +43,11 @@ import { horseCadence } from './horse-gait.js';
 // lips towards the grass. The head hangs off the neck, so a neck bowed far down takes the head past
 // plumb unless the head bone turns back; a first version that pitched the body forward and nodded
 // both bent the face round to point at the forelegs and folded the fore knees as if kneeling
-// (7 Oct 2026). With the forelegs straight and no lean the lips stop ~0.07 over the grass: this
-// horse's neck is shorter than a horse's (tests/horse-graze.test.mjs).
-export const HORSE_GRAZE = { lean: 0, drop: 0, neck: 1.3, head: -1.2 };
+// (7 Oct 2026). With the forelegs straight and no lean the lips stopped ~0.07 over the grass, on a
+// neck 0.21 long; since scripts/horse-model.py NECK_REACH it is 0.30, about the foreleg's length, and
+// the lips come down to ~0.01 with the face at ~90 degrees, the muzzle a head's width in front of the
+// fore hooves - no lean, no drop, forelegs straight (tests/horse-graze.test.mjs).
+export const HORSE_GRAZE = { lean: 0, drop: 0, neck: 1.03, head: -1.0 };
 
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.

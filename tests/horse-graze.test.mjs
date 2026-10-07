@@ -27,7 +27,8 @@ function headMarks(horse) {
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
     if (v.y < 0.6 && v.z > tz) { tz = v.z; tip = i; }
-    if (v.z > 0.27 && v.z < 0.31 && Math.abs(v.x) < 0.01 && v.y > py) { py = v.y; poll = i; }
+    // The head was carried 0.1 further forward when the neck was lengthened (horse-model.py NECK_REACH).
+    if (v.z > 0.37 && v.z < 0.41 && Math.abs(v.x) < 0.01 && v.y > py) { py = v.y; poll = i; }
   }
   const at = (i) => { v.fromBufferAttribute(p, i); m.applyBoneTransform(i, v); return v.applyMatrix4(m.matrixWorld).clone(); };
   return { m, p, at, tip, poll };
@@ -44,7 +45,8 @@ test('the stable horse grazes with its face hanging plumb over the grass, forele
   const face = Math.atan2(poll.y - tip.y, tip.z - poll.z) * DEG;
   assert.ok(face > 75 && face < 100, `face at ${face.toFixed(0)} degrees`);
   assert.ok(tip.z > 0.28, `muzzle ${tip.z.toFixed(3)} ahead, not between the forelegs (z 0.175)`);
-  assert.ok(tip.y < 0.1, `lips ${tip.y.toFixed(3)} over the grass`);
+  // On the grass: within 3 cm of it since the neck is a horse's length (it stopped 7 cm short).
+  assert.ok(tip.y < 0.03 && tip.y > -0.005, `lips ${tip.y.toFixed(3)} over the grass`);
   let low = Infinity;
   for (let i = 0; i < H.p.count; i++) low = Math.min(low, H.at(i).y);
   assert.ok(low > -0.005, `the head ${low.toFixed(3)} into the ground`);
