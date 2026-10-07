@@ -126,9 +126,12 @@ export function animalParts(asset) {
 // One part as one geometry, its slots merged: what a pivot or an InstancedMesh draws.
 // Where a rider sits on a saddled horse (Plans/paard-in-plaats-van-fiets.md): the top of the seat
 // in the middle of the saddle, and the irons hanging either side of it - the only parts of the
-// body low and wide enough, |x| over IRON_OUT and below IRON_TOP. Read off the bake rather than
-// written down, so a saddle baked again carries its rider with it. Null for an asset with no seat.
-const IRON_OUT = 0.1, IRON_TOP = 0.36;
+// body low and wide enough, |x| over IRON_OUT and below IRON_TOP, and beside the girth (|z| under
+// IRON_BESIDE). Read off the bake rather than written down, so a saddle baked again carries its
+// rider with it. Null for an asset with no seat. IRON_TOP went from 0.36 to 0.38 with the shorter
+// leathers (the irons' tops at 0.375, the flaps' lower edge at 0.3825), and IRON_BESIDE came with
+// the shoulder and quarters, which stand out past IRON_OUT in front of and behind the saddle.
+const IRON_OUT = 0.1, IRON_TOP = 0.38, IRON_BESIDE = 0.08;
 export function saddleOf(asset = 'fauna_horse') {
   let seat = -Infinity, low = Infinity, high = -Infinity, wide = 0, z0 = Infinity, z1 = -Infinity;
   for (const n of slotsOf(asset, asset + ' body')) {
@@ -136,7 +139,7 @@ export function saddleOf(asset = 'fauna_horse') {
     for (let i = 0; i < p.length; i += 3) {
       const x = p[i] + at[0], y = p[i + 1] + at[1], z = p[i + 2] + at[2];
       if (Math.abs(x) < 0.02 && Math.abs(z) < 0.03) seat = Math.max(seat, y);
-      if (Math.abs(x) > IRON_OUT && y < IRON_TOP) {
+      if (Math.abs(x) > IRON_OUT && y < IRON_TOP && Math.abs(z) < IRON_BESIDE) {
         low = Math.min(low, y); high = Math.max(high, y); wide = Math.max(wide, Math.abs(x));
         z0 = Math.min(z0, z); z1 = Math.max(z1, z);
       }

@@ -281,12 +281,14 @@ export const HORSEBACK = {
 // The Adventurer (player-bodies.js) on the same horse: a hand taller, hips 0.25 up and narrower
 // (0.064 across), and his own body hanging 0.05 under them where the Traveller's hangs 0.02 - so
 // he sits higher over the seat (`perch`), his thighs go out further to clear the flap, and at
-// the clip's knee his soles stood 3 cm over the irons: the knee opens to 40, the shins straight
-// down from it. He fits the horse at its own size - the one rider it has. Measured in
-// tests/horseback-pose.test.mjs.
+// the clip's knee his soles stood 3 cm over the irons: the knee opened to 40, the shins straight
+// down from it, the leg all but straight. The leathers are 4.5 cm shorter since (irons 0.34 to
+// 0.375, scripts/build-fauna.py), so the knee folds again, to 68, with the shins turned out 10
+// past the flap: soles on the treads, and a knee to rise on for the half seat. He fits the
+// horse at its own size - the one rider it has. Measured in tests/horseback-pose.test.mjs.
 export const HORSEBACK_OF = {
   traveller: HORSEBACK,
-  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 40 * DEG, shin: 0, armIn: 20 * DEG, perch: 0.045 },
+  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 68 * DEG, shin: 10 * DEG, armIn: 20 * DEG, perch: 0.045 },
 };
 export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
 const seated = { ...HORSEBACK };
