@@ -503,6 +503,59 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
 // no clock of its own, because the music is the clock, and `dt` is only for easing into and out
 // of going up. Any four-legged kind dances as the horse does and any two-legged one as the hen.
 const REAR = 0.42;             // how far back a horse goes on its hind legs, in radians
+// The stable's horse on the castle's floor (Plans/DONE/rave-in-het-kasteel.md): a move a phrase of
+// sixteen beats, in this order, eased into over the phrase's first beat - pawing (one fore hoof
+// lifted between the kicks and stamped down on them, the headbang), a piaffe (dressage's trot on
+// the spot: the diagonals up in turn, a beat each, the body rising between the kicks) and a sway
+// (side to side over two beats, the neck swinging with it, a fore toe tapping). Every hoof is down
+// on every kick and every number is the count's alone, so two screens dance alike. Each move
+// gives the hooves as horse-rig.js takes them ({ z, y, flex }: forward, up, fetlock fold) and how
+// much nod, neck swing, sway and bounce goes with it. Up on its hind legs (the drop) the rear
+// takes over, as before.
+export const HORSE_DANCE = ['paw', 'piaffe', 'sway'];
+const PHRASE = 16;
+const PIAFFE_PAIRS = [[0, 3], [1, 2]];   // fl with br, fr with bl
+function horseMove(name, beat, out) {
+  const n = Math.floor(beat), u = beat - n, lift = Math.sin(Math.PI * u), turn = ((n % 2) + 2) % 2;
+  const slow = Math.sin(Math.PI * beat / 2);
+  for (let i = 0; i < 4; i++) { const h = out.hooves[i]; h.z = 0; h.y = 0; h.flex = 0; }
+  if (name === 'piaffe') {
+    for (const i of PIAFFE_PAIRS[turn]) {
+      const fore = i < 2, h = out.hooves[i];
+      h.y = (fore ? 0.07 : 0.045) * lift; h.z = (fore ? 0.025 : 0.015) * lift; h.flex = (fore ? 1.4 : 0.9) * lift;
+    }
+    out.nod = 0.35; out.swing = 0.1 * slow; out.sway = 0.02 * slow; out.bounce = 0.014 * lift;
+  } else if (name === 'sway') {
+    const h = out.hooves[turn];
+    h.y = 0.045 * lift; h.flex = 0.4 * lift;
+    out.nod = 0.2; out.swing = 0.4 * slow; out.sway = 0.09 * slow; out.bounce = 0.006 * lift;
+  } else {
+    const h = out.hooves[turn];
+    h.y = 0.075 * lift; h.z = 0.06 * lift; h.flex = 1.3 * lift;
+    out.nod = 1; out.swing = 0.2 * slow; out.sway = 0.05 * slow; out.bounce = 0.01 * lift;
+  }
+  return out;
+}
+const moveA = { hooves: [0, 1, 2, 3].map(() => ({})) }, moveB = { hooves: [0, 1, 2, 3].map(() => ({})) };
+function horseDance(pose, beat, r, rise) {
+  const phrase = Math.floor(beat / PHRASE), into = beat - phrase * PHRASE;
+  const at = (k) => HORSE_DANCE[((k % HORSE_DANCE.length) + HORSE_DANCE.length) % HORSE_DANCE.length];
+  const t = Math.min(1, Math.max(0, into)), w = t * t * (3 - 2 * t);
+  const A = horseMove(at(phrase), beat, moveA), B = horseMove(at(phrase - 1), beat, moveB);
+  const mix = (k) => A[k] * w + B[k] * (1 - w), kick = Math.exp(-(beat - Math.floor(beat)) * 6);
+  pose.danceHooves ||= [0, 1, 2, 3].map(() => ({ z: 0, y: 0, flex: 0, contact: true }));
+  for (let i = 0; i < 4; i++) {
+    const a = A.hooves[i], b = B.hooves[i], h = pose.danceHooves[i];
+    h.z = (a.z * w + b.z * (1 - w)) * (1 - r);
+    h.y = (a.y * w + b.y * (1 - w)) * (1 - r);
+    h.flex = (a.flex * w + b.flex * (1 - w)) * (1 - r);
+    h.contact = h.y < 1e-4;
+  }
+  pose.headX = (0.12 + 0.42 * kick * mix('nod')) * (1 - r) - 0.5 * r;
+  pose.headY = mix('swing') * (1 - r);
+  pose.bodyZ = mix('sway') * (1 - r);
+  pose.bodyY = mix('bounce') * (1 - r) + Math.max(0, rise);
+}
 export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
   if (!pose) return pose;
   const K = KINDS[kind] || KINDS.chicken;
@@ -548,6 +601,9 @@ export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
     pose.bodyX = lean;
     pose.bodyZ = 0.05 * slow * (1 - r);
     pose.bodyY = 0.01 * lift * (1 - r) + Math.max(0, rise);
+    // The horse has joints (horse-rig.js), so it dances with its hooves rather than swinging
+    // stiff legs: HORSE_DANCE's moves, one a phrase, written over the pose above.
+    if (kind === 'horse') horseDance(pose, beat, r, rise);
   } else {
     // A hen: the head bob, on the beat and quick; stepping from foot to foot; and, going up,
     // her wings out and beating and a hop on every beat.

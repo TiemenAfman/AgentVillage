@@ -14,7 +14,7 @@
 // right *lowers* yaw.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
-import { createAnimal, createPose, stepPose, applyPose, saddleOf } from './fauna.js';
+import { createAnimal, createPose, stepPose, stepDance, applyPose, saddleOf } from './fauna.js';
 import { HORSE_TROT, HORSE_GALLOP, HORSE_PATTERNS, horseCadence, hoofPath, horseBody } from './horse-gait.js';
 import { solidMaterial } from './buildings.js';
 
@@ -196,7 +196,7 @@ export function createRide({phase=0}={}) {
   return {pose:createPose('horse',{phase}),idle:createPose('horse',{phase}),
     cycle:0,gait:'stand',go:0,hz:0,lean:0,transition:0,offsets:[],speed:0};
 }
-export function mountPose(r,{speed=0,rate=0,air=false,graze=false}={},dt=0) {
+export function mountPose(r,{speed=0,rate=0,air=false,graze=false,dance=null}={},dt=0) {
   const step=Number.isFinite(dt)&&dt>0?Math.min(dt,.1):0;
   const v=Number.isFinite(speed)?speed:0;
   const old=r.gait;
@@ -206,7 +206,10 @@ export function mountPose(r,{speed=0,rate=0,air=false,graze=false}={},dt=0) {
   r.speed=v;
   r.go=damp(r.go,r.gait==='stand'&&!air?0:1,8,step);
   // Standing, a horse may put its head down and graze (fauna.js HORSE_GRAZE), rider or not.
-  stepPose('horse',r.idle,{act:graze&&r.gait==='stand'?'feed':'still'},step);
+  // Or, at the rave's count (`dance` = the beat), dance as the stable's horse does (fauna.js HORSE_DANCE).
+  const dancing=Number.isFinite(dance)&&r.gait==='stand';
+  if(dancing) stepDance('horse',r.idle,{beat:dance,up:false},step);
+  else stepPose('horse',r.idle,{act:graze&&r.gait==='stand'?'feed':'still'},step);
   const P=r.pose,I=r.idle;
   P.hooves ||= Array.from({length:4},()=>({z:0,y:0,flex:0,contact:true}));
   if(old!==r.gait) {
@@ -236,6 +239,7 @@ export function mountPose(r,{speed=0,rate=0,air=false,graze=false}={},dt=0) {
   for(let i=0;i<4;i++) {
     const foot=P.hooves[i];
     hoofPath(r.cycle,i,r.gait==='stand'?0:v,r.gait,r.hz,foot);
+    if(dancing&&I.danceHooves){const d=I.danceHooves[i];foot.z=d.z;foot.y=d.y;foot.flex=d.flex;foot.contact=d.contact;}
     if(r.transition&&r.offsets[i]) {
       const ease=r.transition*r.transition*(3-2*r.transition);
       foot.z+=r.offsets[i].z*ease;

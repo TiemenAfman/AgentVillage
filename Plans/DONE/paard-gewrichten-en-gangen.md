@@ -135,3 +135,14 @@ boven het gras: deze nek is korter dan die van een paard. Wie het gras wil raken
 langer. `tests/horse-graze.test.mjs` meet de snuitpunt en het achterhoofd (gezichtshoek 75-100 graden), de
 voorknieën en de hoeven. Een bereden paard graast als het stilstaat en de ruiter het laat
 (`mountPose({ graze })`); in de bewegingsstudio is het de derde stand van de knop Paard.
+
+## Dansen in de rave (7 oktober 2026)
+
+Het stalpaard danste met stijve benen (een zwaai om de heup, door horse-rig.js vertaald). Nu danst
+het met zijn hoeven: `HORSE_DANCE` in fauna.js, een move per frase van zestien tellen, ingefaded over
+de eerste tel - **pawen** (één voorhoef op tussen de kicks en erop neergestampt, met headbangen),
+een **piaffe** (de draf op de plaats uit de dressuur: de diagonalen om de tel op, het lijf omhoog
+tussen de kicks) en **wiegen** (heen en weer over twee tellen, de nek mee, een voorteen die tikt).
+Elke hoef staat op elke kick, alles komt uit de tel alleen (twee schermen dansen gelijk), en op de
+drop steigert het zoals voorheen. In de bewegingsstudio is het de vierde stand van de knop Paard (op
+132 BPM, de rave's tempo). `tests/rave-stable.test.mjs`.

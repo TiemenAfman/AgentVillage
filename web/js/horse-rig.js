@@ -110,7 +110,8 @@ export function poseHorse(a) {
       continue;
     }
     let foot=p.hooves?.[i];
-    if (!foot && p.act==='dance') {
+    if (!foot && p.act==='dance' && p.danceHooves) foot=p.danceHooves[i];
+    else if (!foot && p.act==='dance') {
       // The rave (fauna.js stepDance) still speaks the stiff legs' language: a swing of the
       // whole leg about the hip, forward negative. Read it as where that leg's hoof went.
       const swing=p.legs[i]||0, reach=leg.hip.y;

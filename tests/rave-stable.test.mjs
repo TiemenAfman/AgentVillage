@@ -152,3 +152,30 @@ test('in the hall the horse has room, the floor is as full as ever, and it is in
   show.dispose();
   delete globalThis.document;
 });
+
+// The horse dances with its hooves (fauna.js HORSE_DANCE, horse-rig.js): a move a phrase of
+// sixteen beats - pawing, a piaffe, a sway. In each: every hoof down on every kick, and between
+// the kicks the move's own hooves up (one fore pawing, a diagonal pair in the piaffe, a fore toe
+// tapping in the sway), nothing through the floor.
+test('the horse paws, piaffes and sways, a move a phrase, every hoof down on the kick', async () => {
+  stub();
+  const { HORSE_DANCE } = await import('../web/js/fauna.js');
+  const horse = createAnimal('horse', material(), { area: { x: 0, z: 0, r: 0 }, seed: 'rave:moves' });
+  const legs = ['leg fl', 'leg fr', 'leg bl', 'leg br'];
+  assert.deepEqual(HORSE_DANCE, ['paw', 'piaffe', 'sway']);
+  const up = { paw: [1, 0], piaffe: [2, 1], sway: [1, 0] };   // [hooves up between kicks, of them hinds]
+  HORSE_DANCE.forEach((move, m) => {
+    for (let k = 4; k < 8; k++) {
+      const beat = m * 16 + k;
+      stepDance('horse', horse.pose, { beat, up: false }, FRAME); applyPose(horse, 0, 0, 0);
+      const on = lowest(horse);
+      for (const leg of legs) assert.ok(Math.abs(on[leg]) < 0.012, `${move}: ${leg} not down on beat ${beat}: ${on[leg].toFixed(3)}`);
+      stepDance('horse', horse.pose, { beat: beat + 0.5, up: false }, FRAME); applyPose(horse, 0, 0, 0);
+      const off = lowest(horse), lifted = legs.filter((leg) => off[leg] > 0.015);
+      assert.equal(lifted.length, up[move][0], `${move} at ${beat + 0.5}: ${lifted.join(', ') || 'nothing'} up`);
+      assert.equal(lifted.filter((l) => l.startsWith('leg b')).length, up[move][1], `${move}: hinds up`);
+      for (const [part, y] of Object.entries(off)) assert.ok(y > -0.012, `${move}: ${part} ${y.toFixed(3)} through the floor`);
+    }
+  });
+  delete globalThis.document;
+});
