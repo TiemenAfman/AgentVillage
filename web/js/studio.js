@@ -5,7 +5,7 @@
 // slot owns what is inventory.js's table. Nothing is committed until you wear it - "Never
 // mind" puts back what you had on.
 import * as THREE from 'three';
-import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, SHAPES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
+import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
 import { loadWanderers, onWanderers, wanderersReady } from './player-bodies.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, slotPicks, slotOffers, iconKey, iconGeometry, garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } from './inventory.js';
@@ -125,14 +125,10 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <canvas class="inv-icon"></canvas><span class="inv-label">${SEX_LABEL[x]}</span></button>`).join('')}</div>`;
   const column = (side) => INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
   // Edit character (Plans/basislichamen-en-outfits.md): who you are, apart from what you wear - the
-  // body and the man or the woman on the left, skin and hair on the right, the shape's sliders under
-  // the figure. The same alcove, the same Wear it.
+  // body and the man or the woman on the left, skin and hair on the right. The same alcove, the same Wear it.
   const charLeft = () => `<span class="inv-label">Body</span>${characterHtml()}${sexHtml()}`;
   const charRight = () => ['skin', 'hair'].map((d) => `
       <div class="inv-flaskwrap">${dyeHtml(d, DYE_LABEL[d] || 'Skin colour')}<span class="inv-label">${d === 'skin' ? 'Skin' : 'Hair'}</span></div>`).join('');
-  const shapeHtml = () => `<div class="inv-shape">${SHAPES.map((k) => `
-      <label class="inv-slider"><span class="inv-label">${k.name}</span>
-        <span class="inv-ends"><i>${k.low}</i><input type="range" min="-1" max="1" step="0.05" data-shape="${k.id}"><i>${k.high}</i></span></label>`).join('')}</div>`;
   function setView(view) {
     pop?.close();
     el.dataset.view = view;
@@ -166,7 +162,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
             <div class="inv-col right inv-gear">${column('right')}</div>
             <div class="inv-col right inv-who">${charRight()}</div>
           </div>
-          ${shapeHtml()}
           <p class="inv-note">Your look lives in this browser, so it is yours to change whenever you like.</p>
           <div class="ho-buttons inv-actions">
             <button class="btn primary" id="av-save">Wear it</button>
@@ -179,17 +174,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     // have a size first, and both go down with the markup so a re-open never stacks them.
     icons = makeIcons();
     preview = makePreview(el.querySelector('#av-canvas'));
-    // A slider is applied once a frame at most: every input rebuilds the figure's geometry.
-    let queued = false;
-    for (const input of el.querySelectorAll('[data-shape]')) {
-      input.addEventListener('input', () => {
-        spec.shape = { ...spec.shape, [input.dataset.shape]: Number(input.value) };
-        if (queued) return;
-        queued = true;
-        requestAnimationFrame(() => { queued = false; apply(); });
-      });
-      input.addEventListener('change', () => sync());
-    }
     setView('inventory');
     apply();
     // The Wanderer's bodies are loaded the first time anybody may pick one (player-bodies.js): until
@@ -409,7 +393,6 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       icons.paint(b.firstElementChild, slotIcon(slot, spec), spec);
     }
     el.querySelectorAll('.inv-dye').forEach((d) => d.style.setProperty('--dye', hex(spec[d.dataset.dye])));
-    for (const input of el.querySelectorAll('[data-shape]')) input.value = String(spec.shape?.[input.dataset.shape] ?? 0);
   }
 
   // Show the change in the alcove and on the character out on the island at once.

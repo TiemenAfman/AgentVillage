@@ -258,6 +258,15 @@ Elke fase is een patch, met een redeploy van de open zee voor de anderen.
   voeten en slank↔dik. Lengte kwam er goedkoop bij. Heup, hoofd, handen, voeten en lengte zijn
   bot-schaal; borst en slank↔dik zijn vervorming van de vorm. Kleding en uitrusting gaan mee, en de
   clips blijven werken.
+- **De schuiven zijn er weer uit** (7 oktober 2026, patch na 0.10.3). Martijn: "dit ontregelt alles".
+  Kleding, het paard (zadel en stijgbeugels) en de ladders (sporten op de klimclip, handen op de
+  sporten) zijn op één maat nagemeten, en bij een langer lijf, bredere heupen of een dikker postuur
+  klopte daar niets meer van. Weg zijn de schuiven in Edit character, `SHAPES`, `applyShape` en `tall`
+  (bot-schaal, met `hipY`/`eye` erachteraan) in classic-avatar.js, en `shapeGeometry` en `bustOf` in
+  avatar.js. Ook `shape` in de look is weg: `normalizeAvatar` laat het weg, dus een in de browser
+  opgeslagen look met een vorm staat weer op standaardmaat, en de zee (`lookOf`) geeft het niet meer
+  door. Een oude pagina of zee die het nog stuurt, wordt genegeerd. De schuiven kunnen terugkomen
+  zodra kleding, paard en ladders per maat zijn nagemeten. De oude code staat in commit a069daf.
 - **Het harnas is een kledingkeuze** ("net als de broek, niet overrulend"): in de kiezer van een slot
   staan Peasant, het harnasstuk en niets naast elkaar, en je draagt er één.
 - **"Doorzichtig" en "beweegt raar"** bij broek en shirt: het waren naden. Alles onder de heuplijn hing
