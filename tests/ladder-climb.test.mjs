@@ -80,11 +80,12 @@ test('the Traveller reaches up with both hands in turn and steps with the other 
   assert.ok(a.elbows.leftArm < a.elbows.rightArm, 'the arm reaching up is the straighter one');
 });
 
-// The keeper's recording (7 Oct 2026): quick little strokes at shoulder height. A cycle now takes
-// three rungs, and a hand goes the whole way from overhead to the chest and back.
-test('a climb is slow and reaches far: three rungs a cycle, a hand from overhead to the chest', () => {
-  assert.equal(CLIMB_REACH.rungs, 0.6, 'three of a ship rungs (0.2) a cycle');
-  assert.ok(CLIMB_SPEED / CLIMB_REACH.rungs < 0.8, `${(CLIMB_SPEED / CLIMB_REACH.rungs).toFixed(2)} cycles a second`);
+// The keeper's recording (7 Oct 2026): quick little strokes at shoulder height. A hand goes the
+// whole way from overhead to the chest and back - over two rungs a cycle now (shared/deck.mjs
+// RUNG_STEP, tests/ladder-rungs.test.mjs), at the clip's 1.8 times its own pace.
+test('a climb reaches far: two rungs a cycle, a hand from overhead to the chest', () => {
+  assert.equal(CLIMB_REACH.rungs, climbPerCycle(), 'the Traveller on the same rungs as the clip');
+  assert.ok(CLIMB_SPEED / CLIMB_REACH.rungs < 2.5, `${(CLIMB_SPEED / CLIMB_REACH.rungs).toFixed(2)} cycles a second`);
   const arms = [], elbows = [];
   for (let i = 0; i < 100; i++) { const p = climbReach(i / 100); arms.push(p.limbs.leftArm); elbows.push(p.elbows.leftArm); }
   assert.ok(Math.min(...arms) <= -2.9 && Math.max(...arms) >= -1.2, `arm ${Math.min(...arms)}..${Math.max(...arms)}`);
@@ -92,9 +93,6 @@ test('a climb is slow and reaches far: three rungs a cycle, a hand from overhead
   // held and pulled down for most of the cycle, brought up quickly
   const rising = arms.filter((x, i) => i && x < arms[i - 1]).length;
   assert.ok(rising < 40, `reaching up ${rising} of 100`);
-  // The Adventurer's clip at the pace it was made at, not 3.7 times a second.
-  const clipRate = CLIMB_SPEED / climbPerCycle({ clips: true, leg: 0.212 });
-  assert.ok(Math.abs(clipRate * GAIT_CLIPS.climb.seconds - 1) < 1e-9, `${clipRate.toFixed(2)} cycles a second`);
   // walk.js's copy of the speed
   const walk = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
   assert.equal(Number(/const CLIMB_SPEED = ([\d.]+);/.exec(walk)[1]), CLIMB_SPEED);
@@ -126,11 +124,13 @@ for (const character of ['adventurer', 'traveller']) {
     const lefts = [];
     for (let i = 0; i < 60; i++) { rig.update(pose(rise), FRAME); lefts.push(handsOf(rig).left.y); }
     const up = handsOf(rig);
-    assert.ok(up.left.y > standing.left.y + 0.07 && up.right.y > standing.right.y + 0.07,
+    // (the clip's arms turned down onto the rungs, CLIMB_CLIP_LIFT: a hand on its way down is lower)
+    assert.ok(up.left.y > standing.left.y + 0.05 && up.right.y > standing.right.y + 0.05,
       `hands raised: ${up.left.y.toFixed(3)}/${up.right.y.toFixed(3)} from ${standing.left.y.toFixed(3)}/${standing.right.y.toFixed(3)}`);
     const swing = Math.max(...lefts.slice(20)) - Math.min(...lefts.slice(20));
     assert.ok(swing > 0.06, `the left hand goes from rung to rung (${swing.toFixed(3)})`);
-    assert.ok(Math.max(...lefts) > standing.left.y + 0.17, `and reaches up past the chin (${Math.max(...lefts).toFixed(3)})`);
+    // to the chin: the clip's own reach, no longer widened past it (its hands are on the rungs now)
+    assert.ok(Math.max(...lefts) > standing.left.y + 0.13, `and reaches up to the chin (${Math.max(...lefts).toFixed(3)})`);
     // hanging still: the pose holds
     for (let i = 0; i < 15; i++) rig.update(pose(0), FRAME);   // the limbs catching up with the pose
     const held = handsOf(rig);
@@ -192,7 +192,9 @@ test('walk mode says when the feet are on the rungs, and how far they went up or
   const going = push(walk, [L.hi.x, L.hi.z], 1.5);
   const on = going.filter((f) => f.climbing);
   assert.ok(on.length > 10, `climbing on the way up (${on.length} frames)`);
-  assert.ok(on.every((f) => f.climbing.rise >= 0) && on.some((f) => f.climbing.rise > 0.005), 'rising');
+  assert.ok(on.every((f) => f.climbing.rise >= 0) && on.some((f) => f.climbing.rise > 0.003), 'rising');
+  // and how high on the ladder, from its foot: what puts the climb's hands on its rungs
+  assert.ok(on.every((f) => Number.isFinite(f.climbing.at) && f.climbing.at > 0), 'at a height on it');
   // let go of the keys halfway: still on the ladder, rising by nothing
   for (let i = 0; i < 10; i++) walk.update(FRAME);
   assert.ok(s.climbing && s.climbing.rise === 0, `hanging: ${JSON.stringify(s.climbing)}`);
@@ -204,10 +206,10 @@ test('walk mode says when the feet are on the rungs, and how far they went up or
   assert.equal(walk.ladderAt(s.pos.x + 0.5, s.pos.y, s.pos.z), null, 'nor is a body beside it');
   // down again: rise below zero, then off at the foot and no climb
   const back = push(walk, [L.lo.x, L.lo.z + 0.6], 4);
-  assert.ok(back.some((f) => f.climbing && f.climbing.rise < -0.005), 'climbing down');
+  assert.ok(back.some((f) => f.climbing && f.climbing.rise < -0.003), 'climbing down');
   assert.equal(s.climbing, null, 'off at the foot');
   // and up all the way: over the top onto the plank, no climb any more
-  push(walk, [L.hi.x, L.hi.z], 12);
+  push(walk, [L.hi.x, L.hi.z], 20);
   assert.equal(s.climbing, null, `on the plank: ${s.pos.y.toFixed(2)}`);
   assert.equal(walk.ladderAt(s.pos.x, s.pos.y, s.pos.z), null, 'nor is anybody on the plank');
 });

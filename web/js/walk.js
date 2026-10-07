@@ -1430,7 +1430,7 @@ export function createWalkMode({
   // 0.45, not the 1.8 it was: a rope ladder is climbed by Mixamo's Climbing Up A Ladder on the
   // Adventurer, a cycle per 0.12 of height, and at 1.8 that was fifteen cycles a second (the keeper
   // chose slower over a body gliding past its hands, 6 Oct 2026). The ship's side now takes ~4 s.
-  const CLIMB_SPEED = 0.45;
+  const CLIMB_SPEED = 0.29;
   const CLIMB_DEAD = 0.3;
   const climbAt = { x: 0, z: 0, y: 0 }, climbWas = { x: 0, z: 0, y: 0 };
   // Whether `d` along a climb's path is on the rungs - a stretch going more up than along - rather
@@ -1527,7 +1527,9 @@ export function createWalkMode({
     const was = pathAt(c.path, c.d, climbWas).y;
     c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
     const p = pathAt(c.path, c.d, climbAt);
-    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was } : null;
+    // `at`: how high on the ladder, from its foot - rung 0 - which is what puts the hands and feet of
+    // the climb on its rungs (classic-avatar.js climbPhase).
+    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was, at: p.y - l.lo.y } : null;
     state.pos.set(p.x, p.y, p.z);
     state.yaw = Math.atan2(-l.out[0], -l.out[1]);
     state.moving = wish !== 0;
@@ -1583,7 +1585,7 @@ export function createWalkMode({
     for (const l of fixedLadders) {
       if (Math.hypot(x - l.lo.x, z - l.lo.z) > 0.2) continue;
       if (y < l.lo.y + 0.15 || y > l.hi.y + 0.08) continue;
-      return { yaw: Math.atan2(-l.out[0], -l.out[1]) };
+      return { yaw: Math.atan2(-l.out[0], -l.out[1]), at: y - l.lo.y };
     }
     const sea = (WATER_Y - SWIM_SINK) - DECK_Y;
     for (const b of boatsOf()) {
@@ -1596,7 +1598,7 @@ export function createWalkMode({
       const l = ladderHolding(spec, lx, lz, ly, sea);
       if (!l) continue;
       const [fx, fz] = dirToWorld(frame, l.x < 0 ? 1 : -1, 0);
-      return { yaw: Math.atan2(fx, fz) };
+      return { yaw: Math.atan2(fx, fz), at: ly - l.foot };
     }
     return null;
   }
@@ -1618,7 +1620,7 @@ export function createWalkMode({
     drift = null;
     const len = pathLength(path);
     // `crew`: whether the sea has us aboard, which is whether we came off the deck.
-    climb = { boat: b, path, len, d: dir > 0 ? 0 : len, side: ladder.x < 0 ? -1 : 1, crew: dir < 0, letGo: false };
+    climb = { boat: b, ladder, path, len, d: dir > 0 ? 0 : len, side: ladder.x < 0 ? -1 : 1, crew: dir < 0, letGo: false };
   }
   function stepClimb(dt, ix, iz) {
     if (climb.fixed) return stepFixedClimb(dt, ix, iz);
@@ -1635,7 +1637,7 @@ export function createWalkMode({
     const was = pathAt(c.path, c.d, climbWas).y;
     c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
     const p = pathAt(c.path, c.d, climbAt);
-    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was } : null;
+    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was, at: p.y - c.ladder.foot } : null;
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
     const x = state.pos.x, z = state.pos.z;
