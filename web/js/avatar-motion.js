@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS, bodyKey } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED, horsebackOf } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
+import { loadWanderers } from './player-bodies.js';
 import { swimPose, TREAD_SINK } from './diving.js';
 import { loadSet } from './models.js';
 import { meshAsset, createBuildingMaterial } from './buildings.js';
@@ -26,6 +27,9 @@ const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.85 })
 const saved = loadAvatar();
 const carrier = new THREE.Group();scene.add(carrier);
 // The Wanderer's man and woman too (Plans/basislichamen-en-outfits.md), as the Adventurer with a body.
+// A workbench waits for their bodies (player-bodies.js loadWanderers, lazy on the island) rather than
+// showing the Adventurer in their place first.
+await loadWanderers({ now: true });
 const figures = CHARACTERS.map((c, i) => {
   const look = normalizeAvatar(c.wanderer ? { ...saved, character: 'adventurer', body: c.sex } : { ...saved, character: c.id, body: null });
   const rig = createClassicAvatar(look, mat);

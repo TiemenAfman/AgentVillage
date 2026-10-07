@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, SHAPES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
+import { loadWanderers, onWanderers, wanderersReady } from './player-bodies.js';
 import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, slotPicks, slotOffers, iconKey, iconGeometry, garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
 import { WALK_SPEED } from './avatar-gait.js';
@@ -33,6 +34,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   let preview = null;    // the figure in the alcove, alive only while the panel is
   let icons = null;      // the slot thumbnails' renderer, likewise
   let pop = null;        // whichever picker or palette is up, if any
+  let forgetBodies = null;   // waiting for the Wanderer's bodies (player-bodies.js loadWanderers)
 
   // The key that opened us closes us again, as it does in every game with a bag: I from the
   // sky (main.js ORBIT_KEYS), or wherever it is bound on foot. Not a repeat, not with a
@@ -158,6 +160,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
             <div class="inv-col left inv-who">${charLeft()}</div>
             <div class="inv-stage">
               <canvas id="av-canvas"></canvas>
+              <p class="inv-loading" hidden>...</p>
               ${INVENTORY_FLASKS.map(flaskHtml).join('')}
             </div>
             <div class="inv-col right inv-gear">${column('right')}</div>
@@ -189,6 +192,21 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     }
     setView('inventory');
     apply();
+    // The Wanderer's bodies are loaded the first time anybody may pick one (player-bodies.js): until
+    // they are in, the alcove says so, the figure and the portraits are the Adventurer, and once they
+    // land every thumbnail is painted again (its key cannot tell the stand-in from the real body).
+    if (!wanderersReady()) {
+      const note = el.querySelector('.inv-loading');
+      note.hidden = false;
+      loadWanderers();
+      forgetBodies = onWanderers(() => {
+        forgetBodies = null;
+        note.hidden = true;
+        for (const c of el.querySelectorAll('canvas[data-key]')) delete c.dataset.key;
+        if (icons) sync();
+        if (preview) preview.set(spec);
+      });
+    }
   }
 
   function onSlot(slot, btn) {
@@ -409,6 +427,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
 
   function teardown() {
     closePopover();   // it lives in body, not in el - clearing el would leave it standing
+    if (forgetBodies) { forgetBodies(); forgetBodies = null; }
     if (icons) { icons.dispose(); icons = null; }
     if (preview) { preview.dispose(); preview = null; }
     el.hidden = true;
@@ -531,6 +550,7 @@ function makeIcons() {
     canvas.width = canvas.height = px;
     mesh.geometry.dispose();
     mesh.geometry = iconGeometry(icon, spec);
+    if (!mesh.geometry.attributes.position) { canvas.getContext('2d').clearRect(0, 0, px, px); return; }   // a Wanderer's, still loading
     mesh.position.set(0, 0, 0);
     mesh.rotation.set(...(icon.pose || [0, 0, 0]));
     box.setFromObject(mesh);   // after the pose, so a tilted blade still fits its well

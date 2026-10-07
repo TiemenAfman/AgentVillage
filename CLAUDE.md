@@ -1094,7 +1094,7 @@ is asked for at the top of `boot()` too (`hdAsking`) and `warmRooms` waits for i
 splits a pack piece off the merge only if the list is in when the room is built, and a room warmed blind showed
 no HD ever (`setDetail` only switches pieces that exist). One built blind anyway says so (`hdMissed`), and
 `roomFor` / `rewarmRooms` build it again, never while somebody is in it (`tests/hd-late-manifest.test.mjs`), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
-island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
+island itself draws stays in `SETS`; the Wanderer's bodies go the same worker road (see the Wanderer below). The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
 change a floor or a prop there and rebake, never in two places. The hall's lid (what interior.js takes off when the
@@ -1710,6 +1710,17 @@ classic-avatar.js `applyShape` (the object's mirror kept; `rig.hipY`/`rig.eye` f
 and bust are moved vertices in avatar.js `shapeGeometry` (along the normal / forward round `bustOf`),
 held items excluded. The sea passes `body`, `wear`, `hairStyle`, `hair`, `shape` in `lookOf`; an older sea
 drops them and everybody sees the Adventurer. Gear is the Adventurer's refitted (`refit_gear`).
+**A Wanderer's triangles are loaded only when somebody wears one** (the fourth exception to "Nothing is
+fetched at boot"): `bodies-mesh.js` is 19.5 MB, so the boot imports only `bodies-meta.js` (the same bake
+without positions/normals/colors/skin*, 39 kB - all the inventory and the look read), and
+`player-bodies.js loadWanderers` parses the rest in a worker (`lazy-module.js offThread`, shared with
+models.js LAZY) and merges it into those same part objects. Until then `drawnLook` draws a Wanderer as the
+Adventurer (avatar.js `buildFigure`, classic-avatar.js `createClassicAvatar`, which loads on a Wanderer look
+and swaps itself when `onWanderers` fires) and the inventory's Wanderer icons are empty under a "..."
+(studio.js). Nothing is fetched before `allowWanderers()` (main.js, beside `allowImp`), except our own
+Wanderer at the top of `boot()`, which the boot waits up to 2.5 s for (`ownBodyIn`); `/demo` allows at once,
+`/avatar-motion.html` awaits it. A test that draws a Wanderer `await loadWanderers({ now: true })` first;
+`tests/bodies-lazy.test.mjs` walks the boot's static import graph. The bake writes both files.
 The Adventurer's arm bake also carries `skinIndices`/`skinWeights`: limb bones 0..2,
 shared torso/head bones 3..7 and fifteen finger bones 8..22. `ADVENTURER_FINGERS` gives
 their pivots, parents, curl axes and relaxed/grip angles. Preserve these source weights:

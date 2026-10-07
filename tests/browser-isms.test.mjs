@@ -52,7 +52,8 @@ test('a tooltip draws a trailing key as a key cap, and main.js installs ours', a
   const main = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   assert.match(main, /\ninstallTooltips\(\);/);
   assert.match(main, /await warmRooms\(/, 'the rooms are built behind the boot screen, not at the door');
-  assert.match(readFileSync(new URL('../web/js/models.js', import.meta.url), 'utf8'), /lazy-set-worker\.js/);
+  assert.match(readFileSync(new URL('../web/js/models.js', import.meta.url), 'utf8'), /from '\.\/lazy-module\.js'/);
+  assert.match(readFileSync(new URL('../web/js/lazy-module.js', import.meta.url), 'utf8'), /lazy-set-worker\.js/);
 });
 
 test('Alt+Enter (and F11 in the window) is the fullscreen key; the window goes borderless through Rust', async () => {

@@ -6,6 +6,8 @@
 // part lists, and that file imports avatar.js.
 import { PLAYER_HAT_SHAPES, HAND_ITEMS, CHARACTERS, GARMENT_SETS, HAIR_STYLES, avatarPlayerComponentGeometry, characterOf, normalizeAvatar } from './avatar.js';
 import { PIECE_PARTS, HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
+import { BufferGeometry } from 'three';
+import { wanderersReady } from './player-bodies.js';
 
 const SETTLER_PARTS = characterOf().parts;
 // Every body's parts: the gear shares its names (and slots) across bodies, the bodies' own parts
@@ -203,5 +205,9 @@ export function iconGeometry(icon, spec) {
   // A garment or the clothes drawn as worn: every slot empty but the icon's own.
   if (icon.wear) on = { ...on, wear: { shirt: null, trousers: null, shoes: null, straps: null, ...icon.wear } };
   if (icon.hairStyle) on = { ...on, hairStyle: icon.hairStyle };
+  // A Wanderer's piece before her body is in (player-bodies.js loadWanderers) is nothing yet: its
+  // parts are named apart from the Adventurer standing in for her. The inventory paints it again
+  // when the body lands (studio.js open).
+  if (characterOf(on).wanderer && !wanderersReady()) return new BufferGeometry();
   return avatarPlayerComponentGeometry(icon.shape ? { ...on, hatShape: icon.shape } : on, icon.parts);
 }

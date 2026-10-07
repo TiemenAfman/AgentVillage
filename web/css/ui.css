@@ -729,6 +729,10 @@ textarea.ho-input { resize: vertical; min-height: 56px; font-family: inherit; }
 .inv-stage::before { content: ""; position: absolute; left: 26%; right: 26%; bottom: 7%; height: 7%; border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0,0,0,.75), transparent 70%); }
 .inv-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/* Waiting for the Wanderer's bodies (studio.js open): the Adventurer stands in until they land. */
+.inv-loading { position: absolute; left: 0; right: 0; top: 10px; margin: 0; text-align: center; pointer-events: none;
+  font-size: 22px; letter-spacing: .2em; color: rgba(232,226,212,.7); }
+.inv-loading[hidden] { display: none; }
 
 /* The choice of body: two portraits in wells like the slots', side by side over the alcove,
    the worn one lit the way a worn piece is. */

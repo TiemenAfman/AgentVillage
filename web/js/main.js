@@ -134,6 +134,7 @@ import { createPlanOverlay } from './plan-overlay.js';
 import { createPlanPanel } from './plan-panel.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
+import { loadWanderers, allowWanderers, wantsWanderer } from './player-bodies.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
@@ -8379,7 +8380,19 @@ function rewarmRooms() {
   }
 }
 
+// Our own body, if it is a Wanderer: its 19.5 MB of triangles (player-bodies.js) start parsing in a
+// worker at the top of the boot - the one thing fetched before the boot screen goes - and the boot
+// waits for them a moment before it lifts (`ownBodyIn`), so the first frame shows the body you chose.
+// Past that the Adventurer stands in, the same rig and size, and is swapped when they land. Nobody
+// else's Wanderer is asked for before allowWanderers(), after `state.ui.boot(true)`.
+let ownBody = null;
+async function ownBodyIn(waitMs) {
+  if (!ownBody) return;
+  await Promise.race([ownBody, new Promise((r) => setTimeout(r, waitMs))]);
+}
+
 async function boot() {
+  if (wantsWanderer(loadAvatar())) ownBody = loadWanderers({ now: true });
   if (!STANDALONE) roomsLoading = Promise.all(ROOM_KINDS.filter((r) => !roomReady(r)).map(prepareRoom));
   if (!STANDALONE) hdAsking = loadHdManifest();
   state.ui = createUI({
@@ -9131,6 +9144,7 @@ Everything is copied and checked first; the island then starts again there. The 
   // walk down into it or send it somewhere from the sky. Before the net exists, so the
   // net's own start says it is walking.
   if (!STANDALONE) await warmRooms(3000);
+  await ownBodyIn(2500);
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
@@ -9150,6 +9164,8 @@ Everything is copied and checked first; the island then starts again there. The 
   // The one model that is fetched rather than baked - the volcano's imp - may start loading
   // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.
   allowImp();
+  // And the Wanderer's bodies, for a peer, a figure or the inventory that asks (player-bodies.js).
+  allowWanderers();
   // So may this machine's own models (HOME/models/), which only the keeper has.
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
   // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list, asked for at the top of boot()

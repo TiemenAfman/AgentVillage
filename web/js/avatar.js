@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_EYE_Y } from './settler-mesh.js';
-import { CHARACTERS, CHARACTER_PICKS, DEFAULT_CHARACTER, PART_COLORS, SEXES, GARMENTS, GARMENT_SETS, DEFAULT_WEAR, HAIR_STYLES, characterId, characterOf, bodyKey } from './player-bodies.js';
+import { CHARACTERS, CHARACTER_PICKS, DEFAULT_CHARACTER, PART_COLORS, SEXES, GARMENTS, GARMENT_SETS, DEFAULT_WEAR, HAIR_STYLES, characterId, characterOf, bodyKey, drawnLook } from './player-bodies.js';
 export { CHARACTERS, CHARACTER_PICKS, DEFAULT_CHARACTER, SEXES, GARMENTS, GARMENT_SETS, DEFAULT_WEAR, HAIR_STYLES, characterId, characterOf, bodyKey };
 // The wardrobe moved to shared/ so the walk can ask how tall somebody is without
 // dragging three.js into Node - see the header of shared/palette.mjs. Re-exported
@@ -22,7 +22,7 @@ const KEY = 'promptholm.avatar';
 export const PLAYER_SCALE = 1.12;
 // The Traveller's; a body's own is eyeOf(spec).
 export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
-export const eyeOf = (spec) => characterOf(spec || DEFAULT_CHARACTER).eyeY * PLAYER_SCALE;
+export const eyeOf = (spec) => characterOf(drawnLook(spec) || DEFAULT_CHARACTER).eyeY * PLAYER_SCALE;
 
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
@@ -190,7 +190,8 @@ const GLOWING = new Set(['flame', 'ember']);
 // Blender meshes carry wardrobe slots instead of fixed materials. Recolouring merges
 // them into the same single vertex-coloured mesh used by the studio and walk mode.
 function buildFigure(spec, gear, include = null) {
-  const s = normalizeAvatar(spec);
+  // A Wanderer whose body has not loaded yet is drawn as the Adventurer (player-bodies.js drawnLook).
+  const s = drawnLook(normalizeAvatar(spec));
   const c = characterOf(s);
   // The garments worn (`garment:<set>-<slot>`) and the hairstyle (`hair:<id>`, the body's own first
   // when it has no such style); the skin parts list what each garment hides (`hide`).
