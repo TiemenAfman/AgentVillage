@@ -25,12 +25,17 @@
 // spot before it comes back to meet the ground (the fore reaching out, the hind far under the
 // belly). Both are bumps with no slope at either end, so a landing still meets the stance line
 // at the stance's own speed and nothing snaps.
-export const HORSE_TROT = .72;
-export const HORSE_GALLOP = 1.18;
+// A horse is a way to get somewhere, so it outruns its rider: the Adventurer runs at 1.8 and
+// sprints at 2.7 (avatar-gait.js), and at .72 and 1.18 the keeper walked past his own horse.
+// The trot is now above a sprint and the gallop a good deal more; what pays for it is the
+// cadence and a shorter time on the ground, since a planted hoof covers at most the leg's
+// reach (~.29 a stance at this body height) and never slides: stance = v * duty / hz.
+export const HORSE_TROT = 1.9;
+export const HORSE_GALLOP = 3.4;
 export const HORSE_PATTERNS = {
-  trot: { land: [0, .5, .5, 0], duty: .46, lift: [.09, .066], flex: [1.35, .8], reach: [0, 0], peak: .38 },
-  gallop: { land: [.42, .6, 0, .17], duty: .26, lift: [.13, .11], flex: [1.55, 1.15], reach: [.02, -.016], peak: .32,
-    trail: [.035, .07], over: [.055, .03] },
+  trot: { land: [0, .5, .5, 0], duty: .36, lift: [.09, .066], flex: [1.35, .8], reach: [0, 0], peak: .38 },
+  gallop: { land: [.42, .6, 0, .17], duty: .2, lift: [.13, .11], flex: [1.55, 1.15], reach: [.02, -.016], peak: .32,
+    trail: [.035, .07], over: [.055, 0] },
   walk: { land: [.25, .75, 0, .5], duty: .72, lift: [.038, .03], flex: [.6, .35], reach: [0, 0], peak: .42 },
 };
 export const fraction = (x) => x - Math.floor(x);
@@ -38,9 +43,9 @@ export function horseCadence(speed, gait) {
   const v = Math.abs(speed);
   if (v < .001) return 0;
   // Below the normal pace shorten and slow the trot instead of sliding a stationary foot.
-  if (gait === 'gallop') return 1.25 + .15 * Math.min(1, v / HORSE_GALLOP);
+  if (gait === 'gallop') return 1.7 + .9 * Math.min(1, v / HORSE_GALLOP);
   if (gait === 'walk') return Math.max(.4, v / .29);
-  return .75 + .85 * Math.min(1, v / HORSE_TROT);
+  return .75 + 1.75 * Math.min(1, v / HORSE_TROT);
 }
 // The swing's own clock, skewed so the hoof is highest and most folded at `peak` of the swing
 // (it snaps up off the ground and then reaches forward to land), 0 and 1 at its two ends.
@@ -51,7 +56,10 @@ export function hoofPath(cycle, leg, speed, gait, hz, out = {}) {
   const u = fraction(cycle - p.land[leg]), duty = p.duty;
   const step = hz > 0 ? speed * duty / hz : 0;
   const reach = speed ? p.reach[end] * Math.min(1, Math.abs(speed) / HORSE_TROT) : 0;
-  out.contact = u < duty || !speed;
+  // No cadence is standing, whatever speed is said: passing through nought between forward and
+  // back the horse is 'stand' at a speed of a few thousandths, and the swing's tangent below
+  // divided by that hz of 0 put Infinity into two hooves - the legs vanished (7 Oct 2026).
+  out.contact = u < duty || !speed || !(hz > 0);
   if (out.contact) {
     out.z = reach + step * (.5 - u / duty);
     out.y = 0;
@@ -93,7 +101,7 @@ export function horseBody(cycle, gait, out = {}) {
     out.bodyX = -.12 * Math.cos(TAU * (cycle - .2));
     // Highest in the gathered suspension, lowest as it stretches over mid-stride. Lowered on
     // average so the hind landing straight out of the flight reaches the ground unclamped.
-    out.bodyY = -.046 + .013 * Math.cos(TAU * (cycle - .93));
+    out.bodyY = -.054 + .013 * Math.cos(TAU * (cycle - .93));
     // Head up as the hinds engage, lowest as the leading fore (fr, at .6) lands.
     out.headX = .03 + .1 * Math.cos(TAU * (cycle - .55));
     out.tailX = .32 + .06 * Math.cos(TAU * (cycle - .6));
@@ -103,7 +111,7 @@ export function horseBody(cycle, gait, out = {}) {
   // Twice a stride: lowest at each diagonal's mid-stance, highest in its suspension.
   const c = Math.cos(2 * TAU * (cycle - duty / 2));
   const amp = gait === 'walk' ? .003 : .008;
-  out.bodyY = -.038 - amp * c;
+  out.bodyY = (gait === 'walk' ? -.038 : -.052) - amp * c;
   out.bodyX = 0;
   // Everything goes up and down together; the head drops a little more as the weight lands.
   out.headX = .025 + .02 * c;

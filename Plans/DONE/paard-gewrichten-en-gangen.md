@@ -89,3 +89,22 @@ kantelde star mee met elke wip van de galop, de kop als het eind van een stok. N
 
 De rig krijgt die beweging als `pose.horseback` (een object; `true` blijft de vaste zit).
 Alleen tekenen: niets gaat over de lijn. `tests/mount-rider.test.mjs`.
+
+## Sneller dan de ruiter, en geen benen kwijt (7 oktober 2026)
+
+- **Snelheid**: draf 1,9 en galop 3,4 (waren 0,72 en 1,18; de Avonturier rent 1,8 en sprint 2,7,
+  dus de keeper liep zijn paard voorbij). Betaald met cadans (draf tot 2,5 Hz, galop tot 2,6 Hz) en
+  een kortere steun (draf 0,36, galop 0,20), zodat een staande hoef binnen het bereik van het been
+  blijft (~0,29 per steun) en nooit glijdt; de romp ligt in draf en galop iets lager. In de zwaai
+  strekt een been soms tot het eind (de hoef 1 cm korter dan gepland, in de lucht, onzichtbaar).
+  Galop vanaf 2,6 (`GAIT_EDGES`).
+- **Verdwijnende benen** bij wisselen tussen vooruit en achteruit: door nul heen is het paard even
+  'stand' op een paar duizendsten met cadans 0, en de raaklijn van de zwaai deelde door die 0. De
+  overgang droeg de NaN daarna mee. `hoofPath` behandelt hz 0 als staan, de overgang gooit
+  ongeldige getallen weg (`tests/horse-rig.test.mjs`).
+- **Armen** deinen mee: een gedempte veer gedreven door de versnelling van het lichaam (draf: de
+  ellebogen ±4-5 graden, stilstaand stil).
+- **Knieën**: `stirrupLeg` in classic-avatar.js lost heup en knie op de echte botten op zodat de
+  voeten in de beugels blijven als de heupen opkomen. Met de huidige beugels staat het been van de
+  Avonturier al bijna gestrekt (hij haalt maar ~3 mm); kortere stijgbeugels zijn onderweg in de
+  Blender-bron.

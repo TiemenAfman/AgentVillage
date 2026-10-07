@@ -22,10 +22,10 @@ import { solidMaterial } from './buildings.js';
 // Speeds match the small horse’s stride length. Sprint/Shift selects gallop.
 export const MOUNT_TOP = HORSE_TROT;
 export const MOUNT_GALLOP = HORSE_GALLOP / HORSE_TROT;
-export const MOUNT_ACCEL = .65;       // a horse has mass: about a second to cruising speed
-export const MOUNT_BRAKE = 2.4;       // reined in from the top in under a second, but not in a pace
+export const MOUNT_ACCEL = 1.4;       // a horse has mass: over a second to a trot, two more to a gallop
+export const MOUNT_BRAKE = 4.5;       // reined in from the gallop in under a second, but not in a pace
 export const MOUNT_ROLL = 1.2;        // let go of the reins and it comes back to a halt in a few seconds
-export const MOUNT_REVERSE = .22;     // S at a standstill backs it up, slowly
+export const MOUNT_REVERSE = .35;     // S at a standstill backs it up, slowly
 // A horse turns on its haunches standing and at a walk, and wide at a gallop: it does not pivot
 // on its own axis flat out. Rad/s, from a walk's top down to the gallop's.
 export const MOUNT_TURN = 2.6;
@@ -177,7 +177,7 @@ function slice(m, p, r, boost, step, ground, blocked, ceiling) {
 // rider and every peer work it out of how fast the horse goes, so nothing about it is on the wire.
 // Normal reins select trot; sprint selects gallop. Hysteresis prevents flicker.
 export const GAITS = ['stand', 'trot', 'gallop'];
-export const GAIT_EDGES = [.02, .84];
+export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (3.4)
 export const GAIT_MARGIN = .05;
 export function gaitOf(v, was = null) {
   const speed=Math.abs(v);
@@ -185,8 +185,8 @@ export function gaitOf(v, was = null) {
   const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
   return speed>threshold?'gallop':'trot';
 }
-export const CADENCE = {stand:0,trot:[.75,1.6],gallop:[1.25,1.4]};
-export const CADENCE_MAX=2.1;
+export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,2.6]};
+export const CADENCE_MAX=2.7;
 export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
 export const PATTERN=HORSE_PATTERNS;
 const frac=(x)=>x-Math.floor(x);
@@ -210,8 +210,11 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   if(old!==r.gait) {
     r.transition=1;
     r.offsets=P.hooves.map((foot,i)=>{
-      const next=hoofPath(r.cycle,i,v,r.gait,r.hz);
-      return {z:foot.z-next.z,y:foot.y-next.y,flex:(foot.flex||0)-next.flex};
+      const next=hoofPath(r.cycle,i,r.gait==='stand'?0:v,r.gait,r.hz);
+      const o={z:foot.z-next.z,y:foot.y-next.y,flex:(foot.flex||0)-next.flex};
+      // Never carry a bad number into the ease: one NaN here stays in that hoof for good.
+      for(const k in o) if(!Number.isFinite(o[k])) o[k]=0;
+      return o;
     });
   }
   r.transition=Math.max(0,r.transition-step*5);
@@ -264,7 +267,7 @@ export const RIDER_SEAT = {
 };
 export function createRider() {
   return { lean: 0, leanV: 0, y: 0, yV: 0, rise: 0, seatY: null, pitch: 0, arm: 0,
-    motion: { lean: 0, arm: 0, elbow: 0 } };
+    bob: 0, bobV: 0, lastV: 0, motion: { lean: 0, arm: 0, elbow: 0, lift: 0 } };
 }
 // One step of the rider over the horse's pose: `saddleY` is the saddle's height this frame (the
 // spring works on how it moves, not where it is). Returns the rider's own pitch (radians,
@@ -276,6 +279,13 @@ export function stepRider(k, ride, saddleY, dt) {
   // a sitting trot is felt in the seat), softer in the half seat, where the knees take the bob.
   if (k.seatY === null || !step) { k.seatY = saddleY; k.y = 0; k.yV = 0; }
   const moved = saddleY - k.seatY; k.seatY = saddleY;
+  // The arms hang loose off the shoulders: what lifts the body flings them down a moment later
+  // and they swing back - a damped spring driven by how the body's height speeds up and slows.
+  const bodyV = step ? (moved + k.yV * step) / step : 0;
+  const accel = step ? Math.max(-40, Math.min(40, (bodyV - k.lastV) / step)) : 0;
+  k.lastV = bodyV;
+  k.bobV += (-120 * k.bob - 2 * .3 * Math.sqrt(120) * k.bobV + 4.5 * accel) * step;
+  k.bob = Math.max(-.25, Math.min(.25, k.bob + k.bobV * step));
   const stiff = ride.gait === 'gallop' ? 90 : 260, damping = 2 * .55 * Math.sqrt(stiff);
   k.y -= moved;                                    // the saddle went, the body has not yet
   k.yV += (-stiff * k.y - damping * k.yV) * step;
@@ -294,8 +304,9 @@ export function stepRider(k, ride, saddleY, dt) {
   // The hands follow the mouth: forward as the head goes down, back as it comes up.
   k.arm = damp(k.arm, want.give * (P.headX - .03) * go, 12, step);
   k.motion.lean = k.lean;
-  k.motion.arm = k.arm;
-  k.motion.elbow = -k.arm * .8;
+  k.motion.arm = k.arm + k.bob * .4;
+  k.motion.elbow = -k.arm * .8 + k.bob;
+  k.motion.lift = k.y + k.rise;
   return k;
 }
 

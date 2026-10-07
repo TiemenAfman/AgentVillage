@@ -226,6 +226,7 @@ function seatFit(fit, motion) {
   seated.lean = fit.lean + (motion.lean || 0);
   seated.arm = fit.arm + (motion.arm || 0);
   seated.elbow = fit.elbow + (motion.elbow || 0);
+  seated.lift = motion.lift || 0;
   return seated;
 }
 
@@ -469,6 +470,46 @@ function buildRig(spec, material) {
   object.scale.x = -1;
   const pieces = {};
   const chains = {};
+  // The hips lifted off the seat (the half seat, a bounce) with the feet kept in the irons: the
+  // knees open as he rises and fold as he sits again. The leg is turned out round the barrel and
+  // its bones do not hang plumb, so no plane holds it: hip and knee are solved on the bones
+  // themselves - damped Newton steps on (hip, knee) for the ankle's height and how far forward it
+  // is - and the foot kept level. Where the irons are out of reach (a leg already nearly straight)
+  // the best step found is kept and the soles come off the irons by the rest, rather than the leg
+  // being driven round into a knee bent the wrong way. Measured: tests/horseback-pose.test.mjs.
+  const ankleAt = new THREE.Vector3();
+  function ankleOf(chain, piece, th, kn) {
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    piece.pivot.updateWorldMatrix(false, true);
+    chain.end.getWorldPosition(ankleAt);
+    return object.worldToLocal(ankleAt);
+  }
+  function stirrupLeg(chain, piece, base, lift) {
+    object.updateWorldMatrix(true, false);
+    const want = ankleOf(chain, piece, base.thigh, base.knee).clone();
+    want.y -= lift;
+    let th = base.thigh, kn = base.knee, best = Infinity, bt = th, bk = kn;
+    const e = 1e-3;
+    for (let n = 0; n < 8; n++) {
+      const a = ankleOf(chain, piece, th, kn), y0 = a.y - want.y, z0 = a.z - want.z;
+      const miss = Math.abs(y0) + Math.abs(z0);
+      if (miss < best) { best = miss; bt = th; bk = kn; } else break;
+      if (miss < 1e-5) break;
+      const b = ankleOf(chain, piece, th + e, kn), yt = (b.y - want.y - y0) / e, zt = (b.z - want.z - z0) / e;
+      const c = ankleOf(chain, piece, th, kn + e), yk = (c.y - want.y - y0) / e, zk = (c.z - want.z - z0) / e;
+      const det = yt * zk - yk * zt;
+      if (Math.abs(det) < 1e-9) break;
+      // Damped: near a straight leg a full step overshoots into a knee bent backwards.
+      const dt0 = (y0 * zk - yk * z0) / det, dk = (yt * z0 - y0 * zt) / det, big = Math.max(Math.abs(dt0), Math.abs(dk));
+      const k = big > .25 ? .25 / big : 1;
+      th -= dt0 * k;
+      kn = Math.max(.05, Math.min(2.4, kn - dk * k));
+    }
+    const a = ankleOf(chain, piece, th, kn);
+    if (Math.abs(a.y - want.y) + Math.abs(a.z - want.z) >= best || kn < base.knee * .25) { th = bt; kn = bk; }
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    chain.end.rotation.x = th - kn;
+  }
   const gait = createGait(PIVOTS.leftLeg[1], JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
     JOINTS.leftLeg.end[1]*PLAYER_SCALE, G);
   let previousParent = null;
@@ -1584,6 +1625,7 @@ function buildRig(spec, material) {
         // the stirrup is - then the foot turned back flat on its tread.
         chain.bend.rotation.z = out * horse.shin;
         chain.end.rotation.z = -out * (horse.spread + horse.shin);
+        if (horse.lift > 1e-4) stirrupLeg(chain, pieces[side], horsebackOf(character), horse.lift);
       }
     }
     // The torso's own pose when no clip is playing: the lean shared between the small of the

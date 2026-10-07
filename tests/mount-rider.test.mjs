@@ -17,7 +17,7 @@ function gallop(speed, seconds) {
   const mat = new THREE.MeshBasicMaterial();
   const horse = createMount({ scene: new THREE.Scene(), material: mat });
   const rider = new THREE.Object3D();
-  const out = { horsePitch: [], riderPitch: [], off: 0, lean: [], arm: [], lift: [] };
+  const out = { horsePitch: [], riderPitch: [], off: 0, lean: [], arm: [], elbow: [], lift: [] };
   let z = 0;
   for (let i = 0; i < seconds / dt; i++) {
     z += speed * dt;
@@ -32,7 +32,7 @@ function gallop(speed, seconds) {
     out.lift.push(hips.y - saddle.y);
     out.horsePitch.push(horse.object.rotation.x);
     out.riderPitch.push(rider.rotation.x);
-    out.lean.push(m.lean); out.arm.push(m.arm);
+    out.lean.push(m.lean); out.arm.push(m.arm); out.elbow.push(m.elbow);
   }
   horse.dispose(); mat.dispose();
   return out;
@@ -58,4 +58,11 @@ test('at the trot he sits it: no half seat, a lift on each diagonal, upright', (
   assert.ok(lean < 0.1, `trot lean ${lean}`);
   assert.ok(span(t.lift) > 0.0005 && Math.max(...t.lift) < 0.02, `trot bounce ${span(t.lift)}`);
   assert.ok(Math.min(...t.lift) >= 0);
+  // The arms hang loose: each lift of the body swings the forearms down and back up.
+  assert.ok(span(t.elbow) > 0.08 && span(t.elbow) < 0.4, `trot elbows ${span(t.elbow)}`);
+});
+
+test('standing, the arms are still', () => {
+  const s = gallop(0, 4);
+  assert.ok(span(s.elbow) < 0.01 && span(s.arm) < 0.01, `still arms ${span(s.elbow)} ${span(s.arm)}`);
 });

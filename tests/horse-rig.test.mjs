@@ -4,7 +4,8 @@ import { register } from 'node:module';
 import * as THREE from 'three';
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document={createElementNS:()=>({addEventListener(){},removeEventListener(){},set src(_) {}})};
-const {createMount,MOUNT_TOP,MOUNT_GALLOP}=await import('../web/js/mount.js');
+const M=await import('../web/js/mount.js');
+const {createMount,MOUNT_TOP,MOUNT_GALLOP}=M;
 const {FAUNA}=await import('../web/js/fauna-mesh.js');
 delete globalThis.document;
 
@@ -59,6 +60,24 @@ test('loaded hooves stay level, on the floor and planted in world space in both 
     assert.ok(maxLift>.025,'feet never lift');
     assert.ok(maxFloor<.001,`speed ${speed}: sole ${maxFloor} off floor`);
     assert.ok(maxSlide<.0002,`speed ${speed}: planted hoof moves ${maxSlide} per frame`);
+  }
+  mount.dispose();mat.dispose();
+});
+
+// Switching between forward and back passes through nought as 'stand' at a speed of a few
+// thousandths with no cadence; the swing's tangent divided by that hz of 0 once put Infinity into
+// two hooves and the transition ease carried it on - the horse lost two legs (7 Oct 2026).
+test('reining from forward to back and back again never loses a leg',()=>{
+  const {mountAt,stepMount}=M;
+  const mat=new THREE.MeshBasicMaterial();
+  const mount=createMount({scene:new THREE.Scene(),material:mat});
+  const m=mountAt(0,0,0,0);
+  for(let i=0;i<1500;i++){
+    const rein=[1,-1,0,1,-1,1][Math.floor(i/37)%6];
+    stepMount(m,{rein,gallop:i%400>300},1/60,{ground:()=>0});
+    mount.place(m.x,m.y,m.z,m.yaw);mount.pose({speed:m.v,rate:m.rate,air:m.air},1/60);
+    for(const f of mount.ride.pose.hooves)assert.ok(Number.isFinite(f.z)&&Number.isFinite(f.y)&&Number.isFinite(f.flex),`frame ${i}: hoof ${JSON.stringify(f)}`);
+    for(const b of mount.joints.bones)assert.ok(Number.isFinite(b.quaternion.x)&&Number.isFinite(b.quaternion.w),`frame ${i}: bone ${b.name}`);
   }
   mount.dispose();mat.dispose();
 });
