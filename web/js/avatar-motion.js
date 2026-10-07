@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
+import { normalizeAvatar, loadAvatar, CHARACTERS, bodyKey } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED, horsebackOf } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { swimPose, TREAD_SINK } from './diving.js';
@@ -25,8 +25,9 @@ const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.85 })
 // on one carrier so they share the stride, the track and the camera.
 const saved = loadAvatar();
 const carrier = new THREE.Group();scene.add(carrier);
+// The Wanderer's man and woman too (Plans/basislichamen-en-outfits.md), as the Adventurer with a body.
 const figures = CHARACTERS.map((c, i) => {
-  const look = normalizeAvatar({ ...saved, character: c.id });
+  const look = normalizeAvatar(c.wanderer ? { ...saved, character: 'adventurer', body: c.sex } : { ...saved, character: c.id, body: null });
   const rig = createClassicAvatar(look, mat);
   const stand = new THREE.Group();stand.position.x = (i - (CHARACTERS.length - 1) / 2) * .34;
   stand.add(rig.object);carrier.add(stand);
@@ -41,7 +42,9 @@ const HORSE_GAITS=[['stilstaan',0],['draf',MOUNT_TOP],['galop',MOUNT_TOP*MOUNT_G
 // Use the island material, including the horse's exported smooth skin normals.
 const horseMat=createBuildingMaterial();
 let horse=null, horseGait=1, horseHelper=null;
-const rider=figures.find(f=>f.id==='adventurer');
+// ?rider=wanderer-female puts somebody else on the horse.
+const rider=figures.find(f=>f.id===(new URLSearchParams(location.search).get('rider')||'adventurer'))||figures.find(f=>f.id==='adventurer');
+const seatAt=new THREE.Vector3();
 const traveller = figures[0].rig;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 const track=new THREE.Group();scene.add(track);
@@ -151,7 +154,7 @@ for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()
 };
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
-const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
+const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===bodyKey(spec))f.rig.set(spec);}});
 document.querySelector('#motion-inventory').onclick=()=>inventory.open();
 document.querySelector('#motion-holds').onchange=e=>{showHolds=e.target.checked;};
 document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.checked;if(horseHelper)horseHelper.visible=e.target.checked;};

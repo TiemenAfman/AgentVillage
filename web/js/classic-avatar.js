@@ -283,7 +283,10 @@ export const HORSEBACK_OF = {
   traveller: HORSEBACK,
   adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 68 * DEG, shin: 10 * DEG, armIn: 20 * DEG, perch: 0.045 },
 };
-export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
+// The Wanderers (player-bodies.js) sit the Adventurer's way until they are measured on the horse
+// themselves: their skeleton is his, a little broader in the hip.
+export const horsebackOf = (character) => HORSEBACK_OF[character]
+  || (String(character).startsWith('wanderer-') ? HORSEBACK_OF.adventurer : HORSEBACK);
 const seated = { ...HORSEBACK };
 function seatFit(fit, motion) {
   if (typeof motion !== 'object') return fit;
@@ -489,7 +492,7 @@ export function carriedGeometry() {
 // (HAND_ATTACH). The Adventurer's bake carries refitted copies of these parts too, stretched
 // with the torso they were packed beside, which is no shape for a blade.
 function heldPartGeometry(spec, names) {
-  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null }, names);
+  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null, body: null, shape: null }, names);
   const { GRIP } = bodyOf();
   geometry.translate(-GRIP[0], -GRIP[1], -GRIP[2]);
   return geometry;
@@ -511,7 +514,7 @@ export function heldItemGeometry(item, spec) {
 // One body's rig. createClassicAvatar below is what everybody holds; it builds one of these
 // and builds a new one when the look changes body.
 function buildRig(spec, material) {
-  const { id: character, parts: PARTS, joints: JOINTS, fingers: FINGERS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec?.character);
+  const { id: character, parts: PARTS, joints: JOINTS, fingers: FINGERS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec);
   // The island shares a flat building material. Give this rig smooth shading while
   // retaining its shader hooks and live night/fade uniforms; never mutate the world.
   const sourceMaterial = material;
@@ -579,6 +582,7 @@ function buildRig(spec, material) {
     JOINTS.leftLeg.end[1]*PLAYER_SCALE, G);
   let previousParent = null;
   const parentAt = new THREE.Vector3(), lastParentAt = new THREE.Vector3();
+  const LEG_TORSO = PARTS.some((p) => p.skinGroup?.endsWith('Leg') && p.skinIndices);
   function bindLimb(mesh, group) {
     if (!chains[group]) {
       const root = new THREE.Bone(), bend = new THREE.Bone(), end = new THREE.Bone();
@@ -613,6 +617,10 @@ function buildRig(spec, material) {
         toe = new THREE.Bone(); toe.name = group + ':toe';
         toe.position.copy(ball).sub(local);
         end.add(toe); bones.push(toe);
+        // And the torso's bones after it (4..), which a leg baked with them weights its hips and
+        // waistband to (scripts/build-bodies.py LEG_TORSO): they follow the pelvis, not the thigh.
+        // Only on a body whose legs carry such weights (the Wanderer's).
+        if (LEG_TORSO) bones.push(...torso.skeleton.bones);
       }
       chains[group] = { root, bend, end, cap, toe, ball, fingers, grasp: 0, knee: knee.sub(origin), ankle: ankle.sub(origin),
         skeleton: new THREE.Skeleton(bones) };
@@ -1858,8 +1866,29 @@ function buildRig(spec, material) {
     }
   }
 
+  // The character editor's bone sliders (avatar.js SHAPES): height scales the whole figure (its
+  // mirror kept), the hips widen the pelvis with the spine scaled back so only the hips and the legs
+  // hung from them grow, and head, hands and feet scale their own piece or bone - everything skinned
+  // or hung below follows, the hat on the head and the glove on the hand included. Bust and build are
+  // in the geometry (avatar.js shapeGeometry). Animations turn bones and never scale them, so this
+  // holds through every clip.
+  let tall = 1;
+  function applyShape(look) {
+    const k = look?.shape || {};
+    tall = 1 + .1 * (k.height || 0);
+    object.scale.set(-tall, tall, tall);
+    const hips = 1 + .14 * (k.hips || 0), deep = 1 + .06 * (k.hips || 0);
+    torso.pelvis.scale.set(hips, 1, deep);
+    torso.spine.scale.set(1 / hips, 1, 1 / deep);
+    pieces.head.pivot.scale.setScalar(1 + .15 * (k.head || 0));
+    for (const side of ['leftArm', 'rightArm']) chains[side]?.end.scale.setScalar(1 + .25 * (k.hands || 0));
+    for (const side of ['leftLeg', 'rightLeg']) chains[side]?.end.scale.setScalar(1 + .2 * (k.feet || 0));
+  }
+  applyShape(spec);
+
   function set(next) {
     lookSpec = next;
+    applyShape(next);
     for (const piece of Object.values(pieces)) {
       const geometry = avatarPlayerComponentGeometry(next, piece.names);
       geometry.translate(-piece.at[0], -piece.at[1], -piece.at[2]);
@@ -1901,7 +1930,7 @@ function buildRig(spec, material) {
   return {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
-    character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
+    character, get hipY() { return hipY * tall; }, get eye() { return eye * tall; }, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
     strokes: !!(G.clips && GAIT_CLIPS.swim),
     dyingSeconds,
   };
@@ -1922,7 +1951,7 @@ export const DEATH_REST = 0.7;
 export function createClassicAvatar(spec, material) {
   let rig = buildRig(spec, material);
   function set(next) {
-    if (characterOf(next?.character).id === rig.character) { rig.set(next); return; }
+    if (characterOf(next || undefined).id === rig.character) { rig.set(next); return; }
     const old = rig;
     rig = buildRig(next, material);
     const parent = old.object.parent;

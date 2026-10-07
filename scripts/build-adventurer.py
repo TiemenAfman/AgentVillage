@@ -154,6 +154,34 @@ def lum(c):
     return sum(c) / 3
 
 
+# Hair and skin are dyed at runtime (Plans/basislichamen-en-outfits.md): their corner colours are
+# the texel over the look's default hair or skin colour in linear light (web/js/avatar.js
+# DEFAULT_AVATAR, held equal by tests/bodies.test.mjs, as THREE.Color makes them), and avatar.js
+# multiplies them by the colour the look asks for. At the defaults the Adventurer is drawn exactly
+# as before.
+DEFAULT_SKIN = 0xf1c9a5
+DEFAULT_HAIR = 0x503a2d
+
+
+def linear(hexv):
+    out = []
+    for shift in (16, 8, 0):
+        c = ((hexv >> shift) & 255) / 255
+        out.append(c / 12.92 if c < .04045 else ((c + .055) / 1.055) ** 2.4)
+    return out
+
+
+def tint_of(label):
+    if 'Hairband' in label:
+        return 'hair'
+    if label.endswith('Head') or 'Upper_Skin' in label:
+        return 'skin'
+    return None
+
+
+TINT_BASE = {'hair': linear(DEFAULT_HAIR), 'skin': linear(DEFAULT_SKIN)}
+
+
 def recolour(label, c):
     """The source's texel, turned into this body's colour.
 
@@ -208,6 +236,7 @@ for obj in meshes:
     w, h = img.size if img else (1, 1)
     groups = {g.index: g.name for g in obj.vertex_groups}
     cats = {i: classify(name) for i, name in groups.items()}
+    tint = tint_of(label)
     points, weights = [], []
     for v in mesh.vertices:
         p = game(obj.matrix_world @ v.co)
@@ -240,7 +269,10 @@ for obj in meshes:
         x = int((uv.x % 1) * w) % w
         y = int((uv.y % 1) * h) % h
         c = pixels[(y * w + x) * 4:(y * w + x) * 4 + 3] if pixels else [.5, .5, .5]
-        return [round(v, 5) for v in recolour(label, c)]
+        c = recolour(label, c)
+        if tint:
+            c = [v / b for v, b in zip(c, TINT_BASE[tint])]
+        return [round(v, 5) for v in c]
 
     batches = {}
     for tri in mesh.loop_triangles:
@@ -294,7 +326,9 @@ for obj in meshes:
         objects.append(o)
         o['avatar_group'] = group
         o['avatar_variant'] = 'body'
-        o['avatar_slot'] = 'adventurer'
+        o['avatar_slot'] = tint or 'adventurer'
+        if tint:
+            o['avatar_tint'] = 1
         attr = data.color_attributes.new(name='Colour', type='FLOAT_COLOR', domain='CORNER')
         for loop in data.loops:
             attr.data[loop.index].color = (*batch['colors'][loop.vertex_index], 1)

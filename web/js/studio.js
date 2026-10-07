@@ -5,9 +5,9 @@
 // slot owns what is inventory.js's table. Nothing is committed until you wear it - "Never
 // mind" puts back what you had on.
 import * as THREE from 'three';
-import { SWATCHES, DEFAULT_AVATAR, CHARACTERS, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar } from './avatar.js';
+import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, SHAPES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
-import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, iconKey, iconGeometry } from './inventory.js';
+import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, slotPicks, slotOffers, iconKey, iconGeometry, garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
 import { WALK_SPEED } from './avatar-gait.js';
 import { keyOf } from './keybinds.js';
@@ -17,7 +17,10 @@ import { isUnlocked } from './unlocks.js';
 
 const hex = (n) => `#${(n & 0xffffff).toString(16).padStart(6, '0')}`;
 // What a slot's dye button says it paints; the two flasks carry their own labels.
-const DYE_LABEL = { hat: 'Hat colour', tunic: 'Shirt colour' };
+const DYE_LABEL = { hat: 'Hat colour', tunic: 'Shirt colour', hair: 'Hair colour' };
+const SEX_LABEL = { male: 'Man', female: 'Woman' };
+// The Wanderer portrait shows the body you would be: yours if you are one, else the woman.
+const wandererOf = (spec) => `wanderer-${spec.body || 'female'}`;
 
 export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const el = document.createElement('div');
@@ -69,9 +72,13 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     // the rest of the look but not the body. Everything else on the spec carries over - the
     // hats, the armour and the pack are fitted to both bodies under the same names.
     const charBtn = e.target.closest('[data-character]');
-    if (charBtn) {
-      spec.character = saveCharacter(charBtn.dataset.character).character;
-      if (snapshot) snapshot.character = spec.character;
+    const sexBtn = e.target.closest('[data-sex]');
+    if (charBtn || (sexBtn && !sexBtn.disabled)) {
+      // The man or the woman, at the right (Plans/basislichamen-en-outfits.md): the same choice of
+      // body as the portraits over the alcove, kept at once the same way.
+      const kept = charBtn ? saveCharacter(charBtn.dataset.character) : saveCharacter('wanderer', sexBtn.dataset.sex);
+      spec.character = kept.character; spec.body = kept.body;
+      if (snapshot) { snapshot.character = kept.character; snapshot.body = kept.body; }
       sync(); apply(); return;
     }
     const slotBtn = e.target.closest('[data-slot]');
@@ -81,7 +88,8 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     if (dyeBtn) return openDyes(dyeBtn.dataset.dye, dyeBtn);
     const btn = e.target.closest('button');
     if (!btn) return;
-    if (btn.id === 'av-save') save();
+    if (btn.id === 'av-edit') setView(el.dataset.view === 'character' ? 'inventory' : 'character');
+    else if (btn.id === 'av-save') save();
     // normalizeAvatar(), not a spread of DEFAULT_AVATAR: a shallow spread would hand spec the
     // very same equip object DEFAULT_AVATAR holds, and the first toggle after it would mutate
     // the shared default for every settler reset after this one.
@@ -105,10 +113,31 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     `<div class="inv-flask ${i === 0 ? 'left' : 'right'}">${dyeHtml(flask.dye, flask.label)}<span class="inv-label">${flask.label}</span></div>`;
   // The choice of body, over the alcove: a portrait of each, drawn by the same icon renderer
   // as the slots, and a radio group because exactly one is worn.
-  const characterHtml = () => `<div class="inv-chars" role="radiogroup" aria-label="Character">${CHARACTERS.map((c) => `
+  const characterHtml = () => `<div class="inv-chars" role="radiogroup" aria-label="Character">${CHARACTER_PICKS.map((c) => `
       <button class="inv-char" role="radio" data-character="${c.id}" aria-checked="false" title="${c.name}">
         <canvas class="inv-icon"></canvas><span class="inv-label">${c.name}</span></button>`).join('')}</div>`;
+  // The Wanderer's man or woman, at the top of the right pillar. Only the Wanderer has two bodies;
+  // on the other two the choice stands greyed, saying why.
+  const sexHtml = () => `<div class="inv-sexes" role="radiogroup" aria-label="Body">${SEXES.map((x) => `
+      <button class="inv-sex" role="radio" data-sex="${x}" aria-checked="false" title="${SEX_LABEL[x]}">
+        <canvas class="inv-icon"></canvas><span class="inv-label">${SEX_LABEL[x]}</span></button>`).join('')}</div>`;
   const column = (side) => INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
+  // Edit character (Plans/basislichamen-en-outfits.md): who you are, apart from what you wear - the
+  // body and the man or the woman on the left, skin and hair on the right, the shape's sliders under
+  // the figure. The same alcove, the same Wear it.
+  const charLeft = () => `<span class="inv-label">Body</span>${characterHtml()}${sexHtml()}`;
+  const charRight = () => ['skin', 'hair'].map((d) => `
+      <div class="inv-flaskwrap">${dyeHtml(d, DYE_LABEL[d] || 'Skin colour')}<span class="inv-label">${d === 'skin' ? 'Skin' : 'Hair'}</span></div>`).join('');
+  const shapeHtml = () => `<div class="inv-shape">${SHAPES.map((k) => `
+      <label class="inv-slider"><span class="inv-label">${k.name}</span>
+        <span class="inv-ends"><i>${k.low}</i><input type="range" min="-1" max="1" step="0.05" data-shape="${k.id}"><i>${k.high}</i></span></label>`).join('')}</div>`;
+  function setView(view) {
+    pop?.close();
+    el.dataset.view = view;
+    const b = el.querySelector('#av-edit');
+    if (b) b.textContent = view === 'character' ? 'Back to inventory' : 'Edit character';
+    sync();
+  }
 
   function open() {
     openedAt = performance.now();
@@ -123,15 +152,18 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <h3 class="inv-title" id="inv-title">Inventory</h3>
         <button class="x" id="av-close" aria-label="Close">✕</button>
         <div class="inv-scroll">
-          ${characterHtml()}
+          <div class="inv-top"><button class="btn" id="av-edit">Edit character</button></div>
           <div class="inv-body">
-            <div class="inv-col left">${column('left')}</div>
+            <div class="inv-col left inv-gear">${column('left')}</div>
+            <div class="inv-col left inv-who">${charLeft()}</div>
             <div class="inv-stage">
               <canvas id="av-canvas"></canvas>
               ${INVENTORY_FLASKS.map(flaskHtml).join('')}
             </div>
-            <div class="inv-col right">${column('right')}</div>
+            <div class="inv-col right inv-gear">${column('right')}</div>
+            <div class="inv-col right inv-who">${charRight()}</div>
           </div>
+          ${shapeHtml()}
           <p class="inv-note">Your look lives in this browser, so it is yours to change whenever you like.</p>
           <div class="ho-buttons inv-actions">
             <button class="btn primary" id="av-save">Wear it</button>
@@ -144,12 +176,25 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     // have a size first, and both go down with the markup so a re-open never stacks them.
     icons = makeIcons();
     preview = makePreview(el.querySelector('#av-canvas'));
-    sync();
+    // A slider is applied once a frame at most: every input rebuilds the figure's geometry.
+    let queued = false;
+    for (const input of el.querySelectorAll('[data-shape]')) {
+      input.addEventListener('input', () => {
+        spec.shape = { ...spec.shape, [input.dataset.shape]: Number(input.value) };
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; apply(); });
+      });
+      input.addEventListener('change', () => sync());
+    }
+    setView('inventory');
     apply();
   }
 
   function onSlot(slot, btn) {
-    if (slot.kind === 'toggle') {
+    if (slot.garment && slotPicks(slot, spec)) {
+      openGarment(slot, btn);
+    } else if (slot.kind === 'toggle') {
       // A fresh object every time, not a mutation of spec.equip in place: spec can still be
       // the DEFAULT_AVATAR-derived one from Reset, and mutating that would leak into every
       // settler's default look instead of just this session's.
@@ -177,8 +222,10 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   function openPicker(slot, anchor) {
     if (toggled(anchor)) return;
     const current = slot.field ? spec[slot.field] : (spec.equip?.[slot.equip] || '');
+    const outer = document.createElement('div');
     const box = document.createElement('div');
     box.className = 'inv-pop';
+    outer.appendChild(box);
     for (const opt of slot.options) {
       // A piece somebody has not found yet stays in the picker as its own silhouette, saying
       // where it comes from, and does nothing when clicked. The tile is the same size and
@@ -200,8 +247,18 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       });
       box.appendChild(tile);
     }
-    pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
-    [...box.children].forEach((tile, i) => icons.paint(tile.firstElementChild, optionIcon(slot, slot.options[i].id, spec.character), spec));
+    // The hat's own colour, under the hats (the head's dye button is the hair now): the palette's
+    // tiles, which keep the picker up, so a colour can be tried on the hat that is worn.
+    if (slot.pickerDye) {
+      const dyes = document.createElement('div');
+      dyes.className = 'inv-pop dyes inv-pop-sub';
+      dyes.setAttribute('aria-label', DYE_LABEL[slot.pickerDye]);
+      dyeTiles(slot.pickerDye, dyes);
+      outer.appendChild(dyes);
+    }
+    pop = openPopover({ anchor, content: outer, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
+    const body = characterOf(spec).id;
+    [...box.children].forEach((tile, i) => icons.paint(tile.firstElementChild, optionIcon(slot, slot.options[i].id, body), spec));
   }
 
   // A palette stays up after a choice: colours are compared on the figure, one after another,
@@ -209,8 +266,60 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   // the dye button itself closes it.
   function openDyes(part, anchor) {
     if (toggled(anchor)) return;
+    const outer = document.createElement('div');
     const box = document.createElement('div');
     box.className = 'inv-pop dyes';
+    dyeTiles(part, box);
+    // A Wanderer's hair is a style as well as a colour: its hairstyles over the colours, and the
+    // picker stays up, so a style can be tried with the colour on it.
+    const body = characterOf(spec).id;
+    const styles = part === 'hair' && characterOf(spec).wanderer ? hairStyles(body) : [];
+    if (styles.length) {
+      const row = document.createElement('div');
+      row.className = 'inv-pop inv-pop-styles';
+      for (const h of styles) row.appendChild(tileFor(h.name, () => { spec.hairStyle = h.id; lightRow(row, h.id); sync(); apply(); }, h.id));
+      lightRow(row, spec.hairStyle || characterOf(spec).hair);
+      outer.appendChild(row);
+      box.classList.add('inv-pop-sub');
+    }
+    outer.appendChild(box);
+    pop = openPopover({ anchor, content: outer, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
+    styles.forEach((h, i) => icons.paint(outer.firstElementChild.children[i].firstElementChild, hairIcon(h.id, body), spec));
+  }
+
+  // A tile with an icon well and a name, for the clothes' and the hairstyles' pickers.
+  function tileFor(name, onPick, value) {
+    const tile = document.createElement('button');
+    tile.className = 'inv-tile';
+    tile.dataset.value = value ?? '';
+    tile.title = name;
+    tile.innerHTML = `<canvas class="inv-icon"></canvas><span>${name}</span>`;
+    tile.addEventListener('click', onPick);
+    return tile;
+  }
+  const lightRow = (row, value) => [...row.children].forEach((t) => t.classList.toggle('on', t.dataset.value === (value ?? '')));
+
+  // A Wanderer's clothes (Plans/basislichamen-en-outfits.md): one slot's pieces - each set's, the
+  // slot's armour, nothing - one of them worn. Stays up, so the pieces can be tried on the figure
+  // one after another.
+  function openGarment(slot, anchor) {
+    if (toggled(anchor)) return;
+    const body = characterOf(spec).id;
+    const box = document.createElement('div');
+    box.className = 'inv-pop';
+    const paints = [];
+    for (const o of garmentOptions(slot, body)) {
+      const tile = tileFor(o.name, () => { spec = wearIn(slot, spec, o.id); lightRow(box, o.id); sync(); apply(); }, o.id);
+      box.appendChild(tile);
+      paints.push([tile, o.armour ? { id: `${body}:${slot.id}:armour`, parts: slot.parts, character: body } : garmentIcon(slot.garment, o.id, body)]);
+    }
+    lightRow(box, garmentWorn(slot, spec));
+    pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
+    for (const [tile, icon] of paints) icons.paint(tile.firstElementChild, icon, spec);
+  }
+
+  // A palette's tiles into `box`: every swatch of `part`, then the colours the chests give.
+  function dyeTiles(part, box) {
     const light = () => [...box.children].forEach((t) => t.classList.toggle('on', Number(t.dataset.hex) === spec[part]));
     for (const s of SWATCHES[part]) {
       const tile = document.createElement('button');
@@ -242,34 +351,47 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       }
     }
     light();
-    pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
   }
 
   // Light up what is worn, and repaint whichever icons the current spec makes stale - which
   // makeIcons decides per canvas, so a hat recolour touches the head slot and nothing else.
   function sync() {
+    const pick = pickOf(spec);
     for (const c of el.querySelectorAll('[data-character]')) {
-      const on = c.dataset.character === spec.character;
+      const on = c.dataset.character === pick;
       c.classList.toggle('on', on);
       c.setAttribute('aria-checked', String(on));
-      icons.paint(c.firstElementChild, characterIcon(c.dataset.character), spec);
+      icons.paint(c.firstElementChild, characterIcon(c.dataset.character === 'wanderer' ? wandererOf(spec) : c.dataset.character), spec);
+    }
+    for (const b of el.querySelectorAll('[data-sex]')) {
+      const on = pick === 'wanderer' && spec.body === b.dataset.sex;
+      b.disabled = pick !== 'wanderer';
+      b.title = b.disabled ? 'Only the Wanderer has a man and a woman' : SEX_LABEL[b.dataset.sex];
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+      icons.paint(b.firstElementChild, characterIcon(`wanderer-${b.dataset.sex}`), spec);
     }
     // A dye this body does not read (the Adventurer's own skin and cloth are painted, not
     // dyed) is taken away rather than left to do nothing: its button, its flask, and the
     // Outfit slot, which is nothing but that dye.
     for (const d of el.querySelectorAll('.inv-dye')) {
-      const off = !dyeApplies(d.dataset.dye, spec.character);
+      const off = !dyeApplies(d.dataset.dye, spec);
       (d.closest('.inv-flask') || d).hidden = off;
     }
     for (const slot of INVENTORY_SLOTS) {
       const b = el.querySelector(`[data-slot="${slot.id}"]`);
-      b.disabled = slot.kind === 'dye' && !dyeApplies(slot.dye, spec.character);
-      const on = slot.kind === 'dye' ? !b.disabled : slot.field ? spec[slot.field] !== 'none' : !!spec.equip?.[slot.equip];
+      const picks = slot.garment && slotPicks(slot, spec);
+      b.disabled = !slotOffers(slot, spec) || (slot.kind === 'dye' && !dyeApplies(slot.dye, spec));
+      b.title = b.disabled && slot.id === 'tunic' && characterOf(spec).wanderer ? 'No outfits yet' : slot.label;
+      const on = picks ? garmentWorn(slot, spec) !== null
+        : slot.kind === 'garment' ? false
+        : slot.kind === 'dye' ? !b.disabled : slot.field ? spec[slot.field] !== 'none' : !!spec.equip?.[slot.equip];
       b.classList.toggle('on', on);
       if (slot.kind === 'toggle') b.setAttribute('aria-pressed', String(on));
       icons.paint(b.firstElementChild, slotIcon(slot, spec), spec);
     }
     el.querySelectorAll('.inv-dye').forEach((d) => d.style.setProperty('--dye', hex(spec[d.dataset.dye])));
+    for (const input of el.querySelectorAll('[data-shape]')) input.value = String(spec.shape?.[input.dataset.shape] ?? 0);
   }
 
   // Show the change in the alcove and on the character out on the island at once.

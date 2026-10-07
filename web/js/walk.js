@@ -1961,9 +1961,9 @@ export function createWalkMode({
   // Seconds ridden since the camera was last turned by hand (see the bike branch of update).
   let riddenSinceLook = Infinity;
   function lookedAround() { riddenSinceLook = 0; }
-  // Which ride F gives the body you wear: the Adventurer rides a horse, the Traveller his bicycle -
+  // Which ride F gives the body you wear: the Adventurer and the Wanderer ride a horse, the Traveller his bicycle -
   // the keeper's choice of 6 October 2026 (Plans/paard-in-plaats-van-fiets.md).
-  const rideKind = () => (classicAvatar.character === 'adventurer' ? 'horse' : 'bike');
+  const rideKind = () => (classicAvatar.character !== 'traveller' ? 'horse' : 'bike');
   function rides() { return state.bike || state.mount; }
   let horse = null;
   function mount() {

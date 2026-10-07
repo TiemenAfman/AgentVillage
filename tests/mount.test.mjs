@@ -234,8 +234,9 @@ test('the seat and the irons come off the bake, inside the horse, and the Advent
   assert.notEqual(horsebackOf('adventurer'), horsebackOf('traveller'), 'the Adventurer is the rider who fits it');
 });
 
-test('walk mode rides a horse for the Adventurer and the bicycle for the Traveller', () => {
-  assert.match(WALK_SOURCE, /character === 'adventurer' \? 'horse' : 'bike'/);
+// And the Wanderer (Plans/basislichamen-en-outfits.md): every body but the Traveller rides.
+test('walk mode rides a horse for the Adventurer and the Wanderer, the bicycle for the Traveller', () => {
+  assert.match(WALK_SOURCE, /character !== 'traveller' \? 'horse' : 'bike'/);
   // And the lid a rider needs is a rider's: MOUNT_HEAD in the horse's branch.
   assert.match(WALK_SOURCE, /ceilingAt\(x, z, m\.floor\) - HEAD - MOUNT_HEAD/);
 });

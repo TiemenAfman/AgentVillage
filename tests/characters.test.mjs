@@ -100,14 +100,15 @@ test('sleeve boundary vertices stay joined to the torso through idle and sprint 
   rig.dispose(); material.dispose();
 });
 
-test('exactly two bodies, the Traveller first and the default', () => {
-  assert.deepEqual(CHARACTERS.map((c) => c.id), ['traveller', 'adventurer']);
+// The Wanderer's two (Plans/basislichamen-en-outfits.md) follow; tests/bodies.test.mjs holds them.
+test('the Traveller first and the default, then the Adventurer, then the Wanderer', () => {
+  assert.deepEqual(CHARACTERS.map((c) => c.id), ['traveller', 'adventurer', 'wanderer-male', 'wanderer-female']);
   assert.equal(DEFAULT_AVATAR.character, 'traveller');
 });
 
 test('a look names its body, and anything that is not one is the Traveller', () => {
   assert.equal(normalizeAvatar({ character: 'adventurer' }).character, 'adventurer');
-  for (const bad of [undefined, null, '', 'wizard', 42, '<img>', { id: 'adventurer' }]) {
+  for (const bad of [undefined, null, '', 'wizard', 42, '<img>', { id: 'adventurer' }, 'wanderer-female']) {
     assert.equal(normalizeAvatar({ character: bad }).character, 'traveller', String(bad));
   }
 });
@@ -238,9 +239,12 @@ test('the inventory draws every slot and every tile on either body, and a portra
   assert.notEqual(slotIcon(head, DEFAULT_AVATAR).id, slotIcon(head, ADVENTURER).id);
 });
 
-test("the Adventurer's own skin and cloth are painted, so only the gear's dyes are offered", () => {
-  for (const dye of ['skin', 'tunic', 'trim', 'hat']) assert.ok(dyeApplies(dye, 'traveller'), dye);
-  assert.ok(!dyeApplies('skin', 'adventurer'));
+// His hair and skin are dyed through the texture (`tint`, Plans/basislichamen-en-outfits.md); his
+// cloth is still painted.
+test("the Adventurer's cloth is painted, so the Outfit's dye is not offered; hair and skin are", () => {
+  for (const dye of ['skin', 'tunic', 'trim', 'hat', 'hair']) assert.ok(dyeApplies(dye, 'traveller'), dye);
+  assert.ok(dyeApplies('skin', 'adventurer'));
+  assert.ok(dyeApplies('hair', 'adventurer'));
   assert.ok(!dyeApplies('tunic', 'adventurer'));
   assert.ok(dyeApplies('hat', 'adventurer'));
   assert.ok(dyeApplies('trim', 'adventurer'));
