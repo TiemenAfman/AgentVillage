@@ -185,7 +185,7 @@ export function gaitOf(v, was = null) {
   const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
   return speed>threshold?'gallop':'trot';
 }
-export const CADENCE = {stand:0,trot:[.75,1.6],gallop:[1.85,2.05]};
+export const CADENCE = {stand:0,trot:[.75,1.6],gallop:[1.25,1.4]};
 export const CADENCE_MAX=2.1;
 export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
 export const PATTERN=HORSE_PATTERNS;
