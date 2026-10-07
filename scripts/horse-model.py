@@ -446,13 +446,20 @@ for deg, reach in [(0, 1), (-14, .8), (14, .85)]:
          [.026, .026, .018, .004], [.014, .012, .008, .003], DARK)
 
 
+# Head against neck: a plane through the head's own joint, leaning back like the poll (its normal
+# halfway between the neck's run and the face's), the head bone in front of it over 4 cm. It was
+# a height on top of a height: everything over y 0.604 went with the head - the crest and mane a
+# hand behind the poll too - and anything under y 0.515 partly stayed on the body, which the old
+# muzzle never reached but the new lips and chin do: grazing (headX 0.95) they hung back, the face
+# stretched four times over the mouth and the blaze stood off the nose. Now the head is the head
+# whatever its height, and the neck's share of the rest is still its height up the neck.
+HEAD_PLANE = Vector((0, .25, .968)).normalized()
+
+
 def head_weights(p):
     neck = smoothstep(.432,.515,p.y)
-    skull = smoothstep(.545,.604,p.y) if p.z < .325 else smoothstep(.29,.355,p.z)
-    # The jowl hangs lower than that line was drawn for, under the old head: whatever lies forward
-    # of the skull's back plane goes with the head too, blending out over the throatlatch.
-    skull = max(skull, smoothstep(0, .03, (p - HA).dot(HD)))
-    return {0: 1-neck, 1: neck*(1-skull), 2: neck*skull}
+    skull = smoothstep(-.035, .005, (p - Vector(bones[2]['at'])).dot(HEAD_PLANE))
+    return {0: (1-neck)*(1-skull), 1: neck*(1-skull), 2: skull}
 
 
 finish(head, head_weights)
