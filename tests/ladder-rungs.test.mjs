@@ -155,3 +155,45 @@ test('the workbench hangs its ladder from deck.mjs too', () => {
   assert.match(js, /import \{ RUNG_STEP, RUNG_R, RUNG_OUT \} from 'shared\/deck\.mjs'/);
   assert.match(js, /climbing:\{rise:climbRise,at:climbY\}/);
 });
+
+// The two ladders up the Salty Kraken's mast (scripts/krakenkit/mast.py ladders(), kraken-layout.js
+// MAST_CLIMBS) are cut to the climb as well: plumb, MAST_LADDER out from the mast along its yard, their
+// rungs RUNG_STEP apart from the pit - the kit's y = 0 and the climb's `at` 0 - and the climber's foot
+// RUNG_FROM in front of them. Measured off the bake: a rung is a rod across the ladder (wooden on the
+// east one, rope on the west), so the vertices near the ladder's plane gather in one cluster a rung.
+test('the Salty Kraken\'s mast ladders are baked to the climb: plumb, rungs RUNG_STEP above the pit', async () => {
+  const { KRAKENKIT } = await import('../web/js/krakenkit-mesh.js');
+  const K = await import('../web/js/kraken-layout.js');
+  // the nest's planks in the kit's own frame (mast.py NEST_Y), which the ladders hang from
+  const py = readFileSync(new URL('../scripts/krakenkit/mast.py', import.meta.url), 'utf8');
+  const nest = Number(/^NEST_Y = ([\d.]+)/m.exec(py)[1]);
+  for (const [side, part] of [[1, 'civic_kraken_mast plain wood'], [-1, 'civic_kraken_mast plain rope']]) {
+    const p = KRAKENKIT.parts[part].positions, ys = [], xs = [];
+    for (let i = 0; i < p.length; i += 3) {
+      const [x, y, z] = [p[i], p[i + 1], p[i + 2]];
+      if (Math.abs(x - side * K.MAST_LADDER) < 0.012 && Math.abs(z) < 0.075 && y > 0.03 && y < nest - 0.06) { ys.push(y); xs.push(x); }
+    }
+    ys.sort((a, b) => a - b);
+    const rungs = [];
+    let lo = ys[0], hi = ys[0];
+    for (const y of ys.slice(1).concat(Infinity)) {
+      if (y - hi > 0.02) { rungs.push((lo + hi) / 2); lo = y; }
+      hi = y;
+    }
+    assert.ok(rungs.length > 40, `${part}: ${rungs.length} rungs`);
+    rungs.forEach((y, i) => assert.ok(Math.abs(y - (i + 1) * RUNG_STEP) < 2e-4, `${part}: rung ${i + 1} at ${y.toFixed(4)}`));
+    assert.ok(rungs.at(-1) < nest - 0.06, 'under the nest\'s planks');
+    // plumb: every rung in the one plane, MAST_LADDER out
+    assert.ok(Math.max(...xs) - Math.min(...xs) < 0.025, `${part}: from ${Math.min(...xs)} to ${Math.max(...xs)} across`);
+  }
+  // the walk mode climbs them from a foot RUNG_FROM before the rungs, on the pit (rung 0)
+  for (const l of K.MAST_CLIMBS.filter((c) => !c.exit)) {
+    const out = Math.hypot(l.lo.x - K.KIT.mast.x, l.lo.z - K.KIT.mast.z);
+    assert.ok(Math.abs(out - K.MAST_LADDER - RUNG_FROM) < 1e-9, `${l.name}: foot ${out.toFixed(3)} out`);
+    assert.equal(l.lo.y, K.KIT.mast.y);
+  }
+  assert.equal(K.MAST_FROM, RUNG_FROM);
+  // the bake reads deck.mjs for the step, and shares MAST_LADDER
+  assert.match(py, /^RUNG_STEP = _deck\('RUNG_STEP'\)/m);
+  assert.equal(Number(/^LADDER_X = ([\d.]+)/m.exec(py)[1]), K.MAST_LADDER);
+});

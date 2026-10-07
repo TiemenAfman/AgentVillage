@@ -6,7 +6,7 @@ import { swimPose, TREAD_SINK } from './diving.js';
 import { loadSet } from './models.js';
 import { meshAsset, createBuildingMaterial } from './buildings.js';
 import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
-import { KIT, MAST_LADDER } from './kraken-layout.js';
+import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
@@ -86,7 +86,7 @@ function limbPoint(rig,limb,out){
   return o.getWorldPosition(out);
 }
 function showHoldsFor(i,f,rising){
-  const dots=holdDots[i], lad=ladders[i], on=showHolds&&mode==='climb'&&!onMast&&f.stand.visible;
+  const dots=holdDots[i], lad=ladders[i], on=showHolds&&mode==='climb'&&f.stand.visible;
   for(const r of lad.rungs)r.material.color.setHex(0x6e4d2b);
   for(const [j,[limb]] of LIMBS.entries()){
     const d=dots[j];d.m.visible=on;
@@ -106,11 +106,11 @@ function showHoldsFor(i,f,rising){
   }
 }
 // Or up the Salty Kraken's mast (Mastladder): the hall's own kit piece (krakenkit, a lazy set), its
-// ladder's foot MAST_LADDER out from the mast, and the body where the room's walk mode climbs it
+// ladder's rungs MAST_LADDER out from the mast and the body MAST_FROM before them, where the room's walk mode climbs it
 // (kraken-layout.js MAST_CLIMBS) - to see the climb against the rungs it is really done on, which
-// are narrower and closer together than a rope ladder's. One mast, so one body: Dichtbij picks which.
+// are cut to the climb as a rope ladder's are (Houvast lights where hands and feet hold). One mast, so one body: Dichtbij picks which.
 let onMast=false, mast=null;
-const MAST_TOP=KIT.mast.nest-.2;
+const MAST_TOP=Math.floor((KIT.mast.nest-.2)/(2*RUNG_STEP))*2*RUNG_STEP;
 function showMast(){
   if(mast)return;
   mast=new THREE.Group();mast.visible=false;scene.add(mast);
@@ -180,7 +180,7 @@ function tick(dt){
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
   for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&(close<0||i===climber);
-  if(mode!=='climb'||onMast)for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
+  if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted;
   for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
@@ -235,7 +235,7 @@ function tick(dt){
     if(mode==='climb'){
       f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
-      if(masted&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-CLIMB_OUT-MAST_LADDER);
+      if(masted&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-MAST_FROM-MAST_LADDER);
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
       f.stand.updateMatrixWorld(true);
       showHoldsFor(figures.indexOf(f),f,climbRise);
