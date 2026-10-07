@@ -1082,7 +1082,10 @@ no HD ever (`setDetail` only switches pieces that exist). One built blind anyway
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
-change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
+change a floor or a prop there and rebake, never in two places. The hall's lid (what interior.js takes off when the
+camera rises through the roof) is the bake's `Kraken roof ...` parts - ceiling, beams, rock - and only those: whatever
+hangs from it is `geom.hang` (`Kraken hang ...`), and the kit pieces that hang go to `parts`, or a camera over the eaves
+put out every chandelier and lantern in the hall. A room's bloom and light shafts are `web/js/room-glow.js`
 (`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
 count; the halos are read off every glowing part of the room's own geometry, never listed by hand. Real bloom
 and SMAA are `web/js/post.js` (three's postprocessing, vendored by `scripts/vendor.mjs`), the one render in main.js

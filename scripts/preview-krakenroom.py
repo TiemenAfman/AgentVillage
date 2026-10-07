@@ -129,10 +129,10 @@ for name, (eye, target, lens) in VIEWS.items():
     cam.rotation_euler = (b(*target) - cam.location).to_track_quat('-Z', 'Y').to_euler()
     scene.render.filepath = str(out / f'{name}.png')
     bpy.ops.render.render(write_still=True)
-# The cutaway: the lid and whatever is labelled `near` left out.
+# The cutaway: the lid, what hangs from it and whatever is labelled `near` left out.
 if not only or only == 'cutaway':
     for o in scene.objects:
-        if ' roof ' in o.name or ' near ' in o.name:
+        if ' roof ' in o.name or ' hang ' in o.name or ' near ' in o.name:
             o.hide_render = True
     cam.data.type = 'ORTHO'
     cam.data.ortho_scale = 26.0
