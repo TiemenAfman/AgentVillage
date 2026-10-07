@@ -3,6 +3,7 @@
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
+- 🚧 [destillaat-eiland.md](destillaat-eiland.md) — een uitgeklede kopie van de repo: alleen het eiland dat groeit, de regisseur en de planner, met een lokale zee voor de bewoners.
 - 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
 
 ## Besluiten die nog niet in een eigen plan zitten
