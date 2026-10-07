@@ -5,9 +5,9 @@
 // slot owns what is inventory.js's table. Nothing is committed until you wear it - "Never
 // mind" puts back what you had on.
 import * as THREE from 'three';
-import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
+import { SWATCHES, DEFAULT_AVATAR, CHARACTER_PICKS, SEXES, SHAPES, loadAvatar, saveAvatar, saveCharacter, normalizeAvatar, characterOf, pickOf } from './avatar.js';
 import { createClassicAvatar } from './classic-avatar.js';
-import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, slotPicks, slotOffers, iconKey, iconGeometry, garmentOptions, garmentIcon, hairStyles, hairIcon } from './inventory.js';
+import { INVENTORY_SLOTS, INVENTORY_FLASKS, slotIcon, optionIcon, characterIcon, dyeApplies, slotPicks, slotOffers, iconKey, iconGeometry, garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } from './inventory.js';
 import { openPopover, closePopover } from './popover.js';
 import { WALK_SPEED } from './avatar-gait.js';
 import { keyOf } from './keybinds.js';
@@ -88,7 +88,8 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     if (dyeBtn) return openDyes(dyeBtn.dataset.dye, dyeBtn);
     const btn = e.target.closest('button');
     if (!btn) return;
-    if (btn.id === 'av-save') save();
+    if (btn.id === 'av-edit') setView(el.dataset.view === 'character' ? 'inventory' : 'character');
+    else if (btn.id === 'av-save') save();
     // normalizeAvatar(), not a spread of DEFAULT_AVATAR: a shallow spread would hand spec the
     // very same equip object DEFAULT_AVATAR holds, and the first toggle after it would mutate
     // the shared default for every settler reset after this one.
@@ -120,7 +121,23 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   const sexHtml = () => `<div class="inv-sexes" role="radiogroup" aria-label="Body">${SEXES.map((x) => `
       <button class="inv-sex" role="radio" data-sex="${x}" aria-checked="false" title="${SEX_LABEL[x]}">
         <canvas class="inv-icon"></canvas><span class="inv-label">${SEX_LABEL[x]}</span></button>`).join('')}</div>`;
-  const column = (side) => (side === 'right' ? sexHtml() : '') + INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
+  const column = (side) => INVENTORY_SLOTS.filter((s) => s.side === side).map(slotHtml).join('');
+  // Edit character (Plans/basislichamen-en-outfits.md): who you are, apart from what you wear - the
+  // body and the man or the woman on the left, skin and hair on the right, the shape's sliders under
+  // the figure. The same alcove, the same Wear it.
+  const charLeft = () => `<span class="inv-label">Body</span>${characterHtml()}${sexHtml()}`;
+  const charRight = () => ['skin', 'hair'].map((d) => `
+      <div class="inv-flaskwrap">${dyeHtml(d, DYE_LABEL[d] || 'Skin colour')}<span class="inv-label">${d === 'skin' ? 'Skin' : 'Hair'}</span></div>`).join('');
+  const shapeHtml = () => `<div class="inv-shape">${SHAPES.map((k) => `
+      <label class="inv-slider"><span class="inv-label">${k.name}</span>
+        <span class="inv-ends"><i>${k.low}</i><input type="range" min="-1" max="1" step="0.05" data-shape="${k.id}"><i>${k.high}</i></span></label>`).join('')}</div>`;
+  function setView(view) {
+    pop?.close();
+    el.dataset.view = view;
+    const b = el.querySelector('#av-edit');
+    if (b) b.textContent = view === 'character' ? 'Back to inventory' : 'Edit character';
+    sync();
+  }
 
   function open() {
     openedAt = performance.now();
@@ -135,15 +152,18 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
         <h3 class="inv-title" id="inv-title">Inventory</h3>
         <button class="x" id="av-close" aria-label="Close">✕</button>
         <div class="inv-scroll">
-          ${characterHtml()}
+          <div class="inv-top"><button class="btn" id="av-edit">Edit character</button></div>
           <div class="inv-body">
-            <div class="inv-col left">${column('left')}</div>
+            <div class="inv-col left inv-gear">${column('left')}</div>
+            <div class="inv-col left inv-who">${charLeft()}</div>
             <div class="inv-stage">
               <canvas id="av-canvas"></canvas>
               ${INVENTORY_FLASKS.map(flaskHtml).join('')}
             </div>
-            <div class="inv-col right">${column('right')}</div>
+            <div class="inv-col right inv-gear">${column('right')}</div>
+            <div class="inv-col right inv-who">${charRight()}</div>
           </div>
+          ${shapeHtml()}
           <p class="inv-note">Your look lives in this browser, so it is yours to change whenever you like.</p>
           <div class="ho-buttons inv-actions">
             <button class="btn primary" id="av-save">Wear it</button>
@@ -156,7 +176,18 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
     // have a size first, and both go down with the markup so a re-open never stacks them.
     icons = makeIcons();
     preview = makePreview(el.querySelector('#av-canvas'));
-    sync();
+    // A slider is applied once a frame at most: every input rebuilds the figure's geometry.
+    let queued = false;
+    for (const input of el.querySelectorAll('[data-shape]')) {
+      input.addEventListener('input', () => {
+        spec.shape = { ...spec.shape, [input.dataset.shape]: Number(input.value) };
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; apply(); });
+      });
+      input.addEventListener('change', () => sync());
+    }
+    setView('inventory');
     apply();
   }
 
@@ -268,37 +299,22 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
   }
   const lightRow = (row, value) => [...row.children].forEach((t) => t.classList.toggle('on', t.dataset.value === (value ?? '')));
 
-  // A Wanderer's clothes (Plans/basislichamen-en-outfits.md): one garment slot's sets and nothing,
-  // and under them the armour that was the slot's toggle, as a tile that toggles it. Stays up, so
-  // the pieces can be tried on the figure one after another.
+  // A Wanderer's clothes (Plans/basislichamen-en-outfits.md): one slot's pieces - each set's, the
+  // slot's armour, nothing - one of them worn. Stays up, so the pieces can be tried on the figure
+  // one after another.
   function openGarment(slot, anchor) {
     if (toggled(anchor)) return;
     const body = characterOf(spec).id;
-    const outer = document.createElement('div');
     const box = document.createElement('div');
     box.className = 'inv-pop';
     const paints = [];
-    for (const o of garmentOptions(slot.garment, body)) {
-      const tile = tileFor(o.name, () => { spec.wear = { ...spec.wear, [slot.garment]: o.id }; lightRow(box, o.id); sync(); apply(); }, o.id);
+    for (const o of garmentOptions(slot, body)) {
+      const tile = tileFor(o.name, () => { spec = wearIn(slot, spec, o.id); lightRow(box, o.id); sync(); apply(); }, o.id);
       box.appendChild(tile);
-      paints.push([tile, garmentIcon(slot.garment, o.id, body)]);
+      paints.push([tile, o.armour ? { id: `${body}:${slot.id}:armour`, parts: slot.parts, character: body } : garmentIcon(slot.garment, o.id, body)]);
     }
-    lightRow(box, spec.wear?.[slot.garment]);
-    outer.appendChild(box);
-    if (slot.equip) {
-      const armour = document.createElement('div');
-      armour.className = 'inv-pop inv-pop-sub';
-      const name = { chestplate: 'Chestplate', leggings: 'Leg plates', boots: 'Sabatons' }[slot.equip];
-      const tile = tileFor(name, () => {
-        spec.equip = { ...spec.equip, [slot.equip]: !spec.equip?.[slot.equip] };
-        tile.classList.toggle('on', !!spec.equip[slot.equip]); sync(); apply();
-      });
-      tile.classList.toggle('on', !!spec.equip?.[slot.equip]);
-      armour.appendChild(tile);
-      outer.appendChild(armour);
-      paints.push([tile, { id: `${body}:${slot.id}:armour`, parts: slot.parts, character: body }]);
-    }
-    pop = openPopover({ anchor, content: outer, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
+    lightRow(box, garmentWorn(slot, spec));
+    pop = openPopover({ anchor, content: box, side: sideOf(anchor), className: 'inv-popover', onClose: () => { pop = null; } });
     for (const [tile, icon] of paints) icons.paint(tile.firstElementChild, icon, spec);
   }
 
@@ -367,7 +383,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       const picks = slot.garment && slotPicks(slot, spec);
       b.disabled = !slotOffers(slot, spec) || (slot.kind === 'dye' && !dyeApplies(slot.dye, spec));
       b.title = b.disabled && slot.id === 'tunic' && characterOf(spec).wanderer ? 'No outfits yet' : slot.label;
-      const on = picks ? !!spec.wear?.[slot.garment] || !!spec.equip?.[slot.equip]
+      const on = picks ? garmentWorn(slot, spec) !== null
         : slot.kind === 'garment' ? false
         : slot.kind === 'dye' ? !b.disabled : slot.field ? spec[slot.field] !== 'none' : !!spec.equip?.[slot.equip];
       b.classList.toggle('on', on);
@@ -375,6 +391,7 @@ export function createAvatarStudio(root, { onApply, onClose } = {}) {
       icons.paint(b.firstElementChild, slotIcon(slot, spec), spec);
     }
     el.querySelectorAll('.inv-dye').forEach((d) => d.style.setProperty('--dye', hex(spec[d.dataset.dye])));
+    for (const input of el.querySelectorAll('[data-shape]')) input.value = String(spec.shape?.[input.dataset.shape] ?? 0);
   }
 
   // Show the change in the alcove and on the character out on the island at once.

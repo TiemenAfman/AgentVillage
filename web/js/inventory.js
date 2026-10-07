@@ -136,10 +136,25 @@ export function garmentIcon(slot, set, character) {
   const parts = set ? own.garments[`${set}-${slot}`] || [] : own.underwear;
   return { id: `${c}:garment:${slot}:${set || 'none'}`, parts, character: c, wear: { [slot]: set } };
 }
-// A garment slot's choices on this body: each set that has a piece for it, then nothing.
-export function garmentOptions(garment, character) {
+// A clothes slot's choices on this body: each set that has a piece for it, the slot's armour as one
+// more piece of clothing (Martijn: "net als de broek, niet overrulend" - it is worn instead, not over
+// it), then nothing. `slot` is the inventory slot, for its armour.
+const ARMOUR = { chestplate: 'Chestplate', leggings: 'Leg plates', boots: 'Sabatons' };
+export function garmentOptions(slot, character) {
   const own = BODY_PARTS[characterOf(character).id];
-  return [...GARMENT_SETS.filter((s) => own.garments[`${s.id}-${garment}`]), { id: null, name: 'None' }];
+  return [
+    ...GARMENT_SETS.filter((s) => own.garments[`${s.id}-${slot.garment}`]),
+    ...(slot.equip ? [{ id: 'armour', name: ARMOUR[slot.equip], armour: slot.equip }] : []),
+    { id: null, name: 'None' },
+  ];
+}
+// Which of garmentOptions a look wears in that slot.
+export const garmentWorn = (slot, spec) => (slot.equip && spec.equip?.[slot.equip] ? 'armour' : spec.wear?.[slot.garment] ?? null);
+// The look with `choice` (an id of garmentOptions) worn in that slot.
+export function wearIn(slot, spec, choice) {
+  const wear = { ...spec.wear, [slot.garment]: choice === 'armour' ? null : choice };
+  const equip = slot.equip ? { ...spec.equip, [slot.equip]: choice === 'armour' } : spec.equip;
+  return { ...spec, wear, equip };
 }
 // A hairstyle's tile: the head with that hair.
 export function hairIcon(style, character) {
@@ -155,7 +170,10 @@ export const hairStyles = (character) => {
 // What a slot draws right now.
 export function slotIcon(slot, spec) {
   const c = characterOf(spec).id;
-  if (slot.garment && characterOf(c).wanderer) return garmentIcon(slot.garment, spec.wear?.[slot.garment], c);
+  if (slot.garment && characterOf(c).wanderer) {
+    return garmentWorn(slot, spec) === 'armour' ? { id: `${c}:${slot.id}:armour`, parts: slot.parts, character: c }
+      : garmentIcon(slot.garment, spec.wear?.[slot.garment], c);
+  }
   if (slot.kind === 'garment') return { id: `${c}:${slot.id}:empty`, parts: BODY_PARTS[c].lefthand, character: c };
   if (slot.field) return optionIcon(slot, spec[slot.field], c);
   if (slot.options) return optionIcon(slot, spec.equip?.[slot.equip] || '', c);

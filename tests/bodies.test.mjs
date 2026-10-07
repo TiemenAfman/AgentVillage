@@ -12,11 +12,11 @@ register('./support/shared-loader.mjs', import.meta.url);
 import { MeshBasicMaterial, Vector3, Color } from 'three';
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { CHARACTERS, CHARACTER_PICKS, DEFAULT_AVATAR, GARMENTS, HAIR_STYLES, normalizeAvatar, avatarPlayerGeometry, avatarFigureGeometry,
+const { CHARACTERS, CHARACTER_PICKS, DEFAULT_AVATAR, GARMENTS, HAIR_STYLES, PLAYER_SCALE, normalizeAvatar, avatarPlayerGeometry, avatarFigureGeometry,
   characterOf, bodyKey, pickOf, eyeOf, SWATCHES } = await import('../web/js/avatar.js');
 const { createClassicAvatar, horsebackOf } = await import('../web/js/classic-avatar.js');
 const { INVENTORY_SLOTS, slotIcon, optionIcon, characterIcon, dyeApplies, iconGeometry, slotPicks, slotOffers, lookOn,
-  garmentOptions, garmentIcon, hairStyles, hairIcon } = await import('../web/js/inventory.js');
+  garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } = await import('../web/js/inventory.js');
 const { BODIES } = await import('../web/js/bodies-mesh.js');
 const { PART_COLORS } = await import('../web/js/player-bodies.js');
 if (previousDocument === undefined) delete globalThis.document;
@@ -218,7 +218,7 @@ test('the inventory dresses a Wanderer through Chest, Arms, Legs and Feet, and d
       const icons = [slotIcon(s, spec), ...(s.options || []).map((o) => optionIcon(s, o.id, id))];
       if (s.garment) {
         assert.ok(slotPicks(s, spec), s.id);
-        icons.push(...garmentOptions(s.garment, id).map((o) => garmentIcon(s.garment, o.id, id)));
+        icons.push(...garmentOptions(s, id).filter((o) => !o.armour).map((o) => garmentIcon(s.garment, o.id, id)));
       }
       for (const icon of icons) {
         const g = iconGeometry(icon, spec);
@@ -258,4 +258,74 @@ test('the CC0 source is credited beside the files made from it', () => {
   for (const needle of ['CC0', 'quaternius.itch.io/universal-base-characters', 'quaternius.itch.io/modular-character-outfits-fantasy']) {
     assert.ok(credits.includes(needle), needle);
   }
+});
+
+// Edit character (Plans/basislichamen-en-outfits.md): the shape's sliders. Bones carry height, hips,
+// head, hands and feet - and whatever is worn on them; bust and build are worked into the geometry.
+test('the shape sliders are numbers -1..1 in the look, and the sea hands them on clamped', async () => {
+  const { SHAPES } = await import('../web/js/avatar.js');
+  assert.deepEqual(SHAPES.map((s) => s.id), ['height', 'build', 'hips', 'bust', 'head', 'hands', 'feet']);
+  const s = normalizeAvatar({ shape: { height: 3, bust: -0.333, head: 'big', feet: NaN } }).shape;
+  assert.deepEqual(s, { height: 1, build: 0, hips: 0, bust: -0.33, head: 0, hands: 0, feet: 0 });
+  const { createRoster } = await import('../lib/players.mjs');
+  const roster = createRoster();
+  const conn = { id: 'cccccccccccc', send() {}, close() {} };
+  const p = roster.attach(conn, {});
+  roster.message(conn, JSON.stringify({ t: 'look', shape: { height: 5, hips: -0.5, tail: 1, head: 'x' } }));
+  assert.deepEqual(p.look.shape, { height: 1, hips: -0.5 });
+});
+
+test('height scales the figure and what walk mode reads off it; build and bust move the body, not the head', () => {
+  const material = new MeshBasicMaterial();
+  const rig = createClassicAvatar(WOMAN, material);
+  const hip = rig.hipY, eye = rig.eye;
+  rig.set({ ...WOMAN, shape: { ...WOMAN.shape, height: 1 } });
+  assert.ok(Math.abs(rig.hipY - hip * 1.1) < 1e-9 && Math.abs(rig.eye - eye * 1.1) < 1e-9);
+  assert.ok(rig.object.scale.x < 0, 'the mirror is kept');
+  rig.set({ ...WOMAN, shape: { ...WOMAN.shape, height: 1, feet: 1, hands: 1, head: 1, hips: 1, build: 1 } });
+  for (let frame = 0; frame < 120; frame++) rig.update({ moving: true, running: false, grounded: true, distance: .65 / 60 }, 1 / 60);
+  rig.object.updateMatrixWorld(true);
+  const box = new (rig.object.constructor)();
+  let lowest = Infinity;
+  rig.object.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    o.skeleton.update();
+    const a = o.geometry.attributes.position;
+    for (let i = 0; i < a.count; i += 5) {
+      const v = new Vector3().fromBufferAttribute(a, i);
+      o.applyBoneTransform(i, v);
+      v.applyMatrix4(o.matrixWorld);
+      lowest = Math.min(lowest, v.y);
+    }
+  });
+  assert.ok(lowest > -.03, `big feet and a tall body stay out of the ground: ${lowest}`);
+  rig.dispose();
+  material.dispose();
+  const head = (spec) => {
+    const parts = characterOf(spec).parts.filter((p) => p.group === 'head' && p.variant === 'body').map((p) => p.name);
+    return iconGeometry({ id: 'h', parts }, spec).attributes.position.array;
+  };
+  const torso = (spec) => iconGeometry({ id: 't', parts: characterOf(spec).parts.filter((p) => p.group === 'outfit' && p.slot === 'skin').map((p) => p.name) }, spec).attributes.position.array;
+  const heavy = { ...WOMAN, wear: NAKED, shape: { ...WOMAN.shape, build: 1, bust: 1 } };
+  // Above the neck's pivot: the neck itself goes with the build.
+  const neckY = characterOf(WOMAN).rig.head[1] * PLAYER_SCALE;
+  const face = (arr) => [...arr].filter((_, i, all) => i % 3 === 1 ? false : all[i - (i % 3) + 1] > neckY + .002);
+  assert.deepEqual(face(head(heavy)), face(head({ ...WOMAN, wear: NAKED })), 'the face is the face');
+  const a = torso({ ...WOMAN, wear: NAKED }), b = torso(heavy);
+  let moved = 0;
+  for (let i = 0; i < a.length; i++) moved = Math.max(moved, Math.abs(a[i] - b[i]));
+  assert.ok(moved > .003, `the torso changes shape: ${moved}`);
+});
+
+test('the armour is a piece of clothing in its slot: worn instead of the trousers, not over them', () => {
+  const legs = INVENTORY_SLOTS.find((s) => s.id === 'legs');
+  assert.deepEqual(garmentOptions(legs, 'wanderer-female').map((o) => o.id), ['peasant', 'armour', null]);
+  const plated = wearIn(legs, WOMAN, 'armour');
+  assert.equal(plated.wear.trousers, null);
+  assert.equal(plated.equip.leggings, true);
+  assert.equal(garmentWorn(legs, plated), 'armour');
+  const back = wearIn(legs, plated, 'peasant');
+  assert.equal(back.wear.trousers, 'peasant');
+  assert.equal(back.equip.leggings, false);
+  assert.equal(garmentWorn(legs, wearIn(legs, back, null)), null);
 });

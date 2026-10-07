@@ -253,6 +253,13 @@ Elke fase is een patch, met een redeploy van de open zee voor de anderen.
   blijft voor de overschrijvende set.
 - **Kapsel is een keuze**: in de haar-popover onder HEAD staan de kapsels boven de kleuren (lang,
   knotjes, scheiding, kort, kaal).
+- **Edit character** (zijn keuze): een knop in het inventory, en de karakterkeuze gaat uit het inventory.
+  In hetzelfde venster: lichaam, man/vrouw, huid, haar, en schuiven voor heup, borst, hoofd, handen,
+  voeten en slank↔dik. Lengte kwam er goedkoop bij. Heup, hoofd, handen, voeten en lengte zijn
+  bot-schaal; borst en slank↔dik zijn vervorming van de vorm. Kleding en uitrusting gaan mee, en de
+  clips blijven werken.
+- **Het harnas is een kledingkeuze** ("net als de broek, niet overrulend"): in de kiezer van een slot
+  staan Peasant, het harnasstuk en niets naast elkaar, en je draagt er één.
 - **"Doorzichtig" en "beweegt raar"** bij broek en shirt: het waren naden. Alles onder de heuplijn hing
   aan het been, alles erboven aan de romp, en het kruis hoorde bij één dij. Nu:
   - de benen zijn ook aan de romp-botten gewogen (`LEG_TORSO`);
@@ -291,6 +298,9 @@ Elke fase is een patch, met een redeploy van de open zee voor de anderen.
   Dat geldt ook voor de ladderhandgrepen (`CLIMB_CLIP_LIFT`).
 - De randen van het ondergoed zijn hoekig, want de bake knipt het per driehoek uit de textuur.
 - In het kruis van de vrouwenbroek is bij een grote pas nog een haarlijn te zien.
+- De beenplaten en sabatons zijn halve stukken (de Reiziger droeg ze over zijn broek): als enige
+  kledingstuk laten ze de dijen bloot. Een volledig ijzeren tenue wordt een eigen kledingset.
+- De schuiven zijn niet per lichaam afgesteld op het paard en de ladder (hipY schaalt wel mee).
 - De Ranger-stukken (gratis) als tweede kledingset. Daarna outfits als overschrijvende sets (een pak,
   een piratenkostuum, eventueel de kleding van de Avonturier als set).
 - De module is groot: ~2 MB gzip, de helft daarvan zijn de opnieuw gepaste hoeden per lichaam.

@@ -31,6 +31,22 @@ export const eyeOf = (spec) => characterOf(spec || DEFAULT_CHARACTER).eyeY * PLA
 // A curated swatch per part. Skin tones are named for materials rather than people, and
 // the rest borrow the village's own palette so a settler you make still belongs here.
 
+// The character editor's sliders (Plans/basislichamen-en-outfits.md, "Edit character"): each a
+// number in -1..1, 0 being the body as baked. classic-avatar.js turns height, hips, head, hands and
+// feet into the rig's own scale (the bones carry the clothes and the gear with them); bust and build
+// are the shape itself, worked into the geometry here (shapeGeometry). Kept in the look like every
+// other choice, so the sea hands them on (lib/players.mjs lookOf).
+export const SHAPES = [
+  { id: 'height', name: 'Height', low: 'Short', high: 'Tall' },
+  { id: 'build', name: 'Build', low: 'Skinny', high: 'Heavy' },
+  { id: 'hips', name: 'Hips', low: 'Narrow', high: 'Wide' },
+  { id: 'bust', name: 'Bust', low: 'Flat', high: 'Full' },
+  { id: 'head', name: 'Head', low: 'Small', high: 'Large' },
+  { id: 'hands', name: 'Hands', low: 'Small', high: 'Large' },
+  { id: 'feet', name: 'Feet', low: 'Small', high: 'Large' },
+];
+export const NO_SHAPE = Object.fromEntries(SHAPES.map((s) => [s.id, 0]));
+
 // The wide-brimmed, straw-hatted settler the player has always been.
 export const DEFAULT_AVATAR = {
   // Which body (web/js/player-bodies.js). A look saved before there was a choice has none, and
@@ -39,7 +55,7 @@ export const DEFAULT_AVATAR = {
   // A Wanderer's body (player-bodies.js SEXES), or null for the body `character` names; what it
   // wears over its underwear, a set or null per garment slot (GARMENTS); and its hairstyle
   // (HAIR_STYLES, null for the body's own first). Plans/basislichamen-en-outfits.md.
-  body: null, wear: DEFAULT_WEAR, hairStyle: null,
+  body: null, wear: DEFAULT_WEAR, hairStyle: null, shape: NO_SHAPE,
   // The hair's colour: the Traveller's own brown, which is also what every other body's hair is
   // baked against (scripts/build-bodies.py DEFAULT_HAIR), so a look that never chose one is
   // drawn as it always was.
@@ -104,6 +120,10 @@ export function normalizeAvatar(spec = {}) {
       return [id, v === null ? null : GARMENT_SETS.some((g) => g.id === v) ? v : DEFAULT_WEAR[id]];
     })),
     hairStyle: HAIR_STYLES.some((h) => h.id === spec.hairStyle) ? spec.hairStyle : null,
+    shape: Object.fromEntries(SHAPES.map(({ id }) => {
+      const v = Number(spec.shape?.[id]);
+      return [id, Number.isFinite(v) ? Math.round(Math.max(-1, Math.min(1, v)) * 100) / 100 : 0];
+    })),
     hair: num(spec.hair, d.hair),
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
@@ -224,7 +244,62 @@ function buildFigure(spec, gear, include = null) {
   });
   const geometry = mergeGeometries(parts, false);
   parts.forEach((part) => part.dispose());
+  shapeGeometry(geometry, s, c);
   return geometry;
+}
+
+// Bust and build (SHAPES), in the bake's own frame, before PLAYER_SCALE. Build moves every vertex
+// along its normal - the body and whatever is worn on it alike, so the clothes stay on - except the
+// head, the hands and the feet, which a heavier or skinnier body keeps (and a hand pushed in on its
+// own normals loses its fingers). Bust moves the front of the chest forward round a centre found on
+// the body itself (bustOf), fading out to nothing, the shirt and the chestplate with it.
+const BUILD_REACH = 0.0045;
+const BUST_REACH = 0.55;
+function shapeGeometry(g, s, c) {
+  const { build = 0, bust = 0 } = s.shape || {};
+  if (!build && !bust) return;
+  const p = g.attributes.position, n = g.attributes.normal, ix = g.attributes.skinIndex, w = g.attributes.skinWeight;
+  const b = bust ? bustOf(c) : null;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    // The weights say what a vertex is: a limb's end (index 2, the hand or the foot) or a finger
+    // (8..) is left alone; the head is above the neck pivot.
+    const top = w.getX(i) >= w.getY(i) && w.getX(i) >= w.getZ(i) ? ix.getX(i) : w.getY(i) >= w.getZ(i) ? ix.getY(i) : ix.getZ(i);
+    const extremity = (top === 2 && Math.max(w.getX(i), w.getY(i), w.getZ(i)) > .5 && y < c.rig.head[1]) || top >= 8;
+    if (build && !extremity && y < c.rig.head[1]) {
+      x += n.getX(i) * build * BUILD_REACH; y += n.getY(i) * build * BUILD_REACH; z += n.getZ(i) * build * BUILD_REACH;
+    }
+    if (b && z > b.z - b.r) {
+      for (const cx of [-b.x, b.x]) {
+        const d2 = ((x - cx) ** 2 + ((y - b.y) * 1.2) ** 2) / (b.r * b.r);
+        if (d2 < 1) z += bust * b.r * BUST_REACH * (1 - d2) * (1 - d2) * (bust < 0 ? .6 : 1);
+      }
+    }
+    p.setXYZ(i, x, y, z);
+  }
+  p.needsUpdate = true;
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+}
+// Where a body's chest stands out furthest, either side of the middle, between the hips and the
+// shoulders - worked out once per body from its own skin.
+const BUSTS = new Map();
+function bustOf(c) {
+  if (BUSTS.has(c.id)) return BUSTS.get(c.id);
+  const hip = c.rig.leftLeg[1], shoulder = c.rig.leftArm[1], L = shoulder - hip;
+  let best = { z: -Infinity, x: 0, y: hip + .75 * L };
+  for (const part of c.parts) {
+    if (part.variant !== 'body' || part.group !== 'outfit') continue;
+    const q = part.positions;
+    for (let i = 0; i < q.length; i += 3) {
+      const [x, y, z] = [q[i], q[i + 1], q[i + 2]];
+      if (y < hip + .55 * L || y > hip + .92 * L || Math.abs(x) < .004) continue;
+      if (z > best.z) best = { x: Math.abs(x), y, z };
+    }
+  }
+  const out = { x: Math.max(best.x, Math.abs(c.rig.leftArm[0]) * .38), y: best.y, z: best.z, r: Math.abs(c.rig.leftArm[0]) * .55 };
+  BUSTS.set(c.id, out);
+  return out;
 }
 
 // The triangles a hide list keeps: `runs` is [from, to, from, to...] in triangles.

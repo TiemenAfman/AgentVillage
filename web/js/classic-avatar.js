@@ -480,7 +480,7 @@ export function carriedGeometry() {
 // (HAND_ATTACH). The Adventurer's bake carries refitted copies of these parts too, stretched
 // with the torso they were packed beside, which is no shape for a blade.
 function heldPartGeometry(spec, names) {
-  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null, body: null }, names);
+  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null, body: null, shape: null }, names);
   const { GRIP } = bodyOf();
   geometry.translate(-GRIP[0], -GRIP[1], -GRIP[2]);
   return geometry;
@@ -1811,8 +1811,29 @@ function buildRig(spec, material) {
     }
   }
 
+  // The character editor's bone sliders (avatar.js SHAPES): height scales the whole figure (its
+  // mirror kept), the hips widen the pelvis with the spine scaled back so only the hips and the legs
+  // hung from them grow, and head, hands and feet scale their own piece or bone - everything skinned
+  // or hung below follows, the hat on the head and the glove on the hand included. Bust and build are
+  // in the geometry (avatar.js shapeGeometry). Animations turn bones and never scale them, so this
+  // holds through every clip.
+  let tall = 1;
+  function applyShape(look) {
+    const k = look?.shape || {};
+    tall = 1 + .1 * (k.height || 0);
+    object.scale.set(-tall, tall, tall);
+    const hips = 1 + .14 * (k.hips || 0), deep = 1 + .06 * (k.hips || 0);
+    torso.pelvis.scale.set(hips, 1, deep);
+    torso.spine.scale.set(1 / hips, 1, 1 / deep);
+    pieces.head.pivot.scale.setScalar(1 + .15 * (k.head || 0));
+    for (const side of ['leftArm', 'rightArm']) chains[side]?.end.scale.setScalar(1 + .25 * (k.hands || 0));
+    for (const side of ['leftLeg', 'rightLeg']) chains[side]?.end.scale.setScalar(1 + .2 * (k.feet || 0));
+  }
+  applyShape(spec);
+
   function set(next) {
     lookSpec = next;
+    applyShape(next);
     for (const piece of Object.values(pieces)) {
       const geometry = avatarPlayerComponentGeometry(next, piece.names);
       geometry.translate(-piece.at[0], -piece.at[1], -piece.at[2]);
@@ -1854,7 +1875,7 @@ function buildRig(spec, material) {
   return {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
-    character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
+    character, get hipY() { return hipY * tall; }, get eye() { return eye * tall; }, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
     strokes: !!(G.clips && GAIT_CLIPS.swim),
     dyingSeconds,
   };
