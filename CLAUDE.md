@@ -923,6 +923,17 @@ and a footprint has to be held up all round, so a bulwark's top is not walked al
 not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
+**Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
+bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
+DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds
+128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The rope ladder
+to it is `craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs, its rungs
+the climb's, drawn by boat.js `ladderBoxes`): both ends are on her, so a mast climb keeps `state.deck` on the
+rope's point and the sea hears it as an ordinary `on` + `d` - which is why lib/players.mjs `DECK_HEIGHT` is 10,
+not 4 (an older sea holds a climber halfway up the mast). E in the nest is `craft.nest`'s seat
+(`walk.sitOnDeck`: a seat in her frame, the SITTING bit). `stepHull` lands only on a floor the feet passed
+this frame - it used to land on any floor under them, eight units down from the nest in one frame - and a
+body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
 Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
 `nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
 **A hull is a reference plane** and whoever is on one stands on *that*: a point of her own frame

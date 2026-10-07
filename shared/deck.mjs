@@ -272,6 +272,91 @@ export function ladderDown(craft, lx, lz, dx) {
   return null;
 }
 
+// ---- up the mast ----------------------------------------------------------------------
+//
+// A rope ladder from the deck up to a top (craft.aloft, shared/crafts.mjs): the galleon's to her crow's
+// nest. The same rope, rungs and climb as a ladder over her side (RUNG_STEP from its foot, the hands
+// and feet on the rungs, a path in the hull's frame that a pitching hull carries you along), with two
+// differences: both of its ends are on her - the deck and the nest - so whoever climbs it is crew all
+// the way and the sea is told nothing new, and it may hang from any face of the top, so where a side
+// ladder has a sign it has `out`, the unit vector from the mast to the climber.
+//
+// `x`, `z` is the ropes' plumb line, `hw` half the width between them, `foot` the height of the deck
+// under them (rung 0) and `top` of the rim they hang from; `land` is where a climber steps down inside
+// the top and `floor` the height there.
+
+// Where on the deck the foot of a mast ladder may be taken from: no further out from the ropes than this,
+// and no nearer (the climber's own spot is CLIMB_OUT out). And how far above `foot` the feet may be.
+const MAST_FOOT_OUT = 0.45;
+const MAST_FOOT_IN = 0.05;
+const MAST_FOOT_HEIGHT = 0.3;
+// How squarely a body pushes at it to take it: the deck round a mast is crossed by everybody, so the
+// foot asks as much as the head does - a diagonal past the ropes is not a reach for them.
+const MAST_PUSH = 0.7;
+// How far inside the rim, from the ropes, a body in the top may stand and still be at the ladder's head.
+const MAST_HEAD_IN = 0.55;
+
+// The climber's line and the rope's, in the hull's frame: `CLIMB_OUT` outside the ropes along `out`.
+const alongOut = (l, d) => [l.x + l.out[0] * d, l.z + l.out[1] * d];
+
+// The way up a mast ladder from the deck: up the outside of the top to its rim, over it and down onto
+// the floor inside. Climbed backwards it is the way down.
+export function aloftPath(l) {
+  const [cx, cz] = alongOut(l, CLIMB_OUT);
+  const [ox, oz] = alongOut(l, -0.14);
+  return [
+    { x: cx, z: cz, y: l.foot },
+    { x: cx, z: cz, y: l.top },
+    // Over the rim: a hair above its top, a hand inside the ropes.
+    { x: ox, z: oz, y: l.top + 0.06 },
+    { x: l.land[0], z: l.land[1], y: l.floor },
+  ];
+}
+
+// The mast ladder a body standing on the deck is at the foot of and pushing into, or null. `lx`, `lz`
+// is where it stands in the hull's frame, `ly` its feet, and `px`, `pz` the push, turned into the
+// frame too (dirToLocal) and no longer than 1.
+export function aloftUp(craft, lx, lz, ly, px, pz) {
+  if (!craft.aloft) return null;
+  for (const l of craft.aloft) {
+    if (Math.abs(ly - l.foot) > MAST_FOOT_HEIGHT) continue;
+    const dx = lx - l.x, dz = lz - l.z;
+    const along = dx * l.out[0] + dz * l.out[1];
+    if (along < MAST_FOOT_IN || along > MAST_FOOT_OUT) continue;
+    if (Math.abs(dx * l.out[1] - dz * l.out[0]) > l.hw + LADDER_SLACK) continue;
+    if (-(px * l.out[0] + pz * l.out[1]) >= MAST_PUSH) return l;
+  }
+  return null;
+}
+
+// The mast ladder a body standing in the top is at the head of and pushing out over, or null.
+export function aloftDown(craft, lx, lz, ly, px, pz) {
+  if (!craft.aloft) return null;
+  for (const l of craft.aloft) {
+    if (ly < l.floor - 0.3 || ly > l.top) continue;
+    const dx = lx - l.x, dz = lz - l.z;
+    const along = dx * l.out[0] + dz * l.out[1];
+    if (along > 0 || along < -MAST_HEAD_IN) continue;
+    if (Math.abs(dx * l.out[1] - dz * l.out[0]) > l.hw + LADDER_SLACK) continue;
+    if (px * l.out[0] + pz * l.out[1] >= PUSH_DOWN) return l;
+  }
+  return null;
+}
+
+// The mast ladder somebody standing at a point of a deck is hanging on, and how high on it (from its
+// foot, rung 0), or null: what a page has of somebody else's climb (peers.js) - a deck position up in
+// the air on the climber's line. Their yaw on it, in the hull's frame, faces the ropes.
+export function aloftHolding(craft, lx, lz, ly) {
+  if (!craft.aloft) return null;
+  for (const l of craft.aloft) {
+    const [cx, cz] = alongOut(l, CLIMB_OUT);
+    if (Math.hypot(lx - cx, lz - cz) > HOLD_SLACK) continue;
+    if (ly < l.foot + HOLD_LIFT || ly > l.top + 0.05) continue;
+    return { ladder: l, at: ly - l.foot, fx: -l.out[0], fz: -l.out[1] };
+  }
+  return null;
+}
+
 // ---- getting on and off -------------------------------------------------------------
 
 // Onto the boat: where a body at a world position would stand on this deck, or null when

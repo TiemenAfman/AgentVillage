@@ -8,6 +8,9 @@ import { meshAsset, createBuildingMaterial } from './buildings.js';
 import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
 import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
+import { CRAFTS } from 'shared/crafts.mjs';
+import { DECK_Y } from 'shared/hull.mjs';
+import { createBoat } from './boat.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -122,14 +125,29 @@ function showMast(){
     for(const g of meshAsset('civic_kraken_mast',0xffffff,{ry:-Math.PI/2})){const m=new THREE.Mesh(g,wood);m.castShadow=m.receiveShadow=true;mast.add(m);}
   },e=>console.warn('[motion] no mast:',e.message));
 }
+// Or up the galleon's mainmast to her crow's nest (Kraaiennest, Plans/DONE/kraaiennest.md): her own hull,
+// the ladder welded into it by boat.js (craft.aloft), turned so the climber faces the mast as the
+// others face theirs - her `out` onto +z - and lowered so the ladder's foot, rung 0, is this floor.
+// Eight units of rope: the camera rises with the climber, and over the top it starts again.
+let onNest=false, nest=null;
+const ALOFT=CRAFTS.galleon.aloft[0];
+const NEST_TOP=Math.floor((ALOFT.top-ALOFT.foot-.1)/(2*RUNG_STEP))*2*RUNG_STEP;
+function showNest(){
+  if(nest)return;
+  nest=createBoat({scene,material:new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true}),kind:'ship'}).object;
+  nest.visible=false;nest.receiveShadow=true;
+  // out (ox, oz) onto +z: a turn of yaw sends (x, z) to (x cos + z sin, -x sin + z cos)
+  nest.rotation.y=Math.atan2(-ALOFT.out[0],ALOFT.out[1]);
+}
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
   climbDir=Number(button.dataset.climb);
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
 };
 for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
-  onMast=button.dataset.ladder==='mast';climbY=0;
+  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';climbY=0;
   if(onMast)showMast();
+  if(onNest)showNest();
   for(const b of document.querySelectorAll('[data-ladder]'))b.setAttribute('aria-pressed',String(b===button));
 };
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
@@ -176,16 +194,17 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
-  const masted=mode==='climb'&&onMast, climber=close<0?0:close;
+  const masted=mode==='climb'&&(onMast||onNest), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
-  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&(close<0||i===climber);
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&(close<0||i===climber);
   if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
-  if(mast)mast.visible=masted;
+  if(mast)mast.visible=masted&&onMast;
+  if(nest)nest.visible=masted&&onNest;
   for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
-  const climbWas=climbY, top=onMast?MAST_TOP:CLIMB_TOP;
+  const climbWas=climbY, top=onMast?MAST_TOP:onNest?NEST_TOP:CLIMB_TOP;
   if(mode==='climb'){climbY+=climbDir*CLIMB_SPEED*dt;if(climbY>top)climbY-=top;if(climbY<0)climbY+=top;}
   const climbRise=Math.abs(climbY-climbWas)<.5?climbY-climbWas:0;
   // `climbY` going round the top is a jump; the dots forget where they were
@@ -235,7 +254,12 @@ function tick(dt){
     if(mode==='climb'){
       f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
-      if(masted&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-MAST_FROM-MAST_LADDER);
+      if(masted&&onMast&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-MAST_FROM-MAST_LADDER);
+      if(masted&&onNest&&f===figures[climber]){
+        // the climber's spot on her ladder, CLIMB_OUT out from its ropes, onto this body's feet
+        const cx=ALOFT.x+ALOFT.out[0]*CLIMB_OUT, cz=ALOFT.z+ALOFT.out[1]*CLIMB_OUT, a=nest.rotation.y;
+        nest.position.set(f.stand.position.x-(cx*Math.cos(a)+cz*Math.sin(a)),-(DECK_Y+ALOFT.foot),f.distance-(-cx*Math.sin(a)+cz*Math.cos(a)));
+      }
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
       f.stand.updateMatrixWorld(true);
       showHoldsFor(figures.indexOf(f),f,climbRise);
