@@ -2,9 +2,27 @@
 
 Coordinates and material helpers are passed in by that builder. All deformation is authored
 here; the page receives ordinary baked triangles, weights and the same rest-bone positions.
+
+The anatomy is laid on in two steps, so the bones, the leg chains and every `sole` stay exactly
+where the gaits, the IK and the rider expect them: first the same lofts as before (more rings and
+more sides round, the same stations), then soft bumps that move a surface outwards where a horse
+carries muscle - the point of the shoulder, the quarters, the point of the hip, the withers, the
+croup, the breast, the cheeks - and in where it is tucked up (the flank). Each bump is a smooth
+polynomial of the distance to its centre, so a closed ring stays closed and the skin weights,
+which are a function of the rest position, stay smooth. The barrel beside the saddle is left as
+it was: the rider's legs hang there, and tests/horseback-pose.test.mjs measures them against it.
+
+The coat is the vertex colour (the island has no textures; the exporter reads a colour attribute
+in place of the material's flat colour): the material's colour times a shade - darker along the
+topline and towards the points, lighter underneath, a few faint dapples and a fine coat noise, a
+lighter band round each hoof, streaks in the mane and tail - times an ambient occlusion worked out
+here by casting rays against the horse itself (BVHTree, a fixed set of directions per corner), not
+by Cycles: no sampler and no thread count, so a second bake writes the same bytes.
 """
 import json
 import bmesh
+from mathutils import noise
+from mathutils.bvhtree import BVHTree
 
 a = collection('fauna_horse')
 bones = []
@@ -35,6 +53,35 @@ parts = []
 def smoothstep(a, b, v):
     t = max(0, min(1, (v-a)/(b-a)))
     return t*t*(3-2*t)
+
+
+def blob(p, c, r, mirror=True):
+    """1 at c falling to 0 at distance r, smooth all the way: (1 - d^2/r^2)^2. With `mirror` the
+    centre's x is a distance from the middle, so one call shapes both sides alike."""
+    x = abs(p.x) if mirror else p.x
+    d2 = ((x-c[0])**2 + (p.y-c[1])**2 + (p.z-c[2])**2) / (r*r)
+    return (1-d2)**2 if d2 < 1 else 0
+
+
+def refine(rows):
+    """Catmull-Rom midpoints between every pair of stations: twice the rings along the same
+    curve, so the old outline is kept and only grows rounder."""
+    out = []
+    n = len(rows)
+    for i in range(n-1):
+        p0, p1, p2, p3 = rows[max(0, i-1)], rows[i], rows[i+1], rows[min(n-1, i+2)]
+        out.append(p1)
+        out.append(tuple(-.0625*a0 + .5625*a1 + .5625*a2 - .0625*a3 for a0, a1, a2, a3 in zip(p0, p1, p2, p3)))
+    out.append(rows[-1])
+    return out
+
+
+def reshape(part, start, move):
+    """Move the vertices added to `part` since index `start`: `move(p)` answers an offset for the
+    point p in island coordinates."""
+    for i in range(start, len(part.verts)):
+        world = part.verts[i] + part.origin
+        part.verts[i] = part.verts[i] + move(world)
 
 
 def finish(part, weight):
@@ -78,49 +125,139 @@ def oval(part, centre, size, mat, sides=12, bands=8):
     part.add(pts, faces, mat)
 
 
+def lock(part, points, widths, heights, mat, sides=6):
+    """A lock of hair: a closed tapering tube, its tip a ring a hair wide rather than a point."""
+    loft(part, along(points, widths, heights), mat, sides=sides)
+
+
+def hashed(i, salt):
+    """A fixed number in [0, 1) per lock: a spread that is the same on every bake."""
+    v = math.sin(i * 12.9898 + salt * 78.233) * 43758.5453
+    return v - math.floor(v)
+
+
+# ---- the body ------------------------------------------------------------------------------
 body = Part(a, 'body')
-loft(body, [((0, y, z), (0, 0, 1), w, h) for z, y, w, h in [
+loft(body, [((0, y, z), (0, 0, 1), w, h) for z, y, w, h in refine([
     (-.275,.391,.07,.1),(-.245,.395,.15,.174),(-.2,.39,.188,.206),
     (-.14,.381,.197,.21),(-.075,.375,.194,.211),(0,.376,.184,.205),
-    (.07,.386,.177,.21),(.13,.402,.172,.203),(.19,.417,.139,.181),(.235,.428,.084,.12)]], BAY, sides=16)
+    (.07,.386,.177,.21),(.13,.402,.172,.203),(.19,.417,.139,.181),(.235,.428,.084,.12)])], BAY, sides=20)
 # Taper the back beneath the saddle so the rider's inner thighs clear the coat.
 for p in body.verts:
     p.x *= 1 - .38 * smoothstep(.415, .452, p.y) * (1-smoothstep(.045,.12,abs(p.z)))
-# The saddle still fits the same rider and keeps the existing seat/iron measurements.
+
+
+def body_shape(p):
+    side = 1 if p.x >= 0 else -1
+    # Nothing crosses the middle: a vertex on the centre line gets no sideways push.
+    out = smoothstep(0, .02, abs(p.x)) * side * (
+        .021 * blob(p, (.08, .34, .172), .075)      # point of the shoulder and the triceps
+        + .006 * blob(p, (.075, .4, .145), .045)   # the shoulder blade, kept forward of the knee
+        + .024 * blob(p, (.088, .345, -.19), .085) # the quarters, over the stifle
+        + .007 * blob(p, (.072, .42, -.14), .035)) # the point of the hip
+    up = (.016 * blob(p, (0, .452, .168), .05)     # the withers, in front of the saddle
+          + .009 * blob(p, (0, .44, -.215), .06)   # the croup
+          - .012 * smoothstep(.335, .29, p.y) * blob(p, (0, .3, -.15), .075, mirror=False))  # flank tucked up
+    # The breast: two rounded pectorals either side of a shallow groove.
+    fore = .011 * blob(p, (.036, .35, .228), .045) - .004 * blob(p, (0, .35, .236), .02)
+    # Behind, the quarters part either side of a groove under the tail.
+    fore += .007 * blob(p, (0, .36, -.282), .035, mirror=False) - .004 * blob(p, (.04, .35, -.27), .04)
+    # A belly that hangs a little behind the girth, the barrel's lowest line, and lifts to the flank.
+    up -= .007 * smoothstep(.31, .275, p.y) * blob(p, (0, .275, -.02), .1, mirror=False)
+    return Vector((out, up, fore))
+
+
+reshape(body, 0, body_shape)
+# The saddle still fits the same rider and keeps the existing seat measurement.
 saddle(body)
 finish(body, lambda p: {0: 1})
 
+# ---- the head and neck ---------------------------------------------------------------------
 head = Part(a, 'head', bones[1]['at'])
-loft(head, along([(0,.385,.13),(0,.425,.165),(0,.458,.188),(0,.506,.224),(0,.553,.253),
-                 (0,.595,.282),(0,.605,.311),(0,.59,.344),(0,.568,.377),(0,.54,.416)],
-                [.145,.133,.128,.113,.092,.08,.079,.073,.062,.063],
-                [.17,.178,.17,.147,.122,.112,.112,.103,.082,.07]), BAY, sides=14)
+NECK = [(0,.385,.13),(0,.425,.165),(0,.458,.188),(0,.506,.224),(0,.553,.253),
+        (0,.595,.282),(0,.605,.311),(0,.59,.344),(0,.568,.377),(0,.54,.416)]
+NECK_W = [.145,.133,.128,.113,.092,.08,.079,.073,.062,.063]
+NECK_H = [.17,.178,.17,.147,.122,.112,.112,.103,.082,.07]
+rows = refine([(*p, w, h) for p, w, h in zip(NECK, NECK_W, NECK_H)])
+loft(head, along([r[:3] for r in rows], [r[3] for r in rows], [r[4] for r in rows]), BAY, sides=20)
+
+
+def head_shape(p):
+    side = 1 if p.x >= 0 else -1
+    out = smoothstep(0, .015, abs(p.x)) * side * (
+        .011 * blob(p, (.036, .566, .322), .036)    # the cheek over the round of the jaw
+        + .004 * blob(p, (.036, .622, .318), .02)   # the brow over the eye
+        - .004 * blob(p, (.03, .585, .37), .03))    # the face narrowing below the eye
+    # The jaw's lower edge, and the throatlatch tucked in behind it.
+    up = -.006 * blob(p, (0, .55, .33), .03, mirror=False) + .004 * blob(p, (0, .535, .29), .03, mirror=False)
+    # The crest of the neck carries a little muscle under the mane.
+    up += .006 * blob(p, (0, .55, .2), .07, mirror=False) * smoothstep(-.01, .02, p.y - .45 - (p.z - .14) * 1.1)
+    return Vector((out, up, 0))
+
+
+reshape(head, 0, head_shape)
 muzzle = material('horse muzzle', 0x594537)
-loft(head, along([(0,.545,.402),(0,.532,.429),(0,.532,.45)], [.063,.074,.059], [.068,.06,.048]), muzzle, sides=12)
+loft(head, along([(0,.545,.402),(0,.532,.429),(0,.531,.448),(0,.529,.456)],
+                 [.063,.074,.064,.04], [.068,.06,.05,.028]), muzzle, sides=16)
 # Raised surfaces sit slightly inside the coat, so a side view never sees floating eyes/straps.
 eye = material('horse eye', 0x17120f)
 glint = material('horse eye glint', 0xc5b6a0)
 bridle = material('horse bridle', 0x493025)
 for side in [-1, 1]:
-    oval(head, (side*.037,.604,.322), (.014,.018,.025), DARK)
-    oval(head, (side*.042,.605,.325), (.007,.01,.014), eye)
+    oval(head, (side*.037,.604,.322), (.014,.018,.025), DARK, sides=10, bands=6)
+    oval(head, (side*.042,.605,.325), (.007,.01,.014), eye, sides=10, bands=6)
     oval(head, (side*.045,.608,.33), (.002,.003,.003), glint, sides=8, bands=4)
-    oval(head, (side*.03,.543,.44), (.006,.009,.014), DARK, sides=8, bands=6)
+    # A flared nostril: a rim of the muzzle's skin round a dark opening.
+    oval(head, (side*.025,.547,.443), (.017,.024,.012), muzzle, sides=8, bands=5)
+    oval(head, (side*.027,.547,.4465), (.006,.014,.0065), DARK, sides=6, bands=4)
     loft(head, along([(side*.021,.64,.283),(side*.025,.668,.286),(side*.03,.689,.293)],
                     [.026,.017,.003], [.023,.015,.003]), BAY, sides=8)
     loft(head, along([(side*.023,.647,.296),(side*.028,.675,.297)], [.011,.002], [.003,.002]), muzzle, sides=6)
     loft(head, along([(side*.039,.626,.297),(side*.044,.596,.329),(side*.038,.551,.422)], [.005]*3), bridle, sides=6)
     oval(head, (side*.041,.552,.41), (.007,.011,.011), material('horse tack brass',0xc6a263), sides=8, bands=4)
 # A tapered blaze lies on the front plane of the skull, not a floating rectangular strip.
-loft(head, along([(0,.642,.318),(0,.619,.353),(0,.59,.394),(0,.557,.443)],
-                [.012,.018,.014,.009], [.003]*4), BLAZE, sides=6)
-# Closed mane tufts follow the crest, and overlap instead of leaving open-ended ribbons.
-for i in range(7):
-    t=i/6
-    y,z=.472+.168*t,.153+.12*t
-    loft(head, along([(0,y,z+.015),(0,y+.008,z-.008),(0,y-.025,z-.017)],
-                    [.022,.026,.012],[.028,.022,.007]), DARK, sides=8)
-loft(head, along([(0,.644,.292),(0,.651,.321),(0,.619,.355)], [.034,.026,.009],[.016,.014,.004]), DARK, sides=8)
+# On the face's top line (the loft's upper edge, worked out from its rings): the first blaze lay
+# a centimetre under it and showed only as a fleck on the nose.
+loft(head, along([(0,.659,.322),(0,.634,.368),(0,.601,.402),(0,.572,.432),(0,.558,.446)],
+                [.012,.019,.016,.012,.007], [.006]*5), BLAZE, sides=6)
+
+
+def crest(t):
+    """Where the top of the neck is, from the withers (t 0) to the poll (t 1): the loft's own
+    centre line and depth, offset to its upper edge, and which way is up-and-back off it."""
+    s = 2 + 4 * t
+    i = min(int(s), 5)
+    f = s - i
+    c = Vector(NECK[i]).lerp(Vector(NECK[i+1]), f)
+    d = (Vector(NECK[i+1]) - Vector(NECK[i])).normalized()
+    h = NECK_H[i] + (NECK_H[i+1] - NECK_H[i]) * f
+    v = d.cross(Vector((1, 0, 0))).normalized()
+    return c + v * (h / 2), d, v
+
+
+# A full mane: seventeen locks along the crest, rising off it and falling back and over, most of
+# them to the right as a mane lies, each a closed tube so nothing is an open ribbon.
+for i in range(17):
+    t = i / 16
+    base, d, v = crest(t)
+    sx = -1 if i % 4 == 1 else 1
+    L = (.05 + .02 * hashed(i, 1)) * (1 - .3 * t)
+    x = Vector((sx, 0, 0))
+    down = Vector((0, -1, 0))
+    lock(head, [base - v * .012,
+                base + v * .007 - d * L * .25 + x * .008,
+                base - d * L * .55 + x * .022 + down * L * .12,
+                base - d * L * .8 + x * (.03 + .008 * hashed(i, 2)) + down * L * .42],
+         [.032, .038, .03, .006], [.018, .015, .011, .003], DARK)
+# Under the locks a roll of hair along the crest, so the mane has a body from either side.
+roll = [crest(k / 8) for k in range(9)]
+lock(head, [c + v * .004 for c, d, v in roll], [.026, .03, .03, .03, .028, .026, .024, .022, .01],
+     [.022, .026, .026, .024, .022, .02, .018, .016, .008], DARK, sides=10)
+# The forelock: three locks from between the ears down over the forehead.
+for k, (dx, reach) in enumerate([(0, 1), (-.011, .8), (.011, .85)]):
+    lock(head, [(dx, .646, .29), (dx * 1.2, .652, .316), (dx * 1.4, .63, .345 * reach + .35 * (1 - reach) + .0),
+                (dx * 1.5, .6 + .02 * (1 - reach), .37 - .02 * (1 - reach))],
+         [.026, .026, .018, .004], [.014, .012, .008, .003], DARK)
 
 
 def head_weights(p):
@@ -130,26 +267,63 @@ def head_weights(p):
 
 
 finish(head, head_weights)
+
+# ---- the tail ------------------------------------------------------------------------------
 tail = Part(a, 'tail', bones[3]['at'])
-loft(tail, along([(0,.435,-.244),(0,.395,-.273),(0,.327,-.3),(.005,.239,-.31),(.007,.145,-.316),(.009,.12,-.306)],
-                [.033,.047,.051,.049,.035,.01],[.035,.035,.037,.034,.024,.009]), DARK, sides=12)
+# The dock, and the hair falling off it as a mass with strands coming out of its lower half.
+loft(tail, along([(0,.437,-.243),(0,.416,-.262),(0,.39,-.279),(0,.355,-.293)],
+                 [.033,.042,.045,.04], [.035,.036,.037,.034]), DARK, sides=10)
+loft(tail, along([(0,.405,-.268),(0,.35,-.296),(.003,.285,-.309),(.006,.22,-.316),(.008,.17,-.316),(.009,.14,-.31)],
+                 [.042,.058,.062,.055,.04,.012], [.036,.044,.046,.04,.028,.01]), DARK, sides=10)
+for i in range(9):
+    xs = (i - 4) / 4 * .026 + (hashed(i, 3) - .5) * .006
+    ys = .3 - .06 * hashed(i, 4)
+    ye = .1 + .05 * hashed(i, 5)
+    zz = -.31 - .018 * hashed(i, 6)
+    lock(tail, [(xs * .4, ys, -.303), (xs * .75, ys - .07, zz + .004), (xs, ye + .045, zz), (xs * 1.1, ye, zz + .006)],
+         [.022, .02, .013, .003], [.018, .015, .01, .003], DARK, sides=6)
 finish(tail, lambda p: {3: 1-smoothstep(.34,.18,p.y), 4:smoothstep(.34,.18,p.y)})
 
+# ---- the legs ------------------------------------------------------------------------------
 for leg in legs:
     root, knee, foot = [Vector(bones[leg[k]]['at']) for k in ['root','bend','end']]
     part = Part(a, 'leg '+leg['name'], root)
     front = leg['front']
+    inner = -1 if root.x > 0 else 1   # towards the horse's middle
     # Extra rings around carpus/hock and fetlock deform without the old angular cut-outs.
     pts = [root+Vector((0,.045,0)),root,root.lerp(knee,.3),root.lerp(knee,.7),knee,
            knee.lerp(foot,.2),knee.lerp(foot,.6),foot+Vector((0,.018,0)),foot,foot+Vector((0,-.015,.012))]
-    widths = [.075,.078,.065,.04,.036,.029,.024,.029,.035,.038] if front else [.09,.097,.076,.042,.037,.03,.025,.03,.035,.037]
-    heights = [w*1.16 for w in widths]
+    # The top ring narrower than before, so the leg goes into the body rather than ending on it
+    # as a sleeve; the body's own shoulder and quarters stand over the join.
+    widths = [.056,.074,.065,.04,.036,.029,.024,.029,.035,.038] if front else [.07,.092,.076,.042,.037,.03,.025,.03,.035,.037]
+    heights = [w*(1.3 if i == 0 else 1.16) for i, w in enumerate(widths)]
     loft(part, along(pts, widths, heights), BAY, sides=12,
          paint=lambda p: SOCK if p.y < .136 else BAY)
+
+    def leg_shape(p, knee=knee, front=front, root=root):
+        if front:
+            # The forearm's muscle in front and outside, and the flat bony front of the knee.
+            return Vector((0, 0, .006 * blob(p, (0, .29, root.z + .03), .05, mirror=False)
+                           + .004 * blob(p, (0, knee.y + .005, knee.z + .02), .02, mirror=False)))
+        # The point of the hock behind, and the gaskin swelling above it.
+        return Vector((0, 0, -.009 * blob(p, (0, knee.y + .012, knee.z - .022), .022, mirror=False)
+                       - .006 * blob(p, (0, .27, root.z - .035), .045, mirror=False)))
+
+    reshape(part, 0, leg_shape)
     # A rounded wall, sloping toe and level sole; the hoof is weighted rigidly below the fetlock.
+    # More rings than its shape needs: a coronet band is drawn in the vertex colour.
     z=foot.z+.012
     loft(part, [((root.x,y,z+dz),(0,1,0),w,h) for y,w,h,dz in [
-        (0,.047,.06,.006),(.008,.052,.065,.006),(.031,.041,.046,0),(.039,.033,.034,-.003)]], HOOF, sides=12)
+        (0,.047,.06,.006),(.006,.051,.064,.006),(.014,.05,.061,.005),(.022,.047,.056,.003),
+        (.028,.043,.05,.001),(.031,.041,.046,0),(.039,.033,.034,-.003)]], HOOF, sides=12)
+    # Feathering at the back of the fetlock.
+    lock(part, [(root.x, .076, foot.z - .008), (root.x, .058, foot.z - .018), (root.x, .042, foot.z - .022)],
+         [.018, .02, .005], [.014, .016, .004], SOCK)
+    # The chestnut on the inside of the leg: above the knee in front, below the hock behind.
+    if front:
+        oval(part, (root.x + inner * .0175, .245, knee.z + .002), (.006, .013, .008), DARK, sides=6, bands=4)
+    else:
+        oval(part, (root.x + inner * .013, .152, knee.z + .008 - .006), (.005, .01, .007), DARK, sides=6, bands=4)
 
     def weights(p, leg=leg, root=root, knee=knee):
         hip = smoothstep(root.y+.035,root.y-.04,p.y)
@@ -158,6 +332,99 @@ for leg in legs:
         return {0:1-hip,leg['root']:hip*(1-bend),leg['bend']:hip*bend*(1-hoof),leg['end']:hip*bend*hoof}
 
     finish(part, weights)
+
+
+# ---- the coat ------------------------------------------------------------------------------
+def coat(objects):
+    """Write each corner's colour: its material's colour, shaded, times its occlusion."""
+    verts, polys, offsets = [], [], []
+    for obj in objects:
+        offsets.append(len(verts))
+        verts += [obj.matrix_world @ v.co for v in obj.data.vertices]
+        polys += [[offsets[-1] + i for i in poly.vertices] for poly in obj.data.polygons]
+    tree = BVHTree.FromPolygons(verts, polys)
+    # Thirty-two directions over a hemisphere, cosine-weighted, the same for every corner.
+    golden = math.pi * (3 - math.sqrt(5))
+    dirs = []
+    for k in range(32):
+        r = math.sqrt((k + .5) / 32)
+        dirs.append((r * math.cos(k * golden), r * math.sin(k * golden), math.sqrt(1 - r * r)))
+    reach = .05
+
+    def occlusion(co, n):
+        t = n.cross(Vector((0, 0, 1)))
+        if t.length < .1:
+            t = n.cross(Vector((1, 0, 0)))
+        t.normalize()
+        b = n.cross(t)
+        origin = co + n * 2e-4
+        # A corner buried inside another shell (a leg's top in the body, the neck's root in the
+        # chest) meets that shell's inside first. Nobody sees it, but the faces that come out of
+        # it would carry its darkness out over the join as a jagged smear, so it is left unshaded:
+        # the crease itself is darkened by the corners outside it that look at the other shell.
+        first = tree.ray_cast(origin, n, 1.0)
+        if first[0] is not None and first[1].dot(n) > 0:
+            return 0
+        hits = 0
+        for dx, dy, dz in dirs:
+            if tree.ray_cast(origin, t * dx + b * dy + n * dz, reach)[0] is not None:
+                hits += 1
+        return hits / len(dirs)
+
+    for obj in objects:
+        mesh = obj.data
+        occ = [occlusion(obj.matrix_world @ v.co, v.normal) for v in mesh.vertices]
+        attr = mesh.color_attributes.new('coat', 'FLOAT_COLOR', 'CORNER')
+        mesh.color_attributes.active_color = attr
+        leg_part = ' leg ' in obj.name
+        for poly in mesh.polygons:
+            mat = mesh.materials[poly.material_index]
+            label = mat.name
+            base = mat.diffuse_color
+            for li in poly.loop_indices:
+                vi = mesh.loops[li].vertex_index
+                v = mesh.vertices[vi]
+                w = obj.matrix_world @ v.co
+                q = Vector((w.x, w.z, -w.y))
+                n = Vector((v.normal.x, v.normal.z, -v.normal.y))
+                f = shade(label, q, n, leg_part)
+                if not any(s in label for s in ['eye', 'glint', 'brass']):
+                    # Capped, so the deepest crease (under the mane, in the girth) is shaded, not black.
+                    f *= 1 - .7 * min(occ[vi], .45)
+                attr.data[li].color = tuple(round(min(1, c * f), 4) for c in base[:3]) + (1,)
+
+
+def shade(label, q, n, leg_part):
+    grain = noise.noise(q * 150)
+    if 'coat' in label:
+        f = 1.08 - .2 * smoothstep(.36, .47, q.y)                        # darker along the topline
+        f *= 1 - .08 * smoothstep(.03, 0, abs(q.x)) * smoothstep(.4, .45, q.y) * smoothstep(.2, .1, q.z)  # dorsal line
+        f *= 1 + .1 * max(0, -n.y) - .04 * max(0, n.y)                   # lighter underneath
+        if leg_part:
+            f *= .74 + .26 * smoothstep(.14, .28, q.y)                    # darkening into the points
+        if q.z > .37:
+            f *= 1 - .16 * smoothstep(.38, .43, q.z)                      # and into the muzzle
+        if q.y > .27 and q.z < .3:
+            # A few faint dapples on the barrel and the quarters.
+            f *= 1 + .08 * smoothstep(.25, .55, noise.noise(q * 36)) * smoothstep(.3, .36, q.y)
+        return f * (1 + .035 * grain)
+    if 'muzzle' in label:
+        return (1 + .3 * smoothstep(.53, .508, q.y)) * (1 + .04 * grain)   # the lips paler
+    if 'mane' in label:
+        streak = noise.noise(Vector((q.x * 140, q.y * 10, q.z * 140)))
+        f = .88 + .16 * streak
+        return f * (1 + .3 * smoothstep(.24, .1, q.y))                     # sun on the tail's ends
+    if 'sock' in label:
+        return (.88 + .14 * smoothstep(.05, .13, q.y)) * (1 + .04 * grain)
+    if 'hoof' in label:
+        band = smoothstep(.018, .024, q.y) * smoothstep(.032, .027, q.y)
+        return (.86 + .5 * band + .08 * smoothstep(.008, 0, q.y)) * (1 + .05 * noise.noise(Vector((q.x * 300, q.y * 20, q.z * 300))))
+    if 'blaze' in label:
+        return 1 + .03 * grain
+    return 1
+
+
+coat(parts)
 
 # The .blend has the same real bones and weights as the browser, available for posing.
 armature = bpy.data.armatures.new('Horse armature')

@@ -93,7 +93,10 @@ export const BUDGETS = [
   // handful of parts that move (body, head, tail, four legs), and never instanced. The animals
   // made from a picture (scripts/build-fauna.py) need the room: at 500 a cow's legs were sticks.
   // The rideable horse is inspected beside the player: closed joint rings, smooth head and tack.
-  ['fauna_horse', 6000],
+  // 6500 since it got its anatomy (scripts/horse-model.py: muscle masses, a full mane and a tail
+  // of strands, nostrils, chestnuts, feathering): ~6400 from ~3900. It is drawn once per rider and
+  // per stable, skinned, in its ~7 draw calls - the triangles are the cheap part of it.
+  ['fauna_horse', 6500],
   ['fauna_', 1200],
 ];
 

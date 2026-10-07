@@ -25,7 +25,8 @@ TOP = 5.0                   # the roof's ridge: the mast runs into it
 SPAR = material('plank:mast', 0x3a2618)
 SAIL = 'plain:sail'
 YARD_Y = 2.1
-NEST_Y = 2.74               # the top of the crow's nest's planks: a walkable floor
+NEST_Y = 2.8                # the top of the crow's nest's planks, the floor walked there: kraken-layout.js's
+                            # KIT.mast.nest (the galleries' level U over the pit, where the bridges come in)
 NEST_R = .65                # its outside, the rail included: 1.3 across, room for a walker (0.32) round the pole
 PLANK_R = .63               # where the planks stop and the rim begins
 DECK_T = .035               # the planks' thickness
