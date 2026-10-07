@@ -370,7 +370,7 @@ def saddle(p):
         z = -0.09 + 0.184 * k / 7
         e = abs((z - 0.002) / 0.092)
         span = 68 - 16 * e ** 4
-        rows.append([(on(z, d, 0.0012), on(z, d, 0.0048)) for d in [span * (j / 5 - 1) for j in range(11)]])
+        rows.append([(on(z, d, 0.0012), on(z, d, 0.0048)) for d in [span * (j / 4 - 1) for j in range(9)]])
     slab(p, rows, pad)
     # The seat and the panels under it, as one dished shell: how high its middle stands at each z,
     # and how far round the barrel it reaches (narrowest at the twist, just behind the pommel).
@@ -383,8 +383,8 @@ def saddle(p):
         top = on(z, 0, 0).y
         rise, reach = max(0.006, lerp_table(HEIGHT, z) - top), lerp_table(REACH, z)
         row = []
-        for j in range(9):
-            d = reach * (j / 4 - 1)
+        for j in range(7):
+            d = reach * (j / 3 - 1)
             f = 1 - (d / reach) ** 2
             row.append((on(z, d, 0.004), on(z, d, 0.006 + (rise - 0.006) * f ** 0.6)))
         rows.append(row)
@@ -406,7 +406,7 @@ def saddle(p):
         slab(p, rows, LEATHER)
         # A knee roll along the flap's front edge.
         edge = [on(0.052 + 0.026 * t - 0.016 * t ** 6, side * (38 + 33 * t), 0.0108) for t in (0, .25, .5, .75, 1)]
-        loft(p, along(edge, [0.006, 0.008, 0.008, 0.007, 0.004], [0.012, 0.015, 0.015, 0.013, 0.006]), LEATHER, sides=8)
+        loft(p, along(edge, [0.006, 0.008, 0.008, 0.007, 0.004], [0.012, 0.015, 0.015, 0.013, 0.006]), LEATHER, sides=6)
         # The leather from the bar down over the flap to the iron, behind the knee.
         ix, iy, iz = IRON
         top = iy + 0.031

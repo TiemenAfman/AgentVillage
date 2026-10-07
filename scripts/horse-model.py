@@ -189,8 +189,12 @@ NECK = [(0,.385,.13),(0,.425,.165),(0,.458,.188),(0,.506,.224),(0,.553,.253),
         (0,.595,.282),(0,.605,.311),(0,.59,.344),(0,.568,.377),(0,.54,.416)]
 NECK_W = [.145,.133,.128,.113,.092,.08,.079,.073,.062,.063]
 NECK_H = [.17,.178,.17,.147,.122,.112,.112,.103,.082,.07]
-# The neck alone, to the poll: the skull is a shell of its own laid over the neck's end.
-rows = refine([(*p, w, h) for p, w, h in zip(NECK[:6], NECK_W[:6], NECK_H[:6])])
+# The neck alone, to the poll: the skull is a shell of its own laid over the neck's end. The last
+# station is drawn in a little (0.074 by 0.1, not 0.08 by 0.112) so the whole of the end lies inside
+# the skull's back: at full size its top corner stood 4 cm behind the poll and its sides out past the
+# jowls - a step from every side, and a slot of background between the two when the head turned.
+NECK_END = (.066, .088)
+rows = refine([(*p, w, h) for p, w, h in zip(NECK[:6], NECK_W[:5] + [NECK_END[0]], NECK_H[:5] + [NECK_END[1]])])
 loft(head, along([r[:3] for r in rows], [r[3] for r in rows], [r[4] for r in rows]), BAY, sides=20)
 # The crest of the neck carries a little muscle under the mane.
 reshape(head, 0, lambda p: Vector((0, .006 * blob(p, (0, .55, .2), .07, mirror=False)
@@ -207,8 +211,12 @@ HA, HB = Vector((0, .612, .292)), Vector((0, .533, .452))
 HD, HL = (HB - HA).normalized(), (HB - HA).length
 HV = HD.cross(Vector((1, 0, 0))).normalized()   # up off the face: the forehead's own normal
 X = Vector((1, 0, 0))
+# The back of the skull runs on past the poll, along its own line (which rises behind it), as far
+# as the crest's end: it is the cap over the neck's end, so the two meet with an overlap rather than a
+# seam. At s -0.32 the neck's top-back corner; at s -0.01 its sides, 0.037 out.
 SKULL = [  # along the line, up, down, forehead width, jaw width, squareness
-    (-.08, .03, .034, .05, .046, 2.2), (0, .046, .05, .07, .064, 2.2), (.1, .05, .06, .086, .086, 2.6),
+    (-.34, .006, .008, .012, .014, 2), (-.28, .018, .03, .036, .042, 2.1), (-.2, .03, .04, .056, .06, 2.2),
+    (-.1, .042, .052, .072, .074, 2.3), (0, .048, .064, .078, .08, 2.4), (.1, .05, .064, .086, .086, 2.6),
     (.22, .048, .064, .096, .09, 2.9), (.34, .043, .055, .082, .076, 2.7), (.44, .038, .042, .068, .058, 2.5), (.6, .033, .033, .057, .05, 2.3),
     (.72, .031, .031, .055, .052, 2.2), (.8, .032, .034, .06, .058, 2.2), (.88, .034, .04, .066, .066, 2.2),
     (.95, .029, .036, .06, .06, 2.1), (1, .014, .02, .034, .034, 2)]
@@ -219,7 +227,7 @@ def axis(s):
     return HA + HD * (HL * s)
 
 
-def skull_ring(s, up, down, wt, wb, n, sides=20):
+def skull_ring(s, up, down, wt, wb, n, sides=18):
     c, e, out = axis(s), 2 / n, []
     for k in range(sides):
         f = 2 * math.pi * k / sides
@@ -245,18 +253,42 @@ def prober(part, faces_from):
     so none of it floats off the new shape or sinks into it."""
     tree = BVHTree.FromPolygons([v + part.origin for v in part.verts], part.faces[faces_from:first_end])
 
+    def nearest(p):
+        loc, nrm, _, _ = tree.find_nearest(p)
+        foot = HA + HD * (p - HA).dot(HD)
+        return loc, (nrm if nrm.dot(loc - foot) > 0 else -nrm)
+
     def hit(s, deg, off=0, lift=0):
         r = math.radians(deg)
         d = (HV * math.cos(r) + X * math.sin(r)).normalized()
         loc, nrm, _, _ = tree.ray_cast(axis(s) + HV * lift, d, 1.0)
         nrm = nrm if nrm.dot(d) > 0 else -nrm
         return loc + nrm * off, nrm
+    hit.nearest = nearest
     return hit
 
 
 def near(p, c, r):
     d2 = (p - c).length_squared / (r * r)
     return (1 - d2) ** 2 if d2 < 1 else 0
+
+
+def tube_loop(part, pts, normals, a, b, mat, sides=8):
+    """A closed tube round a closed loop of points, its section an ellipse `a` across the surface and
+    `b` up off it (the surface's normal at each point): a nostril's rim, a ring. Wrapped both ways,
+    so it is a closed solid with no caps."""
+    n = len(pts)
+    rings = []
+    for i in range(n):
+        p, nm = Vector(pts[i]), Vector(normals[i])
+        t = (Vector(pts[(i + 1) % n]) - Vector(pts[i - 1])).normalized()
+        nm = (nm - t * nm.dot(t)).normalized()
+        side = t.cross(nm).normalized()
+        rings.append([p + side * (a * math.cos(2 * math.pi * k / sides)) + nm * (b * math.sin(2 * math.pi * k / sides))
+                      for k in range(sides)])
+    faces = [[i * sides + k, i * sides + (k + 1) % sides, ((i + 1) % n) * sides + (k + 1) % sides,
+              ((i + 1) % n) * sides + k] for i in range(n) for k in range(sides)]
+    part.add([q for r in rings for q in r], faces, mat)
 
 
 first_end = len(head.faces)
@@ -285,6 +317,7 @@ eye = material('horse eye', 0x17120f)
 glint = material('horse eye glint', 0xc5b6a0)
 bridle = material('horse bridle', 0x493025)
 brass = material('horse tack brass', 0xc6a263)
+bit = material('horse bit', 0xb9bcbe)   # smooth-shaded steel, unlike the buckles' flat brass
 inside = material('horse ear', 0x3a2418)
 
 
@@ -298,15 +331,30 @@ for side in [-1, 1]:
     P, N = on(EYE_S, side * EYE_DEG)
     f, u = frame(N)
     ellipsoid(head, P - N * .004, f * .012, u * .0085, N * .0075, DARK, sides=8, bands=5)
-    ellipsoid(head, P - N * .0005, f * .0085, u * .0062, N * .0052, eye)
+    ellipsoid(head, P - N * .0005, f * .0085, u * .0062, N * .0052, eye, sides=8, bands=5)
     ellipsoid(head, P + N * .0042 + u * .002 + f * .002, f * .0018, u * .0018, N * .0012, glint, sides=8, bands=4)
-    # A flared nostril on the front of the muzzle, slanting back and up, round a dark opening.
+    # A nostril: a comma on the front of the muzzle - a round head low and in, a tail curling up and
+    # out - its outline laid on the skin point by point, a soft rolled rim round it and the dark
+    # opening sunk inside the rim. The first was two faceted octagons, a button on the nose.
     P, N = on(.9, side * 50, lift=.006)
     f, u = frame(N)
     slant = (u * .85 - f * .5).normalized()
     across = slant.cross(N).normalized()
-    ellipsoid(head, P - N * .002, across * .0075, slant * .012, N * .0055, muzzle, sides=8, bands=5)
-    ellipsoid(head, P + N * .0012, across * .0032, slant * .008, N * .0035, DARK, sides=6, bands=4)
+    if across.dot(X) * side < 0:
+        across = -across
+    outline = []
+    for k in range(16):
+        t = 2 * math.pi * k / 16
+        c, sn = math.cos(t), math.sin(t)
+        # A teardrop along the slant (its head at -1, its tail at +1), the tail bent outwards.
+        wide = .0058 * sn * (.62 - .38 * c)
+        bend = .004 * (1 + c) ** 2 / 4
+        outline.append(P + slant * (.0105 * c) + across * (wide + bend))
+    surf = [on.nearest(q) for q in outline]
+    tube_loop(head, [q for q, _ in surf], [n for _, n in surf], .0026, .0019, muzzle, sides=6)
+    mid = sum((q for q, _ in surf), Vector()) / len(surf)
+    shell(head, [[mid + (q - mid) * .86 - n * .0006 for q, n in surf],
+                 [mid + (q - mid) * .45 - n * .0042 for q, n in surf]], DARK)
     # The line of the mouth between the lips.
     mouth = [on(s, side * d, .0006) for s, d in [(.8, 126), (.86, 129), (.92, 137), (.97, 150)]]
     strap(head, [m[0] for m in mouth], [m[1] for m in mouth], .003, .0015, DARK)
@@ -319,20 +367,29 @@ for side in [-1, 1]:
     fo = (fo - up * fo.dot(up)).normalized()
     g = up.cross(fo)
     rings = []
-    for t, R in [(0, .011), (.25, .0135), (.55, .012), (.8, .0075), (1, .0012)]:
+    for t, R in [(0, .011), (.25, .0135), (.55, .012), (.8, .0075), (1, .0035)]:
         c = base + up * (.052 * t)
         cup = [c + fo * (R * math.cos(math.radians(40 + 35 * k))) + g * (R * math.sin(math.radians(40 + 35 * k)))
                 for k in range(9)]
         cup += [c + fo * (.32 * R + .6 * R * math.cos(math.radians(285 - 35 * k)))
                  + g * (.6 * R * math.sin(math.radians(285 - 35 * k))) for k in range(7)]
+        if t == 1:
+            # The tip closes on a convex ring, and not too small a one: a crescent's cap is concave,
+            # and at 1.2 mm three of its points were near enough in line that the exporter dropped
+            # the triangle between them as degenerate - an open edge on one ear.
+            cup = cup[:9] + [c + fo * (R * math.cos(math.radians(320 + 10 * (k + 1))))
+                             + g * (R * math.sin(math.radians(320 + 10 * (k + 1)))) for k in range(7)]
         rings.append(cup)
     ear = shell(head, rings, BAY)
     for k in range(len(rings) - 1):
         for i in range(9, 15):
             head.mats[ear + k * 16 + i] = head.slot(inside)
-    # The bit's ring at the corner of the mouth.
-    P, N = on(.82, side * 124, .0015)
-    ellipsoid(head, P, X * .006, HV * .006, HD * .0025, brass, sides=8, bands=4)
+    # The bit's ring at the corner of the mouth, where the cheekpiece comes down to it: a round ring
+    # (sixteen round, six in section) standing just off the cheek, in the cheek's own plane.
+    P, N = on(.82, side * 124, .0032)
+    f, u = frame(N)
+    loop = [P + (f * math.cos(2 * math.pi * k / 16) + u * math.sin(2 * math.pi * k / 16)) * .0068 for k in range(16)]
+    tube_loop(head, loop, [N] * 16, .0016, .0016, bit, sides=6)
 
 # The lower lip and the chin under the muzzle.
 ellipsoid(head, axis(.93) - HV * .029, X * .018, HD * .014, HV * .009, muzzle, sides=8, bands=5)
@@ -366,8 +423,8 @@ def crest(t):
 
 # A full mane: seventeen locks along the crest, rising off it and falling back and over, most of
 # them to the right as a mane lies, each a closed tube so nothing is an open ribbon.
-for i in range(13):
-    t = i / 12
+for i in range(11):
+    t = i / 10
     base, d, v = crest(t)
     sx = -1 if i % 4 == 1 else 1
     L = (.05 + .02 * hashed(i, 1)) * (1 - .3 * t)
@@ -381,7 +438,7 @@ for i in range(13):
 # Under the locks a roll of hair along the crest, so the mane has a body from either side.
 roll = [crest(k / 8) for k in range(9)]
 lock(head, [c + v * .004 for c, d, v in roll], [.026, .03, .03, .03, .028, .026, .024, .022, .01],
-     [.022, .026, .026, .024, .022, .02, .018, .016, .008], DARK, sides=10)
+     [.022, .026, .026, .024, .022, .02, .018, .016, .008], DARK, sides=8)
 # The forelock: three locks from between the ears down over the forehead.
 # Laid on the forehead's surface, like the blaze and the bridle.
 for deg, reach in [(0, 1), (-14, .8), (14, .85)]:
@@ -404,9 +461,9 @@ finish(head, head_weights)
 tail = Part(a, 'tail', bones[3]['at'])
 # The dock, and the hair falling off it as a mass with strands coming out of its lower half.
 loft(tail, along([(0,.437,-.243),(0,.416,-.262),(0,.39,-.279),(0,.355,-.293)],
-                 [.033,.042,.045,.04], [.035,.036,.037,.034]), DARK, sides=10)
+                 [.033,.042,.045,.04], [.035,.036,.037,.034]), DARK, sides=8)
 loft(tail, along([(0,.405,-.268),(0,.35,-.296),(.003,.285,-.309),(.006,.22,-.316),(.008,.17,-.316),(.009,.14,-.31)],
-                 [.042,.058,.062,.055,.04,.012], [.036,.044,.046,.04,.028,.01]), DARK, sides=10)
+                 [.042,.058,.062,.055,.04,.012], [.036,.044,.046,.04,.028,.01]), DARK, sides=8)
 for i in range(7):
     xs = (i - 3) / 3 * .026 + (hashed(i, 3) - .5) * .006
     ys = .3 - .06 * hashed(i, 4)
@@ -520,7 +577,7 @@ def coat(objects):
                 q = Vector((w.x, w.z, -w.y))
                 n = Vector((v.normal.x, v.normal.z, -v.normal.y))
                 f = shade(label, q, n, leg_part)
-                if not any(s in label for s in ['eye', 'glint', 'brass']):
+                if not any(s in label for s in ['eye', 'glint', 'brass', 'bit']):
                     # Capped, so the deepest crease (under the mane, in the girth) is shaded, not black.
                     f *= 1 - .7 * min(occ[vi], .45)
                 attr.data[li].color = tuple(round(min(1, c * f), 4) for c in base[:3]) + (1,)
