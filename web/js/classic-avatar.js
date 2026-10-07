@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE, characterOf } from './avatar.js';
+import { drawnLook, wantsWanderer, wanderersReady, loadWanderers, onWanderers } from './player-bodies.js';
 import { box, cylinder, cone, sphere, meshAsset, mergeParts } from './buildings.js';
 import * as models from './models.js';
 import { dancePose } from './dance.js';
@@ -1950,12 +1951,25 @@ function buildRig(spec, material) {
 export const DROWN_SINK = 0.55;
 export const DEATH_REST = 0.7;
 
+// A Wanderer's body is loaded only when somebody wears one (player-bodies.js loadWanderers): until it
+// is in, the rig is the Adventurer's (`drawnLook`, the same skeleton and size, and what the wire says
+// a Wanderer is), and when it lands every rig still wearing one is set again and so swapped onto it.
 export function createClassicAvatar(spec, material) {
-  let rig = buildRig(spec, material);
+  let wanted = spec, forget = null;
+  const watch = () => {
+    if (!wantsWanderer(wanted) || wanderersReady() || forget) return;
+    loadWanderers();
+    forget = onWanderers(() => { forget = null; set(wanted); });
+  };
+  let rig = buildRig(drawnLook(spec), material);
+  watch();
   function set(next) {
-    if (characterOf(next || undefined).id === rig.character) { rig.set(next); return; }
+    wanted = next;
+    watch();
+    const look = drawnLook(next);
+    if (characterOf(look || undefined).id === rig.character) { rig.set(look); return; }
     const old = rig;
-    rig = buildRig(next, material);
+    rig = buildRig(look, material);
     const parent = old.object.parent;
     if (parent) { parent.add(rig.object); parent.remove(old.object); }
     rig.object.visible = old.object.visible;
@@ -1978,7 +1992,7 @@ export function createClassicAvatar(spec, material) {
     dyingSeconds: (kind) => rig.dyingSeconds(kind),
     update: (pose, dt) => rig.update(pose, dt),
     set,
-    dispose: () => rig.dispose(),
+    dispose: () => { if (forget) { forget(); forget = null; } rig.dispose(); },
     attack: (side) => rig.attack(side),
     held: (side) => rig.held(side),
     drink: (side) => rig.drink(side),

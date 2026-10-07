@@ -18,7 +18,9 @@ const { createClassicAvatar, horsebackOf } = await import('../web/js/classic-ava
 const { INVENTORY_SLOTS, slotIcon, optionIcon, characterIcon, dyeApplies, iconGeometry, slotPicks, slotOffers, lookOn,
   garmentOptions, garmentWorn, wearIn, garmentIcon, hairStyles, hairIcon } = await import('../web/js/inventory.js');
 const { BODIES } = await import('../web/js/bodies-mesh.js');
-const { PART_COLORS } = await import('../web/js/player-bodies.js');
+const { PART_COLORS, loadWanderers } = await import('../web/js/player-bodies.js');
+// Their triangles are loaded only when somebody wears one (tests/bodies-lazy.test.mjs); here, at once.
+assert.equal(await loadWanderers({ now: true }), true);
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
 
