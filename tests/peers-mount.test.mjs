@@ -33,19 +33,18 @@ function ride(peers, speed, n = 8) {
     peers.snapshot([['ann', 0, 0, speed * (t / 1000), 0, POSE.RIDING | POSE.MOVING]], t);
   }
 }
-const horses = (scene) => scene.children.filter((o) => o.children.length === 7 && o.children.every((c) => c.type === 'Group')
-  && o.visible && o.children.some((c) => c.children[0]?.geometry && c.position.y > 0.4));
+const horses = (scene) => scene.children.filter(o => o.visible && o.getObjectByName('horse:body'));
 
 test('an Adventurer riding is drawn on a horse, in the saddle', () => {
   const { scene, peers } = world('adventurer');
-  ride(peers, 4);
+  ride(peers, .72);
   for (let i = 0; i < 30; i++) peers.update(1 / 60, { beat: 0 });
   const h = horses(scene);
   assert.equal(h.length, 1, 'no horse under the Adventurer');
   // The rider's rig (its origin at the soles) is lifted so the hips sit on the seat: with hips
   // about 0.25 over the soles, the origin stands near seat - 0.25 over the ground.
   let skinned = 0;
-  const rider = scene.children.find((o) => { let k = 0; o.traverse((m) => { if (m.isSkinnedMesh) k++; }); skinned = k; return k > 0; });
+  const rider = scene.children.find((o) => { let k = 0; o.traverse((m) => { if (m.isSkinnedMesh) k++; }); skinned = k; return k > 0 && !o.getObjectByName('horse:body'); });
   assert.ok(rider && skinned, 'no rider drawn');
   const y = rider.position.y;
   assert.ok(y > MOUNT.seat - 0.35 && y < MOUNT.seat, `rider's soles at ${y.toFixed(3)} for a seat at ${MOUNT.seat}`);

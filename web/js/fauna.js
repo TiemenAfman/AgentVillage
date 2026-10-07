@@ -35,6 +35,8 @@ import { makeRng } from 'shared/rng.mjs';
 import { ACTS } from 'shared/animals.mjs';
 import { mesh } from './buildings.js';
 import * as models from './models.js';
+import { bindHorse, poseHorse } from './horse-rig.js';
+import { horseCadence } from './horse-gait.js';
 
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.
@@ -147,7 +149,19 @@ export function partGeometry(base) {
   const asset = base.split(' ')[0];
   const names = slotsOf(asset, base);
   if (!names.length) return null;
-  return names.length === 1 ? mesh(names[0]) : mergeGeometries(names.map((x) => mesh(x)), false);
+  const pieces=names.map((name)=>{
+    const geometry=mesh(name),part=models.part(name);
+    if (part.skinIndices) {
+      geometry.setAttribute('normal',new THREE.Float32BufferAttribute(part.normals,3));
+      geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(part.skinIndices,4));
+      geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(part.skinWeights,4));
+    }
+    return geometry;
+  });
+  if(pieces.length===1)return pieces[0];
+  const geometry=mergeGeometries(pieces,false);
+  pieces.forEach(g=>g.dispose());
+  return geometry;
 }
 
 // How far a body sinks when it lies down, how long it is and where its hind hips are,
@@ -451,6 +465,10 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   pose.bodyZ = bank != null ? bodyZ : damp(pose.bodyZ, bodyZ, 8, step);
   // A butt is a jab, and a jab damped is a shove; everything else eases in and out.
   pose.surge = a === 'butt' ? surge : damp(pose.surge, surge, 10, step);
+  if (kind==='horse') {
+    pose.horseSpeed=striding?speed:0;
+    pose.horseCycle=(pose.horseCycle||0)+horseCadence(pose.horseSpeed,'walk')*step;
+  }
   return pose;
 }
 
@@ -564,7 +582,8 @@ export function applyPose(a, x, y, z) {
   const p = a.pose;
   a.object.position.set(x + Math.sin(a.yaw) * p.surge, y + p.bodyY, z + Math.cos(a.yaw) * p.surge);
   a.object.rotation.set(p.bodyX, a.yaw, p.bodyZ);
-  for (const j of a.joints) jointEuler(p, j.role, j.index, j.pivot.rotation);
+  if(a.horseRig)poseHorse(a);
+  else for (const j of a.joints) jointEuler(p, j.role, j.index, j.pivot.rotation);
 }
 
 // The brain on its own: the state machine, the seeded rng and the pose, and no Object3D at
@@ -607,8 +626,9 @@ export function createAnimal(kind, material, { area = { x: 0, z: 0, r: 1 }, seed
   const wings = [find('wing', 0), find('wing', 1)].filter(Boolean);
 
   const a = Object.assign(createBrain(kind, { area, seed, ground, yaw }), { object, body, head, tail, legs, wings, joints, geometries });
+  if(kind==='horse')a.horseRig=bindHorse(a,material);
   a.update = (dt) => updateAnimal(a, dt);
-  a.dispose = () => { object.parent?.remove(object); for (const g of geometries) g.dispose(); };
+  a.dispose = () => { object.parent?.remove(object); a.horseRig?.dispose(); for (const g of geometries) g.dispose(); };
   updateAnimal(a, 0);
   return a;
 }

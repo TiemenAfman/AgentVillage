@@ -27,7 +27,7 @@ const tap = (k) => { key(k, true); key(k, false); };
 const { createWalkMode } = await import('../web/js/walk.js');
 const { normalizeAvatar } = await import('../web/js/avatar.js');
 const { horsebackOf } = await import('../web/js/classic-avatar.js');
-const { MOUNT, MOUNT_TOP } = await import('../web/js/mount.js');
+const { MOUNT, MOUNT_TOP, MOUNT_GALLOP } = await import('../web/js/mount.js');
 
 const FRAME = 1 / 60;
 const MEADOW = 0.5;
@@ -72,14 +72,20 @@ test('the reins ride the horse through its gaits, and the rider sits on its sadd
   const s = walk.state;
   key('w', true);
   run(walk, 4);
-  assert.ok(Math.abs(s.mount.v - MOUNT_TOP) < 0.05, `cantering at ${s.mount.v}`);
-  assert.ok(s.pos.z > 10, `rode to ${s.pos.z}`);
+  assert.ok(Math.abs(s.mount.v - MOUNT_TOP) < 0.05, `trotting at ${s.mount.v}`);
+  assert.ok(s.pos.z > 2, `rode to ${s.pos.z}`);
   assert.equal(s.moving, true);
   assert.equal(s.grounded, true);
   // The rider's feet (the rig's origin) put his hips on the seat, wherever the horse's rock has it.
   const hips = walk.avatar.position.y + 0.25;
   const seat = MEADOW + MOUNT.seat + horsebackOf('adventurer').perch;
   assert.ok(Math.abs(hips - seat) < 0.08, `hips at ${hips.toFixed(3)}, seat at ${seat.toFixed(3)}`);
+  key('Shift', true);
+  run(walk, 2);
+  assert.ok(Math.abs(s.mount.v-MOUNT_TOP*MOUNT_GALLOP)<.05,'sprint selects gallop');
+  key('Shift', false);
+  run(walk, 2);
+  assert.ok(Math.abs(s.mount.v-MOUNT_TOP)<.05,'release sprint returns to trot');
   key('w', false);
   run(walk, 6);
   assert.equal(s.mount.v, 0, 'let go of the reins and it stops');

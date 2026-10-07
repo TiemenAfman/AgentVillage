@@ -92,6 +92,8 @@ export const BUDGETS = [
   // most - thirty at a thousand is 30k, under what the three hundred houses cost - each in a
   // handful of parts that move (body, head, tail, four legs), and never instanced. The animals
   // made from a picture (scripts/build-fauna.py) need the room: at 500 a cow's legs were sticks.
+  // The rideable horse is inspected beside the player: closed joint rings, smooth head and tack.
+  ['fauna_horse', 6000],
   ['fauna_', 1200],
 ];
 
