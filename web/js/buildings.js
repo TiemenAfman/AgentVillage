@@ -300,6 +300,28 @@ export function createBuildingMaterial({ seeThrough = false } = {}) {
   return mat;
 }
 
+// The building material for what the walker himself rides (mount.js, bicycle.js): the same
+// hooks and the same live uniforms (userData is the source's, not a copy, so the night and the
+// fade reach it), but never seen through - the cone is cut to show the rider, and stippling
+// the horse under him away with the house in front of him is the bug this exists for
+// (7 Oct 2026). One clone per source material, so every rider's horse and bike share one
+// program. A material with no see-through of its own (the demo's) is handed back as it is.
+const solids = new WeakMap();
+export function solidMaterial(material) {
+  if (!material || typeof material.customProgramCacheKey !== 'function'
+    || !String(material.customProgramCacheKey()).endsWith('-see')) return material;
+  let solid = solids.get(material);
+  if (!solid) {
+    solid = material.clone();
+    solid.userData = material.userData;
+    solid.onBeforeCompile = material.onBeforeCompile;
+    solid.customProgramCacheKey = material.customProgramCacheKey;
+    solid.seeThroughOff = true;
+    solids.set(material, solid);
+  }
+  return solid;
+}
+
 // ---------------------------------------------------------------- primitives
 function finish(g, hex, emissive = 0, sheet = 0) {
   g.deleteAttribute('uv');

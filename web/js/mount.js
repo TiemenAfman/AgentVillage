@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
 import { createAnimal, createPose, stepPose, applyPose, saddleOf } from './fauna.js';
+import { solidMaterial } from './buildings.js';
 
 // ---- the way --------------------------------------------------------------------------------
 // The bicycle's numbers, on purpose (the plan, "De snelheden"): everything hung on them - the
@@ -317,7 +318,9 @@ export const MOUNT_HEAD = MOUNT ? MOUNT.seat * MOUNT_SCALE - 0.25 : 0.23;
 // (his rig's origin) so that his hips sit on the saddle, in the world, after the pose - so the
 // horse's bob and rock carry him. Seven parts, seven draw calls, like the bicycle.
 export function createMount({ scene, material, seed = 'mount' }) {
-  const horse = createAnimal('horse', material, { area: { x: 0, z: 0, r: 0 }, seed });
+  // Never seen through (buildings.js solidMaterial): the horse is under the rider the cone
+  // is cut to show. The stable's, the wagon's and the story animals keep the island's.
+  const horse = createAnimal('horse', solidMaterial(material), { area: { x: 0, z: 0, r: 0 }, seed });
   if (!horse) return null;
   const ride = createRide({ phase: (seed.length * 1.7) % 9 });
   horse.pose = ride.pose;
