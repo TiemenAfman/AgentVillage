@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { swimPose, TREAD_SINK } from './diving.js';
 
@@ -35,10 +35,14 @@ const helper=new THREE.SkeletonHelper(carrier);helper.visible=false;scene.add(he
 const camera=new THREE.PerspectiveCamera(32,1,.01,100);
 // walk.js's own numbers, for the Springen button.
 const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
-// Up a rope ladder (Klimmen): at CLIMB_V, as walk.js's CLIMB_SPEED, from the floor to CLIMB_TOP and
-// from the bottom again; each body facing its own ladder, its feet CLIMB_OUT in front of the ropes
+// Up a rope ladder (Klimmen): at walk.js's CLIMB_SPEED, up from the floor to CLIMB_TOP and from the
+// bottom again, down the same way, or hanging still (`climbDir` 1, -1, 0: the stick's push in
+// walk.js); each body facing its own ladder, its feet CLIMB_OUT in front of the ropes
 // (shared/deck.mjs) and the rungs a ship's RUNG_STEP apart (boat.js), seen from behind as on foot.
-const CLIMB_V=.45, CLIMB_TOP=1.2, CLIMB_OUT=.16, RUNG_STEP=.2;
+// The rig is handed what walk.js hands it on the rungs, `climbing: { rise }`, so this is the climb
+// the island draws - Dichtbij looks at one body at a time.
+const CLIMB_TOP=1.2, CLIMB_OUT=.16, RUNG_STEP=.2;
+let climbDir=1, climbY=0;
 const ladders=figures.map(f=>{
   const g=new THREE.Group(), rope=new THREE.MeshStandardMaterial({color:0x9c7f52,roughness:1}), wood=new THREE.MeshStandardMaterial({color:0x6e4d2b,roughness:1});
   for(const x of [-.12,.12]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,CLIMB_TOP+.6,.012),rope);r.position.set(x,(CLIMB_TOP+.6)/2,0);g.add(r);}
@@ -46,6 +50,10 @@ const ladders=figures.map(f=>{
   g.visible=false;g.position.x=f.stand.position.x;scene.add(g);return g;
 });
 let jumpAt=null, deathAt=0;
+for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
+  climbDir=Number(button.dataset.climb);
+  for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
+};
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
@@ -73,6 +81,11 @@ function frame(now){
 function tick(dt){
   time+=dt;
   for(const l of ladders)l.visible=mode==='climb';
+  document.querySelector('#motion-climb').hidden=mode!=='climb';
+  // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
+  const climbWas=climbY;
+  if(mode==='climb'){climbY+=climbDir*CLIMB_SPEED*dt;if(climbY>CLIMB_TOP)climbY-=CLIMB_TOP;if(climbY<0)climbY+=CLIMB_TOP;}
+  const climbRise=Math.abs(climbY-climbWas)<.5?climbY-climbWas:0;
   // walk.js's swimming beat: quick in the stroke, slow treading water.
   bob+=dt*(mode==='swim'?6.5:1.4);
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
@@ -98,10 +111,9 @@ function tick(dt){
       continue;
     }
     if(mode==='climb'){
-      const was=f.stand.position.y, y=(time*CLIMB_V)%CLIMB_TOP;
-      f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=y;
+      f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
-      f.rig.update({moving:true,grounded:true,distance:0,climbing:{rise:y>=was?y-was:0}},dt);
+      f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise}},dt);
       continue;
     }
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
@@ -120,7 +132,7 @@ function tick(dt){
 function render(){
   // Camera and nearby scenery follow the actual moving body; the ground marks stay fixed.
   track.position.z=Math.floor(distance/2)*2;
-  const x=close<0?0:figures[close].stand.position.x, near=close<0?1:.72;
+  const x=close<0?0:figures[close].stand.position.x, near=close<0?1:mode==='climb'?.95:.72;
   // Close up, the camera rises with a jump so the leap stays in the frame.
   const lift=mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
   const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);

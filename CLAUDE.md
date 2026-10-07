@@ -1683,8 +1683,13 @@ clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill.
 **On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`,
-`rise` a cycle, `climbStep`), backwards going down and still while hanging; the Traveller reaches up
-procedurally (`climbReach`). walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
+`climbStep`), backwards going down and still while hanging; the Traveller reaches up procedurally
+(`climbReach`: one hand at a time from overhead to the chest, three rungs a cycle). A cycle's rise is
+`climbPerCycle` - the clip at its own pace at `CLIMB_SPEED` (classic-avatar.js's copy of walk.js's), not
+its 0.12 of rise, which played it 3.7 times a second - and the clip's arms are drawn `CLIMB_CLIP_REACH`
+wider and `CLIMB_CLIP_LIFT` higher (`widenClimb`), since played as baked they paddle at the shoulders.
+**Movements and looks of the avatar are shown and judged in `/avatar-motion.html`** (Klimmen: up, down
+or hanging, either body close up with Dichtbij), not on the island. walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
 not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.45 (it was 1.8 - fifteen cycles a
 second; the keeper chose slower). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
 ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,

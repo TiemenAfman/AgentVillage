@@ -26,7 +26,8 @@ const key = (k, down) => {
 };
 const { createWalkMode } = await import('../web/js/walk.js');
 const { buildBuilding } = await import('../web/js/buildings.js');
-const { createClassicAvatar, climbStep, climbKind, climbReach, CLIMB_RATE_MAX, CLIMB_REACH } = await import('../web/js/classic-avatar.js');
+const { createClassicAvatar, climbStep, climbKind, climbReach, climbPerCycle, CLIMB_RATE_MAX, CLIMB_REACH, CLIMB_SPEED } = await import('../web/js/classic-avatar.js');
+const { readFileSync } = await import('node:fs');
 const { DEFAULT_AVATAR } = await import('../web/js/avatar.js');
 const { GAITS } = await import('../web/js/avatar-gait.js');
 const { GAIT_CLIPS } = await import('../web/js/gait-clips.js');
@@ -70,13 +71,33 @@ test('the climb moves by height: a rung climbed is a share of a cycle, hanging s
 test('the Traveller reaches up with both hands in turn and steps with the other foot', () => {
   const a = climbReach(0.25), b = climbReach(0.75);
   for (const p of [a, b]) {
-    assert.ok(p.limbs.leftArm < -2 && p.limbs.rightArm < -2, 'both hands up the ropes');
+    assert.ok(p.limbs.leftArm < -1 && p.limbs.rightArm < -1, 'both hands up the ropes');
     assert.ok(p.limbs.leftLeg < 0 && p.limbs.rightLeg < 0, 'both legs forward onto the rungs');
   }
   assert.ok(a.limbs.leftArm < a.limbs.rightArm && a.limbs.rightLeg < a.limbs.leftLeg, 'left hand high, right foot up');
   assert.ok(b.limbs.rightArm < b.limbs.leftArm && b.limbs.leftLeg < b.limbs.rightLeg, 'and the other way round');
   assert.ok(a.knees[1] > a.knees[0] && b.knees[0] > b.knees[1], 'the leg going up is the one bent');
-  assert.equal(CLIMB_REACH.rungs, 0.4);
+  assert.ok(a.elbows.leftArm < a.elbows.rightArm, 'the arm reaching up is the straighter one');
+});
+
+// The keeper's recording (7 Oct 2026): quick little strokes at shoulder height. A cycle now takes
+// three rungs, and a hand goes the whole way from overhead to the chest and back.
+test('a climb is slow and reaches far: three rungs a cycle, a hand from overhead to the chest', () => {
+  assert.equal(CLIMB_REACH.rungs, 0.6, 'three of a ship rungs (0.2) a cycle');
+  assert.ok(CLIMB_SPEED / CLIMB_REACH.rungs < 0.8, `${(CLIMB_SPEED / CLIMB_REACH.rungs).toFixed(2)} cycles a second`);
+  const arms = [], elbows = [];
+  for (let i = 0; i < 100; i++) { const p = climbReach(i / 100); arms.push(p.limbs.leftArm); elbows.push(p.elbows.leftArm); }
+  assert.ok(Math.min(...arms) <= -2.9 && Math.max(...arms) >= -1.2, `arm ${Math.min(...arms)}..${Math.max(...arms)}`);
+  assert.ok(Math.min(...elbows) < 0.15 && Math.max(...elbows) > 1.2, 'straight up top, bent at the chest');
+  // held and pulled down for most of the cycle, brought up quickly
+  const rising = arms.filter((x, i) => i && x < arms[i - 1]).length;
+  assert.ok(rising < 40, `reaching up ${rising} of 100`);
+  // The Adventurer's clip at the pace it was made at, not 3.7 times a second.
+  const clipRate = CLIMB_SPEED / climbPerCycle({ clips: true, leg: 0.212 });
+  assert.ok(Math.abs(clipRate * GAIT_CLIPS.climb.seconds - 1) < 1e-9, `${clipRate.toFixed(2)} cycles a second`);
+  // walk.js's copy of the speed
+  const walk = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
+  assert.equal(Number(/const CLIMB_SPEED = ([\d.]+);/.exec(walk)[1]), CLIMB_SPEED);
 });
 
 // The rig itself, stepped like walk.js steps it: where its hands are against its head.
@@ -98,8 +119,8 @@ const pose = (rise) => ({ moving: true, grounded: true, climbing: { rise } });
 for (const character of ['adventurer', 'traveller']) {
   test(`the ${character} climbs: hands up the ropes, moving with the height gained and still when hanging`, () => {
     const { rig, standing } = climbRig(character);
-    // a cycle's rise: the clip's on his leg (0.212, avatar-gait.js), or the Traveller's two rungs
-    const per = character === 'adventurer' ? GAIT_CLIPS.climb.rise * 0.212 : CLIMB_REACH.rungs;
+    // a cycle's rise: the clip's own pace, or the Traveller's three rungs
+    const per = climbPerCycle(character === 'adventurer' ? { clips: true, leg: 0.212 } : GAITS.traveller);
     // up for a second at a pace of 1.5 cycles a second
     const rise = per * 1.5 * FRAME;
     const lefts = [];
@@ -108,7 +129,8 @@ for (const character of ['adventurer', 'traveller']) {
     assert.ok(up.left.y > standing.left.y + 0.07 && up.right.y > standing.right.y + 0.07,
       `hands raised: ${up.left.y.toFixed(3)}/${up.right.y.toFixed(3)} from ${standing.left.y.toFixed(3)}/${standing.right.y.toFixed(3)}`);
     const swing = Math.max(...lefts.slice(20)) - Math.min(...lefts.slice(20));
-    assert.ok(swing > 0.02, `the left hand goes from rung to rung (${swing.toFixed(3)})`);
+    assert.ok(swing > 0.06, `the left hand goes from rung to rung (${swing.toFixed(3)})`);
+    assert.ok(Math.max(...lefts) > standing.left.y + 0.17, `and reaches up past the chin (${Math.max(...lefts).toFixed(3)})`);
     // hanging still: the pose holds
     for (let i = 0; i < 15; i++) rig.update(pose(0), FRAME);   // the limbs catching up with the pose
     const held = handsOf(rig);
