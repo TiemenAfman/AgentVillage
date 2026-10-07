@@ -7,6 +7,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [paard-gewrichten-en-gangen.md](DONE/paard-gewrichten-en-gangen.md) — het paard met gewrichten, gesloten vlakken en gangen naar Preston Blair: draf en galop, gevouwen hoeven.
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
 - ✅ [avonturier-handen-en-aansluitingen.md](DONE/avonturier-handen-en-aansluitingen.md) — schouders, nek, twee ogen en beweeglijke ontspannen vingers.
 - ✅ [verfijnde-hoedjes.md](DONE/verfijnde-hoedjes.md) — zeven opnieuw gemodelleerde hoofddeksels.

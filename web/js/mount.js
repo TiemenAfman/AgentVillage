@@ -8,25 +8,24 @@
 // the reins and the ground - no THREE, no document, no clock - so tests/mount.test.mjs can ride
 // it under plain Node; `mountPose` is the legs, as plain numbers on fauna.js's own pose; and
 // `createMount` is the drawing, the stable's horse (`createAnimal('horse')`) with its brain left
-// asleep, posed from outside the way the timber wagon's and the rave's are. No new bake.
+// asleep, posed from outside the way the timber wagon's and the rave's are. Blender supplies the skin and skeleton.
 //
 // Yaw is the island's convention (see boat.js): forward is (sin yaw, cos yaw), and turning to the
 // right *lowers* yaw.
 import * as THREE from 'three';
 import { clamp } from 'shared/rng.mjs';
 import { createAnimal, createPose, stepPose, applyPose, saddleOf } from './fauna.js';
+import { HORSE_TROT, HORSE_GALLOP, HORSE_PATTERNS, horseCadence, hoofPath, horseBody } from './horse-gait.js';
 import { solidMaterial } from './buildings.js';
 
 // ---- the way --------------------------------------------------------------------------------
-// The bicycle's numbers, on purpose (the plan, "De snelheden"): everything hung on them - the
-// camera's pull, wrapEye, "under a boat of 9.5" - stays tuned. Shift is the gallop, paid for out
-// of the body's pool as a run is.
-export const MOUNT_TOP = 8.0;
-export const MOUNT_GALLOP = 1.3;      // 10.4 flat out
-export const MOUNT_ACCEL = 3.2;       // a horse has mass: nearly three seconds to cruising speed
-export const MOUNT_BRAKE = 9.0;       // reined in from the top in under a second, but not in a pace
+// Speeds match the small horse’s stride length. Sprint/Shift selects gallop.
+export const MOUNT_TOP = HORSE_TROT;
+export const MOUNT_GALLOP = HORSE_GALLOP / HORSE_TROT;
+export const MOUNT_ACCEL = .65;       // a horse has mass: about a second to cruising speed
+export const MOUNT_BRAKE = 2.4;       // reined in from the top in under a second, but not in a pace
 export const MOUNT_ROLL = 1.2;        // let go of the reins and it comes back to a halt in a few seconds
-export const MOUNT_REVERSE = 1.0;     // S at a standstill backs it up, slowly
+export const MOUNT_REVERSE = .22;     // S at a standstill backs it up, slowly
 // A horse turns on its haunches standing and at a walk, and wide at a gallop: it does not pivot
 // on its own axis flat out. Rad/s, from a walk's top down to the gallop's.
 export const MOUNT_TURN = 2.6;
@@ -176,126 +175,73 @@ function slice(m, p, r, boost, step, ground, blocked, ceiling) {
 // ---- the gaits ------------------------------------------------------------------------------
 // Bands of the speed, not a state anybody keeps (the plan, "Wat een paard bijzonder maakt"): the
 // rider and every peer work it out of how fast the horse goes, so nothing about it is on the wire.
-// The edges are the horse's, not the feet's: at the island's walking pace (0.65) a horse would be
-// standing still. W rides it up through a walk and a trot into a canter at MOUNT_TOP; Shift is the
-// gallop above it. GAIT_MARGIN either side of an edge keeps a horse riding on one from flickering.
-export const GAITS = ['stand', 'walk', 'trot', 'canter', 'gallop'];
-export const GAIT_EDGES = [0.15, 1.6, 4.2, MOUNT_TOP + 0.2];
-export const GAIT_MARGIN = 0.3;
+// Normal reins select trot; sprint selects gallop. Hysteresis prevents flicker.
+export const GAITS = ['stand', 'trot', 'gallop'];
+export const GAIT_EDGES = [.02, .84];
+export const GAIT_MARGIN = .05;
 export function gaitOf(v, was = null) {
-  const s = Math.abs(v);
-  let g = 0;
-  while (g < GAIT_EDGES.length && s > GAIT_EDGES[g]) g++;
-  const k = GAITS.indexOf(was);
-  if (k < 0 || k === g) return GAITS[g];
-  // Stay in the old gait while within the margin of the edge between them. Standing still is
-  // never held: a horse that has stopped has stopped.
-  if (g > k && s <= GAIT_EDGES[g - 1] + GAIT_MARGIN && g - k === 1) return GAITS[k];
-  if (g < k && s >= GAIT_EDGES[k - 1] - GAIT_MARGIN && k - g === 1 && g > 0) return GAITS[k];
-  return GAITS[g];
+  const speed=Math.abs(v);
+  if(speed<=GAIT_EDGES[0])return 'stand';
+  const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
+  return speed>threshold?'gallop':'trot';
 }
-
-// Strides a second. The reference horse (the plan, "De gangen van een referentiepaard, gemeten")
-// keeps 1.27 Hz from a walk to a run and gains its speed with a longer stride; a real gallop is
-// about 2 Hz. So the cadence saturates there and the island's game speeds are made up by hooves
-// that slide - the bicycle's compromise, with its GEAR set high on purpose.
-export const CADENCE = { stand: 0, walk: [0.8, 1.27], trot: [1.45, 1.6], canter: [1.7, 1.85], gallop: [1.95, 2.05] };
-export const CADENCE_MAX = 2.1;
-export function cadenceOf(v, gait) {
-  const c = CADENCE[gait];
-  if (!c) return 0;
-  const k = GAITS.indexOf(gait);
-  const lo = GAIT_EDGES[k - 1], hi = GAIT_EDGES[k] ?? MOUNT_TOP * MOUNT_GALLOP;
-  const t = clamp((Math.abs(v) - lo) / (hi - lo), 0, 1);
-  return Math.min(CADENCE_MAX, c[0] + (c[1] - c[0]) * t);
+export const CADENCE = {stand:0,trot:[.75,1.6],gallop:[1.85,2.05]};
+export const CADENCE_MAX=2.1;
+export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
+export const PATTERN=HORSE_PATTERNS;
+const frac=(x)=>x-Math.floor(x);
+const body={};
+export function createRide({phase=0}={}) {
+  return {pose:createPose('horse',{phase}),idle:createPose('horse',{phase}),
+    cycle:0,gait:'stand',go:0,hz:0,lean:0,transition:0,offsets:[],speed:0};
 }
-
-// When each leg comes down in its cycle (fl, fr, bl, br - fauna.js's LEG_NAMES order), how much
-// of the cycle it stands, and how far it swings either side of hanging (radians).
-//   walk     four-beat and lateral, as the reference measured: a hind, then the fore on the
-//            same side a quarter later.
-//   trot     diagonal pairs, with a moment of suspension.
-//   canter   three beats: a hind, then the other hind with the diagonal fore, then the lead fore.
-//   gallop   the reference's crossed gallop: LF 0, RF 20, LH 42, RH 60, a flight round 88-100%.
-export const PATTERN = {
-  walk: { land: [0.80, 0.30, 0.52, 0.02], duty: 0.70, swing: [0.24, 0.36] },
-  trot: { land: [0.0, 0.5, 0.5, 0.0], duty: 0.42, swing: [0.36, 0.46] },
-  canter: { land: [0.30, 0.55, 0.0, 0.30], duty: 0.36, swing: [0.46, 0.58] },
-  gallop: { land: [0.0, 0.20, 0.42, 0.60], duty: 0.26, swing: [0.6, 0.72] },
-};
-// One leg's swing at `u` (0..1 of the cycle since it landed): forward at the landing, back along
-// the ground through the stance, then forward through the air. Positive puts the hoof behind.
-function legAt(u, duty, a) {
-  if (u < duty) return -a + 2 * a * (u / duty);
-  const s = (u - duty) / (1 - duty);
-  return a - 2 * a * (0.5 - 0.5 * Math.cos(Math.PI * s));
-}
-const frac = (x) => x - Math.floor(x);
-const LEG_RATE = 12;
-
-// What the horse's body does, as fauna.js's pose (`headX`, `tailX`, `legs`, `bodyY`, `bodyX`...),
-// for a horse going `speed` and turning at `rate`, `air` in the middle of a jump. Standing, it is
-// the stable's horse's own 'still' - breathing, the tail's swish, the head about, the weight from
-// one hind leg to the other (fauna.js stepPose) - and going, the gait is laid over that, so the
-// tail still swishes at a walk. Writes the pose and never a position.
-export function createRide({ phase = 0 } = {}) {
-  return {
-    pose: createPose('horse', { phase }),
-    idle: createPose('horse', { phase }),
-    cycle: 0, gait: 'stand', go: 0, hz: 0, lean: 0,
-  };
-}
-export function mountPose(r, { speed = 0, rate = 0, air = false } = {}, dt = 0) {
-  const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 0;
-  const v = Number.isFinite(speed) ? speed : 0;
-  r.gait = gaitOf(v, r.gait);
-  r.hz = cadenceOf(v, r.gait);
-  r.cycle = frac(r.cycle + r.hz * step);
-  const going = r.gait !== 'stand' || air;
-  r.go = damp(r.go, going ? 1 : 0, going ? 6 : 3, step);
-  stepPose('horse', r.idle, { act: 'still' }, step);
-  const P = r.pose, I = r.idle, go = r.go;
-  const pat = PATTERN[r.gait] || PATTERN.walk;
-  const k = GAITS.indexOf(r.gait);
-  const lo = GAIT_EDGES[k - 1] ?? 0, hi = GAIT_EDGES[k] ?? MOUNT_TOP * MOUNT_GALLOP;
-  const within = clamp((Math.abs(v) - lo) / (hi - lo), 0, 1);
-  const amp = pat.swing[0] + (pat.swing[1] - pat.swing[0]) * within;
-  const c = r.cycle, w = TAU * c;
-  // Backing up runs the walk the other way round.
-  const back = v < 0 ? -1 : 1;
-  for (let i = 0; i < 4; i++) {
-    let to;
-    if (air) to = i < 2 ? -0.55 : 0.5;                    // tucked over a jump
-    else to = legAt(frac(back * c - pat.land[i]), pat.duty, amp);
-    const was = P.legs[i];
-    P.legs[i] = I.legs[i] + (to - I.legs[i]) * go;
-    // A change of gait is a change of pattern: eased, not snapped. LEG_RATE is well over what a
-    // gallop's own swing asks (~6 rad/s), so only a jump from one pattern to another is held back.
-    const most = LEG_RATE * step;
-    if (Math.abs(P.legs[i] - was) > most) P.legs[i] = was + Math.sign(P.legs[i] - was) * most;
+export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
+  const step=Number.isFinite(dt)&&dt>0?Math.min(dt,.1):0;
+  const v=Number.isFinite(speed)?speed:0;
+  const old=r.gait;
+  r.gait=gaitOf(v,r.gait);
+  r.hz=cadenceOf(v,r.gait);
+  r.cycle=frac(r.cycle+r.hz*step);
+  r.speed=v;
+  r.go=damp(r.go,r.gait==='stand'&&!air?0:1,8,step);
+  stepPose('horse',r.idle,{act:'still'},step);
+  const P=r.pose,I=r.idle;
+  P.hooves ||= Array.from({length:4},()=>({z:0,y:0,flex:0,contact:true}));
+  if(old!==r.gait) {
+    r.transition=1;
+    r.offsets=P.hooves.map((foot,i)=>{
+      const next=hoofPath(r.cycle,i,v,r.gait,r.hz);
+      return {z:foot.z-next.z,y:foot.y-next.y,flex:(foot.flex||0)-next.flex};
+    });
   }
-  // The back: still at a walk (the reference: 0.014 of a leg), a bounce twice a stride at a trot,
-  // and in a canter and a gallop the whole body rocking once a stride, the head against it.
-  let y = 0, pitch = 0, nod = 0, tailUp = 0;
-  switch (r.gait) {
-    case 'walk': y = 0.002 * Math.cos(2 * w); nod = 0.06 * Math.sin(2 * w); tailUp = 0.05; break;
-    case 'trot': y = 0.012 * Math.abs(Math.sin(w)) - 0.006; nod = 0.04 * Math.sin(2 * w); tailUp = 0.25; break;
-    case 'canter': y = 0.016 * Math.sin(w); pitch = 0.07 * Math.sin(w + 0.6); nod = -0.12 * Math.sin(w + 0.6); tailUp = 0.4; break;
-    case 'gallop': y = 0.026 * Math.sin(w); pitch = 0.1 * Math.sin(w + 0.6) + 0.03; nod = -0.15 * Math.sin(w + 0.6) + 0.12; tailUp = 0.55; break;
-    default: break;
+  r.transition=Math.max(0,r.transition-step*5);
+  // The body over the stride (Preston Blair's sheets, horse-gait.js horseBody): the trot
+  // bobs twice a stride, everything together; the gallop see-saws, pelvis and ribcage in
+  // turn, most compressed in the suspension and most stretched over the fores.
+  const B=horseBody(r.cycle,r.gait==='stand'?'trot':r.gait,body);
+  P.bodyY=I.bodyY*(1-r.go)+B.bodyY*r.go;
+  P.bodyX=B.bodyX*r.go;
+  r.lean=damp(r.lean,clamp(-rate*Math.abs(v)*.055,-.09,.09),6,step);
+  P.bodyZ=I.bodyZ*(1-r.go)+r.lean;
+  P.headX=I.headX*(1-r.go)+B.headX*r.go;
+  P.headY=I.headY*(1-r.go);
+  P.tailX=I.tailX+B.tailX*r.go;
+  P.tailZ=I.tailZ*(1-.5*r.go);
+  for(let i=0;i<4;i++) {
+    const foot=P.hooves[i];
+    hoofPath(r.cycle,i,r.gait==='stand'?0:v,r.gait,r.hz,foot);
+    if(r.transition&&r.offsets[i]) {
+      const ease=r.transition*r.transition*(3-2*r.transition);
+      foot.z+=r.offsets[i].z*ease;
+      foot.y=Math.max(0,foot.y+r.offsets[i].y*ease);
+      foot.flex=Math.max(0,foot.flex+r.offsets[i].flex*ease);
+    }
+    // In the air the legs are drawn in, fores folded under the chest, hinds trailing.
+    if(air){foot.y=i<2?.12:.075;foot.z=i<2?-.06:.04;foot.flex=i<2?1.2:.6;foot.contact=false;}
+    P.legs[i]=I.legs[i]*(1-r.go)+Math.atan2(-foot.z,.3)*r.go;
   }
-  if (air) { y = 0; pitch = 0; nod = -0.1; tailUp = 0.5; }
-  r.lean = damp(r.lean, clamp(-rate * Math.abs(v) * 0.012, -0.12, 0.12), 6, step);
-  P.headX = I.headX * (1 - go) + (nod + 0.05) * go;
-  P.headY = I.headY * (1 - go);
-  P.tailX = I.tailX + tailUp * go;
-  // The swish goes on at every gait, smaller the faster the tail streams out behind.
-  P.tailZ = I.tailZ * (1 - 0.6 * go) + 0.06 * go * Math.sin(w * 2);
-  P.bodyY = I.bodyY * (1 - go) + y * go;
-  P.bodyX = I.bodyX * (1 - go) + pitch * go;
-  P.bodyZ = I.bodyZ * (1 - go) + r.lean;
-  P.surge = 0;
-  P.low = 0;
+  if(air){P.bodyY=0;P.bodyX=0;}
+  P.surge=0;P.low=0;
   return r;
 }
 
@@ -332,6 +278,7 @@ export function createMount({ scene, material, seed = 'mount' }) {
   return {
     object: horse.object,
     ride,
+    joints: horse.horseRig,
     place(x, y, z, yaw) { at = [x, y, z]; horse.yaw = yaw; },
     pose(input, dt) {
       mountPose(ride, input, dt);

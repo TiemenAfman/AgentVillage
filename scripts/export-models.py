@@ -106,6 +106,8 @@ def bake(set_name, source):
         origin = obj.matrix_world.translation
         # Preserve CORNER/POINT vertex colours painted by hand in Blender when present.
         attr = mesh.color_attributes.active_color
+        skin_rig = obj.get('skin_rig')
+        group_names = {g.index: g.name for g in obj.vertex_groups} if skin_rig else {}
         for slot, material in enumerate(obj.data.materials):
             if not material:
                 continue
@@ -114,6 +116,7 @@ def bake(set_name, source):
                 raise ValueError(f'{set_name}: material "{material.name}" names no sheet; use one of ' + ', '.join(SHEETS))
             positions = []
             colors = []
+            normals, skin_indices, skin_weights = [], [], []
             for tri in mesh.loop_triangles:
                 if tri.material_index != slot:
                     continue
@@ -124,12 +127,26 @@ def bake(set_name, source):
                     positions.extend(round(v, DIGITS) for v in p)
                     color = attr.data[tri.loops[j] if attr.domain == 'CORNER' else tri.vertices[j]].color if attr else material.diffuse_color
                     colors.extend(round(v, DIGITS) for v in color[:3])
+                    if skin_rig:
+                        normal = obj.matrix_world.to_3x3().inverted().transposed() @ mesh.corner_normals[tri.loops[j]].vector
+                        normals.extend(round(v, 6) for v in (normal.x, normal.z, -normal.y))
+                        weights = sorted([(int(group_names[g.group].split(':')[-1]), g.weight)
+                                          for g in mesh.vertices[tri.vertices[j]].groups if g.weight > 0],
+                                         key=lambda pair: (-pair[1], pair[0]))[:4]
+                        total = sum(w for _, w in weights)
+                        if total <= 0:
+                            raise ValueError(f'{obj.name}: unweighted vertex')
+                        weights += [(0, 0)] * (4-len(weights))
+                        skin_indices.extend(i for i, _ in weights)
+                        skin_weights.extend(round(w/total, 6) for _, w in weights)
             if positions:
                 name = obj.name if len(obj.data.materials) == 1 else f'{obj.name}:{slot}'
                 if name in parts:
                     raise ValueError(f'{set_name}: two parts are called "{name}"')
                 parts[name] = {'positions': positions, 'colors': colors, 'sheet': sheet,
                                'emissive': float(material.get('emissive', 0)), 'at': game(origin)}
+                if skin_rig:
+                    parts[name].update(rig=skin_rig, normals=normals, skinIndices=skin_indices, skinWeights=skin_weights)
                 if asset is not None:
                     assets[asset]['parts'].append(name)
         evaluated.to_mesh_clear()
@@ -142,6 +159,8 @@ def bake(set_name, source):
     # `assets` is left out entirely when the .blend names none, which keeps a hero set's
     # module exactly what it was before sets could hold more than one thing.
     result = {'parts': parts, 'anchors': anchors, 'height': float(scene['building_height'])}
+    if 'skin_rigs' in scene:
+        result['rigs'] = json.loads(scene['skin_rigs'])
     if assets:
         result['assets'] = assets
     target = ROOT / 'web/js' / f'{set_name}-mesh.js'

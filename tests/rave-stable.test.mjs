@@ -34,7 +34,11 @@ function lowest(a) {
     const mesh = j.pivot.children[0];
     const p = mesh.geometry.attributes.position;
     let y = Infinity;
-    for (let i = 0; i < p.count; i++) y = Math.min(y, v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld).y);
+    // The horse is skinned since horse-rig.js: its vertices move with the bones, not the pivot.
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);      if (mesh.isSkinnedMesh) mesh.applyBoneTransform(i, v);
+      y = Math.min(y, v.applyMatrix4(mesh.matrixWorld).y);
+    }
     out[j.name.split(' ').slice(1).join(' ')] = y;
   }
   return out;

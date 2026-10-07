@@ -64,9 +64,14 @@ test('the bicycle is never seen through either', () => {
   }
 });
 
+// Its skinned body is drawn smooth (horse-rig.js smoothHorseMaterial): a twin of the island
+// material with the same uniforms and the same cone, not the island material itself.
 test('a horse nobody rides keeps the island material', () => {
   const stable = createAnimal('horse', island, { seed: 'stable:horse' });
-  for (const m of materialsOf(stable.object)) assert.equal(m, island);
+  for (const m of materialsOf(stable.object)) {
+    assert.deepEqual(seen(m), seen(island));
+    assert.equal(m.userData.uniforms, island.userData.uniforms);
+  }
 });
 
 test('a material with no see-through is handed back unchanged', () => {
