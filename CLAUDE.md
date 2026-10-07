@@ -1685,7 +1685,7 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 (`strokes`) gets walk.js's lean and none of the roll and nod the Traveller swims by (peers.js alike): over the
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
-clip is the `mixamo-clips` skill.
+clip is the `mixamo-clips` skill; fetching clips from mixamo.com in bulk (outside git) is the `mixamo-fetch` skill.
 **On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`),
 backwards going down and still while hanging; the Traveller reaches up procedurally (`climbReach`: one hand
 at a time from overhead to the chest). **The ladder is cut to the clip, not the clip to the ladder** (the
