@@ -35,7 +35,7 @@
 import { createFigures, SETTLER_DRINK_S } from './settler-figures.js';
 import { createTipsy, drinkIn, stepTipsy, settlerSway, SETTLER_TIPSY } from './tipsy.js';
 import { createBoat } from './boat.js';
-import { kindOf, styleOf, residentLook } from 'shared/palette.mjs';
+import { kindOf, styleOf, residentLook, keeperOf } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
 import { SEA_LEVEL } from 'shared/terrain.mjs';
@@ -242,11 +242,20 @@ export function createCrowdView({
   // What about that building shows on the body: which one it is, its palette and its kind.
   const dressOf = (spec) => `${spec.id}|${styleOf(spec)}|${kindOf(spec)}`;
 
+  // The keepers first: lib/crowd.mjs appends them after every house and shed, so on a village
+  // bigger than the crowd's CAPACITY they were the ones left over - Hoogezand at 883 figures drew
+  // no innkeeper, no mayor and no pirate at his chest (7 October 2026). A keeper is somebody you
+  // go to on purpose; a settler more or less in a crowd that full is not missed.
+  const keeps = (id) => { const spec = specFor(id); return !!(spec && id === spec.id && keeperOf(spec)); };
   function roster(ids) {
     lastIds = ids;
     for (const [idx, f] of figures) if (ids[idx] !== f.id) retire(idx);
-    ids.forEach((id, idx) => {
-      if (figures.has(idx) || !id) return;
+    const order = [];
+    ids.forEach((id, idx) => { if (id && keeps(id)) order.push(idx); });
+    ids.forEach((id, idx) => { if (id && !keeps(id)) order.push(idx); });
+    order.forEach((idx) => {
+      const id = ids[idx];
+      if (figures.has(idx)) return;
       const spec = specFor(id);
       if (!spec) return;                      // a settler whose house we have not got yet
       const kind = kindOf(spec);
