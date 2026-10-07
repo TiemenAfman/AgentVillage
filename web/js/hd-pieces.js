@@ -4,8 +4,10 @@
 // page reads it (`/api/hd`, not on PUBLIC_API). Without it - on the phone, for a visitor, before
 // the manifest has arrived - every room is exactly the bake.
 //
-// It keeps the lava imp's and the captain's rules (imp.js, captain.js): the manifest is asked for
-// after the boot, a model only when a room that has its piece is built with HD wanted or HD is
+// It keeps the lava imp's and the captain's rules (imp.js, captain.js), but for one thing: the manifest
+// is asked for at the start of the boot, beside the rooms' sets, because a room is built behind the
+// boot screen and splits off only the pieces the list names when it is built (main.js warmRooms,
+// which waits for it a while and builds a room again if it came too late). A model only when a room that has its piece is built with HD wanted or HD is
 // switched on in one, GLTFLoader is imported dynamically, nothing ever waits on any of it, and a
 // failure is said once and leaves the bake standing. A model that does not fit its bake's box
 // (shared/hdfit.mjs HD_FIT) counts as a failure: the KIT spot, the blockers and the camera's boom
@@ -24,7 +26,7 @@ import { parseHdManifest, boxOfParts, fitsBake } from 'shared/hdfit.mjs';
 let manifest = null;
 let asking = null;
 
-// Ask the islander once what the pack holds. Called after the boot (main.js, beside the imp); a
+// Ask the islander once what the pack holds. Called at the top of main.js boot(); a
 // refusal, a 404 from an islander older than the routes, or the phone (where mine() refuses) all
 // mean "no pack". Resolves to the parsed manifest or null, never throws.
 export function loadHdManifest() {
@@ -43,6 +45,15 @@ export function loadHdManifest() {
 
 export const hdInstalled = () => !!(manifest && manifest.pieces.length);
 export const hdPieceOf = (asset) => (manifest && manifest.pieces.find((p) => p.asset === asset)) || null;
+// Was a room built blind? `kitAssets` are what it put through kit(), `pieces` what it split off its
+// merge (pirate-tavern.js). A kit asset the pack now lists that has no piece means the room was
+// built before the list arrived (main.js warmRooms) and can never show HD until it is built again:
+// setDetail only switches pieces that exist.
+export const hdMissed = (kitAssets = [], pieces = []) => {
+  if (!manifest) return false;
+  const split = new Set(pieces.map((p) => p.asset));
+  return kitAssets.some((a) => !split.has(a) && !!hdPieceOf(a));
+};
 // For Settings -> Graphics: which pack, how many pieces, or null for none.
 export const hdStatus = () => (manifest ? { pack: manifest.pack, pieces: manifest.pieces.length } : null);
 

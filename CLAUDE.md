@@ -1074,7 +1074,11 @@ Float32Arrays, which every reader takes like a plain array; importing 34 MB on t
 `interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which. main.js starts them at the top of
 `boot()`, and `warmRooms` builds each room (`roomFor`) and `renderer.compile`s it before `ui.boot(true)` if they
 are in within 3 s (~0.8 s of boot; the first visit then costs one frame, not three seconds) - otherwise a door
-within reach still starts them and `enterInterior` waits ("The door sticks a moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
+within reach still starts them and `enterInterior` waits ("The door sticks a moment..."). The HD pack's list
+is asked for at the top of `boot()` too (`hdAsking`) and `warmRooms` waits for it within the same deadline: `kit()`
+splits a pack piece off the merge only if the list is in when the room is built, and a room warmed blind showed
+no HD ever (`setDetail` only switches pieces that exist). One built blind anyway says so (`hdMissed`), and
+`roomFor` / `rewarmRooms` build it again, never while somebody is in it (`tests/hd-late-manifest.test.mjs`), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):

@@ -2707,6 +2707,13 @@ function keepRaveHours() {
 // could not be built.
 function roomFor(room) {
   let inside = rooms.get(room);
+  // Built before the HD pack's list came in (warmRooms gave up on it): its pack pieces are in the merge,
+  // where no setDetail can reach them. Not while anybody is in it or looking round it.
+  if (inside && inside.hdMissed?.() && state.inside !== inside && !inside.peeking()) {
+    inside.dispose();
+    rooms.delete(room);
+    inside = null;
+  }
   if (!inside) {
     try {
       inside = createInterior({
@@ -8333,20 +8340,39 @@ function playerName() {
 // its shaders while the boot screen still stands. Left to the door, the Salty Kraken's first visit
 // froze the page for ~1.7 s parsing and ~0.8 s building (Plans/minder-browser-meer-spel.md). The
 // phone and the web carry no rooms (pack-page.mjs ROOM_ONLY), and there is no islander to own one.
+// The HD pack's list is asked for beside them (`hdAsking`, a small JSON over loopback) and waited
+// for within the same deadline: kit() splits a pack piece off the room's merge only if the list is
+// in when the room is built, and a room warmed without it showed no HD at all. Should it miss the
+// deadline, the room is built anyway and built again once the list lands (rewarmRooms).
 let roomsLoading = null;
+let hdAsking = null;
 async function warmRooms(waitMs) {
   if (!roomsLoading) return;
-  const ready = await Promise.race([roomsLoading.then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), waitMs))]);
+  const end = performance.now() + waitMs;
+  const within = (p) => Promise.race([p.then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), Math.max(0, end - performance.now())))]);
+  const ready = await within(roomsLoading);
   if (!ready) return;   // still parsing: the door builds it, the parse no longer blocks anything
+  if (hdAsking) await within(hdAsking);
   for (const room of ROOM_KINDS) {
     if (!roomReady(room) || rooms.has(room)) continue;
     const inside = roomFor(room);
     try { if (inside) renderer.compile(inside.scene, camera); } catch (e) { console.warn('room warm-up', e); }
   }
 }
+// The pack's list landed after warmRooms built a room without it: build that room again now, while
+// nobody is at its door, so the first step in is still one frame (roomFor does the throwing away).
+function rewarmRooms() {
+  for (const [room, inside] of [...rooms]) {
+    if (!inside.hdMissed?.()) continue;
+    const again = roomFor(room);
+    if (again === inside) continue;   // somebody is in it: the door rebuilds it next time
+    try { if (again) renderer.compile(again.scene, camera); } catch (e) { console.warn('room warm-up', e); }
+  }
+}
 
 async function boot() {
   if (!STANDALONE) roomsLoading = Promise.all(ROOM_KINDS.filter((r) => !roomReady(r)).map(prepareRoom));
+  if (!STANDALONE) hdAsking = loadHdManifest();
   state.ui = createUI({
     onFilters: (f) => { state.filters = f; applyVisibility(); },
     // The four graphics sliders in Settings. The only way into state.graphics, which is what
@@ -9117,11 +9143,11 @@ Everything is copied and checked first; the island then starts again there. The 
   allowImp();
   // So may this machine's own models (HOME/models/), which only the keeper has.
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
-  // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list here; a model is fetched
-  // when a room that has its piece wants it. A room built before the list lands is all bake.
-  // The pack's answer comes after the island is drawn: what stands outside is switched then (rooms are
-  // built later and ask for themselves).
-  if (!STANDALONE) loadHdManifest().then(() => { applyDetail(); if (state.graphics.detail === 'hd') hdMissingSaid(); });
+  // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list, asked for at the top of boot()
+  // (the same promise here); a model is fetched when a room that has its piece wants it. A room
+  // warmRooms built before the list landed is built again (rewarmRooms), and what stands outside is
+  // switched now.
+  if (!STANDALONE) loadHdManifest().then(() => { rewarmRooms(); applyDetail(); if (state.graphics.detail === 'hd') hdMissingSaid(); });
   // No islander to hear from: /events is its own.
   if (STANDALONE) return;
   connect();
