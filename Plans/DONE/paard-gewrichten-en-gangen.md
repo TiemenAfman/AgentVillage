@@ -108,3 +108,17 @@ Alleen tekenen: niets gaat over de lijn. `tests/mount-rider.test.mjs`.
   voeten in de beugels blijven als de heupen opkomen. Met de huidige beugels staat het been van de
   Avonturier al bijna gestrekt (hij haalt maar ~3 mm); kortere stijgbeugels zijn onderweg in de
   Blender-bron.
+
+## Meer detail, een vacht en kortere beugels (7 oktober 2026)
+
+`scripts/horse-model.py`: spierpartijen (schouder, achterhand, schoft, kruis, borst met groef,
+opgetrokken flank), wangen, wenkbrauw, neusgaten, een volle manen (17 lokken en een kuif), een staart
+met strengen, kastanjes en kootbehang - 3924 naar 6392 driehoeken (budget 6500,
+`scripts/model-rules.mjs`). De vacht is vertex-kleur: donkerder over de rug en naar de benen,
+lichter onder, vage appels, ambient occlusion met 32 vaste stralen per hoekpunt (geen Cycles, dus
+deterministisch). De stijgbeugelriemen zijn 4,5 cm korter (ijzers op 0,3435), `saddleOf` leest ze
+met `IRON_TOP` 0,38 en `IRON_BESIDE`, en de Avonturier zit met de knie op 68 graden.
+Zelfs dan staat zijn been zo ver naar buiten dat een openende knie de voet maar ~6 mm laat zakken:
+de halve zit komt 3 mm op en de vering mag 3 mm, en daarbinnen werken de knieën zichtbaar mee
+(ruim 20 graden per 6 mm). Open: een vage naad waar hals en benen uit de romp komen (aparte gesloten
+schillen, het oude paard had hem ook), en het zadel is nog de oude blokken.

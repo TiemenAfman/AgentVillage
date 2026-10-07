@@ -263,7 +263,7 @@ export const PELVIS_SHARE = .3;
 export const RIDER_SEAT = {
   stand: { lean: 0, rise: 0, give: 0 },
   trot: { lean: 4 * Math.PI / 180, rise: 0, give: .3 },
-  gallop: { lean: 17 * Math.PI / 180, rise: .012, give: .7 },
+  gallop: { lean: 17 * Math.PI / 180, rise: .003, give: .7 },
 };
 export function createRider() {
   return { lean: 0, leanV: 0, y: 0, yV: 0, rise: 0, seatY: null, pitch: 0, arm: 0,
@@ -293,7 +293,10 @@ export function stepRider(k, ride, saddleY, dt) {
   // He can be left behind by a falling saddle, never sink into a rising one: the leather pushes
   // him up at once and he comes down onto it again on his own weight.
   if (k.y < 0) { k.y = 0; if (k.yV < 0) k.yV = 0; }
-  if (k.y > .02) { k.y = .02; if (k.yV > 0) k.yV = 0; }
+  // At most what his knees can give back: the leg reaches the irons turned out round the barrel,
+  // where a knee opening lowers the foot only about 6 mm before the leg is straight (classic-avatar.js
+  // stirrupLeg, tests/horseback-pose.test.mjs): rise plus this stays within it.
+  if (k.y > .003) { k.y = .003; if (k.yV > 0) k.yV = 0; }
   k.rise = damp(k.rise, want.rise * go, 4, step);
   // The torso's own lean: the gait's seat, plus what the horse's pitch would have tipped it by
   // and the spine gave back, eased by a spring so it overshoots a little and settles.

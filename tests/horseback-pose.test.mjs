@@ -140,3 +140,20 @@ test('out of the saddle the legs come back together, and the bicycle wins over t
   const bike = rider({ ...SADDLE, riding: { crank: 0 } }).avatar;
   for (const side of ['leftLeg', 'rightLeg']) assert.equal(bike.joints[side].root.parent.parent.rotation.z, 0);
 });
+
+// The half seat lifts the hips off the leather (mount.js stepRider `lift`); the knees and hips
+// take it (classic-avatar.js stirrupKnees) so the feet stay where they were, in the irons.
+test('lifted out of the saddle, the adventurer\'s knees open so his soles stay in the irons', () => {
+  const sole = (pose) => {
+    const { avatar } = rider(pose, 'adventurer');
+    const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - 0.05);
+    return { y: Math.min(...legs.map((p) => p.y)), hip: avatar.hipY };
+  };
+  const sat = sole(SADDLE);
+  for (const lift of [0.002, 0.004, 0.006]) {
+    const up = sole({ ...SADDLE, horseback: { lean: 0, arm: 0, elbow: 0, lift } });
+    // The rig's origin (the soles at rest) stays put; the hips are lifted by moving the rig up by
+    // `lift` (mount.js carry), so the soles must come down by the same amount inside it.
+    assert.ok(Math.abs((sat.y - up.y) - lift) < 0.003, `lift ${lift}: soles came down ${(sat.y - up.y).toFixed(4)}`);
+  }
+});
