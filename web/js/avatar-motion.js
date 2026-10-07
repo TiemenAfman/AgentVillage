@@ -3,6 +3,9 @@ import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { swimPose, TREAD_SINK } from './diving.js';
+import { loadSet } from './models.js';
+import { meshAsset } from './buildings.js';
+import { KIT, MAST_LADDER } from './kraken-layout.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -49,10 +52,32 @@ const ladders=figures.map(f=>{
   for(let y=.15;y<CLIMB_TOP+.55;y+=RUNG_STEP){const r=new THREE.Mesh(new THREE.BoxGeometry(.26,.012,.014),wood);r.position.y=y;g.add(r);}
   g.visible=false;g.position.x=f.stand.position.x;scene.add(g);return g;
 });
+// Or up the Salty Kraken's mast (Mastladder): the hall's own kit piece (krakenkit, a lazy set), its
+// ladder's foot MAST_LADDER out from the mast, and the body where the room's walk mode climbs it
+// (kraken-layout.js MAST_CLIMBS) - to see the climb against the rungs it is really done on, which
+// are narrower and closer together than a rope ladder's. One mast, so one body: Dichtbij picks which.
+let onMast=false, mast=null;
+const MAST_TOP=KIT.mast.nest-.2;
+function showMast(){
+  if(mast)return;
+  mast=new THREE.Group();mast.visible=false;scene.add(mast);
+  loadSet('krakenkit').then(()=>{
+    // turned so the kit's +x, where the ladder leans out, points at the climber (+z here)
+    // its own material, flat: the bodies' is patched for their skins, and a bake's part may carry
+    // no normals (the building material shades it flat too)
+    const wood=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true});
+    for(const g of meshAsset('civic_kraken_mast',0xffffff,{ry:-Math.PI/2})){const m=new THREE.Mesh(g,wood);m.castShadow=m.receiveShadow=true;mast.add(m);}
+  },e=>console.warn('[motion] no mast:',e.message));
+}
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
   climbDir=Number(button.dataset.climb);
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
+};
+for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
+  onMast=button.dataset.ladder==='mast';climbY=0;
+  if(onMast)showMast();
+  for(const b of document.querySelectorAll('[data-ladder]'))b.setAttribute('aria-pressed',String(b===button));
 };
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
@@ -80,11 +105,14 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
-  for(const l of ladders)l.visible=mode==='climb';
+  const masted=mode==='climb'&&onMast, climber=close<0?0:close;
+  for(const l of ladders)l.visible=mode==='climb'&&!onMast;
+  if(mast)mast.visible=masted;
+  for(const [i,f] of figures.entries())f.stand.visible=!masted||i===climber;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
-  const climbWas=climbY;
-  if(mode==='climb'){climbY+=climbDir*CLIMB_SPEED*dt;if(climbY>CLIMB_TOP)climbY-=CLIMB_TOP;if(climbY<0)climbY+=CLIMB_TOP;}
+  const climbWas=climbY, top=onMast?MAST_TOP:CLIMB_TOP;
+  if(mode==='climb'){climbY+=climbDir*CLIMB_SPEED*dt;if(climbY>top)climbY-=top;if(climbY<0)climbY+=top;}
   const climbRise=Math.abs(climbY-climbWas)<.5?climbY-climbWas:0;
   // walk.js's swimming beat: quick in the stroke, slow treading water.
   bob+=dt*(mode==='swim'?6.5:1.4);
@@ -113,6 +141,7 @@ function tick(dt){
     if(mode==='climb'){
       f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
+      if(masted&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-CLIMB_OUT-MAST_LADDER);
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise}},dt);
       continue;
     }

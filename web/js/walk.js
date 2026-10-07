@@ -1477,7 +1477,7 @@ export function createWalkMode({
     fixedLadders = (list || []).map((l) => {
       const dx = l.lo.x - l.hi.x, dz = l.lo.z - l.hi.z;
       const len = Math.hypot(dx, dz) || 1;
-      return { lo: l.lo, hi: l.hi, out: [dx / len, dz / len] };
+      return { lo: l.lo, hi: l.hi, out: [dx / len, dz / len], onTop: l.onTop || null };
     });
   }
   // The fixed ladder a body standing here is at the foot of and pushing into (`dir` 1), or at the head
@@ -1539,15 +1539,20 @@ export function createWalkMode({
     state.bob += dt * (wish !== 0 ? 7 : 1.5);
     const end = (q) => {
       climb = null;
+      state.climbing = null;
       state.pos.set(q.x, q.y, q.z);
       state.floor = groundAt(q.x, q.z, q.y + 0.05);
       state.moving = false;
     };
-    if (wish > 0 && c.d >= c.len) end(c.path[c.path.length - 1]);
+    // A ladder that goes on through a hatch (the Salty Kraken's, up to her deck) is left at its
+    // head by whoever owns the other side: `onTop`, with the body still on the top rung.
+    if (wish > 0 && c.d >= c.len && l.onTop) { climb = null; state.climbing = null; l.onTop(); }
+    else if (wish > 0 && c.d >= c.len) end(c.path[c.path.length - 1]);
     else if (wish < 0 && c.d <= 0) end(c.path[0]);
     else if (c.letGo) {
       // Let go where you hang: down onto whatever is under you.
       climb = null;
+      state.climbing = null;
       state.grounded = false;
       state.moving = false;
       state.floor = groundAt(p.x, p.z, p.y);
