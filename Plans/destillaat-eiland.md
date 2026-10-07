@@ -96,6 +96,20 @@ eiland - het zoekt elke knop op id - dus wat niets doet is in `index.html` met C
 van `main.js` lege handlers, in plaats van ui.js zelf te ontvlechten. Via `ui.js` (Settings → Debug)
 en `dance.js` komen `noclip.js` en `sound.js` nog als dood gewicht mee.
 
+## Daarna: het hologram (7 oktober)
+
+Tiemen vroeg het eiland ook als "vensterloos 3D-hologram": zwevend op het bureaublad, draaien,
+zoomen, het venster verzetten, volledig scherm, de regisseur aan of uit. Gebouwd in het destillaat,
+niet hier: `web/js/hologram.js` (bij `?hologram`: de canvas wordt doorzichtig gewist; lucht,
+oceaan, wolken, zon en maan worden elke frame weggezet; de mist gaat buiten bereik; een clipping
+plane knipt de grond onder -0.6 weg; de waterschader wordt via een stringpatch op het materiaal
+uitgefaded boven diep water, zodat alleen de ondiepe kust blijft; het eiland wordt op de straal van
+het land ingekaderd) en `hologram/main.cjs` (Electron, omdat Rust hier niet staat: frameless,
+transparent, rechtsklik-slepen verplaatst het venster via de main process, lege pixels laten de muis
+door via `setIgnoreMouseEvents(…, { forward: true })` op een 1-pixel `readPixels` per frame, en een
+tray-menu voor grootte, volledig scherm, regisseur, altijd bovenop en sluiten).
+Het destillaat staat als eigen geschiedenis op de branch `destillaat` van deze repo.
+
 ## Open
 
 - Geluid: de achtergrond (zee, vogels, werk) zou passen bij kijken; `sound.js` vraagt veel cues uit
