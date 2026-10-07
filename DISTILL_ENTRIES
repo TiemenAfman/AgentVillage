@@ -1,4 +1,7 @@
 start.mjs
 web/js/watch-net.js
+web/js/hologram.js
+hologram/main.cjs
+hologram/preload.cjs
 CLAUDE.md
 .gitignore

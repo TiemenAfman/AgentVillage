@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <style>html{background:#0d1420}</style>
+<!-- The hologram (web/js/hologram.js) is see-through from the first paint, boot screen included. -->
+<script>if (/[?&]hologram(?:[=&]|$)/.test(location.search)) document.documentElement.classList.add('hologram');</script>
 <title>Promptholm - destillaat</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🏝️</text></svg>">
 <meta name="theme-color" content="#0d1420">
@@ -79,6 +81,11 @@
 #chronicle, #walk-hud, #dossier, #animal-dossier, #animal-journal, #animal-summary, #quest-log,
 #phone, #touch-controls, #sysmenu-respawn, #update-gate, #update, #build-hud,
 .sysmenu-tab[data-tabbtn="audio"], section[data-tab="audio"], .sysmenu-tab[data-tabbtn="controls"] { display: none !important; }
+/* The hologram (?hologram, web/js/hologram.js): only the island, on a see-through page. */
+html.hologram, html.hologram body { background: transparent !important; }
+body.hologram #titlecard, body.hologram #topright, body.hologram #right-column, body.hologram #labels,
+body.hologram #toasts, body.hologram #director-caption, body.hologram #skew, body.hologram #veil { display: none !important; }
+html.hologram .boot { background: transparent !important; }
 </style>
 <script type="importmap">
 {

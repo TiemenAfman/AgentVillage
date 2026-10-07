@@ -37,6 +37,7 @@ import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
 import { createHerds } from './herds.js';
 import { createWatchNet } from './watch-net.js';
+import { createHologram, HOLOGRAM } from './hologram.js';
 import { keysOf } from './keybinds.js';
 import { attachClock, updateClock, attachResetClock, updateResetClock } from './clock.js';
 import { attachFountain, updateFountain } from './fountain.js';
@@ -645,6 +646,8 @@ const directorIdle = Number(params.get('director'));
 // a grown island or a new polder is a new terrain object.
 let overviewOf = null, overviewShot = null;
 const directorOverview = () => {
+  // The hologram's window is square and holds the whole island at its own distance.
+  if (state.hologram && state.hologram.overview()) return state.hologram.overview();
   if (!state.terrain) return null;
   if (overviewOf !== state.terrain) {
     const f = islandFrame();
@@ -653,13 +656,16 @@ const directorOverview = () => {
   }
   return overviewShot;
 };
-state.director = createDirector({ sources: directorShots, overview: directorOverview, ...(directorIdle > 0 ? { idleS: directorIdle } : {}) });
+// The hologram is looked at in passing rather than worked in, so it wanders off sooner.
+state.director = createDirector({ sources: directorShots, overview: directorOverview, ...(directorIdle > 0 ? { idleS: directorIdle } : HOLOGRAM ? { idleS: 15 } : {}) });
 const directorCaption = document.createElement('div');
 directorCaption.id = 'director-caption';
 directorCaption.hidden = true;
 document.body.appendChild(directorCaption);
 // Nothing open, looking from above, the live island, and switched on.
 function directorMay() {
+  // In the hologram the tray says whether it wanders (hologram.js wanders); otherwise it turns slowly.
+  if (state.hologram && !state.hologram.wanders()) return false;
   if (state.mode !== 'orbit' || state.intro || state.tween || document.hidden) return false;
   if (state.ui && state.ui.directorEnabled && !state.ui.directorEnabled()) return false;
   if (state.sysmenu && state.sysmenu.isOpen()) return false;
@@ -2206,6 +2212,7 @@ function buildScene(village) {
   shownFairway = village.fairway || null;
   state.shot = village;
   frameIsland();
+  if (state.hologram) state.hologram.setWorld(state.world, terrain);
 }
 
 // ---- bridges ---------------------------------------------------------------
@@ -3306,6 +3313,7 @@ function frame(nowMs) {
     b.craft.place(b.x, b.z, b.yaw);
     b.craft.bob(nowMs / 1000);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
+    if (state.hologram) b.craft.object.visible = state.hologram.afloat(state.sea.height(b.x, b.z));
   }
 
   // per-building animated bits, for whatever the cut has left drawn
@@ -3344,12 +3352,35 @@ function frame(nowMs) {
   });
   if (shadowEvery > 1 && ++shadowFrame >= shadowEvery) { shadowFrame = 0; renderer.shadowMap.needsUpdate = true; }
   if (!renderer.shadowMap.autoUpdate && !renderer.shadowMap.needsUpdate) renderer.info.render.frame++;
+  if (state.hologram) state.hologram.frame(dt);
   cullRecords();
-  postFx.render(scene, eye, { room: false });
+  // The hologram's canvas is see-through, which the post composer's targets are not.
+  if (state.hologram) { renderer.render(scene, eye); holoHit(); }
+  else postFx.render(scene, eye, { room: false });
   if (renderStats) {
     const s = renderStats.end(performance.now());
     statsReadout.textContent = `${modest ? 'modest' : 'standard'} · ${quality.rung().name}${quality.auto() ? '' : ' (fixed)'} · ${statsLine(s)} · ${state.particles?.count() ?? 0} particles`;
   }
+}
+
+// In the hologram's window (hologram/main.cjs) a click on bare desktop must reach the desktop: the
+// window is told, every frame, whether the pixel under the pointer is island or nothing. Read
+// straight after the render, while the drawing buffer still holds the frame. Never mid-drag, or a
+// turn of the island would let go of it the moment the pointer crossed the sea.
+let holoInside = null;
+let holoDown = false;
+addEventListener('pointerdown', () => { holoDown = true; }, true);
+addEventListener('pointerup', () => { holoDown = false; }, true);
+const holoPixel = new Uint8Array(4);
+function holoHit() {
+  if (!window.holo || holoDown) return;
+  const gl = renderer.getContext();
+  const r = renderer.getPixelRatio();
+  const x = Math.floor(pointerScreen.x * r), y = Math.floor((innerHeight - pointerScreen.y) * r);
+  if (x < 0 || y < 0 || x >= gl.drawingBufferWidth || y >= gl.drawingBufferHeight) return;
+  gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, holoPixel);
+  const inside = holoPixel[3] > 8;
+  if (inside !== holoInside) { holoInside = inside; window.holo.setIgnore(!inside); }
 }
 
 function updateLabels() {
@@ -3509,6 +3540,7 @@ async function boot() {
     return;
   }
   state.ui.boot(false, 'Raising the island…');
+  state.hologram = createHologram({ renderer, scene, controls, camera, dom: renderer.domElement });
   buildScene(village);
   // Our own sea, on loopback: the clock, the sky and the settlers, nothing else.
   state.net = createWatchNet({
@@ -3538,8 +3570,9 @@ async function boot() {
     onExit: () => leftPlan(),
   });
   applyVillage(village, { animate: false });
-  // No menu to choose a sea from: straight into the flight over the island.
-  startIntro();
+  // No menu to choose a sea from: straight into the flight over the island - except in the
+  // hologram, which has framed itself on the land (hologram.js setWorld).
+  if (!HOLOGRAM) startIntro();
   state.ui.boot(true);
   requestAnimationFrame(tick);
   connect();
@@ -3660,6 +3693,7 @@ addEventListener('resize', () => {
   fitFov();
   renderer.setSize(innerWidth, innerHeight, false);
   if (state.plan) state.plan.resize();
+  if (state.hologram) state.hologram.resize();
   scalePoints();
 });
 
