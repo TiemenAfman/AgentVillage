@@ -100,9 +100,11 @@ test('the adventurer on the stable\'s horse at its own size: soles on the irons,
   const character = 'adventurer';
   const saddle = saddleOf();
   assert.ok(saddle && saddle.stirrup, 'the horse has a seat and irons');
-  // Plans/paard-in-plaats-van-fiets.md: the seat round y 0.50, the irons round 0.30-0.32.
+  // Plans/paard-in-plaats-van-fiets.md: the seat round y 0.50, the irons round 0.30-0.32 - and
+  // since the leathers were taken up 4.5 cm (scripts/build-fauna.py `saddle`), round 0.34-0.35:
+  // at 0.30 the Adventurer reached them with his leg nearly straight and had no knee to rise on.
   assert.ok(saddle.seat > 0.45 && saddle.seat < 0.53, `seat ${saddle.seat}`);
-  assert.ok(saddle.stirrup.y > 0.28 && saddle.stirrup.y < 0.33, `irons ${saddle.stirrup.y}`);
+  assert.ok(saddle.stirrup.y > 0.325 && saddle.stirrup.y < 0.37, `irons ${saddle.stirrup.y}`);
   const fit = horsebackOf(character), s = 1;
   const { avatar } = rider(SADDLE, character);
   assert.equal(avatar.character, character);
@@ -112,7 +114,7 @@ test('the adventurer on the stable\'s horse at its own size: soles on the irons,
   // thighs leave them they sit on the cloth, which a slab of the solid cannot tell from a wall.
   const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - fit.perch);
   const sole = Math.min(...legs.map((p) => p.y)) + lift;
-  // In the iron, or resting on its top bar: the Adventurer's sole is 0.007 over it.
+  // In the iron, or resting on its top bar: the Adventurer's sole rests on the tread, 0.009 over the iron's foot.
   assert.ok(sole >= saddle.stirrup.y * s - 0.002 && sole <= saddle.stirrup.top * s + 0.01, `soles at ${sole.toFixed(3)}, irons ${(saddle.stirrup.y * s).toFixed(3)}-${(saddle.stirrup.top * s).toFixed(3)}`);
   // The horse's body as a solid: how far out it reaches either side in every 1 cm slab of
   // height and length - the barrel, the saddle and its flaps, the irons.
@@ -137,4 +139,21 @@ test('out of the saddle the legs come back together, and the bicycle wins over t
   for (const side of ['leftLeg', 'rightLeg']) assert.equal(avatar.joints[side].root.parent.parent.rotation.z, 0);
   const bike = rider({ ...SADDLE, riding: { crank: 0 } }).avatar;
   for (const side of ['leftLeg', 'rightLeg']) assert.equal(bike.joints[side].root.parent.parent.rotation.z, 0);
+});
+
+// The half seat lifts the hips off the leather (mount.js stepRider `lift`); the knees and hips
+// take it (classic-avatar.js stirrupKnees) so the feet stay where they were, in the irons.
+test('lifted out of the saddle, the adventurer\'s knees open so his soles stay in the irons', () => {
+  const sole = (pose) => {
+    const { avatar } = rider(pose, 'adventurer');
+    const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - 0.05);
+    return { y: Math.min(...legs.map((p) => p.y)), hip: avatar.hipY };
+  };
+  const sat = sole(SADDLE);
+  for (const lift of [0.002, 0.004, 0.006]) {
+    const up = sole({ ...SADDLE, horseback: { lean: 0, arm: 0, elbow: 0, lift } });
+    // The rig's origin (the soles at rest) stays put; the hips are lifted by moving the rig up by
+    // `lift` (mount.js carry), so the soles must come down by the same amount inside it.
+    assert.ok(Math.abs((sat.y - up.y) - lift) < 0.003, `lift ${lift}: soles came down ${(sat.y - up.y).toFixed(4)}`);
+  }
 });

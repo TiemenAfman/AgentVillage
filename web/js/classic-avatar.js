@@ -274,14 +274,26 @@ export const HORSEBACK = {
 // The Adventurer (player-bodies.js) on the same horse: a hand taller, hips 0.25 up and narrower
 // (0.064 across), and his own body hanging 0.05 under them where the Traveller's hangs 0.02 - so
 // he sits higher over the seat (`perch`), his thighs go out further to clear the flap, and at
-// the clip's knee his soles stood 3 cm over the irons: the knee opens to 40, the shins straight
-// down from it. He fits the horse at its own size - the one rider it has. Measured in
-// tests/horseback-pose.test.mjs.
+// the clip's knee his soles stood 3 cm over the irons: the knee opened to 40, the shins straight
+// down from it, the leg all but straight. The leathers are 4.5 cm shorter since (irons 0.34 to
+// 0.375, scripts/build-fauna.py), so the knee folds again, to 68, with the shins turned out 10
+// past the flap: soles on the treads, and a knee to rise on for the half seat. He fits the
+// horse at its own size - the one rider it has. Measured in tests/horseback-pose.test.mjs.
 export const HORSEBACK_OF = {
   traveller: HORSEBACK,
-  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 40 * DEG, shin: 0, armIn: 20 * DEG, perch: 0.045 },
+  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 68 * DEG, shin: 10 * DEG, armIn: 20 * DEG, perch: 0.045 },
 };
 export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
+const seated = { ...HORSEBACK };
+function seatFit(fit, motion) {
+  if (typeof motion !== 'object') return fit;
+  Object.assign(seated, fit);
+  seated.lean = fit.lean + (motion.lean || 0);
+  seated.arm = fit.arm + (motion.arm || 0);
+  seated.elbow = fit.elbow + (motion.elbow || 0);
+  seated.lift = motion.lift || 0;
+  return seated;
+}
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -523,6 +535,46 @@ function buildRig(spec, material) {
   object.scale.x = -1;
   const pieces = {};
   const chains = {};
+  // The hips lifted off the seat (the half seat, a bounce) with the feet kept in the irons: the
+  // knees open as he rises and fold as he sits again. The leg is turned out round the barrel and
+  // its bones do not hang plumb, so no plane holds it: hip and knee are solved on the bones
+  // themselves - damped Newton steps on (hip, knee) for the ankle's height and how far forward it
+  // is - and the foot kept level. Where the irons are out of reach (a leg already nearly straight)
+  // the best step found is kept and the soles come off the irons by the rest, rather than the leg
+  // being driven round into a knee bent the wrong way. Measured: tests/horseback-pose.test.mjs.
+  const ankleAt = new THREE.Vector3();
+  function ankleOf(chain, piece, th, kn) {
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    piece.pivot.updateWorldMatrix(false, true);
+    chain.end.getWorldPosition(ankleAt);
+    return object.worldToLocal(ankleAt);
+  }
+  function stirrupLeg(chain, piece, base, lift) {
+    object.updateWorldMatrix(true, false);
+    const want = ankleOf(chain, piece, base.thigh, base.knee).clone();
+    want.y -= lift;
+    let th = base.thigh, kn = base.knee, best = Infinity, bt = th, bk = kn;
+    const e = 1e-3;
+    for (let n = 0; n < 8; n++) {
+      const a = ankleOf(chain, piece, th, kn), y0 = a.y - want.y, z0 = a.z - want.z;
+      const miss = Math.abs(y0) + Math.abs(z0);
+      if (miss < best) { best = miss; bt = th; bk = kn; } else break;
+      if (miss < 1e-5) break;
+      const b = ankleOf(chain, piece, th + e, kn), yt = (b.y - want.y - y0) / e, zt = (b.z - want.z - z0) / e;
+      const c = ankleOf(chain, piece, th, kn + e), yk = (c.y - want.y - y0) / e, zk = (c.z - want.z - z0) / e;
+      const det = yt * zk - yk * zt;
+      if (Math.abs(det) < 1e-9) break;
+      // Damped: near a straight leg a full step overshoots into a knee bent backwards.
+      const dt0 = (y0 * zk - yk * z0) / det, dk = (yt * z0 - y0 * zt) / det, big = Math.max(Math.abs(dt0), Math.abs(dk));
+      const k = big > .25 ? .25 / big : 1;
+      th -= dt0 * k;
+      kn = Math.max(.05, Math.min(2.4, kn - dk * k));
+    }
+    const a = ankleOf(chain, piece, th, kn);
+    if (Math.abs(a.y - want.y) + Math.abs(a.z - want.z) >= best || kn < base.knee * .25) { th = bt; kn = bk; }
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    chain.end.rotation.x = th - kn;
+  }
   const gait = createGait(PIVOTS.leftLeg[1], JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
     JOINTS.leftLeg.end[1]*PLAYER_SCALE, G);
   let previousParent = null;
@@ -1366,7 +1418,9 @@ function buildRig(spec, material) {
     if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
     // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
-    const horse = !ride && pose.horseback ? horsebackOf(character) : null;
+    // `horseback` may be the rider's own motion from mount.js (carry/stepRider): his lean into
+    // the half seat and his hands following the horse's head, added to the seat's fixed angles.
+    const horse = !ride && pose.horseback ? seatFit(horsebackOf(character), pose.horseback) : null;
     // On a rope ladder (pose.climbing = { rise }): no gait, no swim, no seat - the climb's own pose,
     // moved along by the height gained, not by the distance walked.
     const ladder = pose.climbing && !ride && !horse && !pose.dying && !pose.swimming && !pose.sitting && !pose.lying ? pose.climbing : null;
@@ -1653,6 +1707,7 @@ function buildRig(spec, material) {
         // the stirrup is - then the foot turned back flat on its tread.
         chain.bend.rotation.z = out * horse.shin;
         chain.end.rotation.z = -out * (horse.spread + horse.shin);
+        if (horse.lift > 1e-4) stirrupLeg(chain, pieces[side], horsebackOf(character), horse.lift);
       }
     }
     // The torso's own pose when no clip is playing: the lean shared between the small of the

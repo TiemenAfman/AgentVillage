@@ -39,7 +39,6 @@ const HORSE_GAITS=[['stilstaan',0],['draf',MOUNT_TOP],['galop',MOUNT_TOP*MOUNT_G
 const horseMat=createBuildingMaterial();
 let horse=null, horseGait=1, horseHelper=null;
 const rider=figures.find(f=>f.id==='adventurer');
-const seatAt=new THREE.Vector3();
 const traveller = figures[0].rig;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 const track=new THREE.Group();scene.add(track);
@@ -209,10 +208,8 @@ function tick(dt){
       f.distance+=speed*dt;
       horse.place(0,0,f.distance,0);
       horse.pose({speed},dt);
-      horse.seat(seatAt,f.rig.hipY,horsebackOf(f.id).perch);
-      f.stand.position.copy(seatAt);
-      f.stand.quaternion.copy(horse.object.quaternion);
-      f.rig.update({moving:false,grounded:true,horseback:true,distance:0},dt);
+      const motion=horse.carry(f.stand,f.rig.hipY,horsebackOf(f.id).perch,dt);
+      f.rig.update({moving:false,grounded:true,horseback:motion,distance:0},dt);
       continue;
     }
     f.stand.position.x=f.x;

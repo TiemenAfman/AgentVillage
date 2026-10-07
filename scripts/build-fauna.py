@@ -268,10 +268,13 @@ def saddle(p):
     for side in (-1, 1):
         box(p, (side * 0.087, 0.433, 0.0), (0.012, 0.09, 0.155), pad)
         box(p, (side * 0.096, 0.42, 0.01), (0.014, 0.075, 0.085), LEATHER)
-        box(p, (side * 0.107, 0.368, 0.02), (0.007, 0.095, 0.012), LEATHER)
+        # The leathers buckled 4.5 cm shorter than they hung at first (irons from 0.30 to 0.34):
+        # at full length the Adventurer reached the irons with his leg almost straight, which
+        # left him no knee to rise on - no half seat in the gallop (web/js/mount.js).
+        box(p, (side * 0.107, 0.3905, 0.02), (0.007, 0.05, 0.012), LEATHER)
         for z in (0.004, 0.036):
-            box(p, (side * 0.11, 0.316, z), (0.009, 0.027, 0.006), brass)
-        box(p, (side * 0.11, 0.302, 0.02), (0.009, 0.007, 0.038), brass)
+            box(p, (side * 0.11, 0.361, z), (0.009, 0.027, 0.006), brass)
+        box(p, (side * 0.11, 0.347, 0.02), (0.009, 0.007, 0.038), brass)
 
 
 def horse_face(p):

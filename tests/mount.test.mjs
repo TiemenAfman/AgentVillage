@@ -158,8 +158,8 @@ test('the cadence never runs away, and the pose never goes NaN', () => {
     }
   }
   // Natural cycle frequencies at the two selected riding speeds.
-  assert.equal(cadenceOf(MOUNT_TOP, 'trot'), 1.6);
-  assert.ok(Math.abs(cadenceOf(MOUNT_TOP*MOUNT_GALLOP, 'gallop')-2.05)<1e-9);
+  assert.equal(cadenceOf(MOUNT_TOP, 'trot'), 2.5);
+  assert.ok(Math.abs(cadenceOf(MOUNT_TOP*MOUNT_GALLOP, 'gallop')-2.6)<1e-9);
   const r = createRide();
   for (let i = 0; i < 2000; i++) {
     const v = (i % 600) / 600 * MOUNT_TOP * MOUNT_GALLOP;

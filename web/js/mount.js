@@ -22,10 +22,10 @@ import { solidMaterial } from './buildings.js';
 // Speeds match the small horse’s stride length. Sprint/Shift selects gallop.
 export const MOUNT_TOP = HORSE_TROT;
 export const MOUNT_GALLOP = HORSE_GALLOP / HORSE_TROT;
-export const MOUNT_ACCEL = .65;       // a horse has mass: about a second to cruising speed
-export const MOUNT_BRAKE = 2.4;       // reined in from the top in under a second, but not in a pace
+export const MOUNT_ACCEL = 1.4;       // a horse has mass: over a second to a trot, two more to a gallop
+export const MOUNT_BRAKE = 4.5;       // reined in from the gallop in under a second, but not in a pace
 export const MOUNT_ROLL = 1.2;        // let go of the reins and it comes back to a halt in a few seconds
-export const MOUNT_REVERSE = .22;     // S at a standstill backs it up, slowly
+export const MOUNT_REVERSE = .35;     // S at a standstill backs it up, slowly
 // A horse turns on its haunches standing and at a walk, and wide at a gallop: it does not pivot
 // on its own axis flat out. Rad/s, from a walk's top down to the gallop's.
 export const MOUNT_TURN = 2.6;
@@ -177,7 +177,7 @@ function slice(m, p, r, boost, step, ground, blocked, ceiling) {
 // rider and every peer work it out of how fast the horse goes, so nothing about it is on the wire.
 // Normal reins select trot; sprint selects gallop. Hysteresis prevents flicker.
 export const GAITS = ['stand', 'trot', 'gallop'];
-export const GAIT_EDGES = [.02, .84];
+export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (3.4)
 export const GAIT_MARGIN = .05;
 export function gaitOf(v, was = null) {
   const speed=Math.abs(v);
@@ -185,8 +185,8 @@ export function gaitOf(v, was = null) {
   const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
   return speed>threshold?'gallop':'trot';
 }
-export const CADENCE = {stand:0,trot:[.75,1.6],gallop:[1.85,2.05]};
-export const CADENCE_MAX=2.1;
+export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,2.6]};
+export const CADENCE_MAX=2.7;
 export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
 export const PATTERN=HORSE_PATTERNS;
 const frac=(x)=>x-Math.floor(x);
@@ -210,8 +210,11 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   if(old!==r.gait) {
     r.transition=1;
     r.offsets=P.hooves.map((foot,i)=>{
-      const next=hoofPath(r.cycle,i,v,r.gait,r.hz);
-      return {z:foot.z-next.z,y:foot.y-next.y,flex:(foot.flex||0)-next.flex};
+      const next=hoofPath(r.cycle,i,r.gait==='stand'?0:v,r.gait,r.hz);
+      const o={z:foot.z-next.z,y:foot.y-next.y,flex:(foot.flex||0)-next.flex};
+      // Never carry a bad number into the ease: one NaN here stays in that hoof for good.
+      for(const k in o) if(!Number.isFinite(o[k])) o[k]=0;
+      return o;
     });
   }
   r.transition=Math.max(0,r.transition-step*5);
@@ -245,6 +248,71 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   return r;
 }
 
+// ---- how the rider rides ---------------------------------------------------------------------
+// A rider is not bolted to the saddle. Copying the horse's quaternion onto him (as walk.js,
+// peers.js and the motion workbench did) tipped him whole with every rock of the gallop - seven
+// degrees either way, the head swinging like the end of a stick. A rider's seat follows the
+// saddle and his spine takes the rest: the pelvis goes with `PELVIS_SHARE` of the horse's pitch,
+// the torso stays nearly where it was in the world, and what is left over is a body on springs -
+// a little late on every rise of the back, a little overshoot when the gait changes. In the
+// gallop he goes into a half seat (forward over the withers, hips a hand off the leather, the
+// knees taking the bob), at the trot he sits it and is lifted a touch on each diagonal, and his
+// hands give and take with the horse's head so the reins stay the same length.
+// Drawing only: nothing here is on the wire, and each page works it out of the horse it draws.
+export const PELVIS_SHARE = .3;
+export const RIDER_SEAT = {
+  stand: { lean: 0, rise: 0, give: 0 },
+  trot: { lean: 4 * Math.PI / 180, rise: 0, give: .3 },
+  gallop: { lean: 17 * Math.PI / 180, rise: .003, give: .7 },
+};
+export function createRider() {
+  return { lean: 0, leanV: 0, y: 0, yV: 0, rise: 0, seatY: null, pitch: 0, arm: 0,
+    bob: 0, bobV: 0, lastV: 0, motion: { lean: 0, arm: 0, elbow: 0, lift: 0 } };
+}
+// One step of the rider over the horse's pose: `saddleY` is the saddle's height this frame (the
+// spring works on how it moves, not where it is). Returns the rider's own pitch (radians,
+// forward positive like bodyX), vertical offset from the seat and his `motion` for the rig.
+export function stepRider(k, ride, saddleY, dt) {
+  const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, .05) : 0;
+  const P = ride.pose, want = RIDER_SEAT[ride.gait] || RIDER_SEAT.stand, go = ride.go;
+  // The hips sit the saddle; the body above lags it. A stiff spring when he sits (trot, stand:
+  // a sitting trot is felt in the seat), softer in the half seat, where the knees take the bob.
+  if (k.seatY === null || !step) { k.seatY = saddleY; k.y = 0; k.yV = 0; }
+  const moved = saddleY - k.seatY; k.seatY = saddleY;
+  // The arms hang loose off the shoulders: what lifts the body flings them down a moment later
+  // and they swing back - a damped spring driven by how the body's height speeds up and slows.
+  const bodyV = step ? (moved + k.yV * step) / step : 0;
+  const accel = step ? Math.max(-40, Math.min(40, (bodyV - k.lastV) / step)) : 0;
+  k.lastV = bodyV;
+  k.bobV += (-120 * k.bob - 2 * .3 * Math.sqrt(120) * k.bobV + 4.5 * accel) * step;
+  k.bob = Math.max(-.25, Math.min(.25, k.bob + k.bobV * step));
+  const stiff = ride.gait === 'gallop' ? 90 : 260, damping = 2 * .55 * Math.sqrt(stiff);
+  k.y -= moved;                                    // the saddle went, the body has not yet
+  k.yV += (-stiff * k.y - damping * k.yV) * step;
+  k.y += k.yV * step;
+  // He can be left behind by a falling saddle, never sink into a rising one: the leather pushes
+  // him up at once and he comes down onto it again on his own weight.
+  if (k.y < 0) { k.y = 0; if (k.yV < 0) k.yV = 0; }
+  // At most what his knees can give back: the leg reaches the irons turned out round the barrel,
+  // where a knee opening lowers the foot only about 6 mm before the leg is straight (classic-avatar.js
+  // stirrupLeg, tests/horseback-pose.test.mjs): rise plus this stays within it.
+  if (k.y > .003) { k.y = .003; if (k.yV > 0) k.yV = 0; }
+  k.rise = damp(k.rise, want.rise * go, 4, step);
+  // The torso's own lean: the gait's seat, plus what the horse's pitch would have tipped it by
+  // and the spine gave back, eased by a spring so it overshoots a little and settles.
+  const target = want.lean * go;
+  k.leanV += (90 * (target - k.lean) - 2 * .5 * Math.sqrt(90) * k.leanV) * step;
+  k.lean += k.leanV * step;
+  k.pitch = P.bodyX * PELVIS_SHARE;
+  // The hands follow the mouth: forward as the head goes down, back as it comes up.
+  k.arm = damp(k.arm, want.give * (P.headX - .03) * go, 12, step);
+  k.motion.lean = k.lean;
+  k.motion.arm = k.arm + k.bob * .4;
+  k.motion.elbow = -k.arm * .8 + k.bob;
+  k.motion.lift = k.y + k.rise;
+  return k;
+}
+
 // ---- where the rider goes -------------------------------------------------------------------
 // The seat and the irons, read off the bake (fauna.js saddleOf), so a saddle baked again carries
 // its rider with it; null without the horse in the build.
@@ -273,7 +341,8 @@ export function createMount({ scene, material, seed = 'mount' }) {
   horse.object.scale.setScalar(MOUNT_SCALE);
   horse.object.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(horse.object);
-  const local = new THREE.Vector3();
+  const local = new THREE.Vector3(), hips = new THREE.Vector3(), up = new THREE.Vector3();
+  const rider = createRider();
   let at = [0, 0, 0];
   return {
     object: horse.object,
@@ -288,6 +357,18 @@ export function createMount({ scene, material, seed = 'mount' }) {
     seat(out, hipY, perch = 0.015) {
       local.set(0, (MOUNT ? MOUNT.seat : 0.48) + (perch - hipY) / MOUNT_SCALE, 0);
       return out.copy(local).applyMatrix4(horse.object.matrixWorld);
+    },
+    // Puts a rider's rig (its origin at the soles) so that his hips are on the saddle, turned
+    // as a rider turns (stepRider), and returns his `motion` for the rig's horseback pose.
+    // `extraRoll` is a drunk's sway, about his own forward axis.
+    carry(object, hipY, perch = 0.015, dt = 0, extraRoll = 0) {
+      local.set(0, (MOUNT ? MOUNT.seat : 0.48) + perch / MOUNT_SCALE, 0);
+      hips.copy(local).applyMatrix4(horse.object.matrixWorld);
+      stepRider(rider, ride, hips.y, dt);
+      object.rotation.set(rider.pitch, horse.yaw, ride.pose.bodyZ + extraRoll);
+      up.set(0, hipY - rider.y - rider.rise, 0).applyEuler(object.rotation);
+      object.position.copy(hips).sub(up);
+      return rider.motion;
     },
     get gait() { return ride.gait; },
     set visible(on) { horse.object.visible = on; },
