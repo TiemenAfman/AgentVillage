@@ -725,6 +725,10 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   per frame instead. So **a slot number moves whenever somebody else changes side**: read
   `f.slot` when you use it, never keep one across a frame. Per-figure bookkeeping lives in a
   `WeakMap` in `createFigures`, not on the caller's figure. `tests/settler-batches.test.mjs`.
+  A crowd holds `CAPACITY` bodies (1024) and a roster past it simply leaves the rest out: at 640
+  Hoogezand's 883 drew no innkeeper, mayor or pirate, whom lib/crowd.mjs appends last. So
+  crowd-view.js `roster()` enrols the keepers first, and matrices go up only as far as `count`
+  (`upload` in settler-figures.js), so a bigger CAPACITY costs memory, not bandwidth a frame.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
