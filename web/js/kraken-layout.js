@@ -214,6 +214,32 @@ export const KIT = {
   jollyrogers: [{ x: 7.35, z: -4.5, y: U + 0.395 - 0.424, ry: -Math.PI / 2 }, { x: -3.3, z: HALL.z1 - 0.03, y: G + 1.625 - 0.424, ry: Math.PI }],
 };
 
+// The two ladders up the mast from the pit to the crow's nest (mast.py ladders(): their feet MAST_LADDER
+// out from the mast along its yard, either side, their heads up through a hatch in the nest's floor),
+// climbed as the hull's rope ladder outside is (walk.js setClimbs, interior.js): `lo` where you stand
+// at the foot, facing the mast, a body's CLIMB_OUT (shared/deck.mjs) off the rungs and clear of the
+// mast's foot (`KIT.mast.foot`); `hi` where you step off on the nest's planks, by the hatch, a body
+// clear of the mast. Turned into the hall by the kit's own `ry`, as the bake is.
+export const MAST_LADDER = 0.46;
+// And the ladder up the mast's east face from the nest to the hatch in the ridge (HATCH): climbed too,
+// its head the way out onto the deck (`exit`, interior.js) - E at its foot still goes straight there.
+// Its foot a body's CLIMB_OUT off the rungs (pirate-tavern.js draws them at face + 0.03); its head a
+// body's height under the hatch (`top` there), a little in towards the mast so the way up has a way.
+export const HATCH_TOP = F + CEILING - 0.06;
+export const MAST_CLIMBS = (() => {
+  const m = KIT.mast, c = Math.cos(m.ry), s = Math.sin(m.ry);
+  const at = (kx, y) => ({ x: m.x + kx * c, y, z: m.z - kx * s });
+  return [1, -1].map((side) => ({
+    name: side > 0 ? 'mast ladder' : 'mast side ladder',
+    lo: at(side * (MAST_LADDER + 0.16), m.y),
+    hi: at(side * 0.32, m.y + m.nest),
+  }));
+})().concat([{
+  name: 'hatch ladder', exit: 'deck',
+  lo: { x: HATCH.face + 0.03 + 0.16, y: HATCH.y, z: HATCH.mz },
+  hi: { x: HATCH.face + 0.08, y: HATCH_TOP - 0.5, z: HATCH.mz },
+}]);
+
 // The tables in the pit (two rows of three, the middle aisle from the door to the mast kept open),
 // the hearth, the chandeliers, the captain's furniture and the crew's places (pirate-tavern.js).
 export const TABLES = [

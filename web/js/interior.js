@@ -760,6 +760,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // cells so the step up lands exactly on its edge.
   // Its floors and stairs, when it has storeys (Plans/verdiepingen-binnen.md).
   if (def.surfaces) walk.setSurfaces(def.surfaces);
+  // Ladders climbed rung by rung (the Salty Kraken's up its mast), as the island's rope ladders are.
+  // One whose head is a way out (`exit`, the Kraken's hatch to her deck) leaves the room there.
+  if (def.climbs) walk.setClimbs(def.climbs.map((c) => (c.exit ? { ...c, onTop: () => leave(c.exit) } : c)));
   if (def.stage) {
     const levels = new Map();
     const cell = (v) => Math.round(v + HALF_CELLS - 0.5);

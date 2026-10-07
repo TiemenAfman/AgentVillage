@@ -1689,7 +1689,14 @@ clip is the `mixamo-clips` skill.
 its 0.12 of rise, which played it 3.7 times a second - and the clip's arms are drawn `CLIMB_CLIP_REACH`
 wider and `CLIMB_CLIP_LIFT` higher (`widenClimb`), since played as baked they paddle at the shoulders.
 **Movements and looks of the avatar are shown and judged in `/avatar-motion.html`** (Klimmen: up, down
-or hanging, either body close up with Dichtbij), not on the island. walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
+or hanging, on a rope ladder or the Kraken's mast - the kit's own, loaded lazily - either body close up
+with Dichtbij), not on the island.
+A room climbs too: `def.climbs` (interior.js -> its own walk's `setClimbs`) - the Kraken's two mast
+ladders pit to crow's nest and the hatch ladder up from the nest (`MAST_CLIMBS` in kraken-layout.js),
+whose `exit` makes its head a way out (`onTop` in walk.js: leave for the deck, E at its foot still works).
+Drawn but not climbable: the water tower's (its deck is 5 cm round the tank), the quarry's, the Batavia's
+and the shipyard's (no walkable decks); the Kraken's roof/fore ladders and the hall's west/east ladders
+are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
 not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.45 (it was 1.8 - fifteen cycles a
 second; the keeper chose slower). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
 ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
