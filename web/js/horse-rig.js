@@ -2,6 +2,7 @@
 // this skeleton; a sleeve-like blend at a hip/neck keeps the buried root on the torso.
 import * as THREE from 'three';
 import { FAUNA } from './fauna-mesh.js';
+import { HORSE_GRAZE } from './fauna.js';
 import { hoofPath, horseCadence } from './horse-gait.js';
 
 export const HORSE_RIG = FAUNA.rigs?.horse;
@@ -90,8 +91,9 @@ function solve(leg, wanted, unBody, flex=0) {
 
 export function poseHorse(a) {
   const p=a.pose,rig=a.horseRig,b=rig.bones;
-  b[1].rotation.set(p.headX*.7,p.headY*.7,0);
-  b[2].rotation.set(p.headX*.3,p.headY*.3,0);
+  const g=p.graze||0;
+  b[1].rotation.set(p.headX*.7+g*HORSE_GRAZE.neck,p.headY*.7,0);
+  b[2].rotation.set(p.headX*.3+g*HORSE_GRAZE.head,p.headY*.3,0);
   b[3].rotation.set(p.tailX,0,p.tailZ);
   b[4].rotation.set(p.tailX*.2,0,p.tailZ*.35);
   bodyEuler.set(p.bodyX,0,p.bodyZ);

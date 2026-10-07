@@ -38,6 +38,17 @@ import * as models from './models.js';
 import { bindHorse, poseHorse } from './horse-rig.js';
 import { horseCadence } from './horse-gait.js';
 
+// How a grazing horse puts its head down (stepPose, horse-rig.js poseHorse): the neck nodded
+// further than `graze` alone and the head turned back against it, so the face hangs plumb with the
+// lips towards the grass. The head hangs off the neck, so a neck bowed far down takes the head past
+// plumb unless the head bone turns back; a first version that pitched the body forward and nodded
+// both bent the face round to point at the forelegs and folded the fore knees as if kneeling
+// (7 Oct 2026). With the forelegs straight and no lean the lips stopped ~0.07 over the grass, on a
+// neck 0.21 long; since scripts/horse-model.py NECK_REACH it is 0.30, about the foreleg's length, and
+// the lips come down to ~0.01 with the face at ~90 degrees, the muzzle a head's width in front of the
+// fore hooves - no lean, no drop, forelegs straight (tests/horse-graze.test.mjs).
+export const HORSE_GRAZE = { lean: 0, drop: 0, neck: 1.03, head: -1.0 };
+
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.
 export const KINDS = {
@@ -463,6 +474,13 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   // else from how fast the heading is changing.
   if (bank != null) bodyZ = bank;
   else if (inFlight || pose.flying) bodyZ = clamp(-turn * 0.3, -0.5, 0.5);
+  // A horse grazing (HORSE_GRAZE): `graze` eases the head down and up again, horse-rig.js bows the
+  // neck and turns the head back against it; any lean onto the forehand or sinking is added here.
+  if (kind === 'horse') {
+    pose.graze = damp(pose.graze || 0, a === 'feed' ? 1 : 0, 2.5, step);
+    bodyX += HORSE_GRAZE.lean * pose.graze;
+    bodyY -= HORSE_GRAZE.drop * pose.graze;
+  }
   pose.bodyY = bodyY;
   pose.bodyX = damp(pose.bodyX, bodyX, 10, step);
   pose.bodyZ = bank != null ? bodyZ : damp(pose.bodyZ, bodyZ, 8, step);

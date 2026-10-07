@@ -14,7 +14,7 @@ register('./support/shared-loader.mjs', import.meta.url);
 
 const stub = () => { globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) }; };
 stub();
-const { createAnimal, KINDS } = await import('../web/js/fauna.js');
+const { createAnimal, KINDS, HORSE_GRAZE } = await import('../web/js/fauna.js');
 const { attachStable, updateStable, paddockArea } = await import('../web/js/stable.js');
 const { attachProp, updateProp, attachBakery, updateBakery, BEES } = await import('../web/js/countryside.js');
 const { buildBuilding, meshAsset, isBakeryMoving } = await import('../web/js/buildings.js');
@@ -66,7 +66,9 @@ test('an animal keeps to its patch and stands on its ground', () => {
     for (let i = 0; i < 60 / FRAME; i++) {
       a.update(FRAME);
       assert.ok(Math.hypot(a.x - area.x, a.z - area.z) <= area.r + 1e-6, `${kind} wandered off to ${a.x}, ${a.z}`);
-      assert.ok(Math.abs(a.object.position.y - 0.25) < 0.01, `${kind} is not on its ground`);
+      // A grazing horse sinks onto its forehand on purpose (HORSE_GRAZE.drop); its hooves stay down.
+      const sunk = kind === 'horse' ? HORSE_GRAZE.drop * (a.pose.graze || 0) : 0;
+      assert.ok(Math.abs(a.object.position.y + sunk - 0.25) < 0.01, `${kind} is not on its ground`);
       walked += Math.hypot(a.x - last[0], a.z - last[1]);
       last = [a.x, a.z];
     }

@@ -42,8 +42,9 @@ export const MOUNT_HOP = 3.6;
 export const MOUNT_GRAVITY = 12.5;
 // The probes: a horse is 0.82 long and the bicycle 0.4, so the middle alone let the head go
 // through a wall. The chest is tested ahead of the middle and, backing up, the rump behind it -
-// stable.js's HORSE_CLEAR, "half a horse, nose to rump, and a little".
-export const MOUNT_NOSE = 0.32;
+// stable.js's HORSE_CLEAR, "half a horse, nose to rump, and a little". Moved out 0.1 with the
+// longer neck (scripts/horse-model.py NECK_REACH), so the muzzle stands as far off a wall as before.
+export const MOUNT_NOSE = 0.42;
 export const MOUNT_RUMP = 0.28;
 const TURN_BITE = 0.1;
 const SCRAPE_DRAG = 6.0;
@@ -195,7 +196,7 @@ export function createRide({phase=0}={}) {
   return {pose:createPose('horse',{phase}),idle:createPose('horse',{phase}),
     cycle:0,gait:'stand',go:0,hz:0,lean:0,transition:0,offsets:[],speed:0};
 }
-export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
+export function mountPose(r,{speed=0,rate=0,air=false,graze=false}={},dt=0) {
   const step=Number.isFinite(dt)&&dt>0?Math.min(dt,.1):0;
   const v=Number.isFinite(speed)?speed:0;
   const old=r.gait;
@@ -204,7 +205,8 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   r.cycle=frac(r.cycle+r.hz*step);
   r.speed=v;
   r.go=damp(r.go,r.gait==='stand'&&!air?0:1,8,step);
-  stepPose('horse',r.idle,{act:'still'},step);
+  // Standing, a horse may put its head down and graze (fauna.js HORSE_GRAZE), rider or not.
+  stepPose('horse',r.idle,{act:graze&&r.gait==='stand'?'feed':'still'},step);
   const P=r.pose,I=r.idle;
   P.hooves ||= Array.from({length:4},()=>({z:0,y:0,flex:0,contact:true}));
   if(old!==r.gait) {
@@ -223,7 +225,8 @@ export function mountPose(r,{speed=0,rate=0,air=false}={},dt=0) {
   // turn, most compressed in the suspension and most stretched over the fores.
   const B=horseBody(r.cycle,r.gait==='stand'?'trot':r.gait,body);
   P.bodyY=I.bodyY*(1-r.go)+B.bodyY*r.go;
-  P.bodyX=B.bodyX*r.go;
+  P.bodyX=I.bodyX*(1-r.go)+B.bodyX*r.go;
+  P.graze=(I.graze||0)*(1-r.go);
   r.lean=damp(r.lean,clamp(-rate*Math.abs(v)*.055,-.09,.09),6,step);
   P.bodyZ=I.bodyZ*(1-r.go)+r.lean;
   P.headX=I.headX*(1-r.go)+B.headX*r.go;
@@ -263,7 +266,7 @@ export const PELVIS_SHARE = .3;
 export const RIDER_SEAT = {
   stand: { lean: 0, rise: 0, give: 0 },
   trot: { lean: 4 * Math.PI / 180, rise: 0, give: .3 },
-  gallop: { lean: 17 * Math.PI / 180, rise: .003, give: .7 },
+  gallop: { lean: 17 * Math.PI / 180, rise: .012, give: .7 },
 };
 export function createRider() {
   return { lean: 0, leanV: 0, y: 0, yV: 0, rise: 0, seatY: null, pitch: 0, arm: 0,
@@ -293,10 +296,11 @@ export function stepRider(k, ride, saddleY, dt) {
   // He can be left behind by a falling saddle, never sink into a rising one: the leather pushes
   // him up at once and he comes down onto it again on his own weight.
   if (k.y < 0) { k.y = 0; if (k.yV < 0) k.yV = 0; }
-  // At most what his knees can give back: the leg reaches the irons turned out round the barrel,
-  // where a knee opening lowers the foot only about 6 mm before the leg is straight (classic-avatar.js
-  // stirrupLeg, tests/horseback-pose.test.mjs): rise plus this stays within it.
-  if (k.y > .003) { k.y = .003; if (k.yV > 0) k.yV = 0; }
+  // At most what his knees can give back with his feet kept in the irons (classic-avatar.js
+  // stirrupLeg, tests/horseback-pose.test.mjs): with the thighs close along the saddle, 25 degrees
+  // out, that is about 2.5 cm before the leg is straight (it was 6 mm with them round the old box
+  // flaps at 45). Rise plus this is 2 cm, inside it with a margin.
+  if (k.y > .008) { k.y = .008; if (k.yV > 0) k.yV = 0; }
   k.rise = damp(k.rise, want.rise * go, 4, step);
   // The torso's own lean: the gait's seat, plus what the horse's pitch would have tipped it by
   // and the spine gave back, eased by a spring so it overshoots a little and settles.

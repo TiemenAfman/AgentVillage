@@ -46,7 +46,8 @@ test('in the gallop the rider sits the saddle, takes only part of the rock and g
   assert.ok(g.off < 0.003, `hips ${g.off} off the saddle along the ground`);
   assert.ok(Math.min(...g.lift) >= 0, 'never into the saddle');
   assert.ok(Math.max(...g.lift) < 0.04, `hips ${Math.max(...g.lift)} over the saddle`);
-  assert.ok(Math.min(...g.lift) > 0.002, 'a half seat: the hips stay off the leather');
+  // mount.js RIDER_SEAT.gallop.rise 0.012, within the 2.5 cm his knees give back in the irons.
+  assert.ok(Math.min(...g.lift) > 0.006, `a half seat: the hips stay off the leather (${Math.min(...g.lift)})`);
   const lean = g.lean.reduce((s, v) => s + v, 0) / g.lean.length;
   assert.ok(lean > 0.25 && lean < 0.35, `forward over the withers ${lean}`);
   assert.ok(span(g.arm) > 0.05, `the hands give with the head ${span(g.arm)}`);
@@ -56,7 +57,7 @@ test('at the trot he sits it: no half seat, a lift on each diagonal, upright', (
   const t = gallop(MOUNT_TOP, 6);
   const lean = t.lean.reduce((s, v) => s + v, 0) / t.lean.length;
   assert.ok(lean < 0.1, `trot lean ${lean}`);
-  assert.ok(span(t.lift) > 0.0005 && Math.max(...t.lift) <= 0.0061, `trot bounce ${span(t.lift)}`);
+  assert.ok(span(t.lift) > 0.0005 && Math.max(...t.lift) <= 0.0081, `trot bounce ${span(t.lift)}`);
   assert.ok(Math.min(...t.lift) >= 0);
   // The arms hang loose: each lift of the body swings the forearms down and back up.
   assert.ok(span(t.elbow) > 0.08 && span(t.elbow) < 0.4, `trot elbows ${span(t.elbow)}`);

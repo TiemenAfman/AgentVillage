@@ -48,7 +48,8 @@ function limbVertices(avatar) {
 test('the Adventurer keeps the clip\'s torso, thighs and arms, and opens his knee', () => {
   const a = horsebackOf('adventurer');
   for (const key of ['lean', 'thigh', 'arm', 'elbow']) assert.equal(a[key], HORSEBACK[key], key);
-  assert.ok(a.knee < HORSEBACK.knee && a.spread > HORSEBACK.spread);
+  // Less spread than the clip since the saddle was draped on the barrel: his thighs lie along it.
+  assert.ok(a.knee < HORSEBACK.knee && a.spread < HORSEBACK.spread);
   assert.equal(horsebackOf('nobody'), HORSEBACK);
 });
 
@@ -114,14 +115,17 @@ test('the adventurer on the stable\'s horse at its own size: soles on the irons,
   // thighs leave them they sit on the cloth, which a slab of the solid cannot tell from a wall.
   const legs = limbVertices(avatar).filter((p) => p.y < avatar.hipY - fit.perch);
   const sole = Math.min(...legs.map((p) => p.y)) + lift;
-  // In the iron, or resting on its top bar: the Adventurer's sole rests on the tread, 0.009 over the iron's foot.
+  // In the iron, or resting on its top bar: the Adventurer's sole stands on the tread.
   assert.ok(sole >= saddle.stirrup.y * s - 0.002 && sole <= saddle.stirrup.top * s + 0.01, `soles at ${sole.toFixed(3)}, irons ${(saddle.stirrup.y * s).toFixed(3)}-${(saddle.stirrup.top * s).toFixed(3)}`);
   // The horse's body as a solid: how far out it reaches either side in every 1 cm slab of
-  // height and length - the barrel, the saddle and its flaps, the irons.
+  // height and length - the barrel, the saddle and its flaps. Not the irons and the foot of the
+  // leathers: the foot goes through the one and the shin lies on the other.
   const C = 0.01, half = new Map();
   for (const n of models.assetParts('fauna_horse').filter((n) => n.startsWith('fauna_horse body'))) {
     const { positions: p, at: o } = models.part(n);
     for (let i = 0; i < p.length; i += 3) {
+      const st = saddle.stirrup, x = Math.abs(p[i] + o[0]), y = p[i + 1] + o[1], z = p[i + 2] + o[2];
+      if (x > 0.1 && y < st.top + 0.02 && Math.abs(z - st.z) < 0.015) continue;
       const key = Math.round((p[i + 1] + o[1]) / C) + ',' + Math.round((p[i + 2] + o[2]) / C);
       half.set(key, Math.max(half.get(key) || 0, Math.abs(p[i] + o[0])));
     }
@@ -150,7 +154,8 @@ test('lifted out of the saddle, the adventurer\'s knees open so his soles stay i
     return { y: Math.min(...legs.map((p) => p.y)), hip: avatar.hipY };
   };
   const sat = sole(SADDLE);
-  for (const lift of [0.002, 0.004, 0.006]) {
+  // Up to the 2 cm mount.js asks for (gallop rise + spring cap), with the knees to spare.
+  for (const lift of [0.005, 0.01, 0.015, 0.02]) {
     const up = sole({ ...SADDLE, horseback: { lean: 0, arm: 0, elbow: 0, lift } });
     // The rig's origin (the soles at rest) stays put; the hips are lifted by moving the rig up by
     // `lift` (mount.js carry), so the soles must come down by the same amount inside it.
