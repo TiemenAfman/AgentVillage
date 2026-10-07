@@ -1224,6 +1224,10 @@ function interactables() {
     if (deck.helm < 1.0 && free) {
       out.push({ id: b.id, kind: 'helm', x: b.x, z: b.z, r: 99, label: 'the wheel', prompt: 'take the helm' });
     }
+    // Up in her crow's nest, the seat against the topmast (craft.nest, walk.js sitOnDeck).
+    if (deck.nest != null) {
+      out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
+    }
     return out;
   }
   // A ship's helm is left under way: a ship runs out for most of a minute, and leaving the wheel
@@ -2186,6 +2190,11 @@ function walkCallbacks() {
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
       else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'nestseat') {
+        if (state.walk.state.sitting) state.walk.standUp();
+        else state.walk.sitOnDeck(it.seat);
+        state.walk.setInteractables(interactables());
+      }
       else if (it.kind === 'helm') {
         if (state.walk.takeHelm()) {
           // Ours from now, before the sea has said so: a track left over from somebody else's
@@ -2201,7 +2210,7 @@ function walkCallbacks() {
     onSendAway: (it) => {
       if (it.treasure) return;   // the bottle, the X and the statue are not settlers
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat'].includes(it.kind)) askToSendAway(it.id);
     },
     // Up a ship's rope ladder, and off her again by jumping or down it (walk.js): the sea counts a
     // crew, so it is told at the top and again once you are off. No room to change - on the deck

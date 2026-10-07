@@ -396,6 +396,22 @@ export function ladderBoxes(spec) {
       out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { x, y: foot + k * RUNG_STEP - RUNG_R, z: l.z }));
     }
   }
+  // Up the mast (craft.aloft): the same ropes and rungs, from the deck to the rim of the top, turned to
+  // whichever face of it the ladder hangs from - `out` is the way from the mast to the climber, and a
+  // box's own x is turned onto it - and over the rim to inside, where they are made fast.
+  for (const l of spec.aloft || []) {
+    const [ox, oz] = l.out;
+    const ry = Math.atan2(-oz, ox);
+    const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
+    const at = (d, t) => ({ x: l.x + ox * d - oz * t, z: l.z + oz * d + ox * t, ry });
+    for (const side of [-1, 1]) {
+      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { ...at(RUNG_OUT, side * l.hw), y: foot }));
+      out.push(box(0.2, ROPE_W, ROPE_W, ROPE, { ...at(RUNG_OUT - 0.1, side * l.hw), y: top }));
+    }
+    for (let k = 1; foot + k * RUNG_STEP < top - 0.06; k++) {
+      out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { ...at(RUNG_OUT, 0), y: foot + k * RUNG_STEP - RUNG_R }));
+    }
+  }
   return out;
 }
 

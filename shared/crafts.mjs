@@ -138,6 +138,22 @@ export const CRAFTS = Object.freeze({
     ladders: Object.freeze([1, -1].map((s) => Object.freeze({
       x: s * 2.42, z: 1.85, hw: 0.14, top: 1.27, foot: -0.65, land: Object.freeze([s * 1.35, 1.85]),
     }))),
+    // And one up the mainmast to her crow's nest (shared/deck.mjs aloftPath; Plans/DONE/kraaiennest.md). The
+    // nest is the bake's: an octagonal basket round the topmast, its floor 8.62 above DECK_Y, a stepped
+    // dais in it (8.82, 8.96, 9.06, 9.2 towards the topmast) and its rim at 9.24, 0.72 out - so a body
+    // stands on the ring of the 8.96 step and the rim stops it. Measured by level rays round the mast,
+    // the column under the nest's starboard-aft face (315 degrees) is clear from the deck to the rim
+    // but for one brace at 7.5: ahead of the mast hangs the mainsail, to either side the yards, and
+    // straight aft three halyards. So the ladder hangs there, plumb, 0.8 out (outside the rim's flange),
+    // its foot on the waist (1.12, what the walk map has there) and its rungs RUNG_STEP up from it.
+    aloft: Object.freeze([Object.freeze({
+      x: 0.8 * Math.SQRT1_2, z: -0.8 * Math.SQRT1_2, out: Object.freeze([Math.SQRT1_2, -Math.SQRT1_2]), hw: 0.14,
+      foot: 1.12, top: 9.24, land: Object.freeze([0.297, -0.297]), floor: 8.96,
+    })]),
+    // Where to sit up there: on the dais's top step with your back to the topmast, looking out over
+    // the bow (`yaw` in the hull's frame, 0 forward). `y` is the seat, as a stool's is (walk.js sitOn);
+    // `reach` how far from it E offers it, and `floor` the height a body must be above to be in the nest.
+    nest: Object.freeze({ seat: Object.freeze({ x: 0, z: 0.17, y: 9.2, yaw: 0 }), reach: 0.65, floor: 8.6 }),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
     // falls back to the Benchy's when it is missing): she takes 6 s to reach her top speed, and
     // let go of the helm - or of W - she runs out for most of a minute instead of four seconds
