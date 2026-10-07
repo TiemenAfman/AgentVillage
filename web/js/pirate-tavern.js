@@ -131,7 +131,11 @@ export function buildPirateTavern({ FLOOR, rect }) {
   // The ship's parts. One the HD pack has a model of (hd-pieces.js) stays out of the room's merge and
   // goes to `pieces`, drawn as its own mesh beside the model so Settings can switch between the two.
   const pieces = [];
+  // Every asset that went through kit(), split or not: a room built before the pack's list arrived
+  // split nothing, and this is how it is told that it should have (hd-pieces.js hdMissed).
+  const kitAssets = new Set();
   const kit = (asset, at, out = parts) => {
+    kitAssets.add(asset);
     if (!hdPieceOf(asset)) return place(out, asset, at);
     const geoms = [];
     place(geoms, asset, at);
@@ -356,7 +360,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
 
   return {
     name: 'the Salty Kraken',
-    parts, roof, pieces, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
+    parts, roof, pieces, kitAssets: [...kitAssets], blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
     // The other way out: up the hatch onto the deck outside (interior.js `exits`, main.js leaveInterior).
     exits: [{ id: 'hatch', kind: 'exit', to: 'deck', x: K.HATCH.x, z: K.HATCH.z, r: 0.8, floor: K.HATCH.y, label: 'the hatch', prompt: 'climb up onto the deck' }],
     // The glow round every flame and lit window, read off the parts themselves, and the moonlight
