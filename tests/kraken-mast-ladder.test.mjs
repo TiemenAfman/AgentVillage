@@ -107,3 +107,16 @@ test('the hatch ladder: climbed from the crow\'s nest, out onto the deck', () =>
   assert.equal(r.left(), 'deck', 'out through the hatch');
   assert.ok(Math.max(...ys) > l.hi.y - 0.05, `up to the hatch first (${Math.max(...ys).toFixed(2)})`);
 });
+
+// The crow's nest is walked where its planks are: the floor (FLOORS 'crows-nest', LEVEL.top) is the top
+// of the baked planks (mast.py NEST_Y) over the pit the mast stands on. They were 6 cm apart, and whoever
+// stood in the nest hung that far over its planks.
+test('the crow\'s nest is walked on its planks', async () => {
+  const { KRAKENKIT } = await import('../web/js/krakenkit-mesh.js');
+  const p = KRAKENKIT.parts['civic_kraken_mast plank deck'].positions;
+  let top = -Infinity;
+  for (let i = 1; i < p.length; i += 3) top = Math.max(top, p[i]);
+  const floor = K.FLOORS.find((f) => f.id === 'crows-nest');
+  assert.ok(Math.abs(K.KIT.mast.y + top - floor.y) < 1e-3, `planks at ${(K.KIT.mast.y + top).toFixed(3)}, floor at ${floor.y.toFixed(3)}`);
+  assert.ok(Math.abs(top - K.KIT.mast.nest) < 1e-3);
+});
