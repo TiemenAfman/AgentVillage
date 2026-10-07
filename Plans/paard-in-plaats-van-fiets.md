@@ -49,7 +49,9 @@ anders is dan een fiets, want daar zit het werk.
 
 - **Het paard** (`scripts/build-fauna.py`, `web/js/fauna.js`): `fauna_horse` heeft **al een zadel**
   met een kleed, stijgbeugels en koperen gespen (`saddle(p)`, in het `body`-deel gebakken; de
-  bovenkant ligt rond y = 0,50, de beugelijzers rond 0,30-0,32). Het is in zeven delen
+  bovenkant ligt rond y = 0,50, de beugelijzers rond 0,30-0,32; sinds 7 oktober 4,5 cm korter
+  gegespt, rond 0,34-0,35, zodat de Avonturier een knie heeft om in de halve zit op te staan,
+  `HORSEBACK_OF.adventurer` knie 68 in plaats van 40). Het is in zeven delen
   gebakken met de oorsprong op elk gewricht (`animalParts`); `createAnimal` hangt ze op pivots
   en `applyPose` zet de houding erop. `timberrun.js` en `rave.js` sturen het paard al van buiten
   aan, zonder zijn eigen brein: `stepPose` en `applyPose`.
