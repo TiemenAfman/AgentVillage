@@ -102,7 +102,7 @@ function sampleOnce(clip, u, out) {
 }
 // Up a rope ladder (walk.js `climbing`, peers.js the same off a peer's height): `rise` is how far the
 // feet went up this frame (down is negative), and a cycle of the climb is `perCycle` of it - the clip's
-// own rise on this body's leg, or the Traveller's two rungs - so a hand stays on its rung. Never more
+// pace (climbPerCycle), or the Traveller's three rungs. Never more
 // than CLIMB_RATE_MAX cycles a second: a body jumped along a ladder (a peer's late sample, a hull's
 // swell) would otherwise spin through its limbs.
 export const CLIMB_RATE_MAX = 4;
@@ -117,22 +117,92 @@ export function climbStep(u, rise, perCycle, dt) {
 export function climbKind(gait) {
   return gait && gait.clips && GAIT_CLIPS.climb ? 'clip' : 'reach';
 }
-// The Traveller has no clips, so his climb is drawn here: both hands up the ropes, each reaching
-// higher in turn, and the other side's foot stepping up with it, a cycle per
-// `rungs` climbed - two of a ship's rungs (boat.js RUNG_STEP). Positive is back, as everywhere here.
-export const CLIMB_REACH = { rungs: 0.4, arm: -2.55, armSwing: .35, leg: -.5, legSwing: .4, knee: .35, kneeLift: .75 };
+// How fast a ladder is climbed: walk.js's CLIMB_SPEED (tests/ladder-climb.test.mjs holds the two
+// equal). Mixamo's clip rises 0.12 a cycle on the Adventurer's leg, which at this speed played it
+// 3.7 times a second, nearly three times its own pace (the keeper's recording, 7 Oct 2026): a cycle
+// is stretched to CLIMB_SPEED times the clip's own length, so it plays at the pace it was made at
+// and the hands and feet slide a little on the rungs instead of thrashing.
+export const CLIMB_SPEED = 0.45;
+export function climbPerCycle(gait) {
+  if (climbKind(gait) === 'reach') return CLIMB_REACH.rungs;
+  const c = GAIT_CLIPS.climb;
+  return Math.max(c.rise * gait.leg, CLIMB_SPEED * c.seconds);
+}
+// The Traveller has no clips, so his climb is drawn here, one hand at a time: a hand reaches up the
+// ropes as high as his short arm goes (elbow straight, arm `top`), takes hold and is pulled down
+// past the face to the chest (`low`, elbow bent) as the body rises past it - in a straight line, as
+// a hand on a rung would - then lets go and reaches up again over the last `reach` of the cycle.
+// The other hand is half a cycle behind, and each foot steps up with the hand on the other side.
+// A cycle per `rungs` climbed: three of a ship's rungs (boat.js RUNG_STEP), 0.75 cycles a second
+// at CLIMB_SPEED. It was two rungs and a swing of a fifth of a radian round the shoulder - a quick
+// paddle at chin height the keeper asked to be slower and to reach further (7 Oct 2026).
+// A limb's positive is back, as everywhere here; `lean` (the run's sign) tips the chest in towards
+// the ropes.
+export const CLIMB_REACH = {
+  rungs: 0.6, reach: 0.32,
+  arm: { top: -2.95, low: -1.15 }, elbow: { top: 0.1, low: 1.4 },
+  leg: { top: -1.15, low: -0.25 }, knee: { top: 1.55, low: 0.2 },
+  lean: 0.14,
+};
+// Where one limb is in its stroke: 1 reached up, 0 pushed down. Held and pulled (or pushed) down
+// at the body's own rate, then brought up again eased.
+function climbStroke(u) {
+  const R = CLIMB_REACH, hold = 1 - R.reach;
+  u = ((u % 1) + 1) % 1;
+  if (u < hold) return 1 - u / hold;
+  const t = (u - hold) / R.reach;
+  return t * t * (3 - 2 * t);
+}
+const between = (r, t) => r.low + (r.top - r.low) * t;
 export function climbReach(u) {
-  const R = CLIMB_REACH, s = Math.sin(u * Math.PI * 2);
+  const R = CLIMB_REACH;
+  // left hand with the right foot, then the right hand with the left foot
+  const l = climbStroke(u), r = climbStroke(u + 0.5);
   return {
     limbs: {
-      leftArm: R.arm - R.armSwing * s, rightArm: R.arm + R.armSwing * s,
-      leftLeg: R.leg + R.legSwing * s, rightLeg: R.leg - R.legSwing * s,
+      leftArm: between(R.arm, l), rightArm: between(R.arm, r),
+      leftLeg: between(R.leg, r), rightLeg: between(R.leg, l),
     },
-    // the leg going up is the one bent
-    knees: [R.knee + R.kneeLift * Math.max(0, -s), R.knee + R.kneeLift * Math.max(0, s)],
+    knees: [between(R.knee, r), between(R.knee, l)],
+    elbows: { leftArm: between(R.elbow, l), rightArm: between(R.elbow, r) },
+    lean: R.lean,
   };
 }
 const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop: 0 });
+// The clip's hands go up the ropes no higher than the chin: on the island, played as fast as it
+// was, they read as a quick paddle at the shoulders (the keeper's recording, 7 Oct 2026). So the
+// arms' own movement - collarbone, shoulder, elbow - is drawn CLIMB_CLIP_REACH times as wide round
+// where each joint is on average over the cycle: the hand reaching up goes higher and the one
+// pulling down comes lower, and the timing, the legs and the hips are the clip's.
+export const CLIMB_CLIP_REACH = 1.5, CLIMB_CLIP_LIFT = 0.3;
+const liftQ = new THREE.Quaternion(), liftAxis = new THREE.Vector3(1, 0, 0);
+const CLIMB_ARM_JOINTS = ['lClavicle', 'rClavicle', 'lArm', 'rArm', 'lElbow', 'rElbow'];
+let climbMean = null;
+const widenD = new THREE.Quaternion(), widenInv = new THREE.Quaternion(), widenI = new THREE.Quaternion();
+function widenClimb(p) {
+  const C = GAIT_CLIPS.climb;
+  if (!climbMean) {
+    // The mean of a joint's turns over the rows: summed on one hemisphere, then normalised.
+    climbMean = CLIMB_ARM_JOINTS.map((name) => {
+      const j = GAIT_JOINTS.indexOf(name), m = new THREE.Quaternion(0, 0, 0, 0), q = new THREE.Quaternion();
+      for (let r = 0; r < C.rows.length; r++) {
+        sampleClip(C, r / C.rows.length, poseMean);
+        q.copy(poseMean.q[j]);
+        if (r && m.dot(q) < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+        m.set(m.x + q.x, m.y + q.y, m.z + q.z, m.w + q.w);
+      }
+      return { j, m: m.normalize() };
+    });
+  }
+  // q = mean * (mean^-1 * q)^k: the slerp from no turn past the turn itself.
+  for (const { j, m } of climbMean) {
+    widenD.copy(widenInv.copy(m).invert()).multiply(p.q[j]);
+    if (widenD.w < 0) widenD.set(-widenD.x, -widenD.y, -widenD.z, -widenD.w);
+    p.q[j].copy(m).multiply(widenI.identity().slerp(widenD, CLIMB_CLIP_REACH));
+  }
+  return p;
+}
+const poseMean = clipPose();
 function blendPose(out, a, b, t) {
   for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
   out.drop = a.drop + (b.drop - a.drop) * t;
@@ -1108,7 +1178,10 @@ function buildRig(spec, material) {
       clipFree = digByClip = false;
       clipMix = damp(clipMix, 1, 10, dt);
       if (clipMix < 1e-3) return;
-      applyClip(sampleClip(GAIT_CLIPS.climb, climbU, poseClimb), clipMix, { arms: true, drop: true });
+      applyClip(widenClimb(sampleClip(GAIT_CLIPS.climb, climbU, poseClimb)), clipMix, { arms: true, drop: true });
+      // and both arms raised CLIMB_CLIP_LIFT about the shoulder, so the hands climb past the face
+      liftQ.setFromAxisAngle(liftAxis, -CLIMB_CLIP_LIFT * clipMix);
+      for (const side of ['leftArm', 'rightArm']) if (!busy[side]) pieces[side].pivot.quaternion.premultiply(liftQ);
       return;
     }
     // Which clip, if any: the swim in the water, the dig with a shovel, else the walk family.
@@ -1297,7 +1370,7 @@ function buildRig(spec, material) {
     // On a rope ladder (pose.climbing = { rise }): no gait, no swim, no seat - the climb's own pose,
     // moved along by the height gained, not by the distance walked.
     const ladder = pose.climbing && !ride && !horse && !pose.dying && !pose.swimming && !pose.sitting && !pose.lying ? pose.climbing : null;
-    if (ladder) climbU = climbStep(climbU, ladder.rise || 0, climbKind(G) === 'clip' ? GAIT_CLIPS.climb.rise * G.leg : CLIMB_REACH.rungs, dt);
+    if (ladder) climbU = climbStep(climbU, ladder.rise || 0, climbPerCycle(G), dt);
     else climbU = 0;
     const reach = ladder && climbKind(G) === 'reach' ? climbReach(climbU) : null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
@@ -1530,8 +1603,9 @@ function buildRig(spec, material) {
       : damp(pieces.leftArm.pivot.rotation.z, armZ.leftArm ?? (holding.leftArm ? 0 : (pose.running ? -0.12 : 0)), armZ.leftArm === null ? 12 : 20, dt);
     pieces.rightArm.pivot.rotation.z = drunk.rightArm ? drunk.rightArm.z
       : damp(pieces.rightArm.pivot.rotation.z, armZ.rightArm ?? (holding.rightArm ? 0 : (pose.running ? 0.12 : 0)), armZ.rightArm === null ? 12 : 20, dt);
-    // The idle breath, in the small of the back: the chest, the arms and the head rise with it.
-    torso.spine.position.y = torso.rest.spine + Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
+    // The idle breath, in the small of the back: the chest, the arms and the head rise with it. Not on a ladder:
+    // hanging there the hands hold the rungs, and a chest that rose would lift them off.
+    torso.spine.position.y = torso.rest.spine + Math.sin(time * 2.2) * (moving || ladder ? 0 : 0.0025);
     // The body's share of the dance, eased in over a beat or so and back out when it stops.
     // Scaled by PLAYER_SCALE like every pivot here: dancePose's lifts are a settler's.
     danceMix = damp(danceMix, dance ? 1 : 0, 6, dt);
@@ -1579,7 +1653,7 @@ function buildRig(spec, material) {
     // back and the chest, the shoulders' turn against the hips in the chest, the pelvis and the
     // neck still. A clip (playClips) is blended over this.
     const twistNow = locomotion ? Math.sin(phase) * (G.twist ? mixOf(G.twist, run, dash) : .025) * gaitPose.blend : 0;
-    leanNow = horse ? horse.lean : G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
+    leanNow = horse ? horse.lean : reach ? reach.lean : G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
     if (locomotion) object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
     torso.pelvis.quaternion.identity();
     torso.spine.rotation.set(leanNow / 2, 0, 0);
@@ -1599,7 +1673,7 @@ function buildRig(spec, material) {
       busy[side] = !!action;
       // A body with its own elbows (the Adventurer) bends them to a runner's right angle and
       // keeps them there while the arm pumps; the Traveller's formula is the old one.
-      const elbow = action ? 0 : G.elbow ? .10 * (1 - gaitPose.blend) + mixOf(G.elbow, run, dash) * Math.max(gaitPose.blend, leap)
+      const elbow = action ? 0 : reach ? reach.elbows[side] : G.elbow ? .10 * (1 - gaitPose.blend) + mixOf(G.elbow, run, dash) * Math.max(gaitPose.blend, leap)
         : (.10 + (.20+.65*gaitPose.run)*gaitPose.blend);
       // A runner's elbow closes as the arm comes forward - the fist up to the chin - and opens
       // as it drives back: at one angle all the way, the forearm stood out level in front of him.
