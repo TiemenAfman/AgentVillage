@@ -725,6 +725,10 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   per frame instead. So **a slot number moves whenever somebody else changes side**: read
   `f.slot` when you use it, never keep one across a frame. Per-figure bookkeeping lives in a
   `WeakMap` in `createFigures`, not on the caller's figure. `tests/settler-batches.test.mjs`.
+  A crowd holds `CAPACITY` bodies (1024) and a roster past it simply leaves the rest out: at 640
+  Hoogezand's 883 drew no innkeeper, mayor or pirate, whom lib/crowd.mjs appends last. So
+  crowd-view.js `roster()` enrols the keepers first, and matrices go up only as far as `count`
+  (`upload` in settler-figures.js), so a bigger CAPACITY costs memory, not bandwidth a frame.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
@@ -1682,11 +1686,32 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill.
-**On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`,
-`rise` a cycle, `climbStep`), backwards going down and still while hanging; the Traveller reaches up
-procedurally (`climbReach`). walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
-not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.45 (it was 1.8 - fifteen cycles a
-second; the keeper chose slower). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
+**On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`),
+backwards going down and still while hanging; the Traveller reaches up procedurally (`climbReach`: one hand
+at a time from overhead to the chest). **The ladder is cut to the clip, not the clip to the ladder** (the
+keeper's choice, 7 Oct 2026): the clip rises 0.122 a cycle on the Adventurer's leg with each hand and foot
+taking hold once, left and right half a cycle apart, so every rope ladder's rungs are `RUNG_STEP` (0.061)
+apart from its foot (rung 0), `2 * RUNG_R` thick and `RUNG_FROM` in front of the climber (shared/deck.mjs,
+the one copy; the galleon's `ladderBoxes`, the Kraken's bake and the workbench read it). A cycle is two rungs
+(`climbPerCycle`), never stretched, and its phase is the height on the ladder (`climbPhase` off `climbing.at`,
+which walk.js and peers.js `ladderAt` hand over; `CLIMB_PHASE` per kind), so a hand that has hold stands still
+on a rung while the body rises - and the foot later stands on the rung that hand held. So `CLIMB_SPEED` *is*
+the clip's pace: 0.29 is 1.8 times its own (the keeper's pick). The arms are turned down onto the rungs
+(`CLIMB_CLIP_LIFT`, per side: the Adventurer's shorter arms closed 1.6 cm over them), the Traveller's strokes
+bent by `CLIMB_REACH.ease` so a hold is a straight line, and his limbs follow the climb exactly after
+`LADDER_EASE` (damped, a hold slid). `tests/ladder-rungs.test.mjs` measures the rig's holds against the rungs.
+The Kraken's mast ladders (krakenkit `mast.py`, 0.075 and 0.085 apart, leaning) are not cut to it yet.
+**Movements and looks of the avatar are shown and judged in `/avatar-motion.html`** (Klimmen: up, down
+or hanging, on a rope ladder or the Kraken's mast - the kit's own, loaded lazily - either body close up
+with Dichtbij), not on the island.
+A room climbs too: `def.climbs` (interior.js -> its own walk's `setClimbs`) - the Kraken's two mast
+ladders pit to crow's nest and the hatch ladder up from the nest (`MAST_CLIMBS` in kraken-layout.js),
+whose `exit` makes its head a way out (`onTop` in walk.js: leave for the deck, E at its foot still works).
+Drawn but not climbable: the water tower's (its deck is 5 cm round the tank), the quarry's, the Batavia's
+and the shipyard's (no walkable decks); the Kraken's roof/fore ladders and the hall's west/east ladders
+are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise, at }` on the rungs only (`onRungs`:
+not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.29 (it was 1.8 - fifteen cycles a
+second - then 0.45 with the limbs sliding). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
 ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
 and draws them there - before this a climbing peer was drawn standing on the ground under the ladder.
 

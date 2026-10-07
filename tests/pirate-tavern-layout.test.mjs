@@ -23,6 +23,7 @@ import {
   PUB_PIER_MIN, PUB_PIER_MAX, pubChestSpots, replayGrid, keptWater, fairwayHeld, PATH,
 } from '../lib/layout.mjs';
 import { pubGangway } from '../shared/kraken.mjs';
+import { createCrowd } from '../lib/crowd.mjs';
 import { register } from 'node:module';
 import { runPlan, parsePlan, civicSites } from '../lib/plan.mjs';
 import { MILESTONES, civicIdOf } from '../lib/village.mjs';
@@ -225,6 +226,46 @@ test('an island founded past 52 has the pub and the chest behind it on its first
     const once = json(layout.plots);
     scan(layout, seed, 60);
     assert.equal(json(layout.plots), once, `seed ${seed}: the second scan moved something`);
+  }
+});
+
+// The sea's half of "the pirate stands at his chest": lib/crowd.mjs spawns him half a lot plus a
+// step out in front of it, and with the chest moved to where the Kraken's gangway comes ashore that
+// step has to be dry ground he can stand and idle on - not the gangway, not the water, not the pub.
+// Hoogezand's page drew no pirate there on 7 October 2026; the sea had him, the page's crowd was
+// full (tests/crowd-view.test.mjs). This holds the sea's side of it.
+test('beside the Kraken in the sea the sea stands the pirate on dry ground in front of his chest', () => {
+  for (const seed of SEEDS) {
+    const layout = emptyLayout(seed, SIZE);
+    scan(layout, seed, 60);
+    const pub = layout.plots[PUB_ID], chest = layout.plots[PIRATE_ID];
+    assert.ok(pub && pub.sea && chest, `seed ${seed}: no pub in the sea with a chest`);
+    const terrain = groundOf(seed, layout);
+    const civic = (id, civicType, plot) => ({ id, kind: 'civic', civicType, name: id, plot });
+    const bundle = {
+      island: { name: 'Testholm', seed, gridSize: layout.size, landing: null, town: layout.town },
+      buildings: [civic(PUB_ID, 'piratetavern', pub), civic(PIRATE_ID, 'pirate', chest)],
+      paths: layout.paths,
+    };
+    const crowd = createCrowd({ id: 'testholm', bundle, terrain });
+    const pirate = crowd.figures.get(PIRATE_ID);
+    assert.ok(pirate && pirate.visible, `seed ${seed}: nobody keeps the chest`);
+    const half = terrain.half;
+    const cellOf = (pos) => [Math.floor(pos[0] + half), Math.floor(pos[1] + half)];
+    const pubCells = new Set(cellsOf(pub).map(key));
+    const planks = new Set((gangwayOf(pub, terrain) || { cells: [] }).cells.map(key));
+    const dry = (pos, what) => {
+      const c = cellOf(pos);
+      assert.ok(terrain.isLand(...c) && !terrain.isWater(...c), `seed ${seed}: the pirate ${what} in the water at ${key(c)}`);
+      assert.ok(!pubCells.has(key(c)), `seed ${seed}: the pirate ${what} on the pub's lot`);
+      assert.ok(!planks.has(key(c)), `seed ${seed}: the pirate ${what} on the gangway`);
+    };
+    dry(pirate.home, 'stands');
+    const mid = [chest.gx + 0.5 - half, chest.gz + 0.5 - half];
+    assert.ok(Math.hypot(pirate.home[0] - mid[0], pirate.home[1] - mid[1]) < 1.2, `seed ${seed}: the pirate stands away from his chest`);
+    // And a few minutes of idling at his post keep him there.
+    for (let i = 0; i < 12; i++) { crowd.advance(200, 0); dry(pirate.pos, 'wanders'); }
+    assert.ok(pirate.visible, `seed ${seed}: the pirate went out of sight`);
   }
 });
 

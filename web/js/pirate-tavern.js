@@ -294,7 +294,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
   // A ship's ladder up the mast's east face from the crow's nest into the ridge, and the dark of the open
   // hatch at its head. A handful of boxes, not the hall's bake: that is 34 MB to bake again.
   {
-    const { y, face, mz } = K.HATCH, top = K.F + K.CEILING - 0.06;
+    const { y, face, mz } = K.HATCH, top = K.HATCH_TOP;
     for (const s of [-1, 1]) parts.push(box(0.05, top - y, 0.05, C.darkWood, { x: face + 0.03, y, z: mz + s * 0.2, sheet: 'plank' }));
     for (let h = y + 0.24; h < top - 0.08; h += 0.26) parts.push(box(0.04, 0.035, 0.42, C.plank, { x: face + 0.03, y: h, z: mz, sheet: 'plank' }));
     parts.push(box(0.62, 0.03, 0.62, 0x0d0b0a, { x: face, y: top, z: mz }));
@@ -366,6 +366,8 @@ export function buildPirateTavern({ FLOOR, rect }) {
     parts, roof, pieces, kitAssets: [...kitAssets], blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
     // The other way out: up the hatch onto the deck outside (interior.js `exits`, main.js leaveInterior).
     exits: [{ id: 'hatch', kind: 'exit', to: 'deck', x: K.HATCH.x, z: K.HATCH.z, r: 0.8, floor: K.HATCH.y, label: 'the hatch', prompt: 'climb up onto the deck' }],
+    // The two ladders up the mast to the crow's nest, climbed (kraken-layout.js MAST_CLIMBS).
+    climbs: K.MAST_CLIMBS.map((l) => ({ ...l, lo: { ...l.lo }, hi: { ...l.hi } })),
     // The glow round every flame and lit window, read off the parts themselves, and the moonlight
     // through the skylights (room-glow.js; the light plan is kraken-layout.js LIGHTS).
     halos: halosOf(parts), roofHalos: halosOf(roof),

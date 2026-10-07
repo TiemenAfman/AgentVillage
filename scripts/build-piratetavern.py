@@ -1312,8 +1312,15 @@ ladder('fore ladder', (_ff.x + 0.6, _ff.y), (_ft.x, _ft.y), _ff.z)
 # at its belly, heel and all), over the landing, and clear of the kraken's arms further west.
 SIDE_X = XLW + 0.3                          # the ladder's middle along the hull
 SIDE_Z = UZ0 + LADDER_W / 2                 # its ropes' plumb line, a hand out from the belly
-ROPE_HW = 0.2                               # half the rungs' width
+ROPE_HW = 0.14                              # half the rungs' width: round the climb's hands (shared/crafts.mjs's galleon)
 CLIMB_OUT = 0.16                            # the climber's feet in front of the ropes (shared/deck.mjs)
+# The rungs are the climb's, as a ship's are (shared/deck.mjs, the one copy of these three numbers,
+# held equal by tests/ladder-rungs.test.mjs): RUNG_STEP apart from the landing (rung 0, where the
+# climb's `lo` stands), 2 * RUNG_R thick, and hung RUNG_OUT in front of the ropes' plumb line, where
+# the clip's hands and feet close on them. They were 0.24 apart, rods 0.032 thick, on a sagging rope.
+RUNG_STEP = 0.061
+RUNG_R = 0.007
+RUNG_OUT = CLIMB_OUT - 0.13
 _bx = SIDE_X / SCALE                        # where the plank comes over the bulwark, in the ship's frame
 _gw = W(_bx, sheer(_bx), inner(_bx) + BULWARK + 0.02)   # the gunwale there
 _in = W(_bx, deck_y(_bx), inner(_bx) - 0.05)
@@ -1329,26 +1336,24 @@ for x in (SIDE_X - 0.32, SIDE_X + 0.32):
     rod('boarding knee', (x, _gw.y - 0.05, BOARD[1][2] - 0.08), (x, _gw.y - 0.55, _gw.z + 0.02), 0.022, POST, ship=False, sides=4)
 
 
-def rope_ladder(name, x, z, top, foot, rise=0.24):
-    """Two ropes from the plank's end down to the floor at `foot`, sagging a little out from the hull,
-    and round rungs between them a rise apart."""
-    n = 8
-    sag = lambda t: 0.035 * 4 * t * (1 - t)  # most at the middle, none where it is lashed and where it lies
-    ys = [top - (top - foot) * k / n for k in range(n + 1)]
+def rope_ladder(name, x, z, top, floor):
+    """Two ropes from the plank's end down to the floor at `floor`, hanging plumb RUNG_OUT in front of
+    `z`, and round rungs between them RUNG_STEP apart from the floor up. No sag any more: the climb's
+    hands and feet close on a rung in one plane, and a rung a few centimetres out of it was a hand
+    holding the air."""
+    zr = z + RUNG_OUT
     for sx in (-1, 1):
-        path = [(x + sx * ROPE_HW, y, z + sag(k / n)) for k, y in enumerate(ys)]
-        sweep(name + ' rope', path, [0.013] * len(path), ROPE, ship=False, sides=4)
+        rod(name + ' rope', (x + sx * ROPE_HW, floor + 0.01, zr), (x + sx * ROPE_HW, top, zr), 0.011, ROPE, ship=False, sides=4)
         # the lashing round the plank's end, and the slack lying on the landing
         rod(name + ' lashing', (x + sx * ROPE_HW, top - 0.05, z - 0.02), (x + sx * ROPE_HW, top + 0.02, z - 0.02), 0.02, ROPE, ship=False, sides=4)
     k = 1
-    while foot + rise * k < top - 0.12:
-        y = foot + rise * k
-        t = (top - y) / (top - foot)
-        rod(name + ' rung', (x - ROPE_HW - 0.01, y, z + sag(t)), (x + ROPE_HW + 0.01, y, z + sag(t)), 0.016, POST, ship=False, sides=4)
+    while floor + RUNG_STEP * k < top - 0.06:
+        y = floor + RUNG_STEP * k
+        rod(name + ' rung', (x - ROPE_HW - 0.01, y, zr), (x + ROPE_HW + 0.01, y, zr), RUNG_R, POST, ship=False, sides=4)
         k += 1
 
 
-rope_ladder('side ladder', SIDE_X, SIDE_Z, _gw.y - 0.03, MID + 0.01)
+rope_ladder('side ladder', SIDE_X, SIDE_Z, _gw.y - 0.03, MID)
 CLIMBS = {'side': ((SIDE_X, MID, SIDE_Z + CLIMB_OUT), (SIDE_X, _gw.y, SIDE_Z - 0.3))}
 
 # The two castles as blocks, each in three: either side of where its ladder comes up, and under the
