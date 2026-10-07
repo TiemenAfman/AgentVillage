@@ -146,6 +146,23 @@ export function stepDeck(s, input, craft, dt, move) {
 
 // How far outside the ropes' plumb line a climber's feet are: on the rungs, not in the hull.
 const CLIMB_OUT = 0.16;
+// Every rope ladder is cut to the climb, not the climb to the ladder (the keeper's choice, 7 Oct
+// 2026): Mixamo's Climbing Up A Ladder on the Adventurer rises 0.5778 legs a cycle - 0.1220 on his
+// leg of 0.2111 - with each hand and each foot taking hold once a cycle, the left and the right half
+// a cycle apart. So its rungs are half that apart, RUNG_STEP, and a hand or foot that has hold
+// stands still on one while the body rises (tests/ladder-rungs.test.mjs measures the rig against
+// it). RUNG_FROM is how far in front of the climber's root the rungs hang - between where the clip's
+// feet (0.147) and its hands (0.11) are when they hold - and RUNG_R half a rung's thickness, the
+// foot's ball standing on its top. Rung 0 is the ladder's foot (`foot` of a ship's, `lo` of a fixed
+// one) and the rest are RUNG_STEP above it; the climb's phase is worked out from that same height
+// (classic-avatar.js climbPhase), so whoever comes onto a ladder anywhere has hands on its rungs.
+// The Salty Kraken's bake repeats the three numbers (scripts/build-piratetavern.py).
+export const RUNG_STEP = 0.061;
+export const RUNG_FROM = 0.13;
+export const RUNG_R = 0.007;
+// Where a ladder's rungs hang, out from its `x` in its own side's direction: the climber stands
+// CLIMB_OUT from the ropes' plumb line and the rungs RUNG_FROM in front of the climber.
+export const RUNG_OUT = CLIMB_OUT - RUNG_FROM;
 // How far outside the ropes a body may stand and still be at the foot of the ladder.
 const FOOT_REACH = 0.45;
 // How far along the hull, beyond the ropes, a body may stand and still be at the ladder.

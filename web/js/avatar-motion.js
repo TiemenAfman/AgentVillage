@@ -7,6 +7,7 @@ import { loadSet } from './models.js';
 import { meshAsset, createBuildingMaterial } from './buildings.js';
 import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
 import { KIT, MAST_LADDER } from './kraken-layout.js';
+import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -53,17 +54,57 @@ const JUMP_V=3.1, GRAVITY=12.5, SWIM_SPEED=1.9;
 // Up a rope ladder (Klimmen): at walk.js's CLIMB_SPEED, up from the floor to CLIMB_TOP and from the
 // bottom again, down the same way, or hanging still (`climbDir` 1, -1, 0: the stick's push in
 // walk.js); each body facing its own ladder, its feet CLIMB_OUT in front of the ropes
-// (shared/deck.mjs) and the rungs a ship's RUNG_STEP apart (boat.js), seen from behind as on foot.
-// The rig is handed what walk.js hands it on the rungs, `climbing: { rise }`, so this is the climb
-// the island draws - Dichtbij looks at one body at a time.
-const CLIMB_TOP=1.2, CLIMB_OUT=.16, RUNG_STEP=.2;
+// (shared/deck.mjs) and the rungs the climb's own (RUNG_STEP apart from the floor, rung 0, and
+// RUNG_OUT in front of the ropes - as boat.js and the Salty Kraken's bake hang them), seen from
+// behind as on foot. The rig is handed what walk.js hands it on the rungs, `climbing: { rise, at }`,
+// so this is the climb the island draws - Dichtbij looks at one body at a time. CLIMB_TOP is a
+// whole number of cycles (two rungs each), so going round it is no jump in the pose.
+const CLIMB_TOP=20*RUNG_STEP, CLIMB_OUT=.16, ROPE_HW=.14;
 let climbDir=1, climbY=0;
+const ropeMat=new THREE.MeshStandardMaterial({color:0x9c7f52,roughness:1});
 const ladders=figures.map(f=>{
-  const g=new THREE.Group(), rope=new THREE.MeshStandardMaterial({color:0x9c7f52,roughness:1}), wood=new THREE.MeshStandardMaterial({color:0x6e4d2b,roughness:1});
-  for(const x of [-.12,.12]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,CLIMB_TOP+.6,.012),rope);r.position.set(x,(CLIMB_TOP+.6)/2,0);g.add(r);}
-  for(let y=.15;y<CLIMB_TOP+.55;y+=RUNG_STEP){const r=new THREE.Mesh(new THREE.BoxGeometry(.26,.012,.014),wood);r.position.y=y;g.add(r);}
-  g.visible=false;g.position.x=f.stand.position.x;scene.add(g);return g;
+  const g=new THREE.Group(), rungs=[];
+  for(const x of [-ROPE_HW,ROPE_HW]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,CLIMB_TOP+.6,.012),ropeMat);r.position.set(x,(CLIMB_TOP+.6)/2,RUNG_OUT);g.add(r);}
+  // each rung its own material, so the one a hand or foot has hold of can light up (Houvast)
+  for(let k=1;k*RUNG_STEP<CLIMB_TOP+.55;k++){const r=new THREE.Mesh(new THREE.BoxGeometry(2*ROPE_HW+.012,2*RUNG_R,2*RUNG_R),new THREE.MeshStandardMaterial({color:0x6e4d2b,roughness:1}));r.position.set(0,k*RUNG_STEP,RUNG_OUT);g.add(r);rungs.push(r);}
+  g.visible=false;g.position.x=f.stand.position.x;scene.add(g);return Object.assign(g,{rungs});
 });
+// Houvast: where the hands and feet are, a dot on each - grey while it moves, lit while it holds
+// (it stands still on the ladder while the body rises: under 0.3 of the climb's speed), hands
+// orange and feet blue, and the rung under it lit in the same colour. A hand's rung is the one the
+// foot on that side stands on a cycle later; the dots say whether they really meet.
+const HOLD_COLOURS={hand:0xff9a3c,foot:0x46b4ff}, IDLE=0x5d665f;
+const LIMBS=[['leftArm','hand'],['rightArm','hand'],['leftLeg','foot'],['rightLeg','foot']];
+let showHolds=true;
+const holdDots=figures.map(()=>LIMBS.map(([,kind])=>{
+  const m=new THREE.Mesh(new THREE.SphereGeometry(.011,12,8),new THREE.MeshBasicMaterial({color:IDLE,depthTest:false}));
+  m.renderOrder=5;m.visible=false;scene.add(m);return {m,kind,was:null,held:false};
+}));
+const limbAt=new THREE.Vector3();
+function limbPoint(rig,limb,out){
+  const o=limb.endsWith('Arm')?rig.handAttach[limb]:rig.joints[limb].toe;
+  return o.getWorldPosition(out);
+}
+function showHoldsFor(i,f,rising){
+  const dots=holdDots[i], lad=ladders[i], on=showHolds&&mode==='climb'&&!onMast&&f.stand.visible;
+  for(const r of lad.rungs)r.material.color.setHex(0x6e4d2b);
+  for(const [j,[limb]] of LIMBS.entries()){
+    const d=dots[j];d.m.visible=on;
+    if(!on){d.was=null;continue;}
+    limbPoint(f.rig,limb,limbAt);
+    // the limb's height on the ladder, against the body's own rise this step
+    const y=limbAt.y-lad.position.y;
+    d.held=d.was!==null&&Math.abs(rising)>1e-5&&Math.abs((y-d.was)/rising)<.3||(d.held&&Math.abs(rising)<=1e-5);
+    d.was=y;d.m.position.copy(limbAt);
+    d.m.material.color.setHex(d.held?HOLD_COLOURS[d.kind]:IDLE);
+    if(d.held){
+      // a hand closes round a rung's middle, a foot's ball stands on its top
+      const k=Math.round((y-(d.kind==='foot'?RUNG_R:0))/RUNG_STEP);
+      d.rung=k;d.off=y-(d.kind==='foot'?RUNG_R:0)-k*RUNG_STEP;
+      if(lad.rungs[k-1])lad.rungs[k-1].material.color.setHex(HOLD_COLOURS[d.kind]);
+    }
+  }
+}
 // Or up the Salty Kraken's mast (Mastladder): the hall's own kit piece (krakenkit, a lazy set), its
 // ladder's foot MAST_LADDER out from the mast, and the body where the room's walk mode climbs it
 // (kraken-layout.js MAST_CLIMBS) - to see the climb against the rungs it is really done on, which
@@ -95,6 +136,7 @@ let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===spec.character)f.rig.set(spec);}});
 document.querySelector('#motion-inventory').onclick=()=>inventory.open();
+document.querySelector('#motion-holds').onchange=e=>{showHolds=e.target.checked;};
 document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.checked;if(horseHelper)horseHelper.visible=e.target.checked;};
 // Close up on one body at a time, to judge how a hat or a strap sits: off, then each in turn.
 let close=-1;
@@ -114,7 +156,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op, de handen en voeten per sport':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 const syncHorseControls=()=>{
   document.querySelector('[data-gait="horse"]').textContent='Paard · '+HORSE_GAITS[horseGait][0];
@@ -135,14 +177,19 @@ function frame(now){
 function tick(dt){
   time+=dt;
   const masted=mode==='climb'&&onMast, climber=close<0?0:close;
-  for(const l of ladders)l.visible=mode==='climb'&&!onMast;
+  // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
+  // stands in front of it.
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&(close<0||i===climber);
+  if(mode!=='climb'||onMast)for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted;
-  for(const [i,f] of figures.entries())f.stand.visible=!masted||i===climber;
+  for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
   const climbWas=climbY, top=onMast?MAST_TOP:CLIMB_TOP;
   if(mode==='climb'){climbY+=climbDir*CLIMB_SPEED*dt;if(climbY>top)climbY-=top;if(climbY<0)climbY+=top;}
   const climbRise=Math.abs(climbY-climbWas)<.5?climbY-climbWas:0;
+  // `climbY` going round the top is a jump; the dots forget where they were
+  if(climbRise===0&&climbY!==climbWas)for(const dots of holdDots)for(const d of dots)d.was=null;
   // walk.js's swimming beat: quick in the stroke, slow treading water.
   bob+=dt*(mode==='swim'?6.5:1.4);
   const riding=mode==='horse'&&!!(horse||(horse=createMount({scene,material:horseMat,seed:'motion:horse'})));
@@ -155,7 +202,7 @@ function tick(dt){
     const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
-    f.stand.visible=!riding||f===rider;
+    if(riding)f.stand.visible=f===rider;
     if(riding){
       if(f!==rider)continue;
       const speed=HORSE_GAITS[horseGait][1];
@@ -189,7 +236,9 @@ function tick(dt){
       f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
       if(masted&&f===figures[climber])mast.position.set(f.stand.position.x,0,f.distance-CLIMB_OUT-MAST_LADDER);
-      f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise}},dt);
+      f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
+      f.stand.updateMatrixWorld(true);
+      showHoldsFor(figures.indexOf(f),f,climbRise);
       continue;
     }
     // A jump keeps the way it took off with, as walk.js's does: the same JUMP_V and GRAVITY.
@@ -223,7 +272,7 @@ function render(){
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,get distance(){return distance;},get horse(){return horse;},
+window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
   // held: true stops the clock, so a check can step to one moment and look at it.
   held:false,
   advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};

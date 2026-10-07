@@ -462,11 +462,11 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       p.dive = diving;
       p.moving = moving;
       // Hanging on a rope ladder (main.js -> walk.js ladderAt): at the height they sent, facing the
-      // rungs, the rig climbing by how far that height moved since the last frame - their own page
-      // plays the same clip off the same rise. No bit says so; there is just no floor up there.
+      // rungs, the rig climbing by how far that height moved since the last frame and its phase off
+      // how high on the ladder they hang (`at`) - their own page plays the same clip off the same height. No bit says so; there is just no floor up there.
       const hold = !swimming && !airborne && !seat && !p.aboard && !p.deckTo && !p.room && !(f & FLAG_RIDING)
         ? ladderAt(x, sentY, z) : null;
-      const climbing = hold ? { rise: p.climbY == null ? 0 : sentY - p.climbY } : null;
+      const climbing = hold ? { rise: p.climbY == null ? 0 : sentY - p.climbY, at: hold.at } : null;
       p.climbY = hold ? sentY : null;
       if (hold) yaw = hold.yaw;
       const base = seat ? seat.y

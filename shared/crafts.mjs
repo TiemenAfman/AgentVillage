@@ -133,9 +133,10 @@ export const CRAFTS = Object.freeze({
     // 1.4 to the end of the waist the side is clean (measured by level rays over the whole
     // height of the hull, as the rails were). The foot is well under the waterline - a swimmer
     // takes it from the surface - and the deck is stepped onto 1.35 from the middle, inside the
-    // rail at 1.9.
+    // rail at 1.9. 0.28 wide (`hw`), round the climb's hands - the Traveller's wide ones too - and
+    // no wider: 0.48, as it was, was a ladder wider than a body is tall.
     ladders: Object.freeze([1, -1].map((s) => Object.freeze({
-      x: s * 2.42, z: 1.85, hw: 0.24, top: 1.27, foot: -0.65, land: Object.freeze([s * 1.35, 1.85]),
+      x: s * 2.42, z: 1.85, hw: 0.14, top: 1.27, foot: -0.65, land: Object.freeze([s * 1.35, 1.85]),
     }))),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
     // falls back to the Benchy's when it is missing): she takes 6 s to reach her top speed, and
