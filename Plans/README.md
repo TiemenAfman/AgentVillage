@@ -33,6 +33,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
 
 - 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory. Sinds 0.10.0 op main; open: nog niet in een echte sessie op het eiland nagelopen (fiets, zwemmen, zitten, eerste persoon).
+- 🚧 [basislichamen-en-outfits.md](basislichamen-en-outfits.md) — lichamen in ondergoed (man/vrouw) op het gedeelde skelet, kleding als losse outfit-laag, HEAD = haarkleur, huidkleur te verven. Plan; wacht op keuzes.
 - 🚧 [vallen-en-verdrinken.md](vallen-en-verdrinken.md) — wie gevangen wordt of verdrinkt, valt of zinkt eerst en springt pas daarna naar huis; anderen zien het via de zee (`fell`). Gebouwd: de Reiziger procedureel, de Avonturier met Mixamo's *Falling Forward Death* en *Floating (Flailing Arms)*; open: de open zee uitrollen, op het eiland zelf nalopen.
 
 ## Plannen
