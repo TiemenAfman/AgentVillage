@@ -94,9 +94,11 @@ export const BUDGETS = [
   // made from a picture (scripts/build-fauna.py) need the room: at 500 a cow's legs were sticks.
   // The rideable horse is inspected beside the player: closed joint rings, smooth head and tack.
   // 6500 since it got its anatomy (scripts/horse-model.py: muscle masses, a full mane and a tail
-  // of strands, nostrils, chestnuts, feathering): ~6400 from ~3900. It is drawn once per rider and
-  // per stable, skinned, in its ~7 draw calls - the triangles are the cheap part of it.
-  ['fauna_horse', 6500],
+  // of strands, nostrils, chestnuts, feathering): ~6400 from ~3900. 9000 since the head became a
+  // skull (brow, jowls, cup ears, a bridle on its surface) and the saddle a draped English saddle
+  // with flaps, knee rolls, girth, leathers and irons: ~8700. It is drawn once per rider and per
+  // stable, skinned, in its ~7 draw calls - the triangles are the cheap part of it.
+  ['fauna_horse', 9000],
   ['fauna_', 1200],
 ];
 
