@@ -13,7 +13,8 @@ HEAD-kleurkiezer die de haarkleur bepaalt. Bij het plannen stuurde hij bij (7 ok
 
 Dus niet "nog een lichaam met kleren eraan gebakken" maar een systeem: **een lichaam is een
 basislichaam in ondergoed op het gedeelde skelet; kleding is een losse outfit-laag die op elk
-lichaam past.** De OUTFIT-slot kiest de outfit, HEAD verft het haar, er komt een huidkleur.
+lichaam past.** De OUTFIT-slot kiest de outfit, HEAD verft het haar, er komt een huidkleur. De
+Reiziger en de Avonturier (Link) blijven daarnaast zoals ze zijn (Besluiten, onderaan).
 
 ## Wat er nu staat (en waarom het zo niet verder kan)
 
@@ -133,76 +134,77 @@ hoeden en de rugzak doet.
 
 ### 5. De look en de zee
 
-Nieuwe velden in de look (`normalizeAvatar`, en in `lookOf` in lib/players.mjs):
+Link blijft (keuze van Martijn), dus de basislichamen zijn een **derde soort lichaam** naast de
+Reiziger en de Avonturier. Werknaam in de inventory: **Wanderer** (naam nog vrij). Nieuwe velden in
+de look (`normalizeAvatar`, en in `lookOf` in lib/players.mjs):
 
 | veld | waarde | onbekend/ontbrekend |
 |---|---|---|
 | `character` | `traveller` / `adventurer` (bestaat) | Reiziger |
-| `sex` | `male` / `female` | `male` |
-| `outfit` | slug (`adventurer`, `peasant`, ...) | de standaard-outfit van het lichaam |
-| `hair` | kleur (int) | de huidige haarkleur |
+| `body` | `male` / `female`: een basislichaam (nieuw) | geen: het lichaam van `character` |
+| `outfit` | slug (`peasant`, `ranger`, `adventurer`, ...) | de standaard-outfit |
+| `hair` | kleur (int) | de huidige haarkleur van dat lichaam |
 
-Waarom een los `sex`-veld en niet een derde `character`: `characterId` maakt van een onbekende id
-de **Reiziger**. Een vrouw als `character: 'adventuress'` zou op een oude pagina dus een Reiziger
-worden; met `character: 'adventurer', sex: 'female'` ziet een oude pagina gewoon de (mannelijke)
-Avonturier. Een oude zee laat de onbekende velden in `lookOf` vallen (het is een whitelist), dus
-ook daar: mannelijke Avonturier in de standaard-outfit, standaard-haar. Niets stuk, geen
-`SEA_V`-bump, niets in layout/config/bundel - dus **een patch**. Maar: **de open zee moet opnieuw
-uitgerold worden** voordat anderen haar, haar haarkleur of een andere outfit zien.
+Een Wanderer gaat de deur uit als `character: 'adventurer', body: 'female', outfit, hair`. Waarom
+zo en niet als `character: 'wanderer'`: `characterId` maakt van een onbekende id de **Reiziger**,
+dus een oude pagina zou een vrouw als Reiziger tekenen. Met `character: 'adventurer'` als terugval
+ziet een oude pagina (die `body` niet kent) de Avonturier, en een oude zee laat `body`/`outfit`/
+`hair` in `lookOf` vallen (whitelist), dus ook daar de Avonturier. Niets stuk, geen `SEA_V`-bump,
+niets in layout/config/bundel - **een patch**. Maar: **de open zee moet opnieuw uitgerold worden**
+voordat anderen de Wanderer, de haarkleur of een outfit zien.
 
-Opslag per browser: `promptholm.avatar` krijgt de nieuwe velden; een oude look opent zonder ze
-(man, standaard-outfit, standaard-haar). `saveCharacter` bewaart ook `sex` meteen bij kiezen, net
-als het lichaam nu.
+Opslag per browser: `promptholm.avatar` krijgt de nieuwe velden; een oude look opent zonder ze. Een
+oude pagina die een nieuwe look leest, laat `body` vallen en opent op de Avonturier.
+`saveCharacter` bewaart `body` meteen bij kiezen, net als het lichaam nu.
 
 ### 6. Inventory
 
-- **Bovenaan** blijven de lichaamstypen (Traveller | Adventurer), **rechts** komt de man/vrouw-
-  keuze: twee portretjes (♂/♀, het blote hoofd zoals `characterIcon`) boven de rechter slots.
+- **Bovenaan** drie lichaamstypen: Traveller | Adventurer | Wanderer. **Rechts**, boven de
+  rechter slots, de man/vrouw-keuze: twee portretjes (het blote hoofd zoals `characterIcon`). Alleen
+  actief bij de Wanderer; bij Reiziger en Avonturier grijs met een tooltip (die hebben één lichaam).
   Kiezen wisselt het lichaam in de alcove direct; *Wear it* bewaart, zoals de lichaamskeuze nu.
-  Bij de Reiziger is er (fase 1) geen vrouw: de keuze staat grijs met een tooltip.
-- **HEAD** - het verfknopje kleurt voortaan het **haar** (`dye: 'hair'`). De hoedkleur verhuist
-  naar de hoed-kiezer zelf: onder de hoedtegels een rij kleuren (zie Vragen).
-- **Huid** - de bestaande *Skin*-fles links onderaan de alcove blijft de huidkleur; hij is nu bij
-  de Avonturier verborgen (`dyeApplies`) en verschijnt weer zodra de huid verfbaar is.
-- **OUTFIT** - wordt een kiezer (`kind: 'pick'`, `field: 'outfit'`) met een tegel per outfit,
-  het verfknopje blijft de stofkleur (`tunic`) van de gekozen outfit.
+- **HEAD** - het verfknopje kleurt voortaan het **haar** (`dye: 'hair'`), op elk lichaam: bij de
+  Reiziger zijn bestaande `hair`-delen, bij de Avonturier zijn haar (de `Hairband`-mesh van het
+  Link-model, opnieuw gebakken als grijswaarde × verf), bij de Wanderer haar kapsel.
+- **Hoedkleur** (keuze van Martijn): in de hoedkiezer, een rij kleuren onder de hoedtegels.
+- **Huid** - de bestaande *Skin*-fles links onderaan de alcove is de huidkleur voor elk lichaam.
+  Bij de Avonturier nu verborgen (`dyeApplies`): zijn huid (`Head`, `Upper_Skin`) wordt net als zijn
+  haar grijswaarde × verf gebakken, dan verschijnt de fles vanzelf.
+- **OUTFIT** - bij de Wanderer een kiezer (`kind: 'pick'`, `field: 'outfit'`), een tegel per
+  outfit; het verfknopje blijft de stofkleur (`tunic`). Bij Reiziger en Avonturier zoals nu.
 - `tests/inventory.test.mjs` houdt elke equip-sleutel bij één slot en elke swatch bij één
-  verfknop: met `hair` als nieuwe swatch-rij en de hoedkleur in de hoedkiezer blijft dat waar
-  (de test krijgt de hoed-kiezer als plek voor de `hat`-swatches).
+  verfknop: `hair` krijgt HEAD, `hat` de hoedkiezer.
 - Renderers: de nieuwe portretten gebruiken de bestaande icoon-renderer (`iconGeometry`); geen
   extra WebGL-context (CLAUDE.md: "A temporary renderer gives its context back").
 
-### 7. De Reiziger en de huidige Avonturier
+### 7. De Reiziger en de Avonturier
 
-Voorstel: in fase 1 **blijft de Reiziger** zoals hij is (eigen bake, procedurele beweging, krijgt
-alleen haarverf). De **Avonturier** wordt het eerste lichaam in het nieuwe systeem: zijn kleding
-(tuniek, hemd, broek, riemen, armbeschermers, handschoenen, laarzen) wordt de outfit
-`adventurer`, getrokken op beide basislichamen; zijn Link-lijf en -gezicht verdwijnen (zie Vragen:
-dat is een uiterlijk-keuze). Later kan de Reiziger zelf een outfit (`traveller`) op de
-basislichamen worden, en dan is er nog één soort lichaam.
+Beide blijven zoals ze zijn (keuzes van Martijn), met eigen bake en eigen kleding. Ze krijgen alleen
+haarverf (en de Avonturier huidverf). De Avonturierskleding kan later óók een outfit voor de
+Wanderer worden (fase 3), zodat Martijns referentie - een vrouw in die tuniek - er kan komen; dat is
+dan een kopie die op de basislichamen getrokken wordt, Link zelf blijft onaangeroerd.
 
 ### 8. Grootte en prestaties
 
 - Draw calls: gelijk (outfit en haar in dezelfde merge per ledemaatgroep).
-- Downloadgrootte: twee lichamen van ~13k driehoeken en een outfit per lichaam. De Avonturier is nu
-  33,5k driehoeken / 700 kB gzip. Verwacht ~1-1,5 MB gzip extra voor fase 1+2. Alles blijft
-  synchroon geïmporteerd ("Nothing is fetched at boot"); wordt het te veel, dan kunnen outfits die
-  niemand draagt later lui per outfit (zoals `LAZY`), maar niet in fase 1.
+- Downloadgrootte: twee lichamen van ~13k driehoeken plus outfits per lichaam. De Avonturier is nu
+  33,5k driehoeken / 700 kB gzip. Verwacht ~1-1,5 MB gzip extra. Alles blijft synchroon geïmporteerd
+  ("Nothing is fetched at boot"); wordt het te veel, dan kunnen outfits later lui (zoals `LAZY`).
 - Peers: elke peer bouwt zijn eigen rig (`createClassicAvatar`) zoals nu; geen verschil.
 
 ## Fasering
 
-1. **Basislichamen + huidige outfit als laag (man).** `build-bodies.py` met het mannelijke
-   basislichaam; zones; huid en haar als `tint`-delen; de Avonturier-outfit losgemaakt en op het
-   lichaam getrokken (gewichten via Data Transfer); `outfit`/`hair` in look, `lookOf`,
-   `normalizeAvatar`; HEAD = haar, hoedkleur in de hoedkiezer, Skin-fles terug. Controle: alle
-   clips in `/avatar-motion.html` (lopen, rennen, sprinten, springen, zwemmen, watertrappen,
-   graven, klimmen, paard, sterven) naast de huidige Avonturier.
-2. **De vrouw.** Het vrouwelijke basislichaam, `sex` in look en inventory (keuze rechts), de
-   Avonturier-outfit op haar getrokken; het paard (`horsebackOf`) en de ladder (`CLIMB_CLIP_LIFT`)
-   per lichaam nagemeten. Screenshots naast Martijns referentie.
-3. **Meer outfits.** Peasant en Ranger uit de gratis Quaternius-set (al per lichaam gefit), daarna
-   een pak (`suit`): zelf in Blender op het referentielichaam, of de *Noble* uit de betaalde set.
+1. **Haar- en huidverf + basislichamen met een eerste outfit.** HEAD = haar en hoedkleur in de
+   hoedkiezer (alle lichamen), Avonturier-haar en -huid verfbaar. `build-bodies.py`: het mannelijke
+   en vrouwelijke basislichaam uit Quaternius (zones, huid en haar als `tint`-delen) met de gratis
+   **Peasant**-outfit, die Quaternius al per lichaam gefit heeft. `body`/`outfit`/`hair` in look,
+   `lookOf`, `normalizeAvatar`; Wanderer bovenaan en man/vrouw rechts in de inventory. Controle: alle
+   clips in `/avatar-motion.html` (lopen, rennen, sprinten, springen, zwemmen, watertrappen, graven,
+   klimmen, paard, sterven) per lichaam; screenshots naast Martijns referentie.
+2. **Ranger** als tweede outfit; het paard (`horsebackOf`) en de ladder (`CLIMB_CLIP_LIFT`) per
+   lichaam nagemeten.
+3. **Eigen outfits**: de Avonturierskleding op de basislichamen (refit, gewichten via Data Transfer),
+   daarna een pak (`suit`), zelf in Blender of de *Noble* uit de betaalde set.
 
 Elke fase is een patch, met een redeploy van de open zee voor de anderen.
 
@@ -213,26 +215,30 @@ Elke fase is een patch, met een redeploy van de open zee voor de anderen.
   ouder.
 - `tests/inventory.test.mjs`: elke swatch-rij (ook `hair`) bij precies één knop, elke outfit-tegel
   rendert op elk lichaam.
-- De zee: `lookOf` laat `sex`/`outfit`/`hair` door; een look zonder ze wordt de mannelijke
-  Avonturier in de standaard-outfit (oude pagina/oude zee).
-- `tests/models.test.mjs`-achtige check op de nieuwe bake (deterministisch: twee keer bakken =
-  dezelfde bytes).
+- De zee: `lookOf` laat `body`/`outfit`/`hair` door; een look zonder ze wordt de Avonturier (oude
+  pagina/oude zee).
+- Deterministische bake: twee keer bakken = dezelfde bytes.
 
-## Vragen aan Martijn (via de coördinator)
+## Besluiten (7 oktober 2026, Martijn)
 
-1. **Bron van de basislichamen**: Quaternius Universal Base Characters (aanbevolen) / MakeHuman /
-   het Link-model bewerken.
-2. **Wat er met de huidige Avonturier gebeurt**: zijn kleding wordt een outfit op de nieuwe lichamen
-   en zijn Link-gezicht verdwijnt (aanbevolen) / hij blijft als vast lichaam naast de nieuwe.
-3. **Hoedkleur** nu HEAD het haar verft: rij kleuren in de hoedkiezer (aanbevolen) / de hoed volgt
-   het haar / hoeden een vaste kleur.
-4. **De Reiziger**: blijft zoals hij is met alleen haarverf (aanbevolen) / wordt ook een outfit op de
-   basislichamen in fase 3.
+1. **Bron**: Quaternius Universal Base Characters + Modular Character Outfits - Fantasy (CC0).
+2. **Link blijft** als vast lichaam met eigen kleding naast de nieuwe basislichamen (niet de
+   aanbeveling).
+3. **Hoedkleur** in de hoedkiezer.
+4. **De Reiziger blijft** zoals hij is, met alleen haarverf.
+5. De chip mag de gratis zips downloaden.
 
-En een handeling: de Quaternius-zips zijn gratis ("name your own price", 0 kan) maar een download
-vraagt een klik op itch.io; Martijn haalt ze binnen (of geeft toestemming), de bestanden komen in
-`assets/bodies/source/` (CC0).
+## Bronbestanden
+
+- https://quaternius.itch.io/universal-base-characters - `Universal Base Characters[Standard].zip`
+  (122 MB, gratis).
+- https://quaternius.itch.io/modular-character-outfits-fantasy -
+  `Modular Character Outfits - Fantasy[Standard].zip` (280 MB, gratis: Peasant en Ranger).
+- De zips staan **buiten git** in `D:\Promptholm\sources\quaternius\`. In de repo komt alleen wat de
+  bake leest (de twee lichamen, de gebruikte kapsels, de gebruikte outfit-onderdelen) in
+  `assets/bodies/source/`, met `assets/bodies/CREDITS.md` (CC0, Quaternius, de links, en wat er
+  veranderd is) - zoals `assets/adventurer/source-link.glb`.
 
 ## Status
 
-Plan, 7 oktober 2026. Nog niets gebouwd; wacht op de keuzes hierboven.
+Plan, 7 oktober 2026. Besluiten genomen; fase 1 in aanbouw.
