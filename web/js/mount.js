@@ -42,8 +42,9 @@ export const MOUNT_HOP = 3.6;
 export const MOUNT_GRAVITY = 12.5;
 // The probes: a horse is 0.82 long and the bicycle 0.4, so the middle alone let the head go
 // through a wall. The chest is tested ahead of the middle and, backing up, the rump behind it -
-// stable.js's HORSE_CLEAR, "half a horse, nose to rump, and a little".
-export const MOUNT_NOSE = 0.32;
+// stable.js's HORSE_CLEAR, "half a horse, nose to rump, and a little". Moved out 0.1 with the
+// longer neck (scripts/horse-model.py NECK_REACH), so the muzzle stands as far off a wall as before.
+export const MOUNT_NOSE = 0.42;
 export const MOUNT_RUMP = 0.28;
 const TURN_BITE = 0.1;
 const SCRAPE_DRAG = 6.0;
