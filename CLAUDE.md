@@ -1662,11 +1662,37 @@ which: `avatar.js` builds from it, `classic-avatar.js` works each body's pivots 
 (`bodyOf`), and `createClassicAvatar` swaps the whole rig into the same parent when a look
 changes body - read `rig.object`, `rig.handAttach`, `rig.hipY`, `rig.eye` off the rig, never
 keep them. `scripts/build-adventurer.py` rebuilds everything from the committed CC-BY GLB
-(`assets/adventurer/CREDITS.md`): texture sampled into per-corner `colors` (the body is not
-dyed, so the inventory hides Skin and Outfit for it - `dyeApplies`), ears and ponytail reshaped
+(`assets/adventurer/CREDITS.md`): texture sampled into per-corner `colors` (his cloth is not
+dyed, so the inventory hides the Outfit's dye for him - `dyeApplies`; his hair and skin are
+`tint` parts, below), ears and ponytail reshaped
 through the source's own bones, and the Traveller's gear refitted by measurement under the same
 names; hand items stay the Traveller's own in either hand. The sea passes `character` as a slug
 (`lookOf`); a sea or page from before it draws the Traveller.
+**A third body, the Wanderer, is a body in underwear with clothes over it** ([Plans/basislichamen-en-outfits.md](Plans/basislichamen-en-outfits.md)).
+A man and a woman (`CHARACTERS` ids `wanderer-male`/`-female`) from Quaternius's CC0 kit
+(`assets/bodies/`, baked by `scripts/build-bodies.py` into `web/js/bodies-mesh.js` and
+`assets/bodies/island-wanderer-<sex>.blend` - body, hairstyles and every garment as separate rigged
+objects, the base to model a new garment on), on the Adventurer's skeleton so every Mixamo clip plays. A look says
+`character: 'adventurer', body: 'male'|'female'` - never a third character id, which an older page
+would draw as the Traveller - so **read a body with `characterOf(spec)` / `bodyKey(spec)`, never
+`characterOf(spec.character)`**; `rig.character` is the body id, and "rides a horse" is
+`!== 'traveller'`. **Clothes are garments, one per slot** (`GARMENTS`: shirt, trousers, shoes, straps;
+`spec.wear = { shirt: 'peasant' | null, ... }`), parts with `variant: 'garment:<set>-<slot>'`, picked in
+CHEST / LEGS / FEET (the slot's armour a tile in the same picker) and ARMS; an **outfit** is a set worn
+*over* the clothes, hiding them (a costume, a suit - Martijn's definition), and there are none yet, so
+OUTFIT is greyed on the Wanderer. The skin a garment covers is a per-part `hide: { <garment>: [from,
+to, ...] }` triangle list; `buildFigure` leaves out the union for what is worn - worked out in the bake
+by casting along each skin vertex's normal for the cloth (`COVER_IN` is large because the kit's
+outfits fit its slimmer Regular builds). A Wanderer's legs are skinned to the torso too (`LEG_TORSO`,
+indices 4.. after the runtime's toe, bound only when a body's leg parts carry `skinIndices`), a shirt
+is wholly the torso's and trousers wholly the legs', and the crotch is drawn in both legs: each of
+those was a seam that tore open in a stride. Hairstyles are `hair:<id>` parts (`spec.hairStyle`,
+`HAIR_STYLES`, chosen in the hair popover over the colours). Hair (`spec.hair`,
+the head slot's dye; the hat's colour is in the hat picker, `pickerDye`) and skin are **`tint`
+parts** on every body: corner colours divided by a base and multiplied by the look's colour in
+`buildFigure` - the Adventurer's base is the look's default (so he draws as before), the Wanderer's
+the kit map's own mean. The sea passes `body`, `wear`, `hairStyle`, `hair` in `lookOf`; an older sea
+drops them and everybody sees the Adventurer. Gear is the Adventurer's refitted (`refit_gear`).
 The Adventurer's arm bake also carries `skinIndices`/`skinWeights`: limb bones 0..2,
 shared torso/head bones 3..7 and fifteen finger bones 8..22. `ADVENTURER_FINGERS` gives
 their pivots, parents, curl axes and relaxed/grip angles. Preserve these source weights:

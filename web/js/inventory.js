@@ -4,7 +4,7 @@
 // exactly one dye button, which is how a piece added to DEFAULT_AVATAR tomorrow cannot
 // quietly miss the screen. It cannot live in avatar.js either: it needs classic-avatar.js's
 // part lists, and that file imports avatar.js.
-import { PLAYER_HAT_SHAPES, HAND_ITEMS, CHARACTERS, avatarPlayerComponentGeometry, characterOf } from './avatar.js';
+import { PLAYER_HAT_SHAPES, HAND_ITEMS, CHARACTERS, GARMENT_SETS, HAIR_STYLES, avatarPlayerComponentGeometry, characterOf, normalizeAvatar } from './avatar.js';
 import { PIECE_PARTS, HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
 
 const SETTLER_PARTS = characterOf().parts;
@@ -14,7 +14,7 @@ const PART_SLOT = Object.fromEntries(CHARACTERS.flatMap((c) => c.parts.map((p) =
 // The four spec fields that are colours - the same four SWATCHES has rows for. Every other
 // slot a part can carry (steel, brass, pack...) is fixed, so a part on one of those never
 // goes stale when the wearer changes their mind.
-const DYEABLE = ['skin', 'tunic', 'trim', 'hat'];
+const DYEABLE = ['skin', 'tunic', 'trim', 'hat', 'hair'];
 
 // Hat parts are baked under variant === hatShape (see buildFigure in avatar.js).
 export const hatParts = (shape) => SETTLER_PARTS.filter((p) => p.variant === shape).map((p) => p.name);
@@ -29,18 +29,36 @@ const TUNIC_PARTS = SETTLER_PARTS.filter((p) => p.group === 'outfit' || (p.group
 const BODY_PARTS = Object.fromEntries(CHARACTERS.map(({ id, parts }) => {
   const body = parts.filter((p) => p.variant === 'body');
   const names = (pred) => body.filter(pred).map((p) => p.name);
-  const hand = (side) => names((p) => p.group === side && /hand|thumb|glove/i.test(p.name));
+  // A Wanderer's hand is no part of its own: its arm's skin, all of it, stands for the empty hand.
+  const hand = (side) => {
+    const own = names((p) => p.group === side && /hand|thumb|glove/i.test(p.name));
+    return own.length ? own : names((p) => p.group === side && p.slot === 'skin');
+  };
   return [id, {
-    head: names((p) => p.group === 'head'),
+    // Every hairstyle's parts with the head: buildFigure draws only the style the look wears.
+    head: [...names((p) => p.group === 'head'), ...parts.filter((p) => p.variant.startsWith('hair:')).map((p) => p.name)],
     tunic: id === 'traveller' ? TUNIC_PARTS
       : names((p) => p.group === 'outfit' || (p.group?.endsWith('Arm') && !/skin|glove/i.test(p.name))),
     lefthand: hand('leftArm'), righthand: hand('rightArm'),
+    // A Wanderer's clothes, one list per garment (`<set>-<slot>`), and its hairstyles' own parts.
+    garments: Object.fromEntries(parts.filter((p) => p.variant.startsWith('garment:'))
+      .map((p) => p.variant.slice(8)).filter((g, i, all) => all.indexOf(g) === i)
+      .map((g) => [g, parts.filter((p) => p.variant === `garment:${g}`).map((p) => p.name)])),
+    underwear: names((p) => p.slot === 'underwear'),
+    hair: Object.fromEntries(HAIR_STYLES.map(({ id: h }) => [h, parts.filter((p) => p.variant === `hair:${h}`).map((p) => p.name)])),
     // Which colour slots any of this body's parts read: a dye nothing reads (the Adventurer's
     // skin and cloth are sampled from its texture, not dyed) is hidden while it is worn.
     dyes: new Set(parts.map((p) => p.slot)),
   }];
 }));
-export const dyeApplies = (dye, character) => BODY_PARTS[characterOf(character).id].dyes.has(dye);
+// `who` is a look, or a body's id (player-bodies.js CHARACTERS).
+export const dyeApplies = (dye, who) => BODY_PARTS[characterOf(who).id].dyes.has(dye);
+// A look worn on body `id` (a CHARACTERS id), the rest of it as it is: what an icon of another body
+// renders with. A Wanderer is the Adventurer with a `body` (player-bodies.js bodyKey).
+export function lookOn(spec, id) {
+  const c = characterOf(id);
+  return normalizeAvatar(c.wanderer ? { ...spec, character: 'adventurer', body: c.sex } : { ...spec, character: c.id, body: null });
+}
 export const NO_ITEM = { id: '', name: 'Empty' };   // short: a tile's label is one line wide
 
 // A held item lies diagonal in its slot the way an RPG icon does, rather than standing on
@@ -54,13 +72,22 @@ const ITEM_POSE = { sword: [0, 0, -0.55], hammer: [0, 0, -0.55], parasol: [0, 0,
 // spec itself; `dye` is the SWATCHES part the slot's dye button paints; `parts` (or `ghost`,
 // for a slot with nothing in it) is what the icon renders; `options` are the picker's tiles.
 export const INVENTORY_SLOTS = [
-  { id: 'head', side: 'left', label: 'Head', kind: 'pick', field: 'hatShape', options: PLAYER_HAT_SHAPES, dye: 'hat' },
-  { id: 'chest', side: 'left', label: 'Chest', kind: 'toggle', equip: 'chestplate', parts: PIECE_PARTS.chestplate },
-  { id: 'legs', side: 'left', label: 'Legs', kind: 'toggle', equip: 'leggings', parts: PIECE_PARTS.leggings },
+  // The head's dye is the hair (Plans/basislichamen-en-outfits.md); a hat's colour is chosen in the
+  // hat picker itself (`pickerDye`), under the hats.
+  { id: 'head', side: 'left', label: 'Head', kind: 'pick', field: 'hatShape', options: PLAYER_HAT_SHAPES, dye: 'hair', pickerDye: 'hat' },
+  // On a Wanderer CHEST, LEGS and FEET are its clothes (`garment`: the shirt, the trousers, the
+  // shoes), picked from the sets that have one, and the armour that was the slot's toggle is a tile in
+  // that picker; ARMS is its arm straps. On the other two bodies they are the toggles they were and
+  // ARMS has nothing (Plans/basislichamen-en-outfits.md, Martijn's choice of 7 October 2026).
+  { id: 'chest', side: 'left', label: 'Chest', kind: 'toggle', equip: 'chestplate', parts: PIECE_PARTS.chestplate, garment: 'shirt' },
+  { id: 'arms', side: 'left', label: 'Arms', kind: 'garment', garment: 'straps' },
+  { id: 'legs', side: 'left', label: 'Legs', kind: 'toggle', equip: 'leggings', parts: PIECE_PARTS.leggings, garment: 'trousers' },
   { id: 'lefthand', side: 'left', label: 'Left hand', kind: 'pick', equip: 'leftHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Left hand', 'Left thumb'] },
   { id: 'back', side: 'right', label: 'Back', kind: 'toggle', equip: 'backpack', parts: PIECE_PARTS.backpack },
+  // The Traveller's shirt colour. On a Wanderer the Outfit is a set worn over the clothes, hiding
+  // them (a costume, a suit); there are none yet.
   { id: 'tunic', side: 'right', label: 'Outfit', kind: 'dye', dye: 'tunic', parts: TUNIC_PARTS },
-  { id: 'feet', side: 'right', label: 'Feet', kind: 'toggle', equip: 'boots', parts: PIECE_PARTS.boots },
+  { id: 'feet', side: 'right', label: 'Feet', kind: 'toggle', equip: 'boots', parts: PIECE_PARTS.boots, garment: 'shoes' },
   { id: 'righthand', side: 'right', label: 'Right hand', kind: 'pick', equip: 'rightHandItem', options: [NO_ITEM, ...HAND_ITEMS], ghost: ['Right hand', 'Right thumb'] },
 ];
 // The two flasks at the foot of the alcove, where an RPG keeps its potions: the dyes that
@@ -88,14 +115,48 @@ export function optionIcon(slot, optionId, character) {
 
 // A body's portrait for the inventory's choice of character: the bare head - the whole figure
 // in a well that size was a matchstick, and a face is what tells the two apart.
+// `character` is a CHARACTERS id; the inventory's Wanderer portrait passes the body it would be.
 export function characterIcon(character) {
   const c = characterOf(character).id;
   return { id: `character:${c}`, parts: BODY_PARTS[c].head, character: c };
 }
+// Whether a slot is a clothes picker on this body: CHEST, ARMS, LEGS and FEET on a Wanderer.
+export const slotPicks = (slot, spec) => slot.kind === 'pick' || (!!slot.garment && !!characterOf(spec).wanderer);
+// Whether a slot has anything for this body at all: ARMS is the Wanderer's only, and so is an
+// Outfit that is a set rather than a shirt colour (there are none yet).
+export const slotOffers = (slot, spec) => {
+  const w = !!characterOf(spec).wanderer;
+  if (slot.kind === 'garment') return w;
+  if (slot.id === 'tunic' && w) return false;
+  return true;
+};
+// One garment's tile: `set` in `slot`, or nothing there (the underwear's tile).
+export function garmentIcon(slot, set, character) {
+  const c = characterOf(character).id, own = BODY_PARTS[c];
+  const parts = set ? own.garments[`${set}-${slot}`] || [] : own.underwear;
+  return { id: `${c}:garment:${slot}:${set || 'none'}`, parts, character: c, wear: { [slot]: set } };
+}
+// A garment slot's choices on this body: each set that has a piece for it, then nothing.
+export function garmentOptions(garment, character) {
+  const own = BODY_PARTS[characterOf(character).id];
+  return [...GARMENT_SETS.filter((s) => own.garments[`${s.id}-${garment}`]), { id: null, name: 'None' }];
+}
+// A hairstyle's tile: the head with that hair.
+export function hairIcon(style, character) {
+  const c = characterOf(character).id, own = BODY_PARTS[c];
+  return { id: `${c}:hair:${style}`, parts: [...own.head.filter((n) => !/hair /.test(n)), ...(own.hair[style] || [])], character: c, hairStyle: style };
+}
+// The hairstyles this body has, then bald.
+export const hairStyles = (character) => {
+  const own = BODY_PARTS[characterOf(character).id];
+  return HAIR_STYLES.filter((h) => h.id === 'none' || own.hair[h.id]?.length);
+};
 
 // What a slot draws right now.
 export function slotIcon(slot, spec) {
-  const c = characterOf(spec.character).id;
+  const c = characterOf(spec).id;
+  if (slot.garment && characterOf(c).wanderer) return garmentIcon(slot.garment, spec.wear?.[slot.garment], c);
+  if (slot.kind === 'garment') return { id: `${c}:${slot.id}:empty`, parts: BODY_PARTS[c].lefthand, character: c };
   if (slot.field) return optionIcon(slot, spec[slot.field], c);
   if (slot.options) return optionIcon(slot, spec.equip?.[slot.equip] || '', c);
   const parts = slot.id === 'tunic' ? BODY_PARTS[c].tunic : slot.parts;
@@ -120,6 +181,9 @@ export function iconKey(icon, spec) {
 // here: without that, a tile for a hat you are not wearing has no parts to merge at all.
 export function iconGeometry(icon, spec) {
   if (icon.item) return heldItemGeometry(icon.item, spec);
-  const on = icon.character ? { ...spec, character: icon.character } : spec;
+  let on = icon.character ? lookOn(spec, icon.character) : spec;
+  // A garment or the clothes drawn as worn: every slot empty but the icon's own.
+  if (icon.wear) on = { ...on, wear: { shirt: null, trousers: null, shoes: null, straps: null, ...icon.wear } };
+  if (icon.hairStyle) on = { ...on, hairStyle: icon.hairStyle };
   return avatarPlayerComponentGeometry(icon.shape ? { ...on, hatShape: icon.shape } : on, icon.parts);
 }

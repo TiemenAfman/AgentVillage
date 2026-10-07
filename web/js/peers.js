@@ -479,7 +479,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const riding = !!(f & FLAG_RIDING) && !swimming && !p.room;
       // What they ride is read off the body they wear, as their own page decides it: a horse
       // under an Adventurer, the bicycle under anybody else - no second bit on the wire.
-      const onHorse = riding && p.avatar.character === 'adventurer';
+      const onHorse = riding && p.avatar.character !== 'traveller';
       if (!onHorse) p.gallop.seen = false;
       if (onHorse) {
         mounted(p, x, base, z, yaw, dt, airborne);

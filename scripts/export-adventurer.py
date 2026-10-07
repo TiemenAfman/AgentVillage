@@ -23,6 +23,8 @@ for o in sorted(bpy.data.objects, key=lambda x: x.name):
     attr = mesh.color_attributes.get('Colour')
     if attr:
         p['colors'] = []
+    if o.get('avatar_tint'):
+        p['tint'] = True
     group = o.get('avatar_skin')
     names = {g.index: g.name for g in o.vertex_groups}
     if group:

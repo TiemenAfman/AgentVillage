@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SETTLER_EYE_Y } from './settler-mesh.js';
-import { CHARACTERS, DEFAULT_CHARACTER, PART_COLORS, characterId, characterOf } from './player-bodies.js';
-export { CHARACTERS, DEFAULT_CHARACTER, characterId, characterOf };
+import { CHARACTERS, CHARACTER_PICKS, DEFAULT_CHARACTER, PART_COLORS, SEXES, GARMENTS, GARMENT_SETS, DEFAULT_WEAR, HAIR_STYLES, characterId, characterOf, bodyKey } from './player-bodies.js';
+export { CHARACTERS, CHARACTER_PICKS, DEFAULT_CHARACTER, SEXES, GARMENTS, GARMENT_SETS, DEFAULT_WEAR, HAIR_STYLES, characterId, characterOf, bodyKey };
 // The wardrobe moved to shared/ so the walk can ask how tall somebody is without
 // dragging three.js into Node - see the header of shared/palette.mjs. Re-exported
 // because composing an avatar is this file's subject and everyone asks here.
@@ -22,7 +22,7 @@ const KEY = 'promptholm.avatar';
 export const PLAYER_SCALE = 1.12;
 // The Traveller's; a body's own is eyeOf(spec).
 export const PLAYER_EYE = SETTLER_EYE_Y * PLAYER_SCALE;
-export const eyeOf = (spec) => characterOf(spec?.character).eyeY * PLAYER_SCALE;
+export const eyeOf = (spec) => characterOf(spec || DEFAULT_CHARACTER).eyeY * PLAYER_SCALE;
 
 // The hats are the same handful the settlers wear, freed from their styles: any of them
 // can sit on any head now. 'wide' is the brim the player has always worn, which is why
@@ -36,6 +36,14 @@ export const DEFAULT_AVATAR = {
   // Which body (web/js/player-bodies.js). A look saved before there was a choice has none, and
   // opens on the Traveller it was made on.
   character: DEFAULT_CHARACTER,
+  // A Wanderer's body (player-bodies.js SEXES), or null for the body `character` names; what it
+  // wears over its underwear, a set or null per garment slot (GARMENTS); and its hairstyle
+  // (HAIR_STYLES, null for the body's own first). Plans/basislichamen-en-outfits.md.
+  body: null, wear: DEFAULT_WEAR, hairStyle: null,
+  // The hair's colour: the Traveller's own brown, which is also what every other body's hair is
+  // baked against (scripts/build-bodies.py DEFAULT_HAIR), so a look that never chose one is
+  // drawn as it always was.
+  hair: PART_COLORS.hair,
   skin: 0xf1c9a5, tunic: 0xf0e2c8, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'wide',
   // Equipment: a real on/off state (Plans/uitrusting-en-vasthouden.md), not something
   // derived from the rest of the look. The backpack defaults on, so nobody's look changes
@@ -86,8 +94,17 @@ export function normalizeAvatar(spec = {}) {
   const d = DEFAULT_AVATAR;
   const num = (v, dv) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) & 0xffffff : dv);
   const shape = PLAYER_HAT_SHAPES.some((h) => h.id === spec.hatShape) ? spec.hatShape : d.hatShape;
+  const body = SEXES.includes(spec.body) ? spec.body : null;
   return {
-    character: characterId(spec.character),
+    // A Wanderer says it is the Adventurer, for whoever does not know `body` (player-bodies.js).
+    character: body ? 'adventurer' : characterId(spec.character),
+    body,
+    wear: Object.fromEntries(GARMENTS.map(({ id }) => {
+      const v = spec.wear && typeof spec.wear === 'object' ? spec.wear[id] : undefined;
+      return [id, v === null ? null : GARMENT_SETS.some((g) => g.id === v) ? v : DEFAULT_WEAR[id]];
+    })),
+    hairStyle: HAIR_STYLES.some((h) => h.id === spec.hairStyle) ? spec.hairStyle : null,
+    hair: num(spec.hair, d.hair),
     skin: num(spec.skin, d.skin),
     tunic: num(spec.tunic, d.tunic),
     trim: num(spec.trim, d.trim),
@@ -125,9 +142,27 @@ export function saveAvatar(spec) {
 // Which body you are is kept the moment it is picked, not only on Wear it: the rest of the look
 // is a fitting that Never mind may undo, but the body you last played is the one you expect to
 // find after a restart. Only `character` changes; the saved outfit stays as it was.
-export function saveCharacter(id) {
-  return saveAvatar({ ...loadAvatar(), character: characterId(id) });
+// `id` is one of CHARACTER_PICKS; a Wanderer keeps the body it had last, or `body` if given.
+export function saveCharacter(id, body = null) {
+  const was = loadAvatar();
+  if (id === 'wanderer') {
+    const sex = SEXES.includes(body) ? body : (was.body || lastBody() || 'female');
+    rememberBody(sex);
+    return saveAvatar({ ...was, character: 'adventurer', body: sex });
+  }
+  return saveAvatar({ ...was, character: characterId(id), body: null });
 }
+// Which Wanderer you were the last time you were one, so going back to the Wanderer from another
+// body does not change it. Per browser, like the look.
+const BODY_KEY = 'promptholm.avatar.body';
+function lastBody() {
+  try { const v = localStorage.getItem(BODY_KEY); return SEXES.includes(v) ? v : null; } catch { return null; }
+}
+function rememberBody(body) {
+  try { localStorage.setItem(BODY_KEY, body); } catch { /* the look still has it */ }
+}
+// Which of CHARACTER_PICKS a look is.
+export const pickOf = (spec) => (SEXES.includes(spec?.body) ? 'wanderer' : characterId(spec?.character));
 
 // The colour slots that light up at night - the torch's two flame cones, and nothing else.
 const GLOWING = new Set(['flame', 'ember']);
@@ -136,33 +171,48 @@ const GLOWING = new Set(['flame', 'ember']);
 // them into the same single vertex-coloured mesh used by the studio and walk mode.
 function buildFigure(spec, gear, include = null) {
   const s = normalizeAvatar(spec);
-  const parts = characterOf(s.character).parts.filter((p) => p.variant === 'body'
+  const c = characterOf(s);
+  // The garments worn (`garment:<set>-<slot>`) and the hairstyle (`hair:<id>`, the body's own first
+  // when it has no such style); the skin parts list what each garment hides (`hide`).
+  const worn = new Set(Object.entries(s.wear).filter(([, set]) => set).map(([slot, set]) => `${set}-${slot}`));
+  const style = c.hairStyles?.includes(s.hairStyle) || s.hairStyle === 'none' ? s.hairStyle : c.hair;
+  const parts = c.parts.filter((p) => p.variant === 'body' || p.variant === `hair:${style}`
+    || (p.variant.startsWith('garment:') && worn.has(p.variant.slice(8)))
     || (gear && p.variant === 'gear') || p.variant === s.hatShape
     // 'held' parts (the torch) are never part of an outfit, only drawn when named.
     || (include && p.variant === 'held'))
     .filter((part) => !include || include.has(part.name)).map((part) => {
     const g = new THREE.BufferGeometry();
-    const position = new Float32Array(part.positions);
+    // The skin an outfit covers is left out (scripts/build-bodies.py `hide`): no skin under cloth to
+    // poke through it when a limb bends.
+    const hidden = part.hide ? Object.keys(part.hide).filter((g) => worn.has(g)) : [];
+    const keep = hidden.length ? keptTriangles(hidden.flatMap((g) => part.hide[g]), part.positions.length / 9) : null;
+    const pick = (array, per) => (keep ? pickCorners(array, per, keep) : array);
+    const position = new Float32Array(pick(part.positions, 3));
     const count = position.length / 3;
     const color = new THREE.Color(s[part.slot] ?? PART_COLORS[part.slot]);
-    // A body sampled from a texture (the Adventurer) carries its colour per corner and is
-    // not dyed; every wardrobe piece is one flat slot colour.
-    const colors = part.colors ? new Float32Array(part.colors) : new Float32Array(position.length);
+    // A body sampled from a texture (the Adventurer, the Wanderer) carries its colour per corner
+    // and is not dyed - unless it is a `tint` part (skin, hair), whose corners are the texture
+    // over the default colour, times the colour the look asks for. Every wardrobe piece is one
+    // flat slot colour.
+    const colors = part.colors ? new Float32Array(pick(part.colors, 3)) : new Float32Array(position.length);
     if (!part.colors) for (let i = 0; i < count; i++) color.toArray(colors, i * 3);
+    else if (part.tint) for (let i = 0; i < count * 3; i += 3) { colors[i] *= color.r; colors[i + 1] *= color.g; colors[i + 2] *= color.b; }
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));
     // Blender's corner normals preserve soft faces and intentional hard equipment edges.
-    if (part.normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(part.normals), 3));
+    if (part.normals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(pick(part.normals, 3)), 3));
     else g.computeVertexNormals();
     // Four skin slots per vertex, shared by every merged piece. Static pieces stay
     // on root bone zero; each limb uses its own three-bone Blender chain.
     const indices = new Uint16Array(count * 4), weights = new Float32Array(count * 4);
+    const skin = part.skin && pick(part.skin, 2);
     for (let i = 0; i < count; i++) {
       indices.set([0, 1, 2, 0], i * 4);
-      const bend = part.skin?.[i * 2] || 0, end = part.skin?.[i * 2 + 1] || 0;
+      const bend = skin?.[i * 2] || 0, end = skin?.[i * 2 + 1] || 0;
       weights.set([Math.max(0, 1 - bend - end), bend, end, 0], i * 4);
     }
-    if (part.skinIndices) indices.set(part.skinIndices);
-    if (part.skinWeights) weights.set(part.skinWeights);
+    if (part.skinIndices) indices.set(pick(part.skinIndices, 4));
+    if (part.skinWeights) weights.set(pick(part.skinWeights, 4));
     g.setAttribute('skinIndex', new THREE.BufferAttribute(indices, 4));
     g.setAttribute('skinWeight', new THREE.BufferAttribute(weights, 4));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -175,6 +225,22 @@ function buildFigure(spec, gear, include = null) {
   const geometry = mergeGeometries(parts, false);
   parts.forEach((part) => part.dispose());
   return geometry;
+}
+
+// The triangles a hide list keeps: `runs` is [from, to, from, to...] in triangles.
+function keptTriangles(runs, triangles) {
+  const keep = new Uint8Array(triangles).fill(1);
+  for (let i = 0; i < runs.length; i += 2) keep.fill(0, runs[i], runs[i + 1]);
+  return keep;
+}
+// `per` values a corner, three corners a triangle.
+function pickCorners(array, per, keep) {
+  const out = [];
+  for (let t = 0; t < keep.length; t++) {
+    if (!keep[t]) continue;
+    for (let k = t * 3 * per; k < (t + 1) * 3 * per; k++) out.push(array[k]);
+  }
+  return out;
 }
 
 // Feet at zero; forward is +Z. The unscaled figure is also available without gear.

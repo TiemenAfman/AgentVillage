@@ -239,6 +239,58 @@ Elke fase is een patch, met een redeploy van de open zee voor de anderen.
   `assets/bodies/source/`, met `assets/bodies/CREDITS.md` (CC0, Quaternius, de links, en wat er
   veranderd is) - zoals `assets/adventurer/source-link.glb`.
 
+## Bijsturing tijdens het bouwen (7 oktober 2026, Martijn in de chip)
+
+- **Kleding los baken** ("broek shirt schoenen armstraps"), ook als basis voor Blender. Elk kledingstuk is
+  een eigen stuk: `garment:<set>-<slot>` met de slots shirt, broek, schoenen en armstraps. In
+  `assets/bodies/island-wanderer-<sex>.blend` staat elk kledingstuk als los, gerigd object op de
+  rustpose met hangende armen.
+- **Een outfit overschrijft de kleding**: "een set wat bij elkaar hoort wat je in 1 keer equipt"
+  (een Iron Man-pak, een piratenkostuum). De kleding verdwijnt eronder. Een outfit is dus een laag
+  *boven* de kleding, geen kledingstuk; er zijn er nog geen.
+- **Kledingslots** (zijn keuze uit drie): CHEST = shirt, LEGS = broek, FEET = schoenen worden kiezers,
+  met het harnasstuk als tegel in diezelfde kiezer. De armstraps krijgen een eigen slot ARMS, en OUTFIT
+  blijft voor de overschrijvende set.
+- **Kapsel is een keuze**: in de haar-popover onder HEAD staan de kapsels boven de kleuren (lang,
+  knotjes, scheiding, kort, kaal).
+- **"Doorzichtig" en "beweegt raar"** bij broek en shirt: het waren naden. Alles onder de heuplijn hing
+  aan het been, alles erboven aan de romp, en het kruis hoorde bij één dij. Nu:
+  - de benen zijn ook aan de romp-botten gewogen (`LEG_TORSO`);
+  - een shirt hangt helemaal aan de romp, de broek helemaal aan de benen;
+  - het gewicht van de andere dij loopt via het bekken;
+  - de kruisdriehoeken staan in beide benen.
+
 ## Status
 
-Plan, 7 oktober 2026. Besluiten genomen; fase 1 in aanbouw.
+**Fase 1 gebouwd** (7 oktober 2026, branch `claude/musing-leakey-c0431c`).
+
+- **Bron.** Martijn had beide gratis zips al op 17 september binnengehaald; ze staan nu buiten git in
+  `D:\Promptholm\sources\quaternius\`. Wat de bake leest staat in `assets/bodies/source/` (6,5 MB,
+  texturen op 1024), met `CREDITS.md`. In de gratis versie zitten alleen de *Superhero*-lichamen; de
+  outfits zijn voor de slankere *Regular*-lichamen gemaakt. Daarom zet de bake elk skelet op de botten
+  van het lichaam (dat trekt ook de mannelijke Peasant op maat), en telt stof tot 4 cm *onder* de
+  huid nog als bedekking (`COVER_IN`): anders staken de dijen door de broek.
+- **Bake.** `scripts/build-bodies.py` schrijft `web/js/bodies-mesh.js` rechtstreeks (geen .blend). De
+  armen gaan via de eigen gewichten van de kit 82° omlaag uit de T-pose. De huid onder de Peasant
+  wordt per driehoek verborgen (`hide`). De vrouw krijgt haar eigen handen in plaats van de handen
+  die de kit in haar mouwen heeft geschilderd. Het ondergoed is houtskoolgrijs. Hoeden, rugzak en
+  harnas zijn die van de Avonturier, opnieuw gepast. Haar en huid zijn `tint`-delen.
+- **De Avonturier** heeft nu ook verfbaar haar en verfbare huid (`tint`, gedeeld door de standaardkleur van de
+  look, dus bij de standaard ongewijzigd: de geometrie is byte-gelijk).
+- **Inventory.** Bovenaan Traveller | Adventurer | Wanderer, rechtsboven Man | Woman (alleen actief
+  bij de Wanderer). HEAD verft het haar en kiest het kapsel; de hoedkleur staat onder de hoeden in de
+  hoedkiezer. De Skin-fles kleurt elk lichaam. Bij de Wanderer zijn CHEST, ARMS, LEGS en FEET de
+  kleding, en OUTFIT staat grijs (nog geen sets).
+- **Gecontroleerd** in `/avatar-motion.html` (die toont nu alle vier, `?rider=wanderer-female` zet haar
+  op het paard): lopen, rennen, klimmen en paard met de vrouw, en de inventory. Vergelijking met de
+  referentie: `wanderer-vrouw-vergelijking.jpg` op Martijns bureaublad.
+
+### Nog open
+
+- Het paard is nog niet voor de Wanderers zelf nagemeten: ze gebruiken de getallen van de Avonturier.
+  Dat geldt ook voor de ladderhandgrepen (`CLIMB_CLIP_LIFT`).
+- De randen van het ondergoed zijn hoekig, want de bake knipt het per driehoek uit de textuur.
+- In het kruis van de vrouwenbroek is bij een grote pas nog een haarlijn te zien.
+- De Ranger-stukken (gratis) als tweede kledingset. Daarna outfits als overschrijvende sets (een pak,
+  een piratenkostuum, eventueel de kleding van de Avonturier als set).
+- De module is groot: ~2 MB gzip, de helft daarvan zijn de opnieuw gepaste hoeden per lichaam.
