@@ -78,12 +78,23 @@ leeft van de zeeklok (houtkar, smid) blijft, want de lokale zee geeft die klok.
 ## Fasen
 
 1. ✅ Dit plan.
-2. `scripts/distill.mjs`: de sluiting kopiëren naar de doelmap, `DISTILLED.txt` erbij, `git init`.
-3. De slanke `serve.mjs` van het destillaat (en het zaaien van zijn thuis).
-4. De slanke `web/js/main.js` + `index.html`: opbouw uit de bestaande `main.js`, functie voor functie
-   overgenomen wat hierboven blijft, zonder iets van walk/kamers/zee-keuze.
-5. Proef in het browserpaneel: eiland staat, bewoners lopen, regisseur vliegt na de wachttijd, de
-   planner opent en een dry run komt terug, een nieuwe sessie wordt een huis.
+2. ✅ `scripts/distill.mjs`: de sluiting kopiëren naar de doelmap, `DISTILLED.txt` erbij; een tweede
+   run ruimt op wat de vorige kopieerde en niet meer nodig is.
+3. ✅ De slanke `serve.mjs` (~440 regels tegen 2111) en `start.mjs`, die het thuis zet vóór
+   `lib/paths.mjs` geïmporteerd wordt en het de eerste keer zaait.
+4. ✅ De slanke `web/js/main.js` (~3670 regels tegen 9751) + `web/js/watch-net.js` (een eigen,
+   kijk-alleen lijn naar de zee in plaats van `net.js`, dat aan lijf en spelers vastzit) + `index.html`.
+   Gesneden door `boot()`, `frame()`, de handlers, de vlootsync en de bewoners-router te herschrijven
+   en daarna alles weg te halen waar niets meer naar verwees (met ESLint `no-undef` als vangnet).
+5. ✅ Geproefd in het browserpaneel: het eiland staat, 196 bewoners komen van de lokale zee, de
+   regisseur pakt een shot ("The butcher at the counter"), de planner opent met zijn survey en een dry
+   run komt door de scanqueue terug, en een rescan komt via `/events` als nieuwe village binnen.
+
+Wat er overbleef: 242 bestanden in het destillaat; walk.js, interior.js, net.js, peers, quests,
+schatkaart, noclip-mode, zeebodem en eilandjes zitten er niet meer in. `ui.js` is de kopie van het
+eiland - het zoekt elke knop op id - dus wat niets doet is in `index.html` met CSS verborgen en krijgt
+van `main.js` lege handlers, in plaats van ui.js zelf te ontvlechten. Via `ui.js` (Settings → Debug)
+en `dance.js` komen `noclip.js` en `sound.js` nog als dood gewicht mee.
 
 ## Open
 
