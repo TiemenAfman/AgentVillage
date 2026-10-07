@@ -102,10 +102,13 @@ export function poseHorse(a) {
   for (let i=0;i<rig.legs.length;i++) {
     const leg=rig.legs[i];
     if (special) {
-      leg.upper.rotation.set(p.legs[i]||0,0,0);
+      // Dancing up on its hind legs (fauna.js HORSE_DANCE 'rear') a hind hoof steps up between
+      // the kicks: the thigh forward a little and the hock folded, the other leg standing.
+      const step=!leg.front&&p.rear>.1?(p.hindStep?.[i]||0):0;
+      leg.upper.rotation.set((p.legs[i]||0)-.35*step,0,0);
       // Reared, the hinds hang straight: stepDance lifts the body by exactly what a stiff leg
       // swung back by the lean puts under the floor, so a bent hock would stand it in the air.
-      leg.lower.rotation.set(leg.front?.8:p.rear>.1?0:-.8,0,0);
+      leg.lower.rotation.set(leg.front?.8:p.rear>.1?-.7*step:-.8,0,0);
       leg.hoof.rotation.set(0,0,0);
       continue;
     }

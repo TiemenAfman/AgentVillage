@@ -230,6 +230,8 @@ export function mountPose(r,{speed=0,rate=0,air=false,graze=false,dance=null}={}
   P.bodyY=I.bodyY*(1-r.go)+B.bodyY*r.go;
   P.bodyX=I.bodyX*(1-r.go)+B.bodyX*r.go;
   P.graze=(I.graze||0)*(1-r.go);
+  // Dancing up on its hind legs (fauna.js HORSE_DANCE) horse-rig.js poses the legs from these.
+  P.rear=(I.rear||0)*(1-r.go);P.hindStep=I.hindStep;
   r.lean=damp(r.lean,clamp(-rate*Math.abs(v)*.055,-.09,.09),6,step);
   P.bodyZ=I.bodyZ*(1-r.go)+r.lean;
   P.headX=I.headX*(1-r.go)+B.headX*r.go;

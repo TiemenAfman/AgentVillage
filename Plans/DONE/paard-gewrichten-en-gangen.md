@@ -142,7 +142,7 @@ Het stalpaard danste met stijve benen (een zwaai om de heup, door horse-rig.js v
 het met zijn hoeven: `HORSE_DANCE` in fauna.js, een move per frase van zestien tellen, ingefaded over
 de eerste tel - **pawen** (één voorhoef op tussen de kicks en erop neergestampt, met headbangen),
 een **piaffe** (de draf op de plaats uit de dressuur: de diagonalen om de tel op, het lijf omhoog
-tussen de kicks) en **wiegen** (heen en weer over twee tellen, de nek mee, een voorteen die tikt).
+tussen de kicks) **wiegen** (heen en weer over twee tellen, de nek mee, een voorteen die tikt) en **op de achterbenen** (een hele frase gesteigerd: de voorbenen pawen om de beurt in de lucht, een achterhoef stapt op tussen de kicks, het lijf veert en het hoofd knikt; horse-rig.js leest ).
 Elke hoef staat op elke kick, alles komt uit de tel alleen (twee schermen dansen gelijk), en op de
 drop steigert het zoals voorheen. In de bewegingsstudio is het de vierde stand van de knop Paard (op
 132 BPM, de rave's tempo). `tests/rave-stable.test.mjs`.

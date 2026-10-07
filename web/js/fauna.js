@@ -506,18 +506,21 @@ const REAR = 0.42;             // how far back a horse goes on its hind legs, in
 // The stable's horse on the castle's floor (Plans/DONE/rave-in-het-kasteel.md): a move a phrase of
 // sixteen beats, in this order, eased into over the phrase's first beat - pawing (one fore hoof
 // lifted between the kicks and stamped down on them, the headbang), a piaffe (dressage's trot on
-// the spot: the diagonals up in turn, a beat each, the body rising between the kicks) and a sway
-// (side to side over two beats, the neck swinging with it, a fore toe tapping). Every hoof is down
-// on every kick and every number is the count's alone, so two screens dance alike. Each move
+// the spot: the diagonals up in turn, a beat each, the body rising between the kicks), a sway
+// (side to side over two beats, the neck swinging with it, a fore toe tapping) and dancing up on
+// its hind legs (reared the whole phrase: the fores paw the air in turn, a hind hoof steps up
+// between the kicks, the body bounces and the head bobs). Every hoof it stands on is down on every
+// kick and every number is the count's alone, so two screens dance alike. Each move
 // gives the hooves as horse-rig.js takes them ({ z, y, flex }: forward, up, fetlock fold) and how
 // much nod, neck swing, sway and bounce goes with it. Up on its hind legs (the drop) the rear
 // takes over, as before.
-export const HORSE_DANCE = ['paw', 'piaffe', 'sway'];
+export const HORSE_DANCE = ['paw', 'piaffe', 'sway', 'rear'];
 const PHRASE = 16;
 const PIAFFE_PAIRS = [[0, 3], [1, 2]];   // fl with br, fr with bl
 function horseMove(name, beat, out) {
   const n = Math.floor(beat), u = beat - n, lift = Math.sin(Math.PI * u), turn = ((n % 2) + 2) % 2;
   const slow = Math.sin(Math.PI * beat / 2);
+  out.step0 = 0; out.step1 = 0; out.rear = name === 'rear' ? 1 : 0;
   for (let i = 0; i < 4; i++) { const h = out.hooves[i]; h.z = 0; h.y = 0; h.flex = 0; }
   if (name === 'piaffe') {
     for (const i of PIAFFE_PAIRS[turn]) {
@@ -525,6 +528,11 @@ function horseMove(name, beat, out) {
       h.y = (fore ? 0.07 : 0.045) * lift; h.z = (fore ? 0.025 : 0.015) * lift; h.flex = (fore ? 1.4 : 0.9) * lift;
     }
     out.nod = 0.35; out.swing = 0.1 * slow; out.sway = 0.02 * slow; out.bounce = 0.014 * lift;
+  } else if (name === 'rear') {
+    // Reared, horse-rig.js poses the legs itself (stepDance's swings and `hindStep`): no hooves here.
+    out.nod = 0.6; out.swing = 0.15 * slow; out.sway = 0.03 * slow; out.bounce = 0.012 * lift;
+    out.step0 = turn === 0 ? lift : 0; out.step1 = turn === 1 ? lift : 0;
+    return out;
   } else if (name === 'sway') {
     const h = out.hooves[turn];
     h.y = 0.045 * lift; h.flex = 0.4 * lift;
@@ -537,11 +545,21 @@ function horseMove(name, beat, out) {
   return out;
 }
 const moveA = { hooves: [0, 1, 2, 3].map(() => ({})) }, moveB = { hooves: [0, 1, 2, 3].map(() => ({})) };
+const danceAt = (k) => HORSE_DANCE[((k % HORSE_DANCE.length) + HORSE_DANCE.length) % HORSE_DANCE.length];
+// The phrase's move and the one before it, and how far into the new one (the first beat eases it in).
+function phraseOf(beat) {
+  const phrase = Math.floor(beat / PHRASE), t = Math.min(1, Math.max(0, beat - phrase * PHRASE));
+  // Before the first phrase there was no dance: the first move is not eased in from the last.
+  return { now: danceAt(phrase), was: danceAt(phrase > 0 ? phrase - 1 : phrase), w: t * t * (3 - 2 * t) };
+}
+// How far up its hind legs the dance wants the horse: stepDance eases `pose.rear` towards it.
+function horseRearing(beat) {
+  const { now, was, w } = phraseOf(beat);
+  return (now === 'rear' ? w : 0) + (was === 'rear' ? 1 - w : 0);
+}
 function horseDance(pose, beat, r, rise) {
-  const phrase = Math.floor(beat / PHRASE), into = beat - phrase * PHRASE;
-  const at = (k) => HORSE_DANCE[((k % HORSE_DANCE.length) + HORSE_DANCE.length) % HORSE_DANCE.length];
-  const t = Math.min(1, Math.max(0, into)), w = t * t * (3 - 2 * t);
-  const A = horseMove(at(phrase), beat, moveA), B = horseMove(at(phrase - 1), beat, moveB);
+  const { now, was, w } = phraseOf(beat);
+  const A = horseMove(now, beat, moveA), B = horseMove(was, beat, moveB);
   const mix = (k) => A[k] * w + B[k] * (1 - w), kick = Math.exp(-(beat - Math.floor(beat)) * 6);
   pose.danceHooves ||= [0, 1, 2, 3].map(() => ({ z: 0, y: 0, flex: 0, contact: true }));
   for (let i = 0; i < 4; i++) {
@@ -551,10 +569,13 @@ function horseDance(pose, beat, r, rise) {
     h.flex = (a.flex * w + b.flex * (1 - w)) * (1 - r);
     h.contact = h.y < 1e-4;
   }
-  pose.headX = (0.12 + 0.42 * kick * mix('nod')) * (1 - r) - 0.5 * r;
+  // Up on its hind legs the head is flung back - and in the dance it still bobs to the kick.
+  pose.headX = (0.12 + 0.42 * kick * mix('nod')) * (1 - r) - 0.5 * r + 0.18 * kick * mix('rear') * r;
+  pose.hindStep ||= [0, 0, 0, 0];
+  pose.hindStep[2] = mix('step0') * r; pose.hindStep[3] = mix('step1') * r;
   pose.headY = mix('swing') * (1 - r);
   pose.bodyZ = mix('sway') * (1 - r);
-  pose.bodyY = mix('bounce') * (1 - r) + Math.max(0, rise);
+  pose.bodyY = mix('bounce') * (1 - r * (1 - mix('rear'))) + Math.max(0, rise);
 }
 export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
   if (!pose) return pose;
@@ -571,7 +592,8 @@ export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
   pose.flying = false;
   pose.low = 0;
   pose.surge = 0;
-  pose.rear = damp(pose.rear, up ? 1 : 0, 5, step);
+  // The horse also goes up for a whole phrase of its own (HORSE_DANCE 'rear'), not only on the drop.
+  pose.rear = damp(pose.rear, up ? 1 : kind === 'horse' ? horseRearing(beat) : 0, 5, step);
   const r = pose.rear;
 
   if (K.legs === 4) {
