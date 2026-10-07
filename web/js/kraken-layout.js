@@ -160,8 +160,9 @@ export const KIT = {
   stools: { x0: -1.45, step: 0.725, n: 5, z: -5.45, y: B },
   // Its yard along z, up into the ridge. `nestR` is the crow's nest's round rail (mast.py NEST_R), `foot`
   // the half extents of what stands round its foot on the pit: the staved plinth across, and along the
-  // yard the feet of the two ladders up to the nest (mast.py ladders(), 0.46 out, 0.06 each side).
-  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P, nestR: 0.65, foot: { hx: 0.3, hz: 0.5 } },
+  // yard the feet of the two ladders up to the nest (mast.py ladders(), MAST_LADDER out, 0.06 each side),
+  // a hair short of their rungs, so that a walker stops about where a climber stands.
+  mast: { x: 0, z: -1.6, y: P, ry: Math.PI / 2, height: TOP - P, nest: U - P, nestR: 0.65, foot: { hx: 0.3, hz: 0.37 } },
   gunports: [{ x: -4.2 }, { x: -2.4 }, { x: 2.4 }],           // in the south wall, sill at F + 0.62
   jukebox: { x: -1.5, z: HALL.z1 - 0.13, y: G, ry: Math.PI },
   // The broken bow jutting out of the north gable over the bar (scripts/krakenkit/bow.py: 1.4 deep,
@@ -214,13 +215,19 @@ export const KIT = {
   jollyrogers: [{ x: 7.35, z: -4.5, y: U + 0.395 - 0.424, ry: -Math.PI / 2 }, { x: -3.3, z: HALL.z1 - 0.03, y: G + 1.625 - 0.424, ry: Math.PI }],
 };
 
-// The two ladders up the mast from the pit to the crow's nest (mast.py ladders(): their feet MAST_LADDER
-// out from the mast along its yard, either side, their heads up through a hatch in the nest's floor),
-// climbed as the hull's rope ladder outside is (walk.js setClimbs, interior.js): `lo` where you stand
-// at the foot, facing the mast, a body's CLIMB_OUT (shared/deck.mjs) off the rungs and clear of the
-// mast's foot (`KIT.mast.foot`); `hi` where you step off on the nest's planks, by the hatch, a body
-// clear of the mast. Turned into the hall by the kit's own `ry`, as the bake is.
-export const MAST_LADDER = 0.46;
+// The two ladders up the mast from the pit to the crow's nest (mast.py ladders(): plumb, their rungs
+// MAST_LADDER out from the mast along its yard, either side - mast.py LADDER_X, the one number the bake
+// and this share - and up through a hatch in the nest's floor), climbed as the hull's rope ladder
+// outside is (walk.js setClimbs, interior.js) and cut to the climb as it is: rungs RUNG_STEP apart from
+// the pit, rung 0 (shared/deck.mjs; tests/ladder-rungs.test.mjs measures the bake). `lo` where you
+// stand at the foot, facing the mast, MAST_FROM in front of the rungs - deck.mjs RUNG_FROM, where the
+// climb's hands and feet hold them, repeated because the bake's node side reads this module without a
+// loader - and clear of the mast's foot (`KIT.mast.foot`); `hi` where you step off on the nest's
+// planks, by the hatch, a body clear of the mast. Turned into the hall by the kit's own `ry`, as the
+// bake is. They are plumb because the clip climbs plumb: leaning from 0.46 out at the foot to 0.40 at
+// the hatch, the rungs drew away from the hands as the body rose.
+export const MAST_LADDER = 0.38;
+export const MAST_FROM = 0.13;
 // And the ladder up the mast's east face from the nest to the hatch in the ridge (HATCH): climbed too,
 // its head the way out onto the deck (`exit`, interior.js) - E at its foot still goes straight there.
 // Its foot a body's CLIMB_OUT off the rungs (pirate-tavern.js draws them at face + 0.03); its head a
@@ -231,7 +238,7 @@ export const MAST_CLIMBS = (() => {
   const at = (kx, y) => ({ x: m.x + kx * c, y, z: m.z - kx * s });
   return [1, -1].map((side) => ({
     name: side > 0 ? 'mast ladder' : 'mast side ladder',
-    lo: at(side * (MAST_LADDER + 0.16), m.y),
+    lo: at(side * (MAST_LADDER + MAST_FROM), m.y),
     hi: at(side * 0.32, m.y + m.nest),
   }));
 })().concat([{

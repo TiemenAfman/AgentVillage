@@ -1685,7 +1685,7 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 (`strokes`) gets walk.js's lean and none of the roll and nod the Traveller swims by (peers.js alike): over the
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
-clip is the `mixamo-clips` skill.
+clip is the `mixamo-clips` skill; fetching clips from mixamo.com in bulk (outside git) is the `mixamo-fetch` skill.
 **On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`),
 backwards going down and still while hanging; the Traveller reaches up procedurally (`climbReach`: one hand
 at a time from overhead to the chest). **The ladder is cut to the clip, not the clip to the ladder** (the
@@ -1700,7 +1700,10 @@ the clip's pace: 0.29 is 1.8 times its own (the keeper's pick). The arms are tur
 (`CLIMB_CLIP_LIFT`, per side: the Adventurer's shorter arms closed 1.6 cm over them), the Traveller's strokes
 bent by `CLIMB_REACH.ease` so a hold is a straight line, and his limbs follow the climb exactly after
 `LADDER_EASE` (damped, a hold slid). `tests/ladder-rungs.test.mjs` measures the rig's holds against the rungs.
-The Kraken's mast ladders (krakenkit `mast.py`, 0.075 and 0.085 apart, leaning) are not cut to it yet.
+The Kraken's two mast ladders are cut to it too: plumb at `MAST_LADDER` (kraken-layout.js, = mast.py
+`LADDER_X`), rungs from the pit, `mast.py` reading `RUNG_STEP` out of deck.mjs itself (a Blender script cannot
+import it), the climber `MAST_FROM` (= `RUNG_FROM`) before them. Known gap: the nest's hatches lie too close to
+the mast for a body to come up through them, so the top of the climb passes through the nest's planks.
 **Movements and looks of the avatar are shown and judged in `/avatar-motion.html`** (Klimmen: up, down
 or hanging, on a rope ladder or the Kraken's mast - the kit's own, loaded lazily - either body close up
 with Dichtbij), not on the island.

@@ -29,10 +29,12 @@ own joints towards the baked rotations. The plan is [Plans/tweede-avonturier.md]
 
 **Many at once:** `node scripts/mixamo-fetch.mjs anims Walking "Standing Idle"` (or `--query`,
 `--all`; `characters` for bodies with skin in T-pose) exports with exactly these settings on Y Bot
-through mixamo.com's web API, under the user's own token, into `D:\Mixamo\anims\y-bot\` - outside
-git, skipping what it already has, a `<name>.json` manifest beside each file. README.md, "Mixamo in
-bulk", says how the user gets the token; never type, paste or log one yourself. A fetched clip is
-not in the game until it is copied into `assets/mixamo/` as below.
+through mixamo.com's web API, under the user's own token, into `<out>/anims/y-bot/` (`MIXAMO_OUT`,
+default `D:\Mixamo`) - outside git, skipping what it already has, a `<name>.json` manifest beside
+each file. How to run it, the token and the variants are the project skill
+[mixamo-fetch](../mixamo-fetch/SKILL.md); README.md, "Mixamo in bulk", says how the user gets the
+token; never type, paste or log one yourself. A fetched clip is not in the game until it is copied
+into `assets/mixamo/` as below.
 
 ## 2. Add it
 
