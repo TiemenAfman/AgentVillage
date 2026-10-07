@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { swimPose, TREAD_SINK } from './diving.js';
+import { createMount, MOUNT_TOP } from './mount.js';
+import { createBuildingMaterial } from './buildings.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -22,8 +24,20 @@ const figures = CHARACTERS.map((c, i) => {
   const rig = createClassicAvatar(look, mat);
   const stand = new THREE.Group();stand.position.x = (i - (CHARACTERS.length - 1) / 2) * .34;
   stand.add(rig.object);carrier.add(stand);
-  return { id: c.id, rig, stand, distance: 0 };
+  return { id: c.id, rig, stand, x: stand.position.x, distance: 0 };
 });
+// On horseback (web/js/mount.js, Plans/paard-in-plaats-van-fiets.md): the Adventurer on the horse F
+// gives him on the island - the keeper's decision is that he is its only rider, so the Traveller
+// steps out of the picture meanwhile. Seated as walk.js seats him: the horse placed and posed
+// first, then the outer group (here `stand`, there `avatar`) on its saddle through its matrix and
+// turned with it, the rig told `horseback`. Paard again goes up a gait, at /demo's speeds.
+const HORSE_GAITS=[['stilstaan',0],['stap',1.2],['draf',3],['kanter',MOUNT_TOP],['galop',MOUNT_TOP*1.3]];
+// The island's own building material, as walk.js and /demo hand the horse: a baked part has no
+// normals of its own, and the smooth studio material drew it black.
+const horseMat=createBuildingMaterial();
+let horse=null, horseGait=1;
+const rider=figures.find(f=>f.id==='adventurer');
+const seatAt=new THREE.Vector3();
 const traveller = figures[0].rig;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 const track=new THREE.Group();scene.add(track);
@@ -46,11 +60,14 @@ let close=-1;
 document.querySelector('#motion-close').onclick=e=>{close=close+1<figures.length?close+1:-1;e.target.textContent=close<0?'Dichtbij':CHARACTERS[close].name;};
 document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time;};
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
+const horseNote=()=>{const[name,speed]=HORSE_GAITS[horseGait];return`Paard · ${name}${speed?` op ${speed.toFixed(1)} per seconde`:''} · alleen de Avonturier rijdt (F); nog eens Paard is een gang hoger`;};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
+  if(button.dataset.gait==='horse'&&mode==='horse')horseGait=(horseGait+1)%HORSE_GAITS.length;
+  if(button.dataset.gait==='horse')button.textContent=`Paard · ${HORSE_GAITS[horseGait][0]}`;
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
@@ -64,12 +81,28 @@ function tick(dt){
   time+=dt;
   // walk.js's swimming beat: quick in the stroke, slow treading water.
   bob+=dt*(mode==='swim'?6.5:1.4);
+  const riding=mode==='horse'&&!!(horse||(horse=createMount({scene,material:horseMat,seed:'motion:horse'})));
+  if(horse)horse.visible=riding;
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
   // the one looked at closely, else the two's middle.
   for(const f of figures){
     const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
+    f.stand.visible=!riding||f===rider;
+    if(riding){
+      if(f!==rider)continue;
+      const speed=HORSE_GAITS[horseGait][1];
+      f.distance+=speed*dt;
+      horse.place(0,0,f.distance,0);
+      horse.pose({speed},dt);
+      horse.seat(seatAt,f.rig.hipY,horsebackOf(f.id).perch);
+      f.stand.position.copy(seatAt);
+      f.stand.quaternion.copy(horse.object.quaternion);
+      f.rig.update({moving:false,grounded:true,horseback:true,distance:0},dt);
+      continue;
+    }
+    f.stand.position.x=f.x;
     // In the water each body lies as walk.js lays it (diving.js swimPose): forward in the stroke,
     // upright treading water, and the Traveller rolling and nodding on walk.js's beat - a body
     // that swims its own stroke (`strokes`) only leans, as on the island.
@@ -102,9 +135,13 @@ function tick(dt){
 function render(){
   // Camera and nearby scenery follow the actual moving body; the ground marks stay fixed.
   track.position.z=Math.floor(distance/2)*2;
-  const x=close<0?0:figures[close].stand.position.x, near=close<0?1:.72;
+  // The floor goes along too: a gallop is ten units a second, and its 200 were behind in ten.
+  floor.position.z=track.position.z;
+  // A rider on a horse stands twice as high and twice as long: the camera stands back and up.
+  const riding=mode==='horse'&&!!horse;
+  const x=riding||close<0?0:figures[close].stand.position.x, near=(close<0?1:.72)*(riding?1.9:1);
   // Close up, the camera rises with a jump so the leap stays in the frame.
-  const lift=close<0?0:figures[close].stand.position.y*.8;
+  const lift=riding?.3:close<0?0:figures[close].stand.position.y*.8;
   const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
   camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
   camera.setViewOffset(innerWidth,innerHeight,close<0?-innerWidth*.13:-innerWidth*.2,0,innerWidth,innerHeight);
