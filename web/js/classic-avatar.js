@@ -100,6 +100,38 @@ function sampleOnce(clip, u, out) {
   const n = clip.rows.length;
   return sampleClip(clip, Math.max(0, Math.min(u, (n - 1) / n)), out);
 }
+// Up a rope ladder (walk.js `climbing`, peers.js the same off a peer's height): `rise` is how far the
+// feet went up this frame (down is negative), and a cycle of the climb is `perCycle` of it - the clip's
+// own rise on this body's leg, or the Traveller's two rungs - so a hand stays on its rung. Never more
+// than CLIMB_RATE_MAX cycles a second: a body jumped along a ladder (a peer's late sample, a hull's
+// swell) would otherwise spin through its limbs.
+export const CLIMB_RATE_MAX = 4;
+export function climbStep(u, rise, perCycle, dt) {
+  if (!(perCycle > 0) || !Number.isFinite(rise) || rise === 0) return u;
+  const most = CLIMB_RATE_MAX * Math.max(0, dt);
+  const d = Math.max(-most, Math.min(most, rise / perCycle));
+  return ((u + d) % 1 + 1) % 1;
+}
+// Which way of climbing a body has: Mixamo's clip where it is baked and the body plays clips, the
+// procedural reach-and-step (climbReach) otherwise.
+export function climbKind(gait) {
+  return gait && gait.clips && GAIT_CLIPS.climb ? 'clip' : 'reach';
+}
+// The Traveller has no clips, so his climb is drawn here: both hands up the ropes, each reaching
+// higher in turn, and the other side's foot stepping up with it, a cycle per
+// `rungs` climbed - two of a ship's rungs (boat.js RUNG_STEP). Positive is back, as everywhere here.
+export const CLIMB_REACH = { rungs: 0.4, arm: -2.55, armSwing: .35, leg: -.5, legSwing: .4, knee: .35, kneeLift: .75 };
+export function climbReach(u) {
+  const R = CLIMB_REACH, s = Math.sin(u * Math.PI * 2);
+  return {
+    limbs: {
+      leftArm: R.arm - R.armSwing * s, rightArm: R.arm + R.armSwing * s,
+      leftLeg: R.leg + R.legSwing * s, rightLeg: R.leg - R.legSwing * s,
+    },
+    // the leg going up is the one bent
+    knees: [R.knee + R.kneeLift * Math.max(0, -s), R.knee + R.kneeLift * Math.max(0, s)],
+  };
+}
 const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop: 0 });
 function blendPose(out, a, b, t) {
   for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
@@ -1046,6 +1078,9 @@ function buildRig(spec, material) {
   // the load flung at DIG_THROW of the clip. The swim is played at SWIM_RATE (none, all out) of
   // its own pace by how fast the swimmer goes, SWIM_PACE (walk.js SWIM_SPEED) being all out.
   const DIG_THROW = .52, SWIM_RATE = [.45, 1.25], SWIM_PACE = 1.9;
+  // How far into the climb's cycle the body is (0..1, wrapping), moved by height (climbStep).
+  let climbU = 0;
+  const poseClimb = clipPose();
   let digByClip = false, digT = 0, swimT = 0, treadT = 0, speedOf = 0;
   const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose(), poseTread = clipPose(), poseTreadMix = clipPose();
   const handA = new THREE.Vector3(), handB = new THREE.Vector3(), alongY = new THREE.Vector3(0, 1, 0), handInv = new THREE.Matrix4();
@@ -1053,7 +1088,7 @@ function buildRig(spec, material) {
   const poseWalk = clipPose(), poseRun = clipPose(), poseSprint = clipPose(), poseIdle = clipPose();
   const poseJump = clipPose(), poseLeap = clipPose(), poseGait = clipPose(), poseOut = clipPose();
   const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
-  function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back }) {
+  function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back, ladder }) {
     if (!G.clips) return;
     // Dying owns the whole body: its own clip, played once from the moment it began, or - with
     // none baked - every clip eased out, and the procedural fall (dyingPose) does it.
@@ -1064,6 +1099,16 @@ function buildRig(spec, material) {
       if (!C || clipMix < 1e-3) return;
       // The fall's hips come down with the clip; a drowning body is sunk by walk.js / peers.js.
       applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
+      return;
+    }
+    // On a rope ladder: Mixamo's Climbing Up A Ladder, played by height - a cycle per `rise` of
+    // it on this leg, so hands and feet go up the rungs as fast as the body does - and backwards on
+    // the way down. Hanging still, the clip stands still where it is. It owns the arms too.
+    if (ladder && GAIT_CLIPS.climb) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      if (clipMix < 1e-3) return;
+      applyClip(sampleClip(GAIT_CLIPS.climb, climbU, poseClimb), clipMix, { arms: true, drop: true });
       return;
     }
     // Which clip, if any: the swim in the water, the dig with a shovel, else the walk family.
@@ -1249,7 +1294,13 @@ function buildRig(spec, material) {
     const ride = pose.riding || null;
     // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
     const horse = !ride && pose.horseback ? horsebackOf(character) : null;
-    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse;
+    // On a rope ladder (pose.climbing = { rise }): no gait, no swim, no seat - the climb's own pose,
+    // moved along by the height gained, not by the distance walked.
+    const ladder = pose.climbing && !ride && !horse && !pose.dying && !pose.swimming && !pose.sitting && !pose.lying ? pose.climbing : null;
+    if (ladder) climbU = climbStep(climbU, ladder.rise || 0, climbKind(G) === 'clip' ? GAIT_CLIPS.climb.rise * G.leg : CLIMB_REACH.rungs, dt);
+    else climbU = 0;
+    const reach = ladder && climbKind(G) === 'reach' ? climbReach(climbU) : null;
+    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {
       if (object.parent) {
@@ -1394,6 +1445,7 @@ function buildRig(spec, material) {
     if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
     // One arm held out, the fisherman's with his rod over the water (web/js/fisher.js).
     if (Number.isFinite(pose.reach)) targets.rightArm = pose.reach;
+    if (reach) Object.assign(targets, reach.limbs);
     if (dead) {
       Object.assign(targets, dead.arms, dead.legs);
       Object.assign(armZ, dead.armZ);
@@ -1452,7 +1504,7 @@ function buildRig(spec, material) {
         drunk[side].x -= back * ARM_FOLLOW;
       }
     }
-    const locomotion = !pose.dying && pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !horse && !dance;
+    const locomotion = !pose.dying && pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !horse && !dance && !ladder;
     // The run's forward lean (Plans/tweede-avonturier.md), turned about the hips rather than the
     // feet: the legs hang from the hips and stay under them, and everything above - the torso,
     // the pack, the chestplate and the shoulders the arms hang from - tips forward round them.
@@ -1507,7 +1559,7 @@ function buildRig(spec, material) {
       } else {
         // The pushing leg folds up behind in a leap, the reaching one straightens towards the landing.
         const pushing = i === trail;
-        chain.bend.rotation.x = ride ? .65 : horse ? horse.knee : pose.sitting ? 1.2
+        chain.bend.rotation.x = ride ? .65 : horse ? horse.knee : reach ? reach.knees[i] : pose.sitting ? 1.2
           : !pose.grounded ? .55 + (pushing ? .75 : -.2) * leap : .12;
         chain.bend.rotation.y = chain.bend.rotation.z = 0;
         // In the saddle the foot is held level in the stirrup: back by what hip and knee tipped it.
@@ -1562,7 +1614,7 @@ function buildRig(spec, material) {
       object.rotation.set(dead.tip, 0, 0);
       if (dead.head) pieces.head.pivot.rotation.x = dead.head;
     }
-    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back });
+    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back, ladder });
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.

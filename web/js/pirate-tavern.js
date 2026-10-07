@@ -124,14 +124,21 @@ export function buildPirateTavern({ FLOOR, rect }) {
   const block = (b, y0 = null, y1 = null) => blockers.push(y0 == null ? b : { ...b, y0, y1 });
 
   // ---- what is drawn ------------------------------------------------------------------------
-  // The hall's bake: its lid (ceilings, beams, the rock overhead, whatever hangs) goes to `roof`.
+  // The hall's bake: its lid (ceilings, beams, the rock overhead) goes to `roof`. What hangs from it
+  // (`Kraken hang ...`: lanterns, sails, nets, the chandeliers' chains) is the hall's and stays when the
+  // lid comes off - in the lid it went with it, and a camera rising over the eaves on the upper gallery
+  // put out every chandelier in the hall (the keeper's "camera wegdraaien verbergt ineens props", 6 Oct).
   const ROOF = /^Kraken roof /;
   place(parts, 'piratetavern_room', {}, (n) => !ROOF.test(n));
   place(roof, 'piratetavern_room', {}, (n) => ROOF.test(n));
   // The ship's parts. One the HD pack has a model of (hd-pieces.js) stays out of the room's merge and
   // goes to `pieces`, drawn as its own mesh beside the model so Settings can switch between the two.
   const pieces = [];
+  // Every asset that went through kit(), split or not: a room built before the pack's list arrived
+  // split nothing, and this is how it is told that it should have (hd-pieces.js hdMissed).
+  const kitAssets = new Set();
   const kit = (asset, at, out = parts) => {
+    kitAssets.add(asset);
     if (!hdPieceOf(asset)) return place(out, asset, at);
     const geoms = [];
     place(geoms, asset, at);
@@ -144,12 +151,12 @@ export function buildPirateTavern({ FLOOR, rect }) {
   kit('civic_kraken_jukebox', KIT.jukebox);
   kit('civic_kraken_bow', { ...KIT.bow, sx: KIT.bow.s, sy: KIT.bow.s, sz: KIT.bow.s });
   kit('civic_kraken_figurehead', KIT.figurehead);
-  for (const sl of K.SLOOPS) kit('civic_kraken_sloop', { x: sl.x, y: sl.y - KIT.sloop.flame, z: sl.z }, roof);
-  kit('civic_kraken_wheel', KIT.wheel, roof);
-  kit('civic_kraken_rudder', KIT.rudder, roof);
+  for (const sl of K.SLOOPS) kit('civic_kraken_sloop', { x: sl.x, y: sl.y - KIT.sloop.flame, z: sl.z });
+  kit('civic_kraken_wheel', KIT.wheel);
+  kit('civic_kraken_rudder', KIT.rudder);
   for (const g of KIT.gunports) kit('civic_kraken_gunport', { x: g.x, y: FLOOR + 0.62, z: HALL.z1, ry: Math.PI });
   for (const c of KIT.sconces) kit('civic_kraken_skullsconce', c);
-  kit('civic_kraken_skulllamp', KIT.skulllamp, roof);
+  kit('civic_kraken_skulllamp', KIT.skulllamp);
   kit('civic_kraken_firebasket', KIT.firebasket);
   // The barrel of candles: the bake is the low graphics; the HD pack (HOME/hd/) swaps in Pixal3D's
   // textured model of it through kit(), which is why it goes through kit() and not place().
@@ -356,7 +363,7 @@ export function buildPirateTavern({ FLOOR, rect }) {
 
   return {
     name: 'the Salty Kraken',
-    parts, roof, pieces, blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
+    parts, roof, pieces, kitAssets: [...kitAssets], blockers, seats, lights: K.LIGHTS.map((l) => ({ ...l, at: [...l.at] })), figures, talkers,
     // The other way out: up the hatch onto the deck outside (interior.js `exits`, main.js leaveInterior).
     exits: [{ id: 'hatch', kind: 'exit', to: 'deck', x: K.HATCH.x, z: K.HATCH.z, r: 0.8, floor: K.HATCH.y, label: 'the hatch', prompt: 'climb up onto the deck' }],
     // The glow round every flame and lit window, read off the parts themselves, and the moonlight

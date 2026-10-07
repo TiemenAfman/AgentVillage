@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
-import { mesh } from './buildings.js';
+import { mesh, solidMaterial } from './buildings.js';
 import * as models from './models.js';
 
 // A little over a run (RUN_SPEED 6.6, tests/bicycle.test.mjs reads it out of walk.js) and
@@ -303,6 +303,7 @@ function slice(b, p, r, boost, step, ground, blocked, ceiling) {
 // builder runs the fork legs down it - so the head angle is read off two baked origins here
 // rather than written down a second time.
 export function createBicycle({ scene, material }) {
+  material = solidMaterial(material);   // ridden, so never seen through (buildings.js)
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';        // yaw first, then the lean about the bike's own forward
   const meshes = [];

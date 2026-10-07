@@ -1074,11 +1074,18 @@ Float32Arrays, which every reader takes like a plain array; importing 34 MB on t
 `interior.js` `ROOM_SETS`/`prepareRoom`/`roomReady` say which room needs which. main.js starts them at the top of
 `boot()`, and `warmRooms` builds each room (`roomFor`) and `renderer.compile`s it before `ui.boot(true)` if they
 are in within 3 s (~0.8 s of boot; the first visit then costs one frame, not three seconds) - otherwise a door
-within reach still starts them and `enterInterior` waits ("The door sticks a moment..."), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
+within reach still starts them and `enterInterior` waits ("The door sticks a moment..."). The HD pack's list
+is asked for at the top of `boot()` too (`hdAsking`) and `warmRooms` waits for it within the same deadline: `kit()`
+splits a pack piece off the merge only if the list is in when the room is built, and a room warmed blind showed
+no HD ever (`setDetail` only switches pieces that exist). One built blind anyway says so (`hdMissed`), and
+`roomFor` / `rewarmRooms` build it again, never while somebody is in it (`tests/hd-late-manifest.test.mjs`), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
 island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
-change a floor or a prop there and rebake, never in two places. A room's bloom and light shafts are `web/js/room-glow.js`
+change a floor or a prop there and rebake, never in two places. The hall's lid (what interior.js takes off when the
+camera rises through the roof) is the bake's `Kraken roof ...` parts - ceiling, beams, rock - and only those: whatever
+hangs from it is `geom.hang` (`Kraken hang ...`), and the kit pieces that hang go to `parts`, or a camera over the eaves
+put out every chandelier and lantern in the hall. A room's bloom and light shafts are `web/js/room-glow.js`
 (`def.halos`/`roofHalos`/`shafts`, drawn by interior.js): additive and unlit, so they add nothing to the light
 count; the halos are read off every glowing part of the room's own geometry, never listed by hand. Real bloom
 and SMAA are `web/js/post.js` (three's postprocessing, vendored by `scripts/vendor.mjs`), the one render in main.js
@@ -1675,6 +1682,13 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill.
+**On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`,
+`rise` a cycle, `climbStep`), backwards going down and still while hanging; the Traveller reaches up
+procedurally (`climbReach`). walk.js says so as `state.climbing = { rise }` on the rungs only (`onRungs`:
+not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.45 (it was 1.8 - fifteen cycles a
+second; the keeper chose slower). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
+ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
+and draws them there - before this a climbing peer was drawn standing on the ground under the ladder.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,

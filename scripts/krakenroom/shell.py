@@ -16,7 +16,8 @@ terrace stops, a truss at every TRUSSES z with its tie beam on EAVES. What is on
 things are made: plank widths, stone sizes, where a joist or a rib goes, the roof's rise from the
 wall plate to the boards (ROOF_LIFT).
 
-Groups (scripts/krakenkit/geom.py): the roof and everything hanging from it is the lid (`lid()`), the
+Groups (scripts/krakenkit/geom.py): the roof is the lid (`lid()`), what hangs from it `hang()` (it stays when
+the lid comes off), the
 south and east walls and whatever is fixed to them (the door, the portholes and ribs there, the sea
 arch, the ledgers on them) are `near` (the cutaway preview leaves them out), the rest is the room.
 
@@ -39,7 +40,7 @@ from mathutils import Matrix, Vector
 import geom
 from geom import (PI, TAU, TAR, HULLW, DECKP, STAGEP, CEIL, BEAMZ, BEAMX, OAK, DARK, WOOD, RIB, CARVED,
                   HEARTH, CELLAR, FLAGS, SOOT, IRON, ROPE, PANE, BLACK, material,
-                  group, lid, box, rod, disc, ball, lathe, prism, hull, tube, torus, rng)
+                  group, lid, hang, box, rod, disc, ball, lathe, prism, hull, tube, torus, rng)
 
 ROCK, ROCKW = 'stone:rock', 'stone:rock-warm'
 ROCKL = material('stone:rock-light', 0x7a6c5c)
@@ -1483,7 +1484,7 @@ def rope_bridge(f, anchored):
                 continue
             zt = min(cands, key=lambda v: abs(v - z))
             ztb = zt - .1 if zt > z else zt + .1
-            with lid():
+            with hang():
                 rod('bridge hanger', (xh, hand(xh), z), (xh, EAVES + .02, ztb), .008, ROPE, sides=4)
                 torus('hanger ring', (xh, EAVES - .015, ztb), .03, .007, IRON, seg=8, sides=3)
 

@@ -11,6 +11,25 @@ const unBody=new THREE.Quaternion(), parentQ=new THREE.Quaternion();
 const bodyEuler=new THREE.Euler(0,0,0,'YXZ');
 const flexQ=new THREE.Quaternion(), X=new THREE.Vector3(1,0,0);
 const path = {};
+// The island's material is flat; the horse's exported skin normals want it smooth. One twin per
+// source, shared by every horse (one program), its hooks unbound since they read `this`, and
+// `seeThroughOff` carried over: the ridden horse comes in as buildings.js solidMaterial and
+// must stay solid, the stable's keeps the island's cone (tests/ridden-see-through.test.mjs).
+const smoothOf=new WeakMap();
+export function smoothHorseMaterial(material) {
+  if (!material.flatShading) return material;
+  let smooth=smoothOf.get(material);
+  if (!smooth) {
+    smooth=material.clone();
+    smooth.flatShading=false;
+    smooth.userData=material.userData;
+    smooth.onBeforeCompile=material.onBeforeCompile;
+    smooth.customProgramCacheKey=material.customProgramCacheKey;
+    if (material.seeThroughOff) smooth.seeThroughOff=true;
+    smoothOf.set(material,smooth);
+  }
+  return smooth;
+}
 
 export function bindHorse(a, material) {
   if (!HORSE_RIG) return null;
@@ -23,11 +42,7 @@ export function bindHorse(a, material) {
   });
   definition.bones.forEach((b,i)=>(b.parent>=0?bones[b.parent]:a.object).add(bones[i]));
   const skeleton=new THREE.Skeleton(bones);
-  const smooth=material.clone();
-  smooth.flatShading=false;
-  smooth.userData=material.userData;
-  smooth.onBeforeCompile=material.onBeforeCompile;
-  smooth.customProgramCacheKey=material.customProgramCacheKey.bind(material);
+  const smooth=smoothHorseMaterial(material);
   const meshes=[];
   for (const part of a.joints) {
     const old=part.pivot.children[0];
@@ -47,7 +62,7 @@ export function bindHorse(a, material) {
   });
   a.head=bones[definition.neck]; a.tail=bones[definition.tail];
   a.legs=legs.map(l=>l.upper);
-  return {bones,skeleton,legs,meshes,dispose(){skeleton.dispose();smooth.dispose();}};
+  return {bones,skeleton,legs,meshes,dispose(){skeleton.dispose();}};
 }
 
 function solve(leg, wanted, unBody, flex=0) {
