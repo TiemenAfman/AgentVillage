@@ -136,3 +136,15 @@ test('a pose on a deck is taken from the crew only, held to the planks, and put 
   roster.tick();
   assert.equal(inbox.get(BEN).filter((m) => m.t === 's').at(-1).d, undefined, 'a snapshot with nobody on a deck carries a deck list');
 });
+
+test("a pose up the mast - on her crow's nest, or the ladder to it - is kept at its height", () => {
+  const { roster, join } = room();
+  const ann = join(ANN);
+  ann({ t: 'p', x: beside[0], y: 0, z: beside[1], yaw: 0, f: 0 });
+  ann({ t: 'boat', a: 'board', id: HULL });
+  const a = roster.all().find((p) => p.id === ANN);
+  ann({ t: 'p', x: 0, y: 9, z: 0, yaw: 0, f: 0, on: HULL, d: [0, 8.96, 0, 0] });
+  assert.equal(a.deck.y, 8.96, 'held halfway up the mast');
+  ann({ t: 'p', x: 0, y: 9, z: 0, yaw: 0, f: 0, on: HULL, d: [0, 50, 0, 0] });
+  assert.ok(a.deck.y <= 10, 'a deck position fifty up the mast');
+});

@@ -16,6 +16,7 @@
 // Adding a set: bake it, import it here, put it in SETS. Everything else - the workbench,
 // the model sheet, the shape catalogue - reads it through this file.
 import * as THREE from 'three';
+import { offThread as offThreadAt } from './lazy-module.js';
 import { GOLDPIT } from './goldpit-mesh.js';
 import { GOLDMINE } from './goldmine-mesh.js';
 import { WAGON } from './wagon-mesh.js';
@@ -103,22 +104,9 @@ for (const [set, data] of Object.entries(SETS)) register(set, data);
 // (interior.js prepareRoom, when somebody walks up to the door), never at boot - the boot rule above
 // still holds for everything the island itself draws. Resolved relative to this module, so a subpath
 // behind a proxy works as it does for every other asset.
-// In a browser the module is parsed in a worker (lazy-set-worker.js), so the page never stops for
-// it; under Node, or wherever a module worker cannot start, it is imported here as before.
-function offThread(file, name) {
-  const url = new URL(file, import.meta.url).href;
-  const here = () => import(url).then((m) => m[name]);
-  if (typeof Worker === 'undefined') return here();
-  return new Promise((resolve) => {
-    let w;
-    try { w = new Worker(new URL('./lazy-set-worker.js', import.meta.url), { type: 'module' }); }
-    catch { resolve(here()); return; }
-    const done = (v) => { w.terminate(); resolve(v); };
-    w.onmessage = ({ data }) => done(data.set ? data.set : here());
-    w.onerror = (e) => { e.preventDefault(); done(here()); };
-    w.postMessage({ url, name });
-  });
-}
+// In a browser the module is parsed in a worker (lazy-module.js offThread), so the page never stops
+// for it; under Node, or wherever a module worker cannot start, it is imported here as before.
+const offThread = (file, name) => offThreadAt(new URL(file, import.meta.url).href, name);
 const LAZY = {
   krakenkit: () => offThread('./krakenkit-mesh.js', 'KRAKENKIT'),
   piratetavern_room: () => offThread('./piratetavern_room-mesh.js', 'PIRATETAVERN_ROOM'),

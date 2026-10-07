@@ -16,7 +16,8 @@ import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './clas
 import { createMount } from './mount.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
-import { toWorld } from 'shared/deck.mjs';
+import { toWorld, aloftHolding } from 'shared/deck.mjs';
+import { craftOf } from 'shared/crafts.mjs';
 import { danceStep, wallBeat } from './dance.js';
 import { createZzz, bobZzz } from './zzz.js';
 import { divePitch, swimPose, stepLie } from './diving.js';
@@ -466,8 +467,13 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       // how high on the ladder they hang (`at`) - their own page plays the same clip off the same height. No bit says so; there is just no floor up there.
       const hold = !swimming && !airborne && !seat && !p.aboard && !p.deckTo && !p.room && !(f & FLAG_RIDING)
         ? ladderAt(x, sentY, z) : null;
-      const climbing = hold ? { rise: p.climbY == null ? 0 : sentY - p.climbY, at: hold.at } : null;
-      p.climbY = hold ? sentY : null;
+      // Or up a ship's mast (craft.aloft): a deck position on the climber's line of one of her mast
+      // ladders, which the sea carries like any other place on her (`d`) - drawn on her, climbing.
+      const mast = seat && seat.local && !swimming && !airborne
+        ? aloftHolding(craftOf(p.deckTo.boat), seat.local.x, seat.local.z, seat.local.y) : null;
+      const climbY = hold ? sentY : mast ? seat.local.y : null;
+      const climbing = hold || mast ? { rise: p.climbY == null ? 0 : climbY - p.climbY, at: (hold || mast).at } : null;
+      p.climbY = climbY;
       if (hold) yaw = hold.yaw;
       const base = seat ? seat.y
         : hold ? sentY
@@ -479,7 +485,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const riding = !!(f & FLAG_RIDING) && !swimming && !p.room;
       // What they ride is read off the body they wear, as their own page decides it: a horse
       // under an Adventurer, the bicycle under anybody else - no second bit on the wire.
-      const onHorse = riding && p.avatar.character === 'adventurer';
+      const onHorse = riding && p.avatar.character !== 'traveller';
       if (!onHorse) p.gallop.seen = false;
       if (onHorse) {
         mounted(p, x, base, z, yaw, dt, airborne);
@@ -553,10 +559,10 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     // same point of her frame our own walk mode stands us on (main.js hullOf).
     if (hull.point) {
       const at = hull.point(lx, ly, lz);
-      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt(), walkPoint: { x: lx, z: lz } };
+      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt(), walkPoint: { x: lx, z: lz }, local: { x: lx, y: ly, z: lz } };
     }
     toWorld({ x: hull.x, z: hull.z, fx: Math.sin(hull.yaw), fz: Math.cos(hull.yaw) }, lx, lz, deckAt);
-    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw, walkPoint: { x: lx, z: lz } };
+    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw, walkPoint: { x: lx, z: lz }, local: { x: lx, y: ly, z: lz } };
   }
 
   // One frame of a peer on a bicycle. Everything the bike does is read off where the rider

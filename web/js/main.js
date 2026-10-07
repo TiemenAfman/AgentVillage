@@ -134,6 +134,7 @@ import { createPlanOverlay } from './plan-overlay.js';
 import { createPlanPanel } from './plan-panel.js';
 import { createAvatarStudio } from './studio.js';
 import { loadAvatar } from './avatar.js';
+import { loadWanderers, allowWanderers, wantsWanderer } from './player-bodies.js';
 import { createWaitingFlags } from './waiting.js';
 import { createGamepad } from './gamepad.js';
 import { createInput } from './input.js';
@@ -1224,6 +1225,10 @@ function interactables() {
     if (deck.helm < 1.0 && free) {
       out.push({ id: b.id, kind: 'helm', x: b.x, z: b.z, r: 99, label: 'the wheel', prompt: 'take the helm' });
     }
+    // Up in her crow's nest, the seat against the topmast (craft.nest, walk.js sitOnDeck).
+    if (deck.nest != null) {
+      out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
+    }
     return out;
   }
   // A ship's helm is left under way: a ship runs out for most of a minute, and leaving the wheel
@@ -2186,6 +2191,11 @@ function walkCallbacks() {
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
       else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'nestseat') {
+        if (state.walk.state.sitting) state.walk.standUp();
+        else state.walk.sitOnDeck(it.seat);
+        state.walk.setInteractables(interactables());
+      }
       else if (it.kind === 'helm') {
         if (state.walk.takeHelm()) {
           // Ours from now, before the sea has said so: a track left over from somebody else's
@@ -2201,7 +2211,7 @@ function walkCallbacks() {
     onSendAway: (it) => {
       if (it.treasure) return;   // the bottle, the X and the statue are not settlers
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat'].includes(it.kind)) askToSendAway(it.id);
     },
     // Up a ship's rope ladder, and off her again by jumping or down it (walk.js): the sea counts a
     // crew, so it is told at the top and again once you are off. No room to change - on the deck
@@ -8370,7 +8380,19 @@ function rewarmRooms() {
   }
 }
 
+// Our own body, if it is a Wanderer: its 19.5 MB of triangles (player-bodies.js) start parsing in a
+// worker at the top of the boot - the one thing fetched before the boot screen goes - and the boot
+// waits for them a moment before it lifts (`ownBodyIn`), so the first frame shows the body you chose.
+// Past that the Adventurer stands in, the same rig and size, and is swapped when they land. Nobody
+// else's Wanderer is asked for before allowWanderers(), after `state.ui.boot(true)`.
+let ownBody = null;
+async function ownBodyIn(waitMs) {
+  if (!ownBody) return;
+  await Promise.race([ownBody, new Promise((r) => setTimeout(r, waitMs))]);
+}
+
 async function boot() {
+  if (wantsWanderer(loadAvatar())) ownBody = loadWanderers({ now: true });
   if (!STANDALONE) roomsLoading = Promise.all(ROOM_KINDS.filter((r) => !roomReady(r)).map(prepareRoom));
   if (!STANDALONE) hdAsking = loadHdManifest();
   state.ui = createUI({
@@ -9122,6 +9144,7 @@ Everything is copied and checked first; the island then starts again there. The 
   // walk down into it or send it somewhere from the sky. Before the net exists, so the
   // net's own start says it is walking.
   if (!STANDALONE) await warmRooms(3000);
+  await ownBodyIn(2500);
   if (!STANDALONE) parkOnSquare();
   if (STANDALONE) castOffOnArrival();
   else if (params.has('nointro') || params.has('cam') || params.has('room')) startIntro();
@@ -9141,6 +9164,8 @@ Everything is copied and checked first; the island then starts again there. The 
   // The one model that is fetched rather than baked - the volcano's imp - may start loading
   // from here on, and only if a volcano crowd asks for it. See the header of web/js/imp.js.
   allowImp();
+  // And the Wanderer's bodies, for a peer, a figure or the inventory that asks (player-bodies.js).
+  allowWanderers();
   // So may this machine's own models (HOME/models/), which only the keeper has.
   if (!STANDALONE) loadLocalModels({ scene, terrain: state.terrain });
   // And what the HD pack holds (HOME/hd/, hd-pieces.js): only the list, asked for at the top of boot()

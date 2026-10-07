@@ -923,6 +923,17 @@ and a footprint has to be held up all round, so a bulwark's top is not walked al
 not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
+**Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
+bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
+DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds
+128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The rope ladder
+to it is `craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs, its rungs
+the climb's, drawn by boat.js `ladderBoxes`): both ends are on her, so a mast climb keeps `state.deck` on the
+rope's point and the sea hears it as an ordinary `on` + `d` - which is why lib/players.mjs `DECK_HEIGHT` is 10,
+not 4 (an older sea holds a climber halfway up the mast). E in the nest is `craft.nest`'s seat
+(`walk.sitOnDeck`: a seat in her frame, the SITTING bit). `stepHull` lands only on a floor the feet passed
+this frame - it used to land on any floor under them, eight units down from the nest in one frame - and a
+body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
 Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
 `nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
 **A hull is a reference plane** and whoever is on one stands on *that*: a point of her own frame
@@ -1083,7 +1094,7 @@ is asked for at the top of `boot()` too (`hdAsking`) and `warmRooms` waits for i
 splits a pack piece off the merge only if the list is in when the room is built, and a room warmed blind showed
 no HD ever (`setDetail` only switches pieces that exist). One built blind anyway says so (`hdMissed`), and
 `roomFor` / `rewarmRooms` build it again, never while somebody is in it (`tests/hd-late-manifest.test.mjs`), and `pack-android.mjs` leaves them out of the app (the phone has no rooms). Everything the
-island itself draws stays in `SETS`. The hall's every number is `web/js/kraken-layout.js` (read by
+island itself draws stays in `SETS`; the Wanderer's bodies go the same worker road (see the Wanderer below). The hall's every number is `web/js/kraken-layout.js` (read by
 pirate-tavern.js and, through `scripts/kraken-layout-json.mjs`, by the bake) and its props'
 `web/js/kraken-dressing.js` (`PROPS` + `FOOT`, from which pirate-tavern.js derives the blockers):
 change a floor or a prop there and rebake, never in two places. The hall's lid (what interior.js takes off when the
@@ -1662,11 +1673,54 @@ which: `avatar.js` builds from it, `classic-avatar.js` works each body's pivots 
 (`bodyOf`), and `createClassicAvatar` swaps the whole rig into the same parent when a look
 changes body - read `rig.object`, `rig.handAttach`, `rig.hipY`, `rig.eye` off the rig, never
 keep them. `scripts/build-adventurer.py` rebuilds everything from the committed CC-BY GLB
-(`assets/adventurer/CREDITS.md`): texture sampled into per-corner `colors` (the body is not
-dyed, so the inventory hides Skin and Outfit for it - `dyeApplies`), ears and ponytail reshaped
+(`assets/adventurer/CREDITS.md`): texture sampled into per-corner `colors` (his cloth is not
+dyed, so the inventory hides the Outfit's dye for him - `dyeApplies`; his hair and skin are
+`tint` parts, below), ears and ponytail reshaped
 through the source's own bones, and the Traveller's gear refitted by measurement under the same
 names; hand items stay the Traveller's own in either hand. The sea passes `character` as a slug
 (`lookOf`); a sea or page from before it draws the Traveller.
+**A third body, the Wanderer, is a body in underwear with clothes over it** ([Plans/basislichamen-en-outfits.md](Plans/basislichamen-en-outfits.md)).
+A man and a woman (`CHARACTERS` ids `wanderer-male`/`-female`) from Quaternius's CC0 kit
+(`assets/bodies/`, baked by `scripts/build-bodies.py` into `web/js/bodies-mesh.js` and
+`assets/bodies/island-wanderer-<sex>.blend` - body, hairstyles and every garment as separate rigged
+objects, the base to model a new garment on), on the Adventurer's skeleton so every Mixamo clip plays. A look says
+`character: 'adventurer', body: 'male'|'female'` - never a third character id, which an older page
+would draw as the Traveller - so **read a body with `characterOf(spec)` / `bodyKey(spec)`, never
+`characterOf(spec.character)`**; `rig.character` is the body id, and "rides a horse" is
+`!== 'traveller'`. **Clothes are garments, one per slot** (`GARMENTS`: shirt, trousers, shoes, straps;
+`spec.wear = { shirt: 'peasant' | null, ... }`), parts with `variant: 'garment:<set>-<slot>'`, picked in
+CHEST / LEGS / FEET and ARMS, the slot's armour being one more piece in that row, worn *instead* of the
+cloth piece (`garmentOptions`, `wearIn`: it sets `equip.<armour>` and clears the slot); an **outfit** is a set worn
+*over* the clothes, hiding them (a costume, a suit - Martijn's definition), and there are none yet, so
+OUTFIT is greyed on the Wanderer. The skin a garment covers is a per-part `hide: { <garment>: [from,
+to, ...] }` triangle list; `buildFigure` leaves out the union for what is worn - worked out in the bake
+by casting along each skin vertex's normal for the cloth (`COVER_IN` is large because the kit's
+outfits fit its slimmer Regular builds). A Wanderer's legs are skinned to the torso too (`LEG_TORSO`,
+indices 4.. after the runtime's toe, bound only when a body's leg parts carry `skinIndices`), a shirt
+is wholly the torso's and trousers wholly the legs', and the crotch is drawn in both legs: each of
+those was a seam that tore open in a stride. Hairstyles are `hair:<id>` parts (`spec.hairStyle`,
+`HAIR_STYLES`, chosen in the hair popover over the colours). Hair (`spec.hair`,
+the head slot's dye; the hat's colour is in the hat picker, `pickerDye`) and skin are **`tint`
+parts** on every body: corner colours divided by a base and multiplied by the look's colour in
+`buildFigure` - the Adventurer's base is the look's default (so he draws as before), the Wanderer's
+the kit map's own mean. **Who you are is apart from what you wear**: the inventory's *Edit character*
+(the same frame, `data-view="character"`) holds the body, man or woman, skin, hair, and the shape's
+sliders (`SHAPES`, `spec.shape`, each -1..1): height, hips, head, hands and feet are bone scale in
+classic-avatar.js `applyShape` (the object's mirror kept; `rig.hipY`/`rig.eye` follow height), build
+and bust are moved vertices in avatar.js `shapeGeometry` (along the normal / forward round `bustOf`),
+held items excluded. The sea passes `body`, `wear`, `hairStyle`, `hair`, `shape` in `lookOf`; an older sea
+drops them and everybody sees the Adventurer. Gear is the Adventurer's refitted (`refit_gear`).
+**A Wanderer's triangles are loaded only when somebody wears one** (the fourth exception to "Nothing is
+fetched at boot"): `bodies-mesh.js` is 19.5 MB, so the boot imports only `bodies-meta.js` (the same bake
+without positions/normals/colors/skin*, 39 kB - all the inventory and the look read), and
+`player-bodies.js loadWanderers` parses the rest in a worker (`lazy-module.js offThread`, shared with
+models.js LAZY) and merges it into those same part objects. Until then `drawnLook` draws a Wanderer as the
+Adventurer (avatar.js `buildFigure`, classic-avatar.js `createClassicAvatar`, which loads on a Wanderer look
+and swaps itself when `onWanderers` fires) and the inventory's Wanderer icons are empty under a "..."
+(studio.js). Nothing is fetched before `allowWanderers()` (main.js, beside `allowImp`), except our own
+Wanderer at the top of `boot()`, which the boot waits up to 2.5 s for (`ownBodyIn`); `/demo` allows at once,
+`/avatar-motion.html` awaits it. A test that draws a Wanderer `await loadWanderers({ now: true })` first;
+`tests/bodies-lazy.test.mjs` walks the boot's static import graph. The bake writes both files.
 The Adventurer's arm bake also carries `skinIndices`/`skinWeights`: limb bones 0..2,
 shared torso/head bones 3..7 and fifteen finger bones 8..22. `ADVENTURER_FINGERS` gives
 their pivots, parents, curl axes and relaxed/grip angles. Preserve these source weights:

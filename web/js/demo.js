@@ -39,6 +39,9 @@ import { createAnimal, applyPose, saddleOf } from './fauna.js';
 import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
 import { createClassicAvatar, horsebackOf } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
+import { allowWanderers } from './player-bodies.js';
+// A workbench: a Wanderer may be loaded the moment one is asked for (player-bodies.js), no boot to wait on.
+allowWanderers();
 import { attachButcher, updateButcher } from './butcher.js';
 import { attachQuarry, updateQuarry } from './quarry.js';
 import { YARD_FLOOR, YARD_STAGES, YARD_STAGE_NAMES, YARD_W, YARD_D } from './shipyard.js';

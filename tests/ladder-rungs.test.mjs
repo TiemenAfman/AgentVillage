@@ -20,7 +20,7 @@ globalThis.document = { createElementNS: el, createElement: el, addEventListener
 const { createClassicAvatar, climbPerCycle, climbPhase, CLIMB_SPEED } = await import('../web/js/classic-avatar.js');
 const { DEFAULT_AVATAR } = await import('../web/js/avatar.js');
 const { GAIT_CLIPS } = await import('../web/js/gait-clips.js');
-const { RUNG_STEP, RUNG_R, RUNG_FROM, RUNG_OUT } = await import('../shared/deck.mjs');
+const { RUNG_STEP, RUNG_R, RUNG_FROM, RUNG_OUT, aloftPath } = await import('../shared/deck.mjs');
 const { CRAFTS } = await import('../shared/crafts.mjs');
 const { DECK_Y } = await import('../shared/hull.mjs');
 const { ladderBoxes } = await import('../web/js/boat.js');
@@ -116,7 +116,7 @@ test('the clip\'s hands and feet hold within reach of the rungs\' plane', () => 
 
 test('the galleon\'s rungs are the climb\'s: RUNG_STEP apart from the ladder\'s foot, RUNG_OUT outside it', () => {
   const ship = CRAFTS.galleon;
-  const boxes = ladderBoxes(ship);
+  const boxes = ladderBoxes({ ladders: ship.ladders });   // her side's: the mast's are tests/crows-nest.test.mjs's
   for (const l of ship.ladders) {
     const s = l.x < 0 ? -1 : 1;
     const rungs = boxes.map((g) => { g.computeBoundingBox(); return g.boundingBox; })
@@ -196,4 +196,24 @@ test('the Salty Kraken\'s mast ladders are baked to the climb: plumb, rungs RUNG
   // the bake reads deck.mjs for the step, and shares MAST_LADDER
   assert.match(py, /^RUNG_STEP = _deck\('RUNG_STEP'\)/m);
   assert.equal(Number(/^LADDER_X = ([\d.]+)/m.exec(py)[1]), K.MAST_LADDER);
+});
+
+test("the galleon's mast ladder is the climb's too: rungs RUNG_STEP up from its foot on the deck, RUNG_FROM before the climber", () => {
+  // Up to her crow's nest (shared/crafts.mjs aloft, Plans/DONE/kraaiennest.md): the same rungs, turned to the face of the top it hangs from.
+  const SHIP = CRAFTS.galleon, L = SHIP.aloft[0];
+  const boxes = ladderBoxes({ ladders: [], aloft: SHIP.aloft });
+  const rungs = boxes.map((g) => { g.computeBoundingBox(); return g.boundingBox; }).filter((bb) => bb.max.y - bb.min.y < 3 * RUNG_R);
+  const span = (L.top - L.foot);
+  assert.ok(rungs.length > span / RUNG_STEP - 3, `${rungs.length} rungs for ${span.toFixed(2)} of rope`);
+  for (const bb of rungs) {
+    const y = (bb.min.y + bb.max.y) / 2 - DECK_Y - L.foot, k = Math.round(y / RUNG_STEP);
+    assert.ok(Math.abs(y - k * RUNG_STEP) < 1e-6 && k >= 1, `a rung ${y.toFixed(4)} above the foot`);
+    const cx = (bb.min.x + bb.max.x) / 2, cz = (bb.min.z + bb.max.z) / 2;
+    const out = (cx - L.x) * L.out[0] + (cz - L.z) * L.out[1];
+    assert.ok(Math.abs(out - RUNG_OUT) < 1e-6, `a rung ${out.toFixed(4)} out from the ropes`);
+  }
+  // the climber hangs on the line aloftPath has them on: RUNG_FROM behind the rungs, as on her side
+  const [a] = aloftPath(L);
+  const back = (a.x - L.x) * L.out[0] + (a.z - L.z) * L.out[1];
+  assert.ok(Math.abs(back - RUNG_OUT - RUNG_FROM) < 1e-9, `the climber ${back.toFixed(3)} out from the ropes`);
 });
