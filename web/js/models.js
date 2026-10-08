@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { offThread as offThreadAt } from './lazy-module.js';
 import { GOLDPIT } from './goldpit-mesh.js';
 import { GOLDMINE } from './goldmine-mesh.js';
+import { MINEFIELD } from './minefield-mesh.js';
 import { WAGON } from './wagon-mesh.js';
 import { GOLDSMITH } from './goldsmith-mesh.js';
 import { LIGHTHOUSE } from './lighthouse-mesh.js';
@@ -77,7 +78,7 @@ import { WORKSHOPS } from './workshops-mesh.js';
 import { SHIPYARD } from './shipyard-mesh.js';
 import { HARPOON } from './harpoon-mesh.js';
 
-const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, rowboat: ROWBOAT, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA, cannon: CANNON };
+const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, minefield: MINEFIELD, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, rowboat: ROWBOAT, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA, cannon: CANNON };
 // The galleon's harpoon gun in house style, beside the Sketchfab GLB (web/js/harpoon.js, Plans/harpoen.md).
 SETS.harpoon = HARPOON;
 

@@ -2,19 +2,20 @@
 // it the field of spots to dig - ROOMS.goldmine in interior.js. One room for every floor: going down
 // the stair seeds the field again and puts you back at the way in; the cave stays, only darker.
 //
-// Primitives, not a bake: the field changes with every dig, and at seven by seven it is cheaper to
-// merge it again (a few hundred triangles, on a dig) than to keep instanced meshes in step. The walls
-// and the props are merged once, like every room's. The rules are web/js/mine.js's; this draws them
-// and answers E.
+// The field is a floor of tiles, one a spot, merged again on every dig (a few thousand triangles at
+// most, on a dig): a spot nobody has dug is a flat tile in the floor's colour, a dug one the baked
+// pit (scripts/build-minefield.py), and the way down the baked shaft with its ladder. Cheaper than
+// keeping instanced meshes in step at seven by seven. The walls and the props are merged once, like
+// every room's. The rules are web/js/mine.js's; this draws them and answers E.
 import * as THREE from 'three';
-import { box, cylinder, sphere, mergeParts } from './buildings.js';
+import { box, cylinder, sphere, meshAsset, mergeParts } from './buildings.js';
 import { makeRng } from 'shared/rng.mjs';
 import { GRID, CELL, SPOTS, spotCentre, spotAt, MINE_DIG_SECONDS } from 'shared/mine.mjs';
 
 const C = {
   earth: 0x5a4330, loose: 0x7a5a3a, dark: 0x1e1610, rock: 0x77726a, rockDark: 0x5b5751,
   timber: 0x6b4a2f, timberDark: 0x4a3220, iron: 0x3a3a3f, lamp: 0xffc65a, rope: 0xa88a5a,
-  key: 0xb8923e, step: 0x5e4128,
+  key: 0xb8923e,
 };
 
 // The cave: the field in its middle a little to the north, the way in at the south (+z) wall.
@@ -46,11 +47,17 @@ function shellParts(FLOOR) {
   const rng = makeRng('goldmine:cave');
   const w = HALF_W * 2, d = SOUTH - NORTH;
   const midZ = (SOUTH + NORTH) / 2;
-  parts.push(box(w + WALL * 2, 0.24, d + WALL * 2, C.earth, { y: FLOOR - 0.24, z: midZ }));
-  // The field: one even bed of loose earth over all of it, the same everywhere, so it shows where
-  // there is digging to be done and nothing of where a spot is. Without it the undrawn spots were
-  // the cave's dark floor, and from above the field was a black patch with the holes lost in it.
-  parts.push(box(FIELD + CELL * 0.2, 0.012, FIELD + CELL * 0.2, C.loose, { y: FLOOR, z: FIELD_Z }));
+  // The floor round the field; the field's own floor is its tiles (fieldParts), so that a hole can be
+  // a hole. There was a bed of loose earth over the field here, a shade lighter than the floor, and
+  // from above it was a square lying over the cave (the keeper, 8 October 2026): the spots are dug
+  // blind, so nothing may show where the field is until you dig.
+  const fx = FIELD / 2, fz0 = FIELD_Z - FIELD / 2, fz1 = FIELD_Z + FIELD / 2;
+  const x0 = -HALF_W - WALL, x1 = HALF_W + WALL, z0 = NORTH - WALL, z1 = SOUTH + WALL;
+  const slab = (ax, bx, az, bz) => parts.push(box(bx - ax, 0.24, bz - az, C.earth, { x: (ax + bx) / 2, y: FLOOR - 0.24, z: (az + bz) / 2 }));
+  slab(x0, x1, z0, fz0);
+  slab(x0, x1, fz1, z1);
+  slab(x0, -fx, fz0, fz1);
+  slab(fx, x1, fz0, fz1);
   // Rough rock walls: overlapping boulders of a few sizes along each face, so the line is broken.
   const boulder = (x, z, s) => {
     const h = CEILING * (0.9 + rng.next() * 0.25);
@@ -87,19 +94,33 @@ function shellParts(FLOOR) {
 const LADDER = { x: DOOR_HALF + 0.3, z: SOUTH - 0.45 };
 const LAMPS = [[-HALF_W + 0.2, NORTH + 0.6], [HALF_W - 0.2, NORTH + 0.6], [-HALF_W + 0.2, SOUTH - 0.9], [HALF_W - 0.2, SOUTH - 0.9]];
 
-// The field as it stands: a rock where there is one, a hole where there was a dig, and the stair (or
-// the key) where the goal was dug open. A spot nobody has dug is not drawn at all - the cave's floor is
-// the field, so nothing shows where the spots are until you dig one (the keeper's, Plans/speeltest-quests.md;
-// it was a mound of loose earth on every spot). The prompt still says when E would dig.
+// How deep the baked pit and shaft go under the floor: each is modelled that much too high, standing
+// on its bottom (scripts/build-minefield.py PIT_DEPTH, SHAFT_DEPTH - the same two numbers).
+export const MINE_PIT_DEPTH = 0.16;
+export const MINE_SHAFT_DEPTH = 0.9;
+const PITS = ['civic_minefield_pit_a', 'civic_minefield_pit_b', 'civic_minefield_pit_c'];
+const SHAFT = 'civic_minefield_shaft';
+// A baked tile, its floor painted in the cave floor's own colour so the two cannot drift apart.
+const tile = (asset, x, z, y, quarter) => meshAsset(asset, (name) => (name.startsWith(`${asset} floor`) ? C.earth : null), { x, y, z, ry: quarter * Math.PI / 2 });
+
+// The field as it stands: a rock where there is one, a hole where there was a dig, and the shaft (or
+// the key) where the goal was dug open. A spot nobody has dug is a tile of the cave's floor - nothing
+// shows where the spots are until you dig one (the keeper's, Plans/speeltest-quests.md; it was a mound
+// of loose earth on every spot, then a bed of it over the field). The prompt still says when E would dig.
 function fieldParts(FLOOR, run) {
   const parts = [];
   const f = run.plan();
-  if (!f) return parts;
   const rng = makeRng(`goldmine:field:${run.floor()}`);
   const s = CELL * 0.82;
+  const flat = (x, z) => parts.push(box(CELL, 0.24, CELL, C.earth, { x, y: FLOOR - 0.24, z }));
   for (let i = 0; i < SPOTS; i++) {
     const { x, z } = spotRoom(i);
     const jx = (rng.next() - 0.5) * 0.06, jz = (rng.next() - 0.5) * 0.06, turn = rng.next();
+    // Which pit and which way round: drawn whether or not the spot is dug, so a dig never changes
+    // the look of the pits already open.
+    const pit = PITS[rng.int(PITS.length)], quarter = rng.int(4);
+    if (!f || !run.isDug(i) || f.rock[i]) flat(x, z);
+    if (!f) continue;
     if (f.rock[i]) {
       // A boulder: three blocks leaning into one another, so it reads as stone and not as a crate.
       parts.push(box(s * 0.85, 0.24, s * 0.8, C.rockDark, { x: x + jx, y: FLOOR - 0.04, z: z + jz, ry: turn, rx: 0.12, rz: -0.1 }));
@@ -108,20 +129,18 @@ function fieldParts(FLOOR, run) {
       continue;
     }
     if (!run.isDug(i)) continue;
-    // A hole, and the earth thrown up beside it.
-    parts.push(box(s * 0.78, 0.012, s * 0.78, C.dark, { x, y: FLOOR, z }));
-    parts.push(box(s * 0.3, 0.05, s * 0.25, C.loose, { x: x + s * 0.42, y: FLOOR, z: z - s * 0.3, ry: turn }));
-    if (i !== f.goal) continue;
-    if (!f.bottom) {
-      // The stair: treads going down into the dark, a post either side.
-      for (let k = 0; k < 3; k++) parts.push(box(s * 0.6, 0.012, 0.06, C.step, { x, y: FLOOR + 0.004 + k * 0.001, z: z - 0.12 + k * 0.1 }));
-      for (const sx of [-1, 1]) parts.push(box(0.04, 0.22, 0.04, C.timber, { x: x + sx * s * 0.36, y: FLOOR, z: z + s * 0.36 }));
-    } else if (!run.keyTaken()) {
-      // The key, old iron with a gleam of brass, on a little stone.
-      parts.push(box(0.12, 0.05, 0.12, C.rockDark, { x, y: FLOOR, z }));
-      parts.push(cylinder(0.035, 0.035, 0.012, 10, C.key, { x: x - 0.05, y: FLOOR + 0.05, z, emissive: 0.6 }));
-      parts.push(box(0.1, 0.012, 0.016, C.key, { x: x + 0.02, y: FLOOR + 0.05, z, emissive: 0.6 }));
-      parts.push(box(0.016, 0.012, 0.03, C.key, { x: x + 0.065, y: FLOOR + 0.05, z: z + 0.015, emissive: 0.6 }));
+    // The way down: a shaft with a ladder standing in it, the ladder at the far side so it is seen
+    // from the way in - never turned.
+    if (i === f.goal && !f.bottom) { parts.push(...tile(SHAFT, x, z, FLOOR - MINE_SHAFT_DEPTH, 0)); continue; }
+    // A pit, and the earth thrown up round it.
+    parts.push(...tile(pit, x, z, FLOOR - MINE_PIT_DEPTH, quarter));
+    if (i === f.goal && !run.keyTaken()) {
+      // The key, old iron with a gleam of brass, on a little stone at the bottom of its pit.
+      const y = FLOOR - MINE_PIT_DEPTH + 0.006;
+      parts.push(box(0.1, 0.04, 0.1, C.rockDark, { x, y, z }));
+      parts.push(cylinder(0.035, 0.035, 0.012, 10, C.key, { x: x - 0.05, y: y + 0.04, z, emissive: 0.6 }));
+      parts.push(box(0.1, 0.012, 0.016, C.key, { x: x + 0.02, y: y + 0.04, z, emissive: 0.6 }));
+      parts.push(box(0.016, 0.012, 0.03, C.key, { x: x + 0.065, y: y + 0.04, z: z + 0.015, emissive: 0.6 }));
     }
   }
   return parts;
@@ -196,7 +215,7 @@ function createMineShow({ scene, material, FLOOR, rect, run, on }) {
     return ahead();
   };
   const PROMPTS = {
-    dig: 'dig here', rock: 'a rock - nothing digs that', down: 'go down the stair', key: 'take the key',
+    dig: 'dig here', rock: 'a rock - nothing digs that', down: 'go down the ladder', key: 'take the key',
     drink: 'too tired to dig - drink a draught', tired: 'too tired to dig, and no draught left',
   };
   // One interactable that is always where you stand when there is something to do ahead of you, so
