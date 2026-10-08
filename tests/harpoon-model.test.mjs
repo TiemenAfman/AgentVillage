@@ -114,3 +114,17 @@ test('aimed straight it points ahead at a chest\'s height; yaw swings it, pitch 
   gun.aimDir(dir);
   assert.ok(Math.abs(dir.y - Math.sin(0.3)) < 1e-6, `lifted ${dir.toArray()}`);
 });
+
+test('the house-style bake keeps the GLB\'s frame, so the page can draw either on the same numbers', async () => {
+  const { HARPOON } = await import('../web/js/harpoon-mesh.js');
+  const root = skeleton();
+  root.updateMatrixWorld(true);
+  const world = (name) => root.getObjectByName(name).getWorldPosition(new THREE.Vector3());
+  const N = harpoon.HARPOON_NODES;
+  const at = (p) => new THREE.Vector3().fromArray(HARPOON.parts[`harpoon ${p}:0`].at);
+  assert.ok(at('gun').distanceTo(world(N.gun)) < 0.002, `trunnion ${at('gun').toArray()} / ${world(N.gun).toArray()}`);
+  assert.ok(at('bolt').distanceTo(world(N.bolt)) < 0.002, `bolt tail ${at('bolt').toArray()} / ${world(N.bolt).toArray()}`);
+  const muzzle = new THREE.Vector3().fromArray(HARPOON.anchors.muzzle);
+  assert.ok(muzzle.distanceTo(world(N.muzzle)) < 0.002, `muzzle ${muzzle.toArray()} / ${world(N.muzzle).toArray()}`);
+  assert.ok(Math.abs(at('yoke').x) < 1e-9 && Math.abs(at('yoke').z) < 1e-9, 'the yoke turns on the axis of the pedestal');
+});
