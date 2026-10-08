@@ -28,6 +28,42 @@ const FOOT_MOUND = 1.9;          // the low ring of sand round her feet: any mor
 
 const ease = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 
+// Afloat (walk.js letGo in deep water): she rides the drawn swell - world.js surfaceAt, which runs on
+// the sea's clock, so every screen has her at the same height and lean - with this much of her under
+// the surface, and leans with the water's slope (FLOAT_D either side), FLOAT_LEAN times over since the
+// swell's own slope is a few degrees at most and a statue on it read as standing on glass. A slow roll
+// and nod of her own, on the sea's seconds too, keeps her moving where the swell is faded flat (near a
+// coast, world.js aWave), and is all she has where there is no surface to ask (a test, the workbench).
+export const FLOAT_SINK = 0.36;      // of her height, so the plinth is under and the figure out
+const FLOAT_D = 0.3;
+const FLOAT_LEAN = 2.5;
+const FLOAT_TILT_MAX = 0.35;
+export const FLOAT_BOB = Object.freeze({ heave: 0.03, heaveS: 3.1, roll: 0.07, rollS: 4.3, nod: 0.05, nodS: 5.9 });
+const TAU = Math.PI * 2;
+
+// Where a floating statue is drawn: `surface(x, z)` the water's height there (null: still water at
+// `y0`), `t` the sea's seconds, `rot` her turn. Returns her foot's height and the lean of her body in
+// her own frame (rotation x and z, radians). Pure, so a test can hold her to the surface.
+export function floatPose({ x, z, y0 = 0, rot = 0, t = 0, surface = null }) {
+  const at = (px, pz) => { const h = surface ? surface(px, pz) : y0; return Number.isFinite(h) ? h : y0; };
+  const b = FLOAT_BOB;
+  const heave = b.heave * Math.sin(t * TAU / b.heaveS);
+  const y = at(x, z) + heave - FLOAT_SINK * STATUE_HEIGHT * STATUE_SCALE;
+  // The slope in the world's frame, turned into hers (three's rotation.y by `rot` maps her +x to
+  // (cos, -sin) and her +z to (sin, cos)).
+  const sx = (at(x + FLOAT_D, z) - at(x - FLOAT_D, z)) / (2 * FLOAT_D);
+  const sz = (at(x, z + FLOAT_D) - at(x, z - FLOAT_D)) / (2 * FLOAT_D);
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const lx = sx * c - sz * s, lz = sx * s + sz * c;
+  const clamp = (a) => Math.max(-FLOAT_TILT_MAX, Math.min(FLOAT_TILT_MAX, a));
+  // Up along the water's normal: a slope rising to +x leans her top to -x, which is +z rotation.
+  return {
+    y,
+    rx: clamp(-Math.atan(lz) * FLOAT_LEAN + b.nod * Math.sin(t * TAU / b.nodS + 1.3)),
+    rz: clamp(Math.atan(lx) * FLOAT_LEAN + b.roll * Math.sin(t * TAU / b.rollS + 0.4)),
+  };
+}
+
 // ---- shapes ------------------------------------------------------------------------------------
 
 // A fresh geometry every call: whoever takes it owns it (a boat's cargo gives its geometry back).
@@ -149,8 +185,10 @@ function grainTexture() {
 
 // ---- the view ----------------------------------------------------------------------------------
 
-// `material` is the island's building material.
-export function createTreasureView({ scene, material }) {
+// `material` is the island's building material. `surface(x, z)` is the water's drawn height (world.js
+// surfaceAt) and `seaSeconds()` the sea's clock, for a statue afloat; without them she floats on still
+// water at the height she was let go at.
+export function createTreasureView({ scene, material, surface = null, seaSeconds = null }) {
   const group = new THREE.Group();
   group.name = 'treasure';
   scene.add(group);
@@ -210,7 +248,17 @@ export function createTreasureView({ scene, material }) {
     }
   }
 
-  // One list of what stands on the islets: [{ id, kind: 'statue' | 'chest', stage, x, y, z, rot }].
+  // A statue afloat, put on the swell as it is now (floatPose).
+  function floatEntry(e) {
+    const t = seaSeconds ? seaSeconds() : 0;
+    const p = floatPose({ x: e.at.x, z: e.at.z, y0: e.at.y, rot: e.at.rot, t: Number.isFinite(t) ? t : 0, surface });
+    e.group.position.y = p.y;
+    e.parts.body.position.y = 0;
+    e.parts.body.rotation.set(p.rx, 0, p.rz);
+  }
+
+  // One list of what stands on the islets: [{ id, kind: 'statue' | 'chest', stage, x, y, z, rot,
+  // afloat? }].
   function setSites(list) {
     const seen = new Set();
     for (const site of list) {
@@ -226,6 +274,15 @@ export function createTreasureView({ scene, material }) {
       if (fresh) { e.from = e.to = level; e.t = 1; pose(e, level); }
       else if (level !== e.to) { e.from = e.t >= 1 ? e.to : e.from + (e.to - e.from) * ease(e.t); e.to = level; e.t = 0; }
       e.stage = site.stage;
+      // Afloat: no ring of sand at her feet, and update() puts her on the swell every frame.
+      const afloat = site.kind === 'statue' && site.afloat === true;
+      if (afloat !== !!e.afloat) {
+        e.afloat = afloat;
+        if (e.parts.mound) e.parts.mound.visible = !afloat;
+        if (!afloat) { e.parts.body.rotation.set(0, 0, 0); pose(e, e.t >= 1 ? e.to : e.from); }
+      }
+      e.at = { x: site.x, y: site.y, z: site.z, rot: site.rot || 0 };
+      if (afloat) floatEntry(e);
     }
     for (const [id, e] of entries) if (!seen.has(id) && !id.startsWith('bottle:') && e.leaving == null) e.leaving = FADE_S;
   }
@@ -293,6 +350,7 @@ export function createTreasureView({ scene, material }) {
         e.t = Math.min(1, e.t + dt / RISE_S);
         pose(e, e.from + (e.to - e.from) * ease(e.t));
       }
+      if (e.afloat) floatEntry(e);
     }
     // The heap follows the dig's progress a touch behind it, so it swells rather than jumps.
     if (heap.mesh) {

@@ -2437,11 +2437,17 @@ Late quest events are caught up (delivering also reports lifted and boarded), th
 its current step. Once the statue stands in the town, a second browser's first-hunt map digs an ordinary chest
 and is told the rest at once (`dug statue` and the late events, so its book waits on the word with the pirate).
 **What the arms carry is never lost** (Plans/schatkaarten.md, "Neerzetten en laten vallen"): H / pad ↓ / a touch
-button (`putDown`, `walk.setDown`) sets her down a step ahead on dry ground within a step of the feet; deep water
-(`canDive`, not the rowing boat's shallows), a fall over `CARRY_FALL`, `die` and `sentHome` make walk.js let go
-(`letGo`), where the feet are if dry, else the last dry ground she was carried over. Both end in walk's
-`onLetGo` -> `hunt.letGo`, which keeps the spot in `finds.statue` (`local: true` in our island's own frame,
-else the world's with `isletId` or null) and posts `dropped`; E lifts her again and the book does not move.
+button (`putDown`, `walk.setDown`) sets her down a step ahead on dry ground within a step of the feet, or,
+swimming, onto deep water ahead; a fall over `CARRY_FALL`, `die`, `sentHome` and going under (a plunge) make
+walk.js let go (`letGo`): where the feet are if dry, **afloat** there in water deep enough to dive in
+(`floatAt`: `canDive`, no deck within `FLOAT_LID` over it; `afloat: true`, y = `WATER_Y`), else - the
+shallows - the last dry ground she was carried over. **She floats, so a swimmer keeps her** (the keeper's
+choice: the rowing boat is a help, no longer the only way home); a carrier cannot dive, and E lifts her from
+the surface too (`canHandleAfloat`). Both end in walk's `onLetGo` -> `hunt.letGo`, which keeps the spot in
+`finds.statue` (`local: true` in our island's own frame, else the world's with `isletId` or null; `afloat`)
+and posts `dropped`; E lifts her again and the book does not move. Afloat she rides `world.surfaceAt` (the
+drawn swell, the sea's clock) plus a bob of her own on the sea's seconds (`floatPose` in treasure-site.js),
+so every screen has her alike.
 `?hunt` puts `__state` on window.
 **The statue goes home in a rowing boat** ([Plans/roeiboot-en-schat.md](Plans/roeiboot-en-schat.md)). The boat is
 our own skiff (`boat:w-<player>`, which any page may launch - lib/boats.mjs needs nothing new): coming within

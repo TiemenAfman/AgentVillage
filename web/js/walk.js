@@ -92,6 +92,9 @@ const CARRY_SPEED = 0.55;
 // A fall of more than CARRY_FALL (a cell, four metres) with her in the arms throws her out of them.
 export const SET_AHEAD = 0.6;
 export const CARRY_FALL = 1.0;
+// Let go of in deep water she floats where she met it - unless a deck, a jetty or a bridge hangs lower
+// than this over the surface there: under planks there is no swell to bob on, and she goes ashore.
+const FLOAT_LID = 1.5;
 // A dig (`dig`) takes this long unless the caller says otherwise, and the shovel goes in this far ahead
 // of the feet - where `onDigDone` says the hole is, so a spot is found at the hole and not under the boots.
 const DIG_SECONDS = 2.5;
@@ -240,9 +243,10 @@ export function createWalkMode({
   // struck), 'paused', 'reset' (a seat, a boat, leaving walk mode) or 'blocked'. `onBlocked('carry')`
   // is a thing refused because both hands are full - main.js turns it into a toast.
   onDigDone = null, onDigCancelled = null, onBlocked = null,
-  // The hands letting go of what they carried, anywhere but onto a hull: `onLetGo(item, { x, y, z, why })`
-  // with where it lies now - always dry ground, never the water. `why` is 'set' (H: set down on purpose,
-  // ahead of the feet), 'water' (deep water: nobody swims with her), 'fall' (a drop of CARRY_FALL or
+  // The hands letting go of what they carried, anywhere but onto a hull: `onLetGo(item, { x, y, z, why,
+  // afloat })` with where it lies now - dry ground, or with `afloat` the surface of water deep enough to
+  // dive in (y = WATER_Y), where she floats; never the bed. `why` is 'set' (H: set down on purpose,
+  // ahead of the feet, or swimming onto the water), 'water' (the body went under), 'fall' (a drop of CARRY_FALL or
   // more), 'die' or 'home' (main.js sentHome: the body is taken somewhere else, and she stays). The
   // hunt keeps the spot (treasure.js letGo); `onBlocked('set')` is H refused here.
   onLetGo = null,
@@ -481,6 +485,11 @@ export function createWalkMode({
     && !state.vehicle && !state.deck && !climb && !rides() && !state.swimming
     && !state.sitting && !state.lying && !state.digging;
 
+  // Or swimming at the surface beside her where she floats: she floats, and so the swimmer takes her.
+  const canHandleAfloat = () => state.active && !state.paused && !state.working && !state.parked
+    && !state.vehicle && !state.deck && !climb && !rides() && state.swimming && !state.dive
+    && !state.sitting && !state.lying && !state.digging;
+
   // At the oars of a rowing boat (boat.js `rowing`): drawn seated on her thwart, pulling with her
   // stroke. A ship's pilot stands at her wheel instead.
   const oarsman = () => !!(state.vehicle && !state.deck && state.vehicle.craft && state.vehicle.craft.rowing);
@@ -489,7 +498,7 @@ export function createWalkMode({
   // Take the statue (or whatever `item` names) in both arms. False when there is no room for it: the
   // hands are busy, or it is already in them or on a hull.
   function lift(item = 'statue') {
-    if (!item || state.carry || state.cargo || !canHandle()) return false;
+    if (!item || state.carry || state.cargo || !(canHandle() || canHandleAfloat())) return false;
     state.carry = item;
     lastDry = dryHere();
     // Both hands: no shield up, no dance, no crouch, and the sprint toggle is dropped with the rest.
@@ -509,11 +518,12 @@ export function createWalkMode({
     if (classicAvatar.setCarry) classicAvatar.setCarry(false);
     return item;
   }
-  // Letting go of her on the ground (Plans/schatkaarten.md, "Neerzetten en laten vallen"). Nothing a
-  // body carries is ever lost: she lies on dry ground, and `onLetGo` says where, for the hunt to keep.
-  // `lastDry` is where the feet last stood on dry ground with her in the arms - set by lift() and every
-  // frame after - which is where she ends up when the hands give out somewhere she cannot lie: in
-  // deep water she is back on the shore you waded in from, never on the bed.
+  // Letting go of her (Plans/schatkaarten.md, "Neerzetten en laten vallen"). Nothing a body carries is
+  // ever lost: she lies on dry ground or floats on deep water, and `onLetGo` says where, for the hunt to
+  // keep. In water deep enough to dive in she floats where she met it (the keeper's ask: she bobs, she is
+  // not carried back ashore). `lastDry` is where the feet last stood on dry ground with her in the arms -
+  // set by lift() and every frame after - and is only for the shallows in between: a fall, a death or a
+  // jump home while wading lays her on the shore you came from, not on a bed just under the surface.
   let lastDry = null;
   // Where a fall began (walked off an edge, or over a ship's side), for CARRY_FALL.
   let airTop = -Infinity;
@@ -528,23 +538,42 @@ export function createWalkMode({
     const item = putDown();
     if (!item) return false;
     lastDry = null;
-    if (onLetGo) onLetGo(item, { x: at.x, y: at.y, z: at.z, why });
+    const spot = { x: at.x, y: at.y, z: at.z, why };
+    if (at.afloat) spot.afloat = true;
+    if (onLetGo) onLetGo(item, spot);
     return true;
   }
   // The hands give out (deep water, a fall, a death, a jump home): where the feet are if that is dry
-  // ground, else the last dry ground she was carried over.
+  // ground; afloat right there if the water is deep enough to dive in (`floatHere`); else - the
+  // shallows - the last dry ground she was carried over.
   function letGo(why = 'drop') {
     if (!state.carry) return false;
-    const at = dryHere() || lastDry || { x: state.pos.x, y: Math.max(state.pos.y, WATER_Y), z: state.pos.z };
+    const at = dryHere() || floatHere() || lastDry || { x: state.pos.x, y: Math.max(state.pos.y, WATER_Y), z: state.pos.z };
     return letGoAt(why, at);
   }
+  // The surface at x, z (floatHere: the feet's), when it is water she can float on: deep enough to dive
+  // in, and open to the sky there (under a deck or a jetty there is no swell to bob on, and she goes
+  // ashore instead).
+  const floatHere = () => floatAt(state.pos.x, state.pos.z);
+  function floatAt(x, z) {
+    if (!canDive(bedUnder(x, z), WATER_Y)) return null;
+    if (ceilingAt(x, z, WATER_Y - 0.5) < WATER_Y + FLOAT_LID) return null;
+    return { x, y: WATER_Y, z, afloat: true };
+  }
   // H: set her down on purpose, a step ahead - on dry ground within a step of the feet, never in the
-  // water, on a roof or a wall, and only from a body standing on its own two feet.
+  // shallows, on a roof or a wall, and only from a body standing on its own two feet; or, swimming, onto
+  // deep water a step ahead, where she floats.
   const canSet = () => state.active && !state.paused && !state.working && !state.parked && state.grounded
     && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !rides()
     && !state.sitting && !state.lying && !state.dying;
   function setDown() {
     if (!state.carry) return false;
+    // Swimming: let go, and she floats a step ahead on water deep enough for her (floatAt).
+    if (canHandleAfloat()) {
+      const at = floatAt(state.pos.x + Math.sin(state.yaw) * SET_AHEAD, state.pos.z + Math.cos(state.yaw) * SET_AHEAD);
+      if (!at) { blockedBy('set'); return false; }
+      return letGoAt('set', at);
+    }
     if (!canSet()) { blockedBy('set'); return false; }
     const x = state.pos.x + Math.sin(state.yaw) * SET_AHEAD, z = state.pos.z + Math.cos(state.yaw) * SET_AHEAD;
     const y = groundAt(x, z, state.pos.y);
@@ -1829,8 +1858,8 @@ export function createWalkMode({
     } else if (c.letGo) {
       // Let go where you hang: falling from there, with the hull's way on you like any jump off her.
       const away = hullVelocity(frame, b.v || 0);
-      // Over deep water the statue on the back stays with the ship (her cargo again), since nobody swims
-      // with her (letGo 'water') and the shore she was carried from may be an islet away.
+      // Over deep water the statue on the back stays with the ship (her cargo again): a fall from her
+      // ladder would throw her out of the arms (CARRY_FALL), to float wherever the swell takes the ship.
       if (state.carry && canDive(groundAt(x, z, WATER_Y), WATER_Y)) putOnBoat(b);
       climb = null;
       state.grounded = false;
@@ -1846,9 +1875,9 @@ export function createWalkMode({
       const first = c.path[0];
       const [wx, wz] = toWorld(frame, first.x, first.z);
       const g = groundAt(wx, wz, WATER_Y);
-      // Not into deep water with the statue on the back (nobody swims with her): you hang at the foot,
-      // and up again she goes back on her deck. Lowered into the rowing boat (lowerOff) is the way down.
-      if (state.carry && canDive(g, WATER_Y)) { blockedBy('carry'); return afterMove(dt); }
+      // Into deep water with the statue on the back she comes along, in the arms: she floats, and a
+      // swimmer keeps her (the keeper's choice, 8 Oct 2026). Lowered into the rowing boat (lowerOff) is
+      // the dry way down.
       climb = null;
       state.pos.set(wx, g < 0 ? WATER_Y - SWIM_SINK : g, wz);
       state.floor = g;
@@ -2868,7 +2897,7 @@ export function createWalkMode({
       : state.dive ? (state.onBed ? BOTTOM_SPEED : turbo ? DIVE_TURBO : DIVE_SPEED)
       : state.swimming ? (turbo ? SWIM_TURBO : SWIM_SPEED)
         : state.crouching ? CROUCH_SPEED
-          : sprint ? speeds.sprint : run ? speeds.run : speeds.walk) * push * dt * (state.carry ? CARRY_SPEED : 1);
+          : sprint ? speeds.sprint : run ? speeds.run : speeds.walk) * push * dt * (state.carry && !state.swimming ? CARRY_SPEED : 1);
     state.moving = push > 0.02;
     state.running = run && state.moving;   // the others need to know which gait to draw
     state.sprinting = sprint && state.moving;
@@ -3010,19 +3039,20 @@ export function createWalkMode({
         if (plunge) { state.dive = true; state.vy = plunge; }
         else { state.pos.y = underfoot; state.vy = 0; }
         state.grounded = true;
-        // Down from too high with her in the arms: she is thrown out of them where you land (or, in
-        // the water, onto the shore you came from - letGo).
+        // Down from too high with her in the arms: she is thrown out of them where you land - and in
+        // deep water she floats there (letGo).
         if (state.carry && airTop - state.pos.y > CARRY_FALL) letGo('fall');
         airTop = -Infinity;
       }
     }
     state.swimming = state.dive || (state.grounded && inWater && !state.sitting);
     state.diving = state.dive && headUnder(state.pos.y, WATER_Y);
-    // The statue is too heavy to swim with: in water deep enough to dive in she slips out of the arms
-    // and lies on the last dry ground she was carried over. Wading the shallows - the rowing boat lies
-    // at ROW_DEPTH, well above that - keeps her.
+    // She floats, so a swimmer keeps her in the arms (the keeper's choice, 8 Oct 2026: the rowing boat is
+    // a help, not the only way home). Under the surface she cannot go: C does not dive with her
+    // (above), and a body that went under anyway - a plunge from a height - lets her go to float
+    // where it went in.
     if (state.carry) {
-      if (state.dive || (state.swimming && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y))) letGo('water');
+      if (state.dive) letGo('water');
       else { const d = dryHere(); if (d) lastDry = d; }
     }
 

@@ -69,6 +69,8 @@ const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 // is in the island's own (scene) coordinates: the island keeps those whatever berth it is given.
 // `isletId` is the islet she lies on, or null on an island (set down, or dropped, off every islet) -
 // ours (`local`) or anybody's, a starter's or a neighbour's beach (the world's frame: islands never move).
+// `afloat` is she floats there on water deep enough to dive in (walk.js letGo): `y` is then the still
+// surface, and the view puts her on the swell.
 export function parseStatue(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const { islandId, isletId, spot, y } = raw;
@@ -76,6 +78,7 @@ export function parseStatue(raw) {
   if (!spot || !finite(spot.x) || !finite(spot.z) || !finite(y)) return null;
   const out = { islandId: typeof islandId === 'string' ? islandId : null, isletId, spot: { x: spot.x, z: spot.z }, y };
   if (raw.local === true) out.local = true;
+  if (raw.afloat === true) out.afloat = true;
   return out;
 }
 
@@ -268,7 +271,9 @@ export function createTreasureHunt(deps) {
     if (placed && rec) { finds.setStatue(null); rec = null; }
     if (rec && rec.islandId === id && has(rec.isletId) && !carried()) {
       const [x, z] = rec.local ? [rec.spot.x, rec.spot.z] : worldToScene([rec.spot.x, rec.spot.z], h);
-      out.push({ id: 'statue', kind: 'statue', stage: 'unearthed', x, y: rec.y, z, rot: turnOf('statue'), seed: null });
+      const site = { id: 'statue', kind: 'statue', stage: 'unearthed', x, y: rec.y, z, rot: turnOf('statue'), seed: null };
+      if (rec.afloat) site.afloat = true;
+      out.push(site);
     }
 
     // The map in hand.
@@ -442,17 +447,26 @@ export function createTreasureHunt(deps) {
   }
 
   // The hands let go of her (walk.js onLetGo): set down with H, or slipped out of them in deep water,
-  // a fall or a death. Wherever it was, `at` is dry ground (scene coordinates, the ground's height),
-  // and that is where she lies now - kept in the finds like the spot she was dug up at, so a reload
+  // a fall or a death. Wherever it was, `at` is dry ground (scene coordinates, the ground's height) or,
+  // with `at.afloat`, deep water's surface where she floats, and that is where she lies now - kept in
+  // the finds like the spot she was dug up at, so a reload
   // finds her there, and the island told she is not carried any more ('dropped': lifted -> buried,
   // lib/treasure.mjs). The quest does not move: the book waits at whichever step it was on, and the
   // next lift is a late 'lifted' it ignores.
   const LET_GO_WORDS = {
     set: 'You set the statue down. <b>E</b> lifts her again.',
-    water: 'She is too heavy to swim with: the statue slips from your arms. She lies on the shore you waded in from.',
+    water: 'You go under, and the statue slips from your arms. She lies on the shore you came from.',
     fall: 'You land hard, and the statue tumbles out of your arms. <b>E</b> lifts her again.',
     die: 'The statue stays behind where you fell. She will wait for you.',
     home: 'The statue stays behind where you stood. She will wait for you.',
+  };
+  // The same, when she ended up afloat on deep water.
+  const FLOAT_WORDS = {
+    set: 'You let her go, and the statue <b>floats</b> on the swell. <b>E</b> beside her lifts her again.',
+    water: 'You go under, and the statue slips from your arms. She <b>floats</b> where you went in.',
+    fall: 'You land hard, and the statue tumbles out of your arms. She <b>floats</b> on the swell.',
+    die: 'The statue floats where you went down. She will wait for you.',
+    home: 'The statue floats where you left her. She will wait for you.',
   };
   function letGo(item, at) {
     if (item !== 'statue' || !at || !finite(at.x) || !finite(at.z) || !finite(at.y)) return false;
@@ -470,9 +484,10 @@ export function createTreasureHunt(deps) {
       const islet = (islets() || []).find((i) => dist(wx, wz, i.x, i.z) <= i.r + ISLET_SLACK);
       rec = { islandId: id, isletId: islet ? islet.id : null, spot: { x: wx, z: wz }, y: at.y };
     }
+    if (rec && at.afloat === true) rec.afloat = true;
     if (rec) finds.setStatue(rec);
     if (keeper()) Promise.resolve(post('dropped')).catch(() => null);
-    if (rec) say(LET_GO_WORDS[at.why] || LET_GO_WORDS.set);
+    if (rec) say((rec.afloat && FLOAT_WORDS[at.why]) || LET_GO_WORDS[at.why] || LET_GO_WORDS.set);
     else say('The statue slips from your arms, and goes back to where she lay.');
     refresh();
     return true;

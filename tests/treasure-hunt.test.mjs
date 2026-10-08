@@ -794,7 +794,7 @@ test('let go on an islet she keeps to that islet, in the world\'s frame', async 
   assert.equal(kept.isletId, islet.id);
   assert.deepEqual(kept.spot, { x: islet.x + 1, z: islet.z - 1 });
   assert.equal(kept.local, undefined);
-  assert.match(p.toasts.at(-1), /too heavy to swim with/);
+  assert.match(p.toasts.at(-1), /slips from your arms/);
   const [lying] = p.hunt.sites();
   assert.ok(Math.abs(lying.x - sx) < 1e-9 && Math.abs(lying.z - sz) < 1e-9);
   p.press('lift');
@@ -835,4 +835,23 @@ test('parseStatue takes a spot on an island as well as on an islet, and refuses 
   assert.equal(T.parseStatue({ islandId: 'a', isletId: '', spot: { x: 1, z: 2 }, y: 0.5 }), null);
   assert.equal(T.parseStatue({ islandId: 'a', isletId: 3, spot: { x: 1, z: 2 }, y: 0.5 }), null);
   assert.equal(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1 }, y: 0.5 }), null);
+  assert.equal(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0, afloat: true }).afloat, true);
+  assert.equal(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0, afloat: 1 }).afloat, undefined);
+});
+
+test('let go afloat she is kept afloat: a reload finds her floating where she was, and E lifts her', async () => {
+  const p = firstHunt();
+  await p.dig(p.hunt.sites()[0]);
+  p.press('lift');
+  p.walk.drop({ x: -12, y: 0, z: 30, afloat: true }, 'fall');
+  assert.equal(T.createFinds(p.storage).statue().afloat, true);
+  assert.match(p.toasts.at(-1), /floats/);
+  assert.equal(p.posts.at(-1), 'dropped');
+  const again = page({ storage: p.storage, answer: { read: { statue: 'buried' } } });
+  await again.hunt.boot();
+  const [floating] = again.hunt.sites();
+  assert.deepEqual([floating.kind, floating.x, floating.y, floating.z, floating.afloat], ['statue', -12, 0, 30, true]);
+  again.walk.state.pos.x = -12; again.walk.state.pos.z = 29;
+  again.press('lift');
+  assert.equal(again.walk.carrying(), 'statue');
 });
