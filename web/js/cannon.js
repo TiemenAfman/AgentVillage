@@ -29,7 +29,17 @@ export function cannonShape() {
   const mouth = [anchor[0] - pin[0], anchor[1] - pin[1], anchor[2] - pin[2]];
   // The bore's elevation as modelled: from the trunnions to the mouth (9.5 degrees).
   const rest = Math.atan2(mouth[1], mouth[2]);
-  return (shape = { pin, mouth, rest, length: Math.hypot(mouth[0], mouth[1], mouth[2]) });
+  // The vent (touch hole) the fuse burns in: on top of the breech, a little ahead of its back end -
+  // the highest point of the barrel between 3 and 8 cm in front of the cascabel, in the barrel's own
+  // frame (around the trunnions).
+  const p = models.part(BARREL).positions;
+  let back = Infinity;
+  for (let i = 2; i < p.length; i += 3) back = Math.min(back, p[i]);
+  let vent = [0, 0, back + 0.05];
+  for (let i = 0; i < p.length; i += 3) {
+    if (p[i + 2] > back + 0.03 && p[i + 2] < back + 0.08 && Math.abs(p[i]) < 0.02 && p[i + 1] > vent[1]) vent = [0, p[i + 1], p[i + 2]];
+  }
+  return (shape = { pin, mouth, rest, vent, length: Math.hypot(mouth[0], mouth[1], mouth[2]) });
 }
 export const carriageGeometry = () => mesh(CARRIAGE);
 export const barrelGeometry = () => mesh(BARREL);

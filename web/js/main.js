@@ -2272,6 +2272,7 @@ function walkCallbacks() {
     onGunFire: (shot) => fireCannonHere(shot),
     onGunEvent: (what) => {
       if (what === 'empty') state.ui.toast('Load it first: R rams a ball home.');
+      if (what === 'in') state.ui.toast('In the barrel. Light the fuse and you are fired out of it!');
       // Manned or let go: E's offer changes with it.
       if (what === 'manned' || what === 'left') state.walk.setInteractables(interactables());
     },
@@ -2280,13 +2281,61 @@ function walkCallbacks() {
 
 // ---- the galleon's guns (Plans/kanonnen.md) ----------------------------------------------------
 // What the prompt says at a manned gun, as it changes (a getter on the interactable).
-function gunPrompt() {
+function gunPrompt() { return 'leave the cannon'; }
+
+// The gun's own panel (the keeper: "instructies hud moet groter"), big and in the middle of the lower
+// screen while a gun is manned: what state it is in - empty, being loaded, loaded with its fuse, the
+// fuse burning down, or you in the barrel - and the keys for what can be done now. A burning fuse
+// counts down, and inside the gun it says in so many words what the button will do.
+let gunHud = null, gunHudSaid = '';
+function syncGunHud() {
+  const g = state.mode === 'walk' && state.walk ? state.walk.gun() : null;
+  if (!g) { if (gunHud) gunHud.hidden = true; return; }
+  if (!gunHud) {
+    gunHud = document.createElement('div');
+    gunHud.id = 'gun-hud';
+    document.body.append(gunHud);
+  }
+  gunHud.hidden = false;
+  const key = (k) => `<kbd>${k}</kbd>`;
+  const fire = `${key('Right mouse')}`;
+  let head, lines;
+  if (g.fuse > 0) {
+    head = g.inside ? `You are about to be fired! ${g.fuse.toFixed(1)} s` : `Fuse burning... ${g.fuse.toFixed(1)} s`;
+    lines = [`${fire} snuff the fuse`];
+    gunHud.className = 'burning';
+  } else if (g.inside) {
+    head = 'You are inside the cannon';
+    lines = [`${fire} light the fuse and fire yourself`, `${key('C')} climb out`, `${key('E')} leave`];
+    gunHud.className = 'inside';
+  } else if (g.loading > 0) {
+    head = 'Ramming a ball home...';
+    lines = [`${key('E')} leave`];
+    gunHud.className = '';
+  } else if (g.loaded) {
+    head = 'Loaded';
+    lines = [`${fire} light the fuse`, `${key('R')} unload cannonball`, `${key('E')} leave`];
+    gunHud.className = 'loaded';
+  } else {
+    head = 'Empty';
+    lines = [`${key('R')} load cannonball`, `${key('C')} climb in and fire yourself`, `${key('E')} leave`];
+    gunHud.className = '';
+  }
+  const html = `<div class="gun-head">${head}</div>${lines.map((l) => `<div>${l}</div>`).join('')}`;
+  if (html !== gunHudSaid) { gunHud.innerHTML = html; gunHudSaid = html; }
+}
+// The fuse of the gun we man, every frame: a stub of match in the vent of a loaded gun, sparks and a
+// thread of smoke from a lit one.
+const ventAt = new THREE.Vector3();
+function gunFuseFx() {
   const g = state.walk && state.walk.gun();
-  if (!g) return 'leave the cannon';
-  if (g.inside) return 'leave the cannon - right mouse button to fire yourself, C to climb out';
-  if (g.loading > 0) return 'leave the cannon - ramming a ball home...';
-  if (g.loaded) return 'leave the cannon - right mouse button to fire, R to unload cannonball';
-  return 'leave the cannon - R to load cannonball, C to climb in';
+  if (!g || !state.cannonFx || !(g.loaded || g.inside || g.fuse > 0)) return;
+  const b = state.walk.onDeck && state.walk.onDeck();
+  const v = b && b.craft && b.craft.gunVent ? b.craft.gunVent(g.i) : null;
+  if (!v) return;
+  b.craft.object.updateMatrixWorld();
+  b.craft.object.localToWorld(ventAt.set(v[0], v[1] + 0.012, v[2]));
+  state.cannonFx.fuse([ventAt.x, ventAt.y, ventAt.z], g.fuse > 0);
 }
 let shotsFired = 0;
 // A gun fired from our deck: the muzzle and the way out of it in the scene, read off the transform
@@ -8084,7 +8133,9 @@ function frame(nowMs) {
   glideBoats();
   // Balls in flight and what they come down on (Plans/kanonnen.md): after the boats are where they
   // are drawn this frame, so a ball meets a hull where it is seen.
+  gunFuseFx();
   if (state.cannonFx) state.cannonFx.update(dt, state.sea ? cannonWorld() : null, pointScale());
+  syncGunHud();
   if (state.peers) {
     state.peers.setVisible(live);
     state.peers.update(dt, { beat: danceBeat() });

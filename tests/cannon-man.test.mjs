@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import * as THREE from 'three';
 import { CRAFTS } from '../shared/crafts.mjs';
-import { GUN_TURN, LOAD_S, RECOIL_S, HUMAN_SPEED } from '../shared/cannon.mjs';
+import { GUN_TURN, LOAD_S, RECOIL_S, FUSE_S, HUMAN_SPEED } from '../shared/cannon.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 const noop = () => {};
@@ -97,7 +97,18 @@ test('an empty gun does not fire; a rammed one fires once, and runs back and out
   assert.equal(walk.fireGun(), false, 'fired half rammed');
   run(walk, LOAD_S * 0.6);
   assert.ok(walk.gun().loaded && events.includes('loaded'));
+  // The button lights the fuse; pressed again it snuffs it; lit again it burns the whole FUSE_S anew.
   assert.ok(walk.fireGun());
+  run(walk, FUSE_S * 0.6);
+  assert.equal(shots.length, 0, 'went off before the fuse burnt down');
+  assert.ok(walk.fireGun() && walk.gun().fuse === 0, 'the fuse was not snuffed');
+  run(walk, FUSE_S);
+  assert.equal(shots.length, 0, 'a snuffed fuse fired');
+  assert.ok(walk.gun().loaded, 'snuffing it lost the ball');
+  walk.fireGun();
+  run(walk, FUSE_S * 0.9);
+  assert.equal(shots.length, 0, 'the fuse did not start over');
+  run(walk, FUSE_S * 0.15);
   assert.equal(shots.length, 1);
   assert.equal(shots[0].self, false);
   assert.equal(walk.fireGun(), false, 'fired twice on one ball');
@@ -128,6 +139,7 @@ test('climbed into an empty gun and fired, a body flies the arc and comes down i
   assert.ok(walk.climbInGun());
   assert.equal(walk.loadGun(), false, 'loaded a ball on top of a body');
   assert.ok(walk.fireGun());
+  run(walk, FUSE_S + 0.05);
   assert.equal(shots[0].self, true);
   assert.deepEqual(left, [ship.id], 'the sea was not told we left her');
   assert.equal(walk.state.deck, null);
@@ -140,4 +152,27 @@ test('climbed into an empty gun and fired, a body flies the arc and comes down i
   const flown = walk.state.pos.x - x0;
   assert.ok(flown > 20, `flew only ${flown.toFixed(1)} units`);
   assert.ok(walk.state.swimming, 'not in the water');
+});
+
+test('fired at a building, a body comes down on its roof and rolls off it, never into it', () => {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  const terrain = { worldHeight: () => 0.5, half: 32, size: 64 };
+  const walk = createWalkMode({ scene, camera, terrain, material: new THREE.MeshBasicMaterial(), dom: el(), following: () => false, poseHull: null });
+  walk.enter({ at: [0, 0], blockers: [], interactables: [], onInteract: noop, onSendAway: noop, onPlant: noop, onNextSeed: noop,
+    onPrevSeed: noop, onBuild: noop, onAvatar: noop, onExit: noop, onRelease: noop, onToggleMinimap: noop, onGive: noop });
+  // A house of 4 by 4, its top at 3, as main.js blockersOf hands a building's solids over (y0/y1).
+  const house = { x: 10, z: 0, hx: 2, hz: 2, y0: 0.5, y1: 3 };
+  walk.setBlockers([house]);
+  // Coming down steeply on its middle.
+  walk.launchSelf([10, 8, 0], [0.4, 0, 0]);
+  let lowest = Infinity;
+  for (let i = 0; i < 60 * 6 && walk.state.launched; i++) {
+    walk.update(FRAME);
+    const { x, y, z } = walk.state.pos;
+    if (Math.abs(x - house.x) < house.hx && Math.abs(z - house.z) < house.hz) lowest = Math.min(lowest, y);
+  }
+  assert.ok(lowest >= house.y1 - 1e-6, `went into the house to ${lowest.toFixed(2)}`);
+  assert.ok(walk.state.grounded && !walk.state.launched, 'never came down');
+  assert.ok(Math.abs(walk.state.pos.x - house.x) >= house.hx || Math.abs(walk.state.pos.z - house.z) >= house.hz, 'stayed on the roof');
 });

@@ -250,8 +250,21 @@ export function createCannonFx({ scene }) {
     stepPool(smoke, dt);
   }
 
+  // A gun's fuse, asked every frame it is to be seen: a loaded gun shows a stub of match in its vent
+  // (`burning` false), a lit one throws sparks and a thread of smoke from it.
+  function fuse(at, burning) {
+    emit(fire, at, [0, 0, 0], 0.03, burning ? 0.09 : 0.035, burning ? 0.07 : 0.035, 'flash', burning ? [1, 0.7, 0.25] : [0.6, 0.18, 0.05]);
+    if (!burning) return;
+    seed = (seed + 7919) % 2147483647 || 1;
+    for (let k = 0; k < 2; k++) {
+      emit(fire, at, [(rnd() - 0.5) * 1.6, 0.6 + rnd() * 1.4, (rnd() - 0.5) * 1.6], 0.25 + rnd() * 0.2, 0.05, 0.015, 'ember', [1, 0.75, 0.3]);
+    }
+    if (rnd() < 0.3) emit(smoke, at, [(rnd() - 0.5) * 0.1, 0.35, (rnd() - 0.5) * 0.1], 1.2, 0.03, 0.18, 'smoke', [0.7, 0.7, 0.68]);
+  }
+
   return {
     fire: fire1,
+    fuse,
     landed,
     update,
     setWind(x, z) { wind = [x, z]; },

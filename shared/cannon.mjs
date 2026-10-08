@@ -24,6 +24,9 @@ export const GUN_TURN = 1.1;
 // unlimited shot (the keeper's call), so this is what paces a broadside.
 export const LOAD_S = 1.6;
 export const RECOIL_S = 0.9;
+// The fuse (the keeper, after Sea of Thieves): firing lights it, and the gun goes off FUSE_S later.
+// Firing again before then snuffs it, and lighting it again starts the two seconds over.
+export const FUSE_S = 2;
 
 // A ball: out of the muzzle at BALL_SPEED, under BALL_G. At the gun's highest it carries about 135
 // units over flat water (v^2 sin 2a / g), the width of a big island; laid level from the deck, 35.

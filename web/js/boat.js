@@ -811,6 +811,11 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     gunLay: (i) => (guns[i] ? { lay: guns[i].lay.slice(), kick: guns[i].kick } : null),
     layGun,
     gunMuzzle: (i) => (guns[i] ? muzzleOf(guns[i].spec, guns[i].lay, guns[i].kick) : null),
+    // The touch hole the fuse burns in, in the same frame.
+    gunVent: (i) => {
+      const g = guns[i], s = cannonShape();
+      return g && s ? layPoint(g.spec, g.lay, g.kick, true, s.vent[0], s.vent[1], s.vent[2]) : null;
+    },
 
     // Where a body in it is, swell and all: a ship's pilot's feet at her wheel, a rower's seat
     // on the thwart (walk.js sits him there).
