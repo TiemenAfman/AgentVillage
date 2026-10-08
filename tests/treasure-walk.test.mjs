@@ -21,7 +21,7 @@ const handlers = { keydown: [], keyup: [] };
 globalThis.addEventListener = (type, fn) => { if (handlers[type]) handlers[type].push(fn); };
 globalThis.removeEventListener = noop;
 const { createWalkMode } = await import('../web/js/walk.js');
-const { createBoat, cargoMesh, DECK_Y } = await import('../web/js/boat.js');
+const { createBoat, cargoMesh, DRAUGHT } = await import('../web/js/boat.js');
 const { createClassicAvatar, carriedGeometry } = await import('../web/js/classic-avatar.js');
 const { normalizeAvatar } = await import('../web/js/avatar.js');
 const T = await import('../web/js/treasure.js');
@@ -151,7 +151,7 @@ test('the carried figure in the rig is the baked prop, centred on the hands', ()
   assert.ok(avatar.carried.children[0].geometry.attributes.position.count > 200, 'the baked 112 triangles, not a three-piece block');
 });
 
-test('on a boat she is the baked statue, sized for the Benchy, and the hull gives her geometry back', () => {
+test('on a boat she is the baked statue, sized for the rowing boat, and the hull gives her geometry back', () => {
   S.registerStatueCargo();
   const scene = new THREE.Scene();
   const material = new THREE.MeshBasicMaterial();
@@ -164,7 +164,8 @@ test('on a boat she is the baked statue, sized for the Benchy, and the hull give
   const size = new THREE.Vector3();
   mesh.geometry.boundingBox.getSize(size);
   assert.ok(size.y > 0.18 && size.y < 0.26 && size.x < 0.3, `the baked figure, ${size.x.toFixed(2)} x ${size.y.toFixed(2)}`);
-  assert.equal(mesh.position.y, DECK_Y, 'standing on the deck');
+  assert.ok(Math.abs(mesh.position.y - (0.085 - DRAUGHT)) < 1e-9, 'standing on the floorboards (shared/hull.mjs FLOORBOARDS)');
+  assert.ok(mesh.position.z < 0, 'in the stern sheets, in front of the oarsman who faces aft');
   let disposed = 0;
   mesh.geometry.addEventListener('dispose', () => disposed++);
   craft.setCargo(null);

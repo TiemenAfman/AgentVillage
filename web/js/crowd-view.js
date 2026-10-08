@@ -35,6 +35,9 @@
 import { createFigures, SETTLER_DRINK_S } from './settler-figures.js';
 import { createTipsy, drinkIn, stepTipsy, settlerSway, SETTLER_TIPSY } from './tipsy.js';
 import { createBoat } from './boat.js';
+import { DECK_Y, DRAUGHT, SEAT, FLOORBOARDS } from 'shared/hull.mjs';
+// A settler at the oars of an outing's boat (settler-figures.js sitPose): the thwart over her floorboards.
+const OAR_SEAT = Object.freeze({ h: SEAT - FLOORBOARDS, rest: 0 });
 import { kindOf, styleOf, residentLook, keeperOf } from 'shared/palette.mjs';
 import { isGuard, isCodex, GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { lerpAngle } from 'shared/settlerwalk.mjs';
@@ -47,7 +50,7 @@ import { impsOn, wantsImp, createImp, pickImps, impBudget, IMP_SCALE } from './i
 const BAR_OVER_IMP = 1.08 * IMP_SCALE + 0.1;
 const BAR_OVER_SETTLER = 0.43;
 const BAR_CLEAR = 0.14;
-import { MOVING } from 'shared/settlerwire.mjs';
+import { MOVING, GRID } from 'shared/settlerwire.mjs';
 import { GOLDPIT_ID } from 'shared/gold.mjs';
 import { FADE_START } from './fade.js';
 
@@ -576,6 +579,16 @@ export function createCrowdView({
       f.faceAngle = r.ryaw;
       f.anim = 'still';
       f.mode = 'idle';
+      // Down in her, the sea's deck (DECK_Y, the datum it lowers a settler to): seated on the rowing
+      // boat's thwart instead (Plans/roeiboot-en-schat.md), facing aft at the oars - her floorboards
+      // the floor, the thwart the seat. Stepping in and out stays standing, at the height sent. The
+      // height comes in 1/GRID steps (shared/settlerwire.mjs), so "at the deck" is within half of one.
+      if (Math.abs(r.ry - DECK_Y) < 0.5 / GRID) {
+        f.y = FLOORBOARDS - DRAUGHT + hull.object.position.y;
+        f.seat = OAR_SEAT;
+        f.anim = 'sit';
+        f.faceAngle = r.ryaw + Math.PI;
+      } else if (f.seat === OAR_SEAT) f.seat = null;
     }
     for (const [idx, f] of figures) {
       if (f.hidden) { if (f.visible) { f.visible = false; view.hide(f); } continue; }

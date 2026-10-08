@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { lerpAngle } from './walk.js';
 import { createBicycle, RIDER, GEOMETRY as BIKE } from './bicycle.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
 import { createMount } from './mount.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
@@ -409,7 +409,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const airborne = !!(f & FLAG_AIRBORNE);
       const blocking = !!(f & FLAG_BLOCKING);
       const lying = !!(f & FLAG_LYING) && !swimming;
-      const sitting = !!(f & FLAG_SITTING) && !swimming;
+      // At the oars of a rowing boat (main.js seatOf hands over her stroke): seated, as our own oarsman is.
+      const rowing = seat && seat.rowing ? seat.rowing : null;
+      const sitting = (!!(f & FLAG_SITTING) && !swimming) || !!rowing;
       const crouching = !!(f & FLAG_CROUCHING) && !lying && !swimming;
       const dancing = !!(f & FLAG_DANCING) && !moving && !airborne && !swimming && !lying && !sitting && !p.aboard;
       p.zzz.visible = !!(f & FLAG_ASLEEP) && !moving;
@@ -505,7 +507,9 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         p.mesh.position.set(x, base, z);
         p.mesh.rotation.set(LIE_PITCH, yaw, 0);
       } else if (sitting) {
-        p.mesh.position.set(x, base, z);
+        // An oarsman's `base` is the thwart itself (main.js seatOf), so the hips go onto it, as
+        // walk.js puts ours.
+        p.mesh.position.set(x, rowing ? base - p.avatar.hipY + SEAT_FLESH : base, z);
         p.mesh.rotation.set(0, yaw, 0);
       } else {
         // The legs walk now (the rig below), so the whole body only rocks a little with it.
@@ -534,6 +538,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         horseback: onHorse ? p.riderMotion || true : false,
         dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
         climbing,
+        rowing,
       }, dt);
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot

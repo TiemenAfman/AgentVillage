@@ -1,11 +1,46 @@
 # Een roeiboot voor de schat, en de Benchy eruit
 
-**🚧 Status: plan van 8 oktober 2026, keuzes liggen bij de keeper.** Vervolg op
+**🚧 Status: gebouwd op 8 oktober 2026 (branch `claude/relaxed-banach-f427a7`), nog niet op het echte
+eiland nagelopen.** Vervolg op
 [schatkaarten.md](schatkaarten.md). Wens van de keeper, letterlijk: *"Er moet een klein roeibootje klaar
 liggen op het eiland van de schat. Als je de schat opgegraven hebt en je loopt tegen de roeiboot aan, dan
 staat de schat op de roeiboot. Met E kun je de boot boarden. Als je weer aan land komt of bij je galjoen,
 dan moet je de schat over kunnen zetten zodat je hem terug kan brengen naar de piraat. Vervang Benchy ook
 voor de roeiboot."*
+
+## Besluiten van de keeper (8 oktober 2026)
+
+| Vraag | Besluit |
+|---|---|
+| Overzetten bij het galjoen | **De sloep van het schip**: met de roeiboot aan haar touwladder hijst E het beeld aan dek (jij aan de kop van de ladder); op het dek naast het beeld laat E het in de roeiboot zakken, die dan aan de voet van de ladder aan de landkant ligt, met jou aan de riemen. |
+| Zien anderen het beeld in je boot | **Nee, alleen jijzelf**: niets nieuws over de lijn, een patch. |
+| Roeien | **Zichtbaar**: de riemen bewegen op de afgelegde afstand, de roeier zit op de doft met het gezicht naar achteren en de handen aan de riemen, settlers op een uitje zitten. |
+| Afleveren | **Plein, dan de piraat** (zoals het was), en het gat van de tweede browser gedicht. |
+
+## Hoe het gebouwd is
+
+- **De roeiboot**: `scripts/build-rowboat.py` → `assets/rowboat/rowboat.blend` → `web/js/rowboat-mesh.js`
+  (440 driehoeken, hero-budget 4000): romp met binnen- en buitenhuid, potdeksel, spiegel, buikdenning, twee doften
+  en een achterbank, dollen, en twee riemen als losse delen met hun oorsprong op de dol. De Benchy-set
+  (`assets/benchy`, `build-benchy.py`, `benchy-mesh.js`) is weg; `CRAFTS.benchy` heet `CRAFTS.rowboat`,
+  `DEFAULT_CRAFT` is `'rowboat'`.
+- **`DECK_Y` bleef staan.** Het bleek geen boot-getal maar een nulpunt: elk dek in `shared/crafts.mjs` (het galjoen,
+  haar ladders, de walk-map) staat erboven en de zee laat settlers erheen zakken. De roeiboot kreeg eigen getallen in
+  `shared/hull.mjs` (`DRAUGHT` 0.05, `SEAT` 0.159, `FLOORBOARDS` 0.085, `SEAT_Y`); `craft.deck()` geeft `SEAT_Y`,
+  de pagina zet een roeier en een settler op een uitje daar neer. Geen redeploy van de zee nodig.
+- **Roeien**: `oarAngles`/`oarPoint`/`row` in `web/js/boat.js` (riem-hoeken uit de fase; de fase uit de afgelegde
+  weg in `place()`, `STROKE` 4.5 per slag, achteruit draait terug, een sprong telt niet); `pose.rowing` in
+  `classic-avatar.js` (armen ver bij de inpik, ingetrokken bij de uithaal, lijf mee); `walk.js oarsman()` en
+  `peers.js` via `seatOf().rowing`; `SEAT_FLESH` zet de heup op de doft. Settlers op een uitje: `'sit'` met `OAR_SEAT`.
+- **De roeiboot op het eilandje**: `rowboatSpot` (`shared/treasure.mjs`, puur), `callRowboat`/`touchRowboat`/
+  `afloat`/`onDeck` in `web/js/treasure.js`, `launchRowboat` en `treasureBoats` in `main.js`, `hoistOnto`/`lowerOff`
+  in `walk.js`. `relaunchSkiff` loopt nu voor elke pagina met een eigen boot, niet alleen zonder eiland.
+- **Tests**: `tests/rowboat-hoist.test.mjs` (de echte walk mode: omhoog en weer omlaag), nieuwe gevallen in
+  `tests/treasure-hunt.test.mjs` (de plek, het klaarleggen, tegenaan lopen, hijsen/laten zakken, de tweede browser),
+  aangepast: `boat`, `archbridge`, `models`, `deck`, `crew`, `treasure-walk`, `quest-log`.
+- **In het spel nagelopen** (worktree-eiland, `?hunt&noclip`): de boot ligt klaar naast de X, het beeld gaat erin
+  door ertegenaan te lopen, E boardt, de roeier zit op de doft naar achteren met het beeld voor zich, de riemen
+  roeien; bij het galjoen hijst E het beeld aan dek en laat E het weer in de roeiboot zakken.
 
 ## Wat er nu is (uitgezocht, 8 oktober)
 

@@ -59,8 +59,8 @@ export const QUESTS = [
     steps: [
       { on: 'lifted', match: { kind: 'statue' }, goal: 'Lift the statue',
         text: "Two hands, and slow! She be heavy, that one." },
-      { on: 'boarded', match: { kind: 'statue' }, goal: 'Put the statue on your boat',
-        text: "Lay her on the boat, gentle now, and sail her home." },
+      { on: 'boarded', match: { kind: 'statue' }, goal: 'Put the statue in the rowing boat',
+        text: "There be a rowing boat by the islet. Walk her into it, gentle now, and row her home - or up to yer ship." },
       { on: 'delivered', match: { kind: 'statue' }, goal: 'Stand the statue in your town',
         text: "Set her down on the square where all can see." },
       { on: 'talked', match: { with: 'pirate' }, goal: 'Tell the pirate it is done',

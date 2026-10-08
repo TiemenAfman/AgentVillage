@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import { createBoats, skiffOf } from '../lib/boats.mjs';
 import * as THREE from 'three';
-import { DRAUGHT, CABIN_FLOOR } from '../shared/hull.mjs';
+import { DRAUGHT, SEAT, SEAT_Y } from '../shared/hull.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 // boat.js reaches buildings.js for the hull, and buildings.js asks for its texture sheets
@@ -255,15 +255,19 @@ test('a hull is a reference plane: a point of her frame is read off the transfor
   assert.deepEqual([bare.x, bare.y, bare.z], [6, DECK_Y + 0.5, 8]);
 });
 
-test('the rider stands on the baked cabin floor with room below its roof', () => {
+// The oarsman sits on the middle thwart (scripts/build-rowboat.py ROW_Z), and SEAT is its top; under
+// it, beside it, are the floorboards, over the water, where his feet go.
+test('the rower sits on the baked thwart, over floorboards that are over the water', () => {
   const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
   const made = createBoat({ scene: { add() {}, remove() {} }, material });
-  const origin = new THREE.Vector3(0, 0.5 - DRAUGHT, 0);
-  const floor = new THREE.Raycaster(origin, new THREE.Vector3(0, -1, 0)).intersectObject(made.object)[0];
-  const roof = new THREE.Raycaster(origin, new THREE.Vector3(0, 1, 0)).intersectObject(made.object)[0];
-  assert.ok(floor && roof, 'the cabin must have a floor and roof');
-  assert.ok(Math.abs(floor.point.y + DRAUGHT - CABIN_FLOOR) < 0.002, 'rider feet must meet the floor');
-  assert.ok(roof.point.y - floor.point.y >= 0.54 + 0.05, 'the rider needs headroom');
+  const down = new THREE.Vector3(0, -1, 0);
+  const seat = new THREE.Raycaster(new THREE.Vector3(0, 0.5, 0.04), down).intersectObject(made.object)[0];
+  assert.ok(seat, 'the boat must have a thwart amidships');
+  assert.ok(Math.abs(seat.point.y + DRAUGHT - SEAT) < 0.002, `the thwart is at ${(seat.point.y + DRAUGHT).toFixed(3)}, SEAT says ${SEAT}`);
+  assert.ok(Math.abs(seat.point.y - SEAT_Y) < 0.002, 'SEAT_Y is the thwart over the water');
+  const feet = new THREE.Raycaster(new THREE.Vector3(0, 0.5, -0.15), down).intersectObject(made.object)[0];
+  assert.ok(feet && feet.point.y > 0.02, `the floorboards are ${feet && feet.point.y.toFixed(3)} over the water: the sea shows inside an open boat`);
+  assert.ok(seat.point.y - feet.point.y > 0.05, 'a seat, not a step');
   made.dispose();
   material.dispose();
 });
@@ -290,7 +294,7 @@ test('BOW is the hull it was measured from, and the boat is one draw call', () =
 
   made.bob(0);
   assert.equal(made.object.position.y, 0, 'the hull does not ride on the water plane');
-  assert.equal(made.deck(), DECK_Y);
+  assert.equal(made.deck(), SEAT_Y, 'a rower sits on the thwart');
   assert.equal(made.object.rotation.y, 1.2, 'the swell threw away the heading');
   made.bob(1.1);
   assert.ok(Math.abs(made.object.position.y) < 0.06, 'that is a wave, not a swell');
