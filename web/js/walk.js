@@ -14,7 +14,7 @@ import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
-import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION } from 'shared/harpoon.mjs';
+import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
@@ -2302,8 +2302,6 @@ export function createWalkMode({
   // (web/js/harpoon-play.js ropes()): `ends()` the two fast points in the scene, or null once it has let
   // go, and `deck` = { boat, x, z, y } the stand at the gun in her frame.
   let onLine = null;              // { line, t, v, jump }: `t` along it from the gun's end
-  const ROPE_WALK = 0.9;          // u/s along a line: carefully, a foot before the other
-  const ROPE_HANG = 0.42;         // how far the feet hang under a line slid down
   const ROPE_STEP_OFF = 0.35;     // past the hook's end, onto the ground
   const ropeAt = { x: 0, y: 0, z: 0 };
   function takeRope(line, from = 'a') {
@@ -3754,6 +3752,8 @@ export function createWalkMode({
       dying: state.dying,
       // Sliding down a harpoon's line the body hangs from it by its hands, as on a ladder's rungs.
       climbing: climb ? state.climbing : state.rope === 'zip' ? { rise: 0 } : null,
+      // On a harpoon's line: arms out walking it, hanging from it sliding down (classic-avatar.js).
+      roping: state.rope,
       // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
       // its pose across the ends of (classic-avatar.js LADDER_FADE)
       onLadder: !!climb,

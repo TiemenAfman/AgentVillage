@@ -284,7 +284,7 @@ def measure(clip, path):
 
 # Played by time, not by distance. `die` and `drown` play once, from the moment the sea sends the
 # body home (classic-avatar.js dyingPose, Plans/vallen-en-verdrinken.md).
-TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig', 'die', 'drown')
+TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig', 'die', 'drown', 'hang')
 # Played by height: a ladder's rungs (`rise`, leg lengths a cycle, in place of a gait's stride).
 # They face the way their hips face, like a timed clip, since what they travel is up.
 CLIMBS = ('climb',)
