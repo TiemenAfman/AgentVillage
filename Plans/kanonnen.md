@@ -52,7 +52,7 @@ romp en blijven open. Daarna:
 **Eén per boord, in de waist, in de geschutspoort op z −0.5 tussen de oude.** Dat is het beeld uit
 de referentie (een breedzijde), weg van de ladder (z 1.85), van de grote mast (z 0, binnen ±0.15)
 en van de mastladder (op 0.57, −0.57). Het kanon richt zijn loop door de poort naar buiten
-(yaw ±90° in het schip). Het getal staat één keer in `CRAFTS.galleon.cannons` (shared/crafts.mjs):
+(yaw ±90° in het schip). Het getal staat één keer in `CRAFTS.galleon.mounts` (shared/crafts.mjs):
 `{ x, z, yaw, y }` per kanon, met `y` uit de walk-map.
 
 **Getekend als deel van de romp**, niet als losse meshes: de affuit en de loop worden in de geometrie
@@ -194,3 +194,34 @@ dat zou een eigen plan zijn.
 2. Doet een treffer schade (fase C), en aan wie: spelers, de guards van de vulkaan, schepen?
 3. Munitie: onbeperkt met laadtijd, of een voorraad?
 4. Waar de twee staan: één per boord in de waist, of allebei voor of achter?
+
+## Besluiten van de keeper (8 oktober 2026)
+
+- **Zichtbaar**: ja, via de zee (fase B).
+- **Schade**: ook spelers, behalve op hun eigen eiland (fase C). Hij twijfelt nog over schade aan
+  andermans boten; zie het voorstel hieronder.
+- **Munitie**: onbeperkt, met laadtijd.
+- **Plaats**: één kanon per boord, midscheeps.
+- **Vuren met de rechtermuisknop** (zijn eigen vraag, tijdens het testen): rechts vuurt altijd. Links
+  vuurt alleen met een pointer lock; zonder lock sleep je met links om te richten.
+
+## Stand
+
+Gebouwd zoals hierboven, met deze afwijkingen:
+
+- Alles wat bemand wordt, staat in één lijst, `CRAFTS.galleon.mounts` (`kind: 'cannon'`,
+  `yawLim`, `pitchLim`). Dat is op verzoek van de harpoen-chip, zodat een harpoen er later bij kan.
+- Aan het kanon is je eigen lijf verborgen en kijkt de camera vanachter de stuitkop langs de loop;
+  anderen zien de schutter wel.
+- Een afgevuurd lijf vliegt opgerold (de hurkpose van de rig) en draait kopje-over. Er is dus geen
+  nieuwe pose en geen nieuw bit nodig.
+- Schepen hebben nog geen gezondheid. Een kogel op een romp ontploft en raakt wie er in de buurt
+  staat.
+
+**Open: schade aan boten (voorstel).** Een galjoen krijgt een romp-gezondheid op de zee (in het
+geheugen, net als alles daar). Een treffer op de romp kost `HULL_HIT` en vanzelf herstelt een romp
+niet. Bij 0 zakt het schip een paar seconden en ligt het daarna weer heel aan zijn eigen ligplaats,
+zoals een onbemande boot na vijf minuten al terugdrijft (`driftHome`). De bemanning belandt in het
+water. Een roeiboot zinkt bij één treffer en komt ook terug aan zijn ligplaats. Eigen eiland: in de
+eigen haven (binnen de eigen grid) is je schip veilig. Dat kost een nieuw bericht
+(`{t:'boat', a:'sunk'}`) en is nog steeds een patch.

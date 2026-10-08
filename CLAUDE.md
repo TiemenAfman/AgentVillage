@@ -869,6 +869,24 @@ An unattended boat does not stay marooned either: after five quiet minutes the s
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
 
+**The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
+eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
+keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
+`cannon carriage`, `cannon barrel` with its origin on the trunnion axis, `anchor.muzzle`). Where they stand is
+`CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
+harpoon's too), and boat.js welds every gun into the hull's one geometry and moves its corners on the CPU when it
+is laid (`layGun`, web/js/cannon.js `layPoint`/`muzzleOf`), like the oars. Walk mode mans one (`manGun`, E at the
+breech): the camera lays it within its limits at `GUN_TURN`, R (the dance key) rams a ball home, the **right**
+button fires (the left only under a pointer lock, else it drags to aim), C climbs into an empty one and firing
+that is `launchSelf` - the jump's own fall with `drift` kept, landing or plunging as any fall does, tucked and
+tumbling. The flight is `shared/cannon.mjs` (closed-form `ballAt`, `ballHit`, trig-free), flown by every page
+(`web/js/cannon-fx.js`: balls, flash, smoke, blast, spray, three draw calls, no lights; sounds `boom`/`blast`/
+`splash` on the part `cannons`) and by the sea (`lib/cannons.mjs`): `{t:'cannon', a:'fire'}` is passed on by the
+roster only from somebody aboard that ship, and the sea's flight hurts through `hurt()` (cause `cannon`) whoever
+is in the blast - never the gunner, never anybody on their own island - and the volcano's agents through
+`combat.blast`; a ball that lands on a body is said as `{t:'cannon', a:'boom'}`. No `SEA_V`: a patch, but
+others see a shot (and anybody is hurt) only once the open sea runs this code. Ships take no damage yet.
+
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing
 it there put a stranger on the town square until its slice came round. And a joining client
