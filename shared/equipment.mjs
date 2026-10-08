@@ -38,6 +38,9 @@ export const EQUIPMENT = [
   // A companion with an idle of its own, not a garment: the fauna system may move it later.
   { id: 'parrot', slot: 'shoulder', name: 'Parrot', unlock: 'parrot', status: 'planned' },
   { id: 'spyglass', slot: 'hand', name: 'Spyglass', unlock: 'spyglass', status: 'planned' },
+  // The gold mine's key (Plans/goudmijn-zoektocht.md): owned once the bottom floor is reached, drawn
+  // once there is a door for it.
+  { id: 'mine-key', slot: 'hand', name: 'Old iron key', unlock: 'mine-key', status: 'planned' },
 ];
 
 const BY_ID = new Map(EQUIPMENT.map((e) => [e.id, e]));

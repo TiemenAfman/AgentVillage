@@ -14,7 +14,7 @@
 // never disagree with itself, and a state from somewhere else is repaired rather than trusted.
 //
 // Pure, and under shared/'s rule (no sin, cos or pow; tests/quests.test.mjs reads the file).
-import { UNLOCK_IDS, SHOVEL } from './treasure.mjs';
+import { UNLOCK_IDS, SHOVEL, MINE_KEY } from './treasure.mjs';
 
 export const QUEST_STATE_V = 1;
 
@@ -29,7 +29,7 @@ export const QUEST_STATE_V = 1;
 // The gold mine's (Plans/goudmijn-zoektocht.md), and `dug { kind: 'gem' }`:
 //   entered    went into a place:    { where: 'goldmine' }
 //   descended  took the stair down:  { floor } - the floor arrived on, 1 the top
-//   found      took something up:    { kind: 'artifact' }
+//   found      took something up:    { kind: 'key' } (the gold mine's bottom floor)
 //   sold       sold at a counter:    { what: 'gems' }
 //   bought     bought at a counter:  { what: 'potion' }
 // `with` in a talked event is who was spoken to: 'pirate' at his sea chest, one of the
@@ -153,7 +153,7 @@ export const QUESTS = [
       { on: 'bought', match: { what: 'potion' }, goal: 'Buy a stamina potion at the tavern',
         text: 'Ask at the bar of the tavern. It costs, mind.' },
       { on: 'descended', least: { floor: 3 }, goal: 'Reach the third floor of the mine',
-        text: 'Warm earth means the stair is near. Follow it down.' },
+        text: "Nothing tells you where the stair is - you dig until you hit it. Come out and you start at the top again, so remember where it was." },
       { on: 'talked', match: { with: 'goldsmith' }, goal: 'Tell the goldsmith how deep you went',
         text: 'Three floors! Then this garnet dye is yours - deep as the stones it comes from.' },
     ],
@@ -163,16 +163,18 @@ export const QUESTS = [
     id: 'heart-of-the-mountain',
     line: 'mine',
     title: 'The Heart of the Mountain',
-    text: "The old miners swore there was something at the very bottom. Not gold - older than gold. Bring it up and I'll tell you what it is.",
+    text: "The old miners swore there was something at the very bottom, seven floors down. Not gold - older than gold. Bring it up and I'll tell you what it is.",
     steps: [
       { on: 'talked', match: { with: 'goldsmith' }, goal: 'Speak to the goldsmith',
         text: 'Go all the way down. Whatever lies on the last floor, bring it to me.' },
-      { on: 'found', match: { kind: 'artifact' }, goal: 'Find what lies on the bottom floor',
+      { on: 'found', match: { kind: 'key' }, goal: 'Find what lies on the bottom floor',
         text: 'The bottom floor. Dig until there is no stair left to find.' },
       { on: 'talked', match: { with: 'goldsmith' }, goal: 'Bring it to the goldsmith',
-        text: "So the old stories were true. Keep it - it was always meant for whoever dug that deep." },
+        text: "A key. Old iron, and no lock on this island it fits. Keep it - one day we will find the door." },
     ],
-    reward: {},
+    // The key's door is not built yet (the keeper's: "nader te bepalen"): a quest that wants it asks
+    // unlocks.js for MINE_KEY.
+    reward: { unlock: [MINE_KEY] },
   },
   {
     id: 'treasure-of-the-day',

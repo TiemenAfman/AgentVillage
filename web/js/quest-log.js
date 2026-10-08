@@ -16,7 +16,7 @@ import {
   QUESTS, advance, parseQuestState, activeStep, completedQuests, unlocksOf, timesDone,
   pirateHasBusiness, businessWith, hasBusiness, giverOf, lineOf, LINES, STORY,
 } from 'shared/quests.mjs';
-import { REWARD_COLORS, QUEST_COLORS, REWARD_HATS, REWARD_ITEMS, SHOVEL } from 'shared/treasure.mjs';
+import { REWARD_COLORS, QUEST_COLORS, REWARD_HATS, REWARD_ITEMS, QUEST_ITEMS, SHOVEL } from 'shared/treasure.mjs';
 import { WORLD_HALF } from 'shared/regions.mjs';
 
 export const QUESTS_KEY = 'promptholm.quests';
@@ -26,7 +26,7 @@ export const FINDS_KEY = 'promptholm.finds';
 // (shared/treasure.mjs UNLOCK_IDS); an id nobody named is shown as it is.
 export const UNLOCK_NAMES = Object.fromEntries([
   [SHOVEL, 'Shovel'],
-  ...[...REWARD_COLORS, ...QUEST_COLORS, ...REWARD_HATS, ...REWARD_ITEMS].map((u) => [u.id, u.name]),
+  ...[...REWARD_COLORS, ...QUEST_COLORS, ...REWARD_HATS, ...REWARD_ITEMS, ...QUEST_ITEMS].map((u) => [u.id, u.name]),
 ]);
 export const unlockName = (id) => UNLOCK_NAMES[id] || String(id);
 

@@ -240,7 +240,7 @@ test('what is unlocked is only what the progress supports', () => {
 const SMITH = WITH('goldsmith');
 const MINE = [SMITH, { type: 'entered', where: 'goldmine' }, { type: 'dug', kind: 'gem' }, { type: 'sold', what: 'gems' }, SMITH,
   SMITH, { type: 'bought', what: 'potion' }, { type: 'descended', floor: 3 }, SMITH,
-  SMITH, { type: 'found', kind: 'artifact' }, SMITH];
+  SMITH, { type: 'found', kind: 'key' }, SMITH];
 
 test('there are two lines, the story and the mine, and every mine quest is the goldsmith\'s', () => {
   assert.deepEqual(LINES, ['story', 'mine']);
@@ -268,7 +268,7 @@ test('the mine is open from the first moment and runs beside the story without w
   assert.equal(activeQuest(s, 'mine'), null, 'the mine is told');
   assert.equal(activeQuest(s).id, 'first-dig');
   assert.deepEqual(completedQuests(s).map((q) => q.id), ['into-the-mine', 'deeper-still', 'heart-of-the-mountain']);
-  assert.deepEqual(unlocksOf(s).sort(), ['deep-garnet', 'miners-ochre', 'shovel']);
+  assert.deepEqual(unlocksOf(s).sort(), ['deep-garnet', 'mine-key', 'miners-ochre', 'shovel']);
   // And the story still tells to the end after it.
   s = run(s, ...OUTSIDE.slice(1), ...KRAKEN);
   assert.equal(activeQuest(s).id, 'treasure-of-the-day');
