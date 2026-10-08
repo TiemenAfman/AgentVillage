@@ -1713,11 +1713,13 @@ the head slot's dye; the hat's colour is in the hat picker, `pickerDye`) and ski
 parts** on every body: corner colours divided by a base and multiplied by the look's colour in
 `buildFigure` - the Adventurer's base is the look's default (so he draws as before), the Wanderer's
 the kit map's own mean. **Who you are is apart from what you wear**: the inventory's *Edit character*
-(the same frame, `data-view="character"`) holds the body, man or woman, skin, hair, and the shape's
-sliders (`SHAPES`, `spec.shape`, each -1..1): height, hips, head, hands and feet are bone scale in
-classic-avatar.js `applyShape` (the object's mirror kept; `rig.hipY`/`rig.eye` follow height), build
-and bust are moved vertices in avatar.js `shapeGeometry` (along the normal / forward round `bustOf`),
-held items excluded. The sea passes `body`, `wear`, `hairStyle`, `hair`, `shape` in `lookOf`; an older sea
+(the same frame, `data-view="character"`) holds the body, man or woman, skin and hair. **There are no
+sliders for the body's size**: seven of them (height, build, hips, bust, head, hands, feet) came in
+0.10.3 and went out again ("it upsets everything"), because clothes, the horse and the ladders are
+measured at one size only. `normalizeAvatar` and `lookOf` drop a `shape`, so a look saved with one is
+drawn at the standard size. They may come back once all of that is measured per size
+(Plans/basislichamen-en-outfits.md; the old code is commit a069daf). The sea passes `body`, `wear`,
+`hairStyle`, `hair` in `lookOf`; an older sea
 drops them and everybody sees the Adventurer. Gear is the Adventurer's refitted (`refit_gear`).
 **A Wanderer's triangles are loaded only when somebody wears one** (the fourth exception to "Nothing is
 fetched at boot"): `bodies-mesh.js` is 19.5 MB, so the boot imports only `bodies-meta.js` (the same bake
