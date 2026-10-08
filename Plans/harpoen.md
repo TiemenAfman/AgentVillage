@@ -195,14 +195,20 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
 
 ## Stappen
 
-1. **Plan en vragen** (dit stuk). Daarna, los van de antwoorden, `shared/harpoon.mjs`: de vlucht,
-   `ropeShape`, `stepReel` en `ropeMode` (balanceren of zipline op de helling), met tests.
-2. De bake `harpoon` (eigen model), in /demo, of de HD-route als de keeper dat kiest.
-3. Na de merge van de kanonnen: het gedeelde bemande wapen (`mounts`), de twee harpoenen gelast in de romp,
-   richten en de camera. Test met de echte walk mode zonder browser.
-4. Vuren, het touw tekenen en inspoelen voor het schatbeeld (alleen de pagina).
-5. Je schip naar land of een ander schip trekken (`stepBoat` met `pull`, op een losgelaten romp).
-6. Touw lopen en ziplinen: walk.js, de rig, `/avatar-motion.html`.
-7. Geluid.
-8. Fase B, de zee: het touw laten zien, spelers grijpen, de trek naar de schipper. Patch plus een
-   redeploy van de open zee.
+1. ✅ Plan, vragen en besluiten. `shared/harpoon.mjs` (vlucht, `boltHit`, `ropeShape`, `stepReel`, `ropeMode`, `stepZip`).
+2. ✅ De GLB in git met credits (`build-harpoon-glb.py`, `web/js/harpoon.js`), en de eigen bake `harpoon` ernaast;
+   beide in /demo.
+3. ✅ Op het galjoen: twee `kind: 'harpoon'`-mounts achter de kanonnen, als kind van de romp (boat.js), bemand met
+   hetzelfde `manGun` en dezelfde `layGun`/`gunMuzzle`. De HUD zegt per stand wat de knoppen doen.
+4. ✅ Vuren, de lijn (`harpoon-line.js`) en het schatbeeld binnenhalen tot op het dek (`harpoon-play.js`,
+   treasure.js `drag`/`reelAboard`).
+5. ✅ Het eigen schip naar land of een ander schip slepen (`harpoon-tow.js`, walk.js `onGunTow` na `stepUnderSail`),
+   alleen een romp die deze pagina stapt. Een lijn die niemand inspoelt knapt als het schip wegdrijft.
+6. ✅ Over het touw: `takeRope` (C aan het harpoen, E bij de haak): lopen, glijden en eraf springen, met een echte
+   walk-mode-test. **Open**: een eigen houding. Nu loopt het lijf met de gewone gang en hangt het bij het glijden in
+   de ladderhouding (`climbing: { rise: 0 }`). Mixamo's *Hanging Idle* / *Hanging* en een balansloop (zodra
+   `/mixamo-fetch` klaar is; op 8 oktober stond het op 1317/2446) gaan via de `mixamo-clips`-route en worden getoond
+   in `/avatar-motion.html`.
+7. ✅ Geluid: part `harpoons`, families `harpoon`, `ratchet` en `creak`.
+8. 🚧 Fase B, de zee: het touw laten zien aan anderen, spelers grijpen (besluit 3: altijd), een losse boot slepen
+   (besluit 4), de trek naar de schipper als de harpoenier crew is. Patch plus een redeploy van de open zee.

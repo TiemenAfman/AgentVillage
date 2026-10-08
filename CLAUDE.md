@@ -892,6 +892,20 @@ galleon 5, a rowing boat 2; whole again after `HULL_MEND_MS`) and then sinks (`b
 ...mooring, sunk: [x, z]}`, crew in the water, the boat whole at her berth) - never in her own island's waters or
 untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` and floats a bar over her
 (`web/js/hull-bars.js`, two instanced meshes).
+**Her two harpoons are mounts too, after the cannons** ([Plans/harpoen.md](Plans/harpoen.md); `kind: 'harpoon'`,
+forecastle, one a side - appended, never inserted, the index is on the wire). Not welded: the keeper's first choice is
+the Sketchfab GLB (`web/models/harpoon.glb` from the committed `assets/harpoon/source-harpoon.glb` by
+`scripts/build-harpoon-glb.py`, CC BY 4.0 with `assets/harpoon/CREDITS.md`, four nested nodes each on its own axis),
+fetched after the boot like the captain (`web/js/harpoon.js`), hung on the hull's object as a child and aimed through
+the same `layGun`/`gunMuzzle`. A ship starts on the house-style bake (set `harpoon`, `scripts/build-harpoon.py`, the
+GLB's frame to the millimetre, a test holds them together) and swaps the GLB in when it lands, unless the browser says
+`promptholm.debug.harpoon` = `bake`. The fire button sends the line out or lets it go; the reel is automatic
+(`web/js/harpoon-line.js`, arithmetic in `shared/harpoon.mjs`), and `web/js/harpoon-play.js` decides what a hook does:
+the floating statue is dragged to the gun (treasure.js `drag`/`reelAboard`), land or a ship tows **our own** hull
+only while no other page steps her (`web/js/harpoon-tow.js` via walk.js `onGunTow`, after `stepUnderSail`). A line in
+land or a ship stays fast when the gun is left: C at the gun or E at the hook puts you on it (walk.js `takeRope`,
+`onLine` - not the ladder's `onRope`): walked flat, slid down steep, never climbed up steep, Space jumps off with the
+way you had. Sounds `harpoon`/`ratchet`/`creak` on the part `harpoons`. Nothing of it is on the wire yet (fase B).
 
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing
