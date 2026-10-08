@@ -181,9 +181,15 @@ De mijnlijn loopt **parallel** aan het verhaal (de keeper): vanaf het begin open
 ## Nog open
 
 - Een deur voor de sleutel.
-- De grot is primitieven; een `minekit`-bake zou mooier zijn.
+- De grot is primitieven; een `minekit`-bake zou mooier zijn. De gaten zijn wél gebakken (8 oktober 2026,
+  op het woord van de keeper: "de gaten zijn vierkant", "het gat met de trap ziet eruit als een luik"):
+  `scripts/build-minefield.py` geeft drie kuilen en een schacht met een houten ladder erin, elk een tegel
+  vloer van één vak die zoveel te hoog is gemodelleerd als hij diep is (`MINE_PIT_DEPTH`, `MINE_SHAFT_DEPTH`
+  in mine-room.js). Het veld is nu tegels: ongegraven een vlakke tegel in de vloerkleur, dus het effen bed
+  (dat van boven als een lichter vierkant over de grot lag) is weg. Je loopt nog op vloerhoogte over een
+  kuil heen; de prompt zegt "go down the ladder".
 - Een tweede blik op de getallen na echt spelen (balk, stenen, prijs van het drankje). Gespeeld op 8
   oktober 2026, zie [speeltest-quests.md](speeltest-quests.md): ruim 100 graafbeurten voor vier verdiepingen,
   ≈ 0,35 munt per beurt tegen 0,4 aan drankje. Daar ook de besluiten van de keeper, gebouwd: de graafplekken zijn
-  onzichtbaar (één effen bed losse aarde over het veld) en de camera kijkt van boven (`camera.pitch`); 7 x 7 en
+  onzichtbaar (eerst één effen bed losse aarde over het veld, nu tegels in de vloerkleur) en de camera kijkt van boven (`camera.pitch`); 7 x 7 en
   de ruimte blijven.

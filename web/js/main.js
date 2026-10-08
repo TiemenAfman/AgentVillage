@@ -2828,7 +2828,7 @@ function enterInterior(room, at, spot = null) {
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
-  if (room === 'goldmine') state.ui.toast(`The gold mine, floor 1 of ${MINE_FLOORS}. <b>E</b> digs the earth in front of you; somewhere under it is the stair down. The ladder by the way in takes you out - and out is starting again.`);
+  if (room === 'goldmine') state.ui.toast(`The gold mine, floor 1 of ${MINE_FLOORS}. <b>E</b> digs the earth in front of you; somewhere under it is the shaft down. The rope ladder by the way in takes you out - and out is starting again.`);
   refreshMusic();
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
@@ -3272,7 +3272,7 @@ const mineHooks = {
   dug(what) {
     const g = gemById(what);
     if (g) state.ui.toast(`${/^[aeiou]/i.test(g.name) ? 'An' : 'A'} <b>${escapeHtml(g.name.toLowerCase())}</b>! The goldsmith pays ${g.price} coins for one.`);
-    else if (what === 'stair') state.ui.toast('A stair, going down into the dark. <b>E</b> on it to go deeper.');
+    else if (what === 'stair') state.ui.toast('A shaft, a ladder going down into the dark. <b>E</b> at it to go deeper.');
     else if (what === 'key') state.ui.toast('Something glints at the bottom of the hole. <b>E</b> to take it.');
   },
   down(floor) {
@@ -3291,7 +3291,7 @@ const mineHooks = {
     }
   },
   out() {
-    state.ui.toast('Your arms will not lift the shovel again, and there is no draught left. Climb out at the ladder and try again later - the stairs stay where they are today.');
+    state.ui.toast('Your arms will not lift the shovel again, and there is no draught left. Climb out at the ladder and try again later - the shafts stay where they are today.');
   },
 };
 function openMine(it) {
