@@ -90,7 +90,14 @@ function fakeContext() {
       buffers.push(buf);
       return buf;
     },
-    resume() { ctx.state = 'running'; return Promise.resolve(); },
+    // `refuse` is a browser that has seen no activation yet: the promise is turned down and the
+    // context stays where it was (a finger's pointerdown and touchstart grant none).
+    refuse: false,
+    resume() {
+      if (ctx.refuse) return Promise.reject(new Error('not allowed to start'));
+      ctx.state = 'running';
+      return Promise.resolve();
+    },
     suspend() { ctx.state = 'suspended'; return Promise.resolve(); },
   };
   return ctx;
@@ -1387,6 +1394,37 @@ test('switched off, the context is suspended rather than merely silent', () => {
   sound.toggle();
   assert.equal(sound.stats().context, 'running');
   assert.equal(ctx.calls.buffer, buffers, 'nothing was synthesised a second time');
+});
+
+test('a finger that grants no activation on its way down is asked again on its way up', async () => {
+  // The phone and /play under a thumb: the first pointerdown/touchstart comes before the browser
+  // will start anything, so the context is made and refused. It used to let go of the page
+  // there, and the island stayed silent behind a lit chip for good.
+  store = { 'promptholm.sound': 'on' };
+  const sound = made();
+  ctx.state = 'suspended';
+  ctx.refuse = true;
+  dispatch('pointerdown');
+  await Promise.resolve();
+  assert.equal(sound.stats().built, true);
+  assert.equal(sound.stats().context, 'suspended', 'the browser said no');
+  ctx.refuse = false;                              // the touchend carries the activation
+  dispatch('touchend');
+  await Promise.resolve();
+  assert.equal(sound.stats().context, 'running');
+  assert.equal(sound.on, true);
+});
+
+test('a lit chip over a context the browser held back starts it rather than switching off', () => {
+  store = { 'promptholm.sound': 'on' };
+  const sound = made();
+  ctx.refuse = true;
+  ctx.state = 'suspended';
+  dispatch('pointerdown');
+  ctx.refuse = false;
+  sound.toggle();                                  // the chip's click is a gesture
+  assert.equal(sound.on, true, 'still on');
+  assert.equal(sound.stats().context, 'running');
 });
 
 test('a tab nobody is looking at makes no noise', () => {

@@ -3099,12 +3099,26 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // The first touch of the page. Registered at construction and capturing, so it sees the
   // pointerdown that precedes the Sound chip's own click - which means that by the time
   // the chip's handler runs, a context may legally be made.
+  //
+  // On a touchscreen that is not yet a gesture. The HTML spec's activation-triggering events
+  // are keydown, mousedown, a *mouse* pointerdown, and a pointerup or touchend of any other
+  // pointer - a finger's pointerdown and touchstart grant nothing. Listening to those alone
+  // and letting go after the first made the context on a touch that could not start it:
+  // suspended, its resume() refused, and nobody asked again, so on the phone and on /play
+  // under a thumb the island stayed silent with the chip lit. So every event that can carry
+  // the activation is listened to, and the listeners stay until the context really runs.
+  const GESTURES = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'click', 'keydown'];
+  const unlisten = () => {
+    for (const ev of GESTURES) removeEventListener(ev, gesture, true);
+  };
   const gesture = () => {
     gestured = true;
-    for (const ev of ['pointerdown', 'keydown', 'touchstart']) removeEventListener(ev, gesture, true);
-    if (on) start();
+    if (!on) return;
+    if (!built) start();
+    if (ctx.state === 'running') { unlisten(); return; }
+    ctx.resume().then(() => { if (ctx.state === 'running') unlisten(); }, () => { /* the next gesture asks again */ });
   };
-  for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, gesture, true);
+  for (const ev of GESTURES) addEventListener(ev, gesture, true);
 
   // Out of earshot while the tab is in the background. Not a nicety: a browser that keeps
   // a hidden tab's audio running is a village murmuring out of a window nobody can see.
@@ -3169,7 +3183,13 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     get on() { return on; },
     get possible() { return soundPossible(); },
     setOn,
-    toggle: () => setOn(!on),
+    // A lit chip over a context the browser would not start (a page restored "on" and touched
+    // only in ways that grant no activation) is silent; a tap on it is then a gesture, and is
+    // taken as "start it", not as "off".
+    toggle: () => {
+      if (on && built && ctx.state !== 'running' && !document.hidden) { gestured = true; start(); return on; }
+      return setOn(!on);
+    },
     update,
     raveClock,
     shantyClock,
