@@ -87,6 +87,8 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createPirate, createQuestGiver } from './pirate.js';
 import { createQuestLog } from './quest-log.js';
+import { createMineRun } from './mine.js';
+import { gemById, POTION_PRICE, FLOORS as MINE_FLOORS } from 'shared/mine.mjs';
 import { createQuestPanel } from './quest-panel.js';
 import { createQuestMark } from './quest-mark.js';
 import { unlock } from './unlocks.js';
@@ -1292,6 +1294,8 @@ function interactables() {
     if (deck.nest != null) {
       out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
     }
+    // Beside the treasure statue on her deck: lower it into the rowing boat (treasure.js onDeck).
+    if (state.hunt) out.push(...state.hunt.onDeck(deck));
     return out;
   }
   // A ship's helm is left under way: a ship runs out for most of a minute, and leaving the wheel
@@ -1304,6 +1308,10 @@ function interactables() {
   // Only once she has nearly stopped: under way the prompt sat on screen the whole voyage,
   // and nobody steps off a boat doing nine knots anyway.
   if (aboard && Math.abs(aboard.v || 0) > OFFER_BELOW) return out;
+  // In the rowing boat with the treasure statue, at a ship's rope ladder: E hoists her up it
+  // (treasure.js afloat) rather than putting anybody ashore.
+  const hoist = aboard && state.hunt ? state.hunt.afloat() : [];
+  if (hoist.length) return hoist;
   if (aboard) {
     const bx = aboard.x + Math.sin(aboard.yaw) * (BOW + 0.7);
     const bz = aboard.z + Math.cos(aboard.yaw) * (BOW + 0.7);
@@ -1356,7 +1364,7 @@ function interactables() {
       out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
     } else if (rec.spec.civicType === 'goldmine') {
       // The week over the keys, the pit's way (Plans/DONE/goudmijn.md).
-      out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: minePrompt() });
+      out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: mineKeeper() ? 'step into the gold mine' : minePrompt() });
     } else if (rec.spec.civicType === 'goldsmith') {
       out.push({ id: rec.id, kind: 'goldsmith', x: p.x, z: p.z, r: 2.4, label: 'the goldsmith' });
     } else if (rec.spec.civicType === 'market') {
@@ -2206,8 +2214,8 @@ function walkCallbacks() {
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
-      else if (it.kind === 'goldmine') state.ui.toast(mineWords(state.gold));
-      else if (it.kind === 'goldsmith') state.ui.toast(smithWords());
+      else if (it.kind === 'goldmine') openMine(it);
+      else if (it.kind === 'goldsmith') visitGoldsmith();
       else if (it.kind === 'tavern') enterInterior(it.room, it, it.spot || null);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'chronicle') openChronicle();
@@ -2784,7 +2792,10 @@ function roomFor(room) {
         onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
         onTalk: (it) => openCrewTalk(it),
-        onOrder: (r) => questEvents.drank(r),
+        // A drink at a seat, or the miner's draught at the tavern's counter (Plans/goudmijn-zoektocht.md).
+        onOrder: (r, what) => (what === 'potion' ? buyDraught() : questEvents.drank(r)),
+        // The gold mine's field and rules are this page's (web/js/mine.js).
+        extra: room === 'goldmine' ? { mine: { run: state.mineRun || (state.mineRun = createMine()), on: mineHooks } } : null,
         hd: hdOn(),
         // I opens the wardrobe, as it does on the island.
         onAvatar: () => openStudio(),
@@ -2835,20 +2846,27 @@ function enterInterior(room, at, spot = null) {
   deckOut = (at && at.deck) || null;
   state.walk.exit();
   state.inside = inside;
+  // In at the top of the mine, every time (the keeper's rule: out is starting again).
+  if (room === 'goldmine') state.mineRun.enter();
   const rave = room === 'rave';
   inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes(), spot });
   rememberRoom({ now: true });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
+  if (room === 'goldmine') state.ui.toast(`The gold mine, floor 1 of ${MINE_FLOORS}. <b>E</b> digs the earth in front of you; somewhere under it is the stair down. The ladder by the way in takes you out - and out is starting again.`);
   refreshMusic();
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
   // tavern the one room on the island where nobody could keep you company.
-  if (state.peers) state.peers.place(inside.room, { scene: inside.scene, terrain: inside.terrain });
-  if (state.net) state.net.setRoom(inside.room, inside.walk);
+  // Every island's gold mine is its own, unlike the taverns the whole sea shares: scoped by our island
+  // (lib/players.mjs room), or two keepers each in their own mine would stand in one another's.
+  const where = roomName(inside.room);
+  if (state.peers) state.peers.place(where, { scene: inside.scene, terrain: inside.terrain });
+  if (state.net) state.net.setRoom(where, inside.walk);
 }
+const roomName = (room) => (room === 'goldmine' && state.islandId ? `${state.islandId}:goldmine` : room);
 
 // The step before the door in the Salty Kraken's castle front (scripts/build-piratetavern.py, the
 // `deck.door-step` floor): where on the island, at what height, and a point to face - away from the
@@ -2867,6 +2885,8 @@ function leaveInterior(to = null) {
   // Up the Salty Kraken's hatch: out onto its deck at the castle's door, not down at its front door.
   const deck = to === 'deck' ? deckOut || krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
   if (deck) cameFrom = { at: deck.at, y: deck.y, facing: deck.facing };
+  if (state.inside.room === 'goldmine') state.mineRun.leave();
+  if (state.vitals) state.vitals.setDig(1, false);
   state.inside = null;
   forgetRoom();
   state.ui.setIndoors(false);
@@ -3236,7 +3256,106 @@ const questEvents = {
   // A drink had in a room (the Salty Kraken's first chapter), and a dive that went deep enough.
   drank: (where) => (state.quests ? reportQuest(state.quests.onDrank(where)) : null),
   dived: (depth) => (state.quests ? reportQuest(state.quests.onDived(depth)) : null),
+  // The gold mine's line (Plans/goudmijn-zoektocht.md).
+  entered: (where) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'entered', where })) : null),
+  descended: (floor) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'descended', floor })) : null),
+  found: (kind) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'found', kind })) : null),
+  sold: (what) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'sold', what })) : null),
+  bought: (what) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'bought', what })) : null),
 };
+
+// ---- the gold mine (Plans/goudmijn-zoektocht.md) -------------------------------------------------
+// The mine, the goldsmith's counter and the tavern's draught all spend and fill the purse of the
+// garden (lib/garden.mjs), so they are the keeper's alone, on our own island, as the seed stall is.
+const mineKeeper = () => !state.guest && state.hasIslander !== false && !STANDALONE;
+async function gardenOp(body) {
+  const answer = await answerOf(await mine('/api/garden', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }));
+  if (answer.garden) state.garden = answer.garden;
+  return answer;
+}
+function createMine() {
+  return createMineRun({
+    storage: (() => { try { return localStorage; } catch { return { getItem: () => null, setItem: () => {} }; } })(),
+    island: () => state.terrain.seed,
+    day: () => treasureDay(timeNow()),
+    garden: {
+      found: (gem) => gardenOp({ op: 'findGem', kind: gem, day: treasureDay(timeNow()) }).catch((e) => console.warn('the stone was not kept', e)),
+      potions: () => (state.garden && state.garden.potions) || 0,
+      drink: () => gardenOp({ op: 'drinkPotion' }),
+    },
+    quests: {
+      entered: () => questEvents.entered('goldmine'),
+      descended: (f) => questEvents.descended(f),
+      dug: (k) => questEvents.dug(k),
+      found: (k) => questEvents.found(k),
+    },
+  });
+}
+// What the mine's room tells us (web/js/mine-room.js `on`).
+const mineHooks = {
+  dug(what) {
+    const g = gemById(what);
+    if (g) state.ui.toast(`${/^[aeiou]/i.test(g.name) ? 'An' : 'A'} <b>${escapeHtml(g.name.toLowerCase())}</b>! The goldsmith pays ${g.price} coins for one.`);
+    else if (what === 'stair') state.ui.toast('A stair, going down into the dark. <b>E</b> on it to go deeper.');
+    else if (what === 'key') state.ui.toast('Something glints at the bottom of the hole. <b>E</b> to take it.');
+  },
+  down(floor) {
+    state.ui.toast(floor >= MINE_FLOORS
+      ? `Floor ${floor} of ${MINE_FLOORS} - the bottom. Whatever the old miners left lies under this earth.`
+      : `Floor ${floor} of ${MINE_FLOORS}.`);
+  },
+  key() { state.ui.toast('An old iron <b>key</b>, heavy and cold. The goldsmith will want to see it.'); },
+  say(html) { state.ui.toast(escapeHtml(html)); },
+  async drink() {
+    try {
+      await state.mineRun.drink();
+      state.ui.toast(`A miner's draught. Strength back in your arms - ${(state.garden && state.garden.potions) || 0} left.`);
+    } catch (e) {
+      state.ui.toast(escapeHtml(e.message || 'there is no draught left'));
+    }
+  },
+  out() {
+    state.ui.toast('Your arms will not lift the shovel again, and there is no draught left. Climb out at the ladder and try again later - the stairs stay where they are today.');
+  },
+};
+function openMine(it) {
+  if (!mineKeeper()) { state.ui.toast(mineWords(state.gold)); return; }
+  enterInterior('goldmine', it);
+}
+// The goldsmith: he buys every stone you carry, and he has the mine's quests to give.
+async function visitGoldsmith() {
+  if (!mineKeeper()) { state.ui.toast(smithWords()); return; }
+  const gems = (state.garden && state.garden.gems) || {};
+  if (Object.values(gems).some((n) => n > 0)) {
+    try {
+      const a = await gardenOp({ op: 'sellGems' });
+      state.ui.toast(`The goldsmith weighs ${a.count === 1 ? 'your stone' : `your ${a.count} stones`} and pays <b>${a.paid} coins</b>. Purse: ${a.purse}.`);
+      questEvents.sold('gems');
+    } catch (e) {
+      state.ui.toast(escapeHtml(e.message || 'the goldsmith did not answer'));
+      return;
+    }
+  }
+  const v = state.quests && state.quests.view();
+  const line = v && (v.lines || []).find((l) => l.giver === 'goldsmith');
+  if (!line) { state.ui.toast(smithWords()); return; }
+  if (!state.crewTalk || state.crewTalk.isOpen()) return;
+  if (state.walk) state.walk.setPaused(true);
+  state.crewTalk.open({ who: 'goldsmith', name: 'The goldsmith', idle: null, talk: () => state.quests.onTalked('goldsmith') });
+}
+// The draught at the tavern's bar.
+async function buyDraught() {
+  if (!mineKeeper()) { state.ui.toast('The barman keeps the miner\'s draught for whoever lives here.'); return; }
+  try {
+    const a = await gardenOp({ op: 'buyPotion' });
+    state.ui.toast(`A miner's draught, corked, for <b>${a.paid} coins</b>: ${a.potions} in the satchel. Drink it in the mine when your arms give out.`);
+    questEvents.bought('potion');
+  } catch (e) {
+    state.ui.toast(escapeHtml(e.message || 'the barman did not answer'));
+  }
+}
 
 // Speaking to one of the Salty Kraken's crew (web/js/pirate-tavern.js `talkers`): the giver's
 // window, with the room's walk paused while it is up. No faceUp - that is for the sea's figures;
@@ -3372,6 +3491,7 @@ function startTreasureHunt() {
     toast: (html) => state.ui.toast(html),
     onChange: () => { if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables()); },
     refetchVillage: () => fetchVillage().then((v) => applyVillage(v, { animate: true })),
+    rowboat: treasureBoats(),
   });
   // A page that closes with the statue in its arms or on its boat puts it back on the islet; one
   // that crashes leaves 'lifted' behind, which boot() below undoes on the next load.
@@ -3380,6 +3500,67 @@ function startTreasureHunt() {
     mine('/api/treasure', { ...treasureBody('dropped'), keepalive: true }).catch(() => {});
   });
   state.hunt.boot();
+}
+
+// The boats the treasure hunt works with (treasure.js `rowboat`, Plans/roeiboot-en-schat.md): our
+// own rowing boat, laid ready at the map's islet; every rowing boat we may take, which a statue in
+// the arms is walked into; and the ships' rope ladders, where the rowing boat hands her up to a
+// deck and takes her down again - "the ship's boat".
+function treasureBoats() {
+  const me = () => state.net && state.net.id();
+  // A ladder's foot in the world: where its ropes hang (shared/crafts.mjs ladders), in the hull's
+  // flat frame - forward (sin, cos) of her yaw, her right (cos, -sin).
+  const foot = (b, l) => {
+    const s = Math.sin(b.yaw), c = Math.cos(b.yaw);
+    return { x: b.x + l.x * c + l.z * s, z: b.z - l.x * s + l.z * c, out: [(l.x < 0 ? -1 : 1) * c, -(l.x < 0 ? -1 : 1) * s] };
+  };
+  return {
+    mine: () => state.boats.find((b) => b.own) || null,
+    launch: (x, z, yaw) => launchRowboat(x, z, yaw),
+    hulls: () => state.boats.filter((b) => !isShip(b) && (!b.pilot || b.pilot === me())),
+    reach: BOW + 0.55,
+    ladders: () => state.boats.filter(isShip).flatMap((b) =>
+      ((b.craft.spec && b.craft.spec.ladders) || []).map((ladder) => ({ ship: b, ladder, ...foot(b, ladder) }))),
+    cargoAt: (b) => {
+      const at = b.craft && b.craft.cargo && b.craft.cargo();
+      if (!at) return null;
+      const p = at.getWorldPosition(new THREE.Vector3());
+      return { x: p.x, z: p.z };
+    },
+    hoist: (ship, ladder) => {
+      const row = state.walk && state.walk.aboard();
+      if (!row || !state.walk.hoistOnto(ship, ladder)) return false;
+      if (state.net) {
+        state.net.dropBoat(row.id);
+        // Crew from the top of the ladder, as a climb makes you - once the sea has had a pose of
+        // us up here, since it boards nobody standing further than a deck's reach off her middle.
+        setTimeout(() => { if (state.net && state.walk && state.walk.deckWhere()) state.net.boardBoat(ship.id); }, 300);
+        state.net.setRoom(null, state.walk);
+      }
+      state.walk.setInteractables(interactables());
+      return true;
+    },
+    lower: (ship) => {
+      if (!state.walk) return false;
+      // At the foot of whichever ladder looks at the nearer land, a hand off her side and lying along
+      // her: the row ashore starts there.
+      const ladders = ((ship.craft.spec && ship.craft.spec.ladders) || []).map((l) => {
+        const f = foot(ship, l);
+        let land = Infinity;
+        for (let t = 2; t <= 120 && land === Infinity; t += 2) {
+          if (state.walk.groundAt(f.x + f.out[0] * t, f.z + f.out[1] * t) >= 0.06) land = t;
+        }
+        return { ...f, land };
+      }).sort((a, b) => a.land - b.land);
+      const f = ladders[0];
+      if (!f) return false;
+      const row = launchRowboat(f.x + f.out[0] * 0.45, f.z + f.out[1] * 0.45, ship.yaw);
+      if (!row || !state.walk.lowerOff(ship, row)) return false;
+      if (state.net) state.net.leaveBoat(ship.id);
+      takeBoat(row);
+      return true;
+    },
+  };
 }
 
 // K on foot, where the side panels do not open: a word on where the story stands.
@@ -4651,7 +4832,7 @@ function boatsFor(region) {
     let b = state.boats.find((x) => x.id === m.id);
     if (!b) {
       const ship = kindOf(m.id) === 'galleon';
-      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
+      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'rowboat' });
       const at = ship ? shipBerth(m, state.sea.height, shipWater(v.works, region.terrain.half, region.origin || [0, 0])) : m;
       craft.place(at.x, at.z, m.yaw);
       b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
@@ -7861,12 +8042,16 @@ function frame(nowMs) {
       clock: state.sound && state.inside.music ? state.sound.clockOf(state.inside.music) : null,
       // Who the story waits on, for the mark over one of the Kraken's crew.
       business: state.quests ? state.quests.businessWith() : null,
+      // The tavern counter's words: the miner's draught, its price and how many are in the satchel.
+      counter: `buy a miner's draught - ${POTION_PRICE} coins (${(state.garden && state.garden.potions) || 0} in the satchel)`,
       // In noclip the camera is not the room's walk mode's (Plans/noclip-camera.md).
       eye: state.mode === 'noclip' ? camera.position : null,
     });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
+    // The digging bar, in the mine only (Plans/goudmijn-zoektocht.md).
+    state.vitals.setDig(state.inside.room === 'goldmine' ? state.mineRun.level() : 1, state.inside.room === 'goldmine');
     rememberRoom();
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
@@ -8760,6 +8945,7 @@ Everything is copied and checked first; the island then starts again there. The 
     if (!state.quests.jumpTo(id, Number(step) || 0)) console.warn(`?quest: no quest called "${id}"`);
   }
   state.questEvents = questEvents;
+  if (!state.mineRun) state.mineRun = createMine();
   state.questPanel = createQuestPanel({ ui: state.ui, log: state.quests });
   state.pirate = createPirate(document.body, {
     log: state.quests,
@@ -9011,6 +9197,13 @@ Everything is copied and checked first; the island then starts again there. The 
         const at = hullPointOf(b, h.x, h.y - DECK_Y, h.z, seatPoint);
         return { x: at.x, y: at.y, z: at.z, yaw: b.yaw, tilt: hullTiltOf(b, seatTilt) };
       }
+      // At the oars of a rowing boat: on her thwart facing aft, pulling with her stroke, on her plane -
+      // as walk.js draws our own oarsman.
+      const r = b.craft && b.craft.rowing;
+      if (r) {
+        poseHull(b);
+        return { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw + Math.PI, tilt: hullTiltOf(b, seatTilt), rowing: { phase: r.phase() } };
+      }
       return { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw };
     },
     // And somebody standing on a deck is drawn on that hull too, at their place on it
@@ -9084,9 +9277,10 @@ Everything is copied and checked first; the island then starts again there. The 
     // meant, so a sea with another idea of a full one would still fill our bar to the top.
     onBreath: (m) => { air = Math.min(AIR_S, Math.max(0, (m.air / m.max) * AIR_S)); },
     onBoat: onBoatFromServer,
-    // Only a phone owns a skiff; anybody else's page has nothing here to put back.
+    // A phone owns a skiff from the start, an islander's page once the treasure hunt has laid one
+    // out for it (launchRowboat); a page with none has nothing here to put back.
     onWelcome: (self, build) => {
-      if (STANDALONE) relaunchSkiff(self);
+      relaunchSkiff(self);
       // The sea says which release it is on every welcome, so a sea updated under us is
       // noticed on the reconnect its restart causes.
       state.seaBuild = build;
@@ -9376,6 +9570,30 @@ async function arriveOnLand(start) {
     ? `You wake on the square of <b>${escapeHtml(start.name)}</b>. Your boat is moored off the shore.`
     : `You wake on a little island${start.near ? ` off <b>${escapeHtml(start.near)}</b>` : ''}. Your boat is moored off the beach.`);
   return true;
+}
+
+// Our own rowing boat - the skiff, `boat:w-<player>` - laid in the water at a place of the page's
+// choosing and let go, for the treasure hunt (Plans/roeiboot-en-schat.md): ready at the islet of the
+// map, and lowered beside the galleon's ladder to take the statue ashore. The sea needs nothing new
+// for it: a launch is "my skiff is here now" (lib/boats.mjs), the same boat moved if it was in the
+// water already, and it sinks with this page's socket. Never from under somebody in it. Null while
+// there is no player id to name it by.
+function launchRowboat(x, z, yaw) {
+  const self = state.net && state.net.id();
+  if (!self) return null;
+  let b = state.boats.find((o) => o.own);
+  if (b && state.walk && state.walk.aboard() === b) return b;
+  if (!b) {
+    const craft = createBoat({ scene, material: buildingMat });
+    b = { id: `boat:w-${self}`, x, z, yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null, own: true };
+    state.boats.push(b);
+  }
+  Object.assign(b, { id: `boat:w-${self}`, x, z, yaw, v: 0, aground: false, pilot: null, track: null });
+  b.craft.place(x, z, yaw);
+  state.net.launchBoat(b.id, x, z, yaw);
+  state.net.dropBoat(b.id);
+  if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
+  return b;
 }
 
 // A reconnect is a new player id, and the sea sank the skiff named after the old one when

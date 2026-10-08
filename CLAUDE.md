@@ -816,6 +816,18 @@ outings grow with the crowd it walks (`outingsAtOnce`, 2 to 4) and sail round ev
 lies on water (`waterPlots`). A bundle with no
 harbours gets the one dock and one boat of old, so a world of mixed versions still sails.
 
+**Every boat but the galleon is a rowing boat** (`assets/rowboat`, `scripts/build-rowboat.py`,
+[Plans/roeiboot-en-schat.md](Plans/roeiboot-en-schat.md); it replaced the 3D Benchy, whose set is gone). One asset,
+its hull parts and its two oars welded into one geometry - one draw call - and the oars moved in it on the CPU by
+the stroke (`row`/`oarAngles` in boat.js): the phase is the way the hull made between two `place()`s along her
+heading, `STROKE` units a stroke, so every page pulls every boat alike with nothing on the wire. Whoever is at the
+oars sits on the thwart facing aft (`pose.rowing` with `sitting` in classic-avatar.js, walk.js `oarsman()`, peers.js
+off main.js `seatOf`'s `rowing`), the origin a hip's height under the seat (`SEAT_FLESH`); a settler on an outing sits
+(`OAR_SEAT`, crowd-view.js). **`DECK_Y` is a datum and keeps the Benchy's number**: every craft's deck is written
+above it and the sea lowers settlers to it, so the rowing boat's own heights are `DRAUGHT`, `SEAT`, `FLOORBOARDS`,
+`SEAT_Y` in shared/hull.mjs, and the page puts a body on `SEAT_Y` (`craft.deck()`) - no sea redeploy, and a sea or
+page from before draws the old heights a few centimetres off.
+
 The welcome carries **every** boat (`snapshot` in `lib/boats.mjs`), untouched ones at their
 mooring - leaving those out let two pages that had heard different things draw one ship in
 two places. The sea knows no galleon, so its mooring for `boat:<region>` is the Benchy's
@@ -883,7 +895,7 @@ a room to the sea (`afoot` in lib/hostility.mjs) and a hull to peers.js (`BOAT_R
 place - read as a place it hid every pilot. [Plans/DONE/lopen-op-de-boot.md](Plans/DONE/lopen-op-de-boot.md).
 Standing on a deck is a position in the hull's own frame (`shared/deck.mjs`, trig-free: a
 hull comes in as `{ x, z, fx, fz }`, `frameOf` in lib/boats.mjs), and what a boat holds is
-`shared/crafts.mjs`, the one copy (every boat is a Benchy, `crew: 1`). The sea takes a deck
+`shared/crafts.mjs`, the one copy (every boat but the galleon is the rowing boat, `crew: 1`). The sea takes a deck
 pose (`on` + `d`) only from somebody `aboard`, clamps it to the planks, works the world
 position out itself, and sends decks as their own list `d` beside the rows - a row's slots
 are fixed and an older page must read it unchanged. Aboard is not afoot (`pilotsOf` counts the
@@ -2367,8 +2379,20 @@ The square is offered while she is in the arms as an interactable whose x/z are 
 prompt is a getter on `walk.carrying()` ("lay the statue on the boat"). E at the X turns the body towards it
 before `walk.dig` (the hole is `DIG_REACH` 0.6 ahead of the feet; `DIG_TOLERANCE` decides if it is on the X).
 Late quest events are caught up (delivering also reports lifted and boarded), the book ignores one that is not
-its current step. Known gap: once the statue stands in the town, a second browser's first-hunt map digs an
-ordinary chest and its `bring-it-home` chain cannot advance. `?hunt` puts `__state` on window.
+its current step. Once the statue stands in the town, a second browser's first-hunt map digs an ordinary chest
+and is told the rest at once (`dug statue` and the late events, so its book waits on the word with the pirate).
+`?hunt` puts `__state` on window.
+**The statue goes home in a rowing boat** ([Plans/roeiboot-en-schat.md](Plans/roeiboot-en-schat.md)). The boat is
+our own skiff (`boat:w-<player>`, which any page may launch - lib/boats.mjs needs nothing new): coming within
+`ROWBOAT_CALL` of the islet with its map (or its statue still on it), treasure.js asks main.js `launchRowboat` to
+lay it at `rowboatSpot` (shared/treasure.mjs: the nearest water `ROW_DEPTH` deep from the X along eight bearings,
+bow to the X) and let it go, unless it lies within `ROWBOAT_NEAR` already, has us in it or holds the statue.
+Walking into any rowing boat we may take with the statue in the arms lays her in it (`touchRowboat`, no key: the
+`boarded` step); E boards, stepping ashore hands her back as before. **A ship is reached by her ladder, which nobody
+climbs carrying her**, so from the rowing boat at a ladder foot (`HOIST_REACH`) E hoists her (`walk.hoistOnto`: her
+the ship's cargo, you on the planks where that ladder lands, crew 300 ms later), and beside her on the deck
+(`LOWER_REACH`) E lowers her (`walk.lowerOff`, the skiff relaunched at the foot of the ladder that looks at the
+nearer land, and you boarded at its oars). Cargo is still this page's alone: nothing of it is on the wire.
 
 **The Salty Kraken is a pub at the water, a third room, and the crew that tells the rest of the story**
 ([Plans/piratenkroeg.md](Plans/piratenkroeg.md)). Rung 52, `civic:piratetavern` (`PUB_ID`), on **`PUB_LOT`,
@@ -2994,7 +3018,7 @@ any more — what is still imported from it is the wardrobe and `figureGeometry`
 | `scripts/build-*.py` | author the `.blend` files; `export-models.py` bakes them |
 | `tools/island.mjs` | the island's own CLI: `where`, `look`, `build`, `remove`, `reload` — talks to the running server over HTTP |
 | `docs/manual.md` | what everything on the island means; `docs/next/` is written-up work that is *not* done |
-| `site/` | promptholm.com, the landing page: static, no build step, light only, published by `.github/workflows/site.yml`; its download buttons use `releases/latest/download/<asset>`, so keep the asset names `release.yml` makes ([Plans/DONE/website.md](Plans/DONE/website.md)) |
+| `site/` | the landing page, live on https://agentsofthesea.com: static, no build step, light only; there is no GitHub Pages workflow - something outside this repo (an nginx at mijndomein.nl) picks up a push to `main` within minutes, so a change to `site/` is live once it is on GitHub's `main`; its download buttons use `releases/latest/download/<asset>`, so keep the asset names `release.yml` makes ([Plans/DONE/website.md](Plans/DONE/website.md)) |
 
 `data/` and `config.json` are HOME's - `~/.promptholm`, or a worktree's own (see the desktop
 window above) - and a checkout's own `data/` is only the backup an island moved out of

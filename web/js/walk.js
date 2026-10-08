@@ -8,7 +8,7 @@ import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } fr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
 import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
@@ -468,6 +468,11 @@ export function createWalkMode({
     && !state.vehicle && !state.deck && !climb && !rides() && !state.swimming
     && !state.sitting && !state.lying && !state.digging;
 
+  // At the oars of a rowing boat (boat.js `rowing`): drawn seated on her thwart, pulling with her
+  // stroke. A ship's pilot stands at her wheel instead.
+  const oarsman = () => !!(state.vehicle && !state.deck && state.vehicle.craft && state.vehicle.craft.rowing);
+  const rowTilt = new THREE.Quaternion();
+
   // Take the statue (or whatever `item` names) in both arms. False when there is no room for it: the
   // hands are busy, or it is already in them or on a hull.
   function lift(item = 'statue') {
@@ -512,6 +517,45 @@ export function createWalkMode({
     if (c.hull.craft && c.hull.craft.setCargo) c.hull.craft.setCargo(null);
     state.carry = c.item;
     if (classicAvatar.setCarry) classicAvatar.setCarry(true);
+    return true;
+  }
+
+  // The statue up a ship's side and down it again (Plans/roeiboot-en-schat.md, "de sloep van het
+  // schip"). A rope ladder wants both hands, so nobody climbs one carrying her: from a rowing boat
+  // lying at one of a ship's ladders, `hoistOnto` takes her up with you - her onto the ship's deck as
+  // her cargo, you onto the planks where that ladder lands, crew from there (the caller tells the
+  // sea). `lowerOff` is the way back: off her deck, her into the rowing boat `row` the caller has laid
+  // at a ladder's foot; the caller then boards `row` (board()), and you are at the oars with her in
+  // the stern. Both false when the statue is not where they start from.
+  function hoistOnto(ship, ladder) {
+    const row = state.vehicle;
+    if (!row || !ship || !ladder || !state.cargo || state.cargo.hull !== row || state.deck) return false;
+    const { item } = state.cargo;
+    if (row.craft && row.craft.setCargo) row.craft.setCargo(null);
+    state.cargo = { item, hull: ship };
+    if (ship.craft && ship.craft.setCargo) ship.craft.setCargo(cargoMesh(item, material));
+    const [lx, lz] = ladder.land;
+    const floor = deckAt(specOf(ship), lx, lz) ?? ladder.top;
+    const land = ship.craft && ship.craft.walk ? nearestStand(ship.craft.walk, lx, lz, floor + 0.2) : null;
+    state.vehicle = null;
+    climb = null;
+    deckBoat = ship;
+    const yaw = Math.atan2(-(ladder.x < 0 ? -1 : 1), 0);
+    state.deck = { boat: ship.id, x: land ? land.x : lx, z: land ? land.z : lz, y: land ? land.y : floor, vy: 0, grounded: true, yaw };
+    state.swimming = false;
+    state.grounded = true;
+    state.vy = 0;
+    place(camBack * 1.5);
+    return true;
+  }
+  function lowerOff(ship, row) {
+    if (!state.deck || deckBoat !== ship || !row || !state.cargo || state.cargo.hull !== ship) return false;
+    const { item } = state.cargo;
+    if (ship.craft && ship.craft.setCargo) ship.craft.setCargo(null);
+    if (row.craft && row.craft.setCargo) row.craft.setCargo(cargoMesh(item, material));
+    state.cargo = { item, hull: row };
+    state.sitting = null;
+    offDeck();
     return true;
   }
 
@@ -2788,6 +2832,14 @@ export function createWalkMode({
       horse.pose({ speed: m.v, rate: m.rate, air: m.air }, dt);
       const fit = horsebackOf(classicAvatar.character);
       state.riderMotion = horse.carry(avatar, classicAvatar.hipY, fit.perch, dt, roll * 0.3);
+    } else if (oarsman()) {
+      // At the oars (Plans/roeiboot-en-schat.md): on the thwart, which is where the boat sets the
+      // body (craft.deck()), facing aft as an oarsman does - so turned half round from the bow - and
+      // pitching and rolling with her.
+      const v = state.vehicle;
+      avatar.position.set(state.pos.x, state.pos.y - classicAvatar.hipY + SEAT_FLESH, state.pos.z);
+      avatar.rotation.set(0, v.yaw + Math.PI, roll * 0.3);
+      if (v.craft.object) avatar.quaternion.premultiply(hullTiltOf(v, rowTilt));
     } else if (state.sitting) {
       // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
@@ -2829,7 +2881,8 @@ export function createWalkMode({
     const stoop = state.crouching && !state.dive;
     classicAvatar.update({
       moving: state.moving, running: state.running, sprinting: state.sprinting, grounded: state.grounded, distance: frameDistance,
-      crouching: stoop, sitting: !!state.sitting, lying: state.lying,
+      crouching: stoop, sitting: !!state.sitting || !!oarsman(), lying: state.lying,
+      rowing: oarsman() ? { phase: state.vehicle.craft.rowing.phase() } : null,
       swimming: state.swimming, treading: state.swimming && !state.dive ? 1 - state.lie : 0, blocking: state.blocking ? state.guard : false, phase: state.bob, firstPerson: fp, pitch: state.camPitch,
       riding: state.bike ? { crank: state.bike.crank, standing: state.turbo && state.bike.v > 0.5 } : null,
       horseback: state.mount ? state.riderMotion || true : false,
@@ -3191,7 +3244,7 @@ export function createWalkMode({
     // Going down before the jump home (main.js sentHome): die('fall' | 'drown') -> seconds, 0 when
     // this body cannot; revive() ends it (exit() does too); dying() is { kind, t } or null.
     die, revive, dying: () => state.dying,
-    lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo,
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
     // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and

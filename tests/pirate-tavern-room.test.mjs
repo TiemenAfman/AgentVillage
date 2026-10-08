@@ -84,7 +84,7 @@ function walkable(def) {
 }
 
 test('it is the third room', () => {
-  assert.deepEqual(ROOM_KINDS, ['tavern', 'rave', 'piratetavern']);
+  assert.deepEqual(ROOM_KINDS.slice(0, 3), ['tavern', 'rave', 'piratetavern']);
 });
 
 test('every seat is somewhere to sit down and stand up from', () => {

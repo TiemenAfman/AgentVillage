@@ -61,6 +61,10 @@ function fakeWalk() {
     calls: [],
     carrying: () => carry,
     cargo: () => cargo,
+    // The hull we are in, as walk.js's `aboard()` says it; set by the test.
+    vehicle: null,
+    aboard: () => w.vehicle,
+    setCargo(c) { cargo = c; },
     lift(item) { if (carry || cargo) return false; carry = item; return true; },
     putDown() { const c = carry; carry = null; return c; },
     putOnBoat(hull) { if (!carry) return false; cargo = { item: carry, hull }; carry = null; return true; },
@@ -92,7 +96,7 @@ function fakeView() {
 }
 
 // One page: a book with the storage behind it, the unlocks, and a hunt on a fake walker.
-function page({ keeper = true, now = NOON, village = villageOf(), answer = null } = {}) {
+function page({ keeper = true, now = NOON, village = villageOf(), answer = null, rowboat = null } = {}) {
   U.resetUnlocks();
   const storage = memory();
   const toasts = [], posts = [];
@@ -131,6 +135,7 @@ function page({ keeper = true, now = NOON, village = villageOf(), answer = null 
     toast: (html) => toasts.push(html),
     onChange: () => { changes.n++; },
     refetchVillage: async () => { fetches.n++; vil.current = { ...vil.current, treasure: { placed: true, found: 0 } }; },
+    rowboat,
   });
   return {
     hunt, log, storage, walk, view, toasts, posts, clockState, changes, fetches, village: vil,
@@ -464,7 +469,7 @@ test('the statue\'s whole voyage: lift, lay on a boat, set down in the square - 
   assert.equal(p.walk.carrying(), 'statue');
   assert.deepEqual(p.posts, ['lifted']);
   assert.equal(p.hunt.sites().length, 0, 'gone from the sand once she is in your arms');
-  assert.equal(p.log.view().active.goal, 'Put the statue on your boat');
+  assert.equal(p.log.view().active.goal, 'Put the statue in the rowing boat');
   assert.ok(p.hunt.interactables().some((i) => i.kind === 'deliver'), 'the square offers to take her');
   assert.equal(p.hunt.interactables().some((i) => i.kind === 'lift'), false);
 
@@ -530,7 +535,7 @@ test('an island that does not answer leaves her in your arms, and the story wher
   await new Promise((r) => setImmediate(r));
   assert.equal(p.walk.carrying(), 'statue');
   assert.match(p.toasts.at(-1), /did not answer/);
-  assert.equal(p.log.view().active.goal, 'Put the statue on your boat', 'not delivered, not reported');
+  assert.equal(p.log.view().active.goal, 'Put the statue in the rowing boat', 'not delivered, not reported');
   assert.ok(T.createFinds(p.storage).statue(), 'and still remembered');
 });
 
@@ -579,4 +584,139 @@ test('every stored map and note is read the way the book left it', () => {
   const book = p.storage.getItem(QUESTS_KEY);
   p.hunt.refresh();
   assert.equal(p.storage.getItem(QUESTS_KEY), book);
+});
+
+// ---- the rowing boat (Plans/roeiboot-en-schat.md) ------------------------------------------
+
+const { isletById, isletHeight } = await import('../shared/islets.mjs');
+const { rowboatSpot, ROW_DEPTH } = await import('../shared/treasure.mjs');
+
+// The boats as main.js hands them over: our own rowing boat (null until laid out), what a statue in
+// the arms walks into, one ship with a ladder foot wherever the test puts it.
+function fakeBoats() {
+  const b = {
+    own: null, launched: [], hoisted: [], lowered: [], ladder: null, statueAt: null,
+    mine: () => b.own,
+    launch(x, z, yaw) { b.own = { id: 'boat:w-me', x, z, yaw, own: true }; b.launched.push([x, z, yaw]); return b.own; },
+    hulls: () => (b.own ? [b.own] : []),
+    reach: 1.2,
+    ladders: () => (b.ladder ? [b.ladder] : []),
+    cargoAt: () => b.statueAt,
+    hoist(ship, ladder) { b.hoisted.push([ship, ladder]); return true; },
+    lower(ship) { b.lowered.push(ship); return true; },
+  };
+  return b;
+}
+// The islet of the first map, in scene coordinates, and a point on it the walker can stand on.
+function isletOf(p) {
+  const card = p.log.card();
+  const islet = isletById(card.isletId);
+  const [x, z] = worldToScene([islet.x, islet.z], HOME);
+  return { islet, card, x, z };
+}
+
+test('rowboatSpot lays her in water a body can wade to, bow to the X, the same on every page', () => {
+  const islet = ISLETS[0];
+  const from = { x: 0, z: 0 };
+  const a = rowboatSpot(islet, from), b = rowboatSpot(islet, from);
+  assert.deepEqual(a, b);
+  assert.ok(isletHeight(islet, a.x, a.z) <= ROW_DEPTH, 'afloat');
+  assert.ok(Math.hypot(a.x, a.z) < islet.r * 3, 'not out at sea');
+  // The bow points back along the way out, at the X.
+  const len = Math.hypot(a.x - from.x, a.z - from.z);
+  assert.ok(Math.abs(a.bow[0] + (a.x - from.x) / len) < 1e-9 && Math.abs(a.bow[1] + (a.z - from.z) / len) < 1e-9);
+});
+
+test('coming to the islet with the map lays the rowing boat out there, once, and again if it was left far off', () => {
+  const boats = fakeBoats();
+  const p = firstHunt({ rowboat: boats });
+  const { islet, card, x, z } = isletOf(p);
+  // Far away: nothing.
+  p.walk.state.pos.x = x + islet.r + 200; p.walk.state.pos.z = z;
+  p.hunt.frame(0.016, 1);
+  assert.equal(boats.launched.length, 0, 'not from across the sea');
+  // Within reach of the shore: laid out at the spot the map's X gives, bow to the X.
+  p.walk.state.pos.x = x + islet.r + 20;
+  p.hunt.frame(0.016, 2);
+  assert.equal(boats.launched.length, 1);
+  const spot = rowboatSpot(islet, { x: card.spot.x - islet.x, z: card.spot.z - islet.z });
+  const [sx, sz] = worldToScene([spot.x + islet.x, spot.z + islet.z], HOME);
+  assert.ok(Math.abs(boats.own.x - sx) < 1e-9 && Math.abs(boats.own.z - sz) < 1e-9);
+  assert.ok(Math.abs(boats.own.yaw - Math.atan2(spot.bow[0], spot.bow[1])) < 1e-9);
+  assert.match(p.toasts.at(-1), /rowing boat/);
+  // Lying there, it is not laid out again.
+  p.hunt.frame(0.016, 4);
+  assert.equal(boats.launched.length, 1);
+  // Rowed off and left far away: back at the islet on the next visit.
+  boats.own.x += 300;
+  p.hunt.frame(0.016, 6);
+  assert.equal(boats.launched.length, 2);
+  // But never from under the oarsman, nor away with the statue in it.
+  boats.own.x += 300;
+  p.walk.vehicle = boats.own;
+  p.hunt.frame(0.016, 8);
+  assert.equal(boats.launched.length, 2, 'from under the oarsman');
+  p.walk.vehicle = null;
+  p.walk.setCargo({ item: 'statue', hull: boats.own });
+  p.hunt.frame(0.016, 10);
+  assert.equal(boats.launched.length, 2, 'away with the statue in it');
+});
+
+test('walking into the rowing boat with the statue lays her in it - no key - and E then boards', async () => {
+  const boats = fakeBoats();
+  const p = firstHunt({ rowboat: boats });
+  await p.dig(p.hunt.sites()[0]);
+  p.press('lift');
+  boats.launch(p.walk.state.pos.x + 5, p.walk.state.pos.z, 0);
+  p.hunt.frame(0.016, 20);
+  assert.equal(p.walk.carrying(), 'statue', 'five off is not walking into it');
+  p.walk.state.pos.x += 4.2;
+  p.hunt.frame(0.016, 21);
+  assert.equal(p.walk.carrying(), null);
+  assert.equal(p.walk.cargo().hull, boats.own);
+  assert.equal(p.log.view().active.goal, 'Stand the statue in your town');
+  assert.match(p.toasts.at(-1), /rowing boat/);
+});
+
+test('at a ship\'s ladder E hoists the statue aboard, and beside her on the deck E lowers her again', async () => {
+  const boats = fakeBoats();
+  const p = firstHunt({ rowboat: boats });
+  const ship = { id: 'boat:a' };
+  const row = boats.launch(10, 10, 0);
+  p.walk.vehicle = row;
+  // No statue in the boat: nothing to hoist.
+  boats.ladder = { ship, ladder: { x: 2.42 }, x: 10.5, z: 10 };
+  assert.deepEqual(p.hunt.afloat(), []);
+  p.walk.setCargo({ item: 'statue', hull: row });
+  const [up] = p.hunt.afloat();
+  assert.equal(up.kind, 'hoist');
+  assert.equal(up.prompt, 'hoist the statue aboard');
+  p.hunt.interact(up);
+  assert.deepEqual(boats.hoisted, [[ship, boats.ladder.ladder]]);
+  // Too far from the ladder: nothing.
+  boats.ladder = { ship, ladder: { x: 2.42 }, x: 14, z: 10 };
+  assert.deepEqual(p.hunt.afloat(), []);
+  // On her deck with the statue on it: the offer stands where she does, and moves with the ship.
+  p.walk.vehicle = null;
+  p.walk.setCargo({ item: 'statue', hull: ship });
+  boats.statueAt = { x: 3, z: 4 };
+  const [down] = p.hunt.onDeck({ boat: ship });
+  assert.equal(down.kind, 'lower');
+  assert.deepEqual([down.x, down.z], [3, 4]);
+  boats.statueAt = { x: 5, z: 4 };
+  assert.equal(down.x, 5, 'read when asked');
+  p.hunt.interact(down);
+  assert.deepEqual(boats.lowered, [ship]);
+  // Another ship's deck offers nothing.
+  assert.deepEqual(p.hunt.onDeck({ boat: { id: 'boat:b' } }), []);
+});
+
+test('a second browser whose first map is dug after the statue stands goes on to the pirate', async () => {
+  const p = firstHunt({ village: villageOf({ treasure: { placed: true, found: 1 } }) });
+  assert.equal(p.log.view().active.id, 'first-dig');
+  await p.dig(p.hunt.sites()[0]);
+  assert.equal(p.log.view().active.id, 'bring-it-home', 'the first dig is done');
+  assert.equal(p.log.view().active.goal, 'Tell the pirate it is done', 'nothing to carry: she is home already');
+  assert.equal(p.walk.carrying(), null);
+  assert.ok(p.toasts.some((t) => /already stands/.test(t)), 'and is told why');
 });

@@ -1,27 +1,35 @@
-// The arch bridge, and the one promise it exists to keep: the Benchy sails under it.
+// The arch bridge, and the one promise it exists to keep: a boat sails under it.
 //
 // Measured, not asserted from the constants: the hull's size comes from the baked mesh in
-// web/js/benchy-mesh.js, and the opening from sampling the bridge's own soffit. The boat is
-// given room for her swell and roll on top of her own height, and the margin asked for is
-// small on purpose: the bridge is sized so she just fits, and it stays walkable.
+// web/js/rowboat-mesh.js, and the opening from sampling the bridge's own soffit. The boat is
+// given room for her swell and roll on top of her own height. The bridge was sized so the 3D
+// Benchy (0.92 air draft) just fitted; the rowing boat that replaced her
+// (Plans/roeiboot-en-schat.md) is lower, with her oarsman the tallest thing in her, so she fits
+// with room to spare and the crown keeps its height - it is walked, and lowering it would move
+// every arch bridge already built.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { readFileSync } from 'node:fs';
-import { DRAUGHT } from '../shared/hull.mjs';
+import { DRAUGHT, SEAT_Y } from '../shared/hull.mjs';
 import { SHAPES } from '../shared/shapes.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { propGeometry, propLift, archDeckY, archSoffitY, archSpring, ARCH_MIN_LEN, ARCH_LIFT_MIN, deckCellsOf, bridgeRoadCellsOf } = await import('../web/js/props.js');
-const { BENCHY } = await import('../web/js/benchy-mesh.js');
+const { ROWBOAT } = await import('../web/js/rowboat-mesh.js');
 delete globalThis.document;
 
+// The hull without her oars (they reach out low over the water, under any soffit), and over it
+// the oarsman: a settler 0.54 tall is counted as standing on the thwart, which is more than he is.
 function hull() {
-  const P = BENCHY.parts['benchy hull'].positions;
   let w = 0, top = 0;
-  for (let i = 0; i < P.length; i += 3) { w = Math.max(w, Math.abs(P[i])); top = Math.max(top, P[i + 1]); }
-  return { beam: w * 2, airDraft: top - DRAUGHT };
+  for (const [name, part] of Object.entries(ROWBOAT.parts)) {
+    if (/oar/.test(name)) continue;
+    const P = part.positions;
+    for (let i = 0; i < P.length; i += 3) { w = Math.max(w, Math.abs(P[i])); top = Math.max(top, P[i + 1]); }
+  }
+  return { beam: w * 2, airDraft: Math.max(top - DRAUGHT, SEAT_Y + 0.54) };
 }
 
 // The widest band, centred on the channel, over which the soffit stays at least `h` up.
@@ -57,7 +65,7 @@ test('a river is about two wide, and the opening spans it', () => {
   }
 });
 
-test('the Benchy just fits under the crown: clear of it, but not by much', () => {
+test('the rowing boat and her oarsman fit under the crown', () => {
   const { beam, airDraft } = hull();
   // swell (BOB_RISE 0.03), a hand for roll and pitch at the rail, and a small margin
   const need = airDraft + 0.03 + 0.05;
@@ -68,8 +76,6 @@ test('the Benchy just fits under the crown: clear of it, but not by much', () =>
       const up = ARCH_LIFT_MIN + archSoffitY(p, z);
       assert.ok(up >= need, `length ${length}: ${up.toFixed(2)} at ${z.toFixed(2)}, needs ${need.toFixed(2)}`);
     }
-    const crown = ARCH_LIFT_MIN + archSoffitY(p, 0);
-    assert.ok(crown <= need + 0.3, `length ${length}: crown ${crown.toFixed(2)} is far more than she needs`);
   }
 });
 

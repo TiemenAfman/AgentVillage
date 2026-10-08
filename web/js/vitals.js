@@ -31,6 +31,8 @@ export function createVitals(root, { haze = [] } = {}) {
   const stamina = root.querySelector('.vital.stamina');
   const air = root.querySelector('.vital.air');
   const tipsy = root.querySelector('.vital.tipsy');
+  // The gold mine's digging bar (Plans/goudmijn-zoektocht.md): shown in the mine only, full or not.
+  const dig = root.querySelector('.vital.dig');
 
   let hurtFlip = false;
 
@@ -77,6 +79,16 @@ export function createVitals(root, { haze = [] } = {}) {
     // time on the surface - and back on screen the frame it starts to drain.
     setAir: (fraction) => write(air, fraction),
     setTipsy: (level) => write(tipsy, level || 0, { rest: 0 }),
+    setDig(level, shown) {
+      if (!dig) return;
+      dig.hidden = !shown;
+      // Never faded away full or empty, as the others are: in the mine it is what you are watching.
+      if (!shown) return;
+      const v = Math.round(Math.min(1, Math.max(0, level)) * 500) / 500;
+      if (dig.dataset.said === String(v)) return;
+      dig.dataset.said = String(v);
+      dig.style.setProperty('--f', String(v));
+    },
     setHaze,
   };
 }

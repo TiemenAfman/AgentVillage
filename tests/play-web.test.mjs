@@ -5,12 +5,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { handheldOf, firstInputMode, nextInputMode, padUsed } from '../web/js/device.js';
 import { webNotice, SEA_PROTOCOL } from '../web/js/update.js';
 import { shelfId, contentStamp, doorHtml, shelfJson, withStandalone, copyPage, ROOM_ONLY } from '../scripts/pack-page.mjs';
 import { OPEN_SEA as PACKED_SEA } from '../scripts/pack-web.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 test('the graphics tier comes from the machine, not from having no islander', () => {

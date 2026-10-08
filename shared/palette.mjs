@@ -101,6 +101,8 @@ export const PLAYER_SWATCHES = [
   { id: 'sea-green', name: 'Sea green', hex: 0x2e8b74, hint: 'A reward from the pirate' },
   { id: 'kraken-purple', name: 'Kraken purple', hex: 0x5b3a8e, hint: 'A reward from the Captain, or a chest' },
   { id: 'gold-leaf', name: 'Gold leaf', hex: 0xe0b83c, hint: 'A reward from the navigator, or a chest' },
+  { id: 'miners-ochre', name: "Miner's ochre", hex: 0xb8742a, hint: 'A reward from the goldsmith' },
+  { id: 'deep-garnet', name: 'Deep garnet', hex: 0x6e1f2e, hint: 'A reward from the goldsmith' },
 ];
 
 // The look every settler of a style used to have, and still the look of the figure that

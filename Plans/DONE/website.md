@@ -1,8 +1,8 @@
-# Promptholm.com: een landingspagina
+# agentsofthesea.com: een landingspagina
 
-**✅ Status: pagina gebouwd op 29 september 2026 (`site/`); nog niet online - Pages en DNS
-moeten nog aangezet worden** (handmatig: Settings → Pages → Source "GitHub Actions" met het custom
-domain, en DNS voor promptholm.com).
+**✅ Status: pagina gebouwd op 29 september 2026 (`site/`), live op https://agentsofthesea.com.**
+Het domein promptholm.com is er nooit gekomen; de site wordt buiten deze repo om uitgerold
+(zie "Online" onderaan).
 
 ## Wat Tiemen vroeg
 
@@ -20,7 +20,7 @@ domain, en DNS voor promptholm.com).
   diepe zeeblauw als inkt, de lagune als accent en één dakpanrood voor de knoppen. De game
   zelf levert de kleur via de screenshots. De titelkaart van de game (donker glas, goud) ligt
   als enige donkere vlak over de hero-afbeelding, omdat dat is hoe het eiland er echt uitziet.
-- **Engels.** De game, de README en de handleiding zijn Engels; promptholm.com is voor
+- **Engels.** De game, de README en de handleiding zijn Engels; de site is voor
   iedereen.
 - **Downloaden zonder dat de pagina mee hoeft te bewegen.** De knoppen wijzen naar
   `releases/latest/download/promptholm-windows-x64.zip` en `…/promptholm-android.apk`, die
@@ -57,8 +57,11 @@ Recept, voor als ze opnieuw moeten:
    Een frame duurt in software seconden: schermafdrukken met een timeout van minuten.
 4. Omzetten naar WebP op 1600 en 800 breed; `og.jpg` 1200 x 630.
 
-## Online zetten (nog te doen)
+## Online
 
-- `.github/workflows/site.yml` publiceert `site/` bij een push naar main die `site/` raakt.
-- Eenmalig: Settings → Pages → Source "GitHub Actions", custom domain `promptholm.com`.
-- DNS van promptholm.com naar GitHub Pages (A-records op de apex, of ALIAS/ANAME).
+- De site staat op **https://agentsofthesea.com** (nginx bij mijndomein.nl). Iets buiten deze
+  repo zet hem daar neer: een push naar `main` op GitHub stond op 8 oktober 2026 binnen twee
+  minuten live. Wat dat precies is, staat niet in de repo.
+- De GitHub Pages-workflow (`.github/workflows/site.yml`) en `site/CNAME` zijn op 8 oktober
+  2026 weggehaald: Pages stond nooit aan op de repo, elke run faalde sinds 29 september, en
+  promptholm.com bestaat niet.

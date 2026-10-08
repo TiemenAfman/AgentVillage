@@ -310,6 +310,8 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .vital.stamina i { background: linear-gradient(#f5d98a, #d9a441); }
 .vital.air i { background: linear-gradient(#a6e0fa, #3f8fd0); }
 .vital.tipsy i { background: linear-gradient(#c79cf2, #7b3fc4); }
+.vital.dig i { background: linear-gradient(#f0b070, #b8641e); }
+.vital[hidden] { display: none; }
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
 .vital.full, .vital.empty { opacity: 0; transition: opacity 1.2s ease 1.5s; }

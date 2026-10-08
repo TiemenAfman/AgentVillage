@@ -14,7 +14,7 @@
 // bake, web/js/shipwalk-map.js). What is listed here for the galleon is what the SEA needs, which has
 // no mesh - the coarse hold a claimed deck position is clamped to - and where a ladder lands; the
 // rectangles and rails are also the fallback of any craft without a model of its own to walk (shared/
-// deck.mjs stepDeck, the Benchy's one square).
+// deck.mjs stepDeck, the rowing boat's one square).
 //
 //   crew      how many may be aboard at once, pilot included
 //   helm      where the pilot stands, [x, z], and faces the bow
@@ -39,8 +39,9 @@
 //             with the push at the hull and hanging still without one; the mesh is drawn from
 //             these same numbers (web/js/boat.js), so what you climb is what you see.
 //
-// No boat has more than one person yet. The Benchy is scaled for a single rider
-// (scripts/build-benchy.py) and her whole deck is the helm: exactly what walk.js has always
+// Every boat but the galleon is the rowing boat (scripts/build-rowboat.py,
+// Plans/roeiboot-en-schat.md), which replaced the 3D Benchy and kept her rules: room for one,
+// and her whole deck is the helm - the oarsman's thwart - exactly what walk.js has always
 // done with a pilot, pinned to the middle of the hull. A bigger boat is a new entry here
 // with the numbers read off its model's anchors, not a change to anything that reads them.
 
@@ -58,7 +59,7 @@ const BULWARK = 0.25;
 const rail = (x, z, hx, hz, deckY) => Object.freeze({ x, z, hx, hz, top: deckY + BULWARK });
 
 export const CRAFTS = Object.freeze({
-  benchy: Object.freeze({
+  rowboat: Object.freeze({
     crew: 1,
     helm: Object.freeze([0, 0]),
     deck: Object.freeze([Object.freeze({ x: 0, z: 0, hx: 0.08, hz: 0.12, y: 0 })]),
@@ -70,7 +71,7 @@ export const CRAFTS = Object.freeze({
   // were measured across it too - less the waterline (1.469 above the keel) and DECK_Y:
   // the waist 2.63 above the keel, the forecastle 2.84, the quarterdeck 3.26 and the poop
   // 3.47. Planking a body can stand on is a little inside the bulwarks, which are the rails.
-  // `sail` is how she handles (web/js/boat.js stepBoat): faster than the Benchy on the
+  // `sail` is how she handles (web/js/boat.js stepBoat): faster than the rowing boat on the
   // straight, slower through a turn, and `probes` are the points of the hull tested against
   // the ground - bow and shoulders, in her frame, mirrored astern - because a bow point alone
   // lets a hull seven wide lie with half of it in the dunes.
@@ -155,7 +156,7 @@ export const CRAFTS = Object.freeze({
     // `reach` how far from it E offers it, and `floor` the height a body must be above to be in the nest.
     nest: Object.freeze({ seat: Object.freeze({ x: 0, z: 0.17, y: 9.2, yaw: 0 }), reach: 0.65, floor: 8.6 }),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
-    // falls back to the Benchy's when it is missing): she takes 6 s to reach her top speed, and
+    // falls back to the rowing boat's when it is missing): she takes 6 s to reach her top speed, and
     // let go of the helm - or of W - she runs out for most of a minute instead of four seconds
     // (drag 0.1: 13 u/s is under 1 after 26 s and at `creep` after 45, some 130 units on). The rudder
     // is felt a second late and a swing carries on after it is centred (`yawLag`), a hard turn
@@ -174,10 +175,10 @@ export const CRAFTS = Object.freeze({
 // Which kind a boat is. An island's first boat - `boat:<region>`, the one it has always had,
 // at the berth it always had - is its galleon, one an island; the ones its keeper builds at
 // the harbours (`boat:<region>-<side><k>`, lib/boatyard.mjs) and a wanderer's skiff
-// (`boat:w-<player>`, lib/boats.mjs) are Benchies. Asked by id rather than looked up in a
+// (`boat:w-<player>`, lib/boats.mjs) are rowing boats. Asked by id rather than looked up in a
 // table of ids, so a boat that has never been touched, and so has no record anywhere, still
 // has an answer - and the sea and every page give the same one.
-export const DEFAULT_CRAFT = 'benchy';
+export const DEFAULT_CRAFT = 'rowboat';
 export function kindOf(boatId) {
   return typeof boatId === 'string' && /^boat:[0-9a-z]+$/.test(boatId) ? 'galleon' : DEFAULT_CRAFT;
 }

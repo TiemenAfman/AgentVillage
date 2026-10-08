@@ -75,6 +75,33 @@ export function spotOf(islet, seed) {
   return { x: 0, z: 0, y: isletHeight(islet, 0, 0) };
 }
 
+// ---- where the rowing boat lies -----------------------------------------------------------
+
+// The rowing boat waiting at the islet of a map (Plans/roeiboot-en-schat.md): on the nearest water
+// to the X that a boat floats in and a body still reaches with a statue in its arms - ROW_DEPTH
+// deep, and ROW_ROOM further out so her stern is not on the sand. Looked for along eight bearings
+// from the X, the shortest wins and a tie goes to the first in this list, so every page that holds
+// the map lays her in the same water. In the islet's frame like `spotOf`; null when no bearing
+// reaches water within `limit` (an islet is a few cells across, so it always does).
+export const ROW_DEPTH = -0.3;
+const ROW_ROOM = 0.9;
+const H = Math.SQRT1_2;
+const BEARINGS = [[1, 0], [H, H], [0, 1], [-H, H], [-1, 0], [-H, -H], [0, -1], [H, -H]];
+export function rowboatSpot(islet, from, limit = islet.r * 3) {
+  let best = null;
+  for (const [dx, dz] of BEARINGS) {
+    for (let t = 0; t <= limit; t += 0.25) {
+      if (isletHeight(islet, from.x + dx * t, from.z + dz * t) > ROW_DEPTH) continue;
+      if (!best || t < best.t) best = { t, dx, dz };
+      break;
+    }
+  }
+  if (!best) return null;
+  const u = best.t + ROW_ROOM;
+  // `bow` is the way to the X, so she lies bow to the shore as a boat is pulled up to it.
+  return { x: from.x + best.dx * u, z: from.z + best.dz * u, bow: [-best.dx, -best.dz] };
+}
+
 // ---- which islet -------------------------------------------------------------------------
 
 // How far from the player's berth a map may send them, in world units: a trip of some 15 to
@@ -248,7 +275,18 @@ export const REWARD_HATS = [
 export const REWARD_ITEMS = [
   { id: 'spyglass', name: 'Spyglass' },
 ];
-export const UNLOCK_IDS = [SHOVEL, ...REWARD_COLORS, ...REWARD_HATS, ...REWARD_ITEMS]
+// The colours only a quest gives, never a chest: the gold mine's (Plans/goudmijn-zoektocht.md). Apart
+// from REWARD_COLORS because rewardOf draws from that list, and a colour added there would change what
+// every chest already on a map holds.
+export const QUEST_COLORS = [
+  { id: 'miners-ochre', name: "Miner's ochre" },
+  { id: 'deep-garnet', name: 'Deep garnet' },
+];
+// The key from the gold mine's bottom floor (Plans/goudmijn-zoektocht.md): a piece the quests hand
+// out and nothing draws yet - which door it opens is still to be decided.
+export const MINE_KEY = 'mine-key';
+export const QUEST_ITEMS = [{ id: MINE_KEY, name: 'Old iron key' }];
+export const UNLOCK_IDS = [SHOVEL, ...REWARD_COLORS, ...QUEST_COLORS, ...REWARD_HATS, ...REWARD_ITEMS, ...QUEST_ITEMS]
   .map((u) => (typeof u === 'string' ? u : u.id));
 
 // In percent: a colour, a hat, a hand item.

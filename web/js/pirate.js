@@ -8,6 +8,8 @@
 // What he says is the quest data's (shared/quests.mjs), not written here: `pirateSpeech` picks
 // the lines out of quest-log.js's `view()`, so a new quest needs no change in this file.
 // Everything in it is escaped when drawn; nothing reaches the network.
+import { CREW_IDS } from 'shared/quests.mjs';
+
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Said when there is nothing to hand over yet and, at the hand-over, before the button is
@@ -26,7 +28,29 @@ export const CREW_NOT_YET = "Ye've business with the old pirate at his sea chest
 // what they say when the story has nothing for them. `{ title, lines, hint, button }`: `button`
 // is the label of the one action offered (null when there is nothing for you right now), `hint`
 // a quiet line under the words saying what the story is waiting for.
+// The step a giver's window is about: their own line's when they give one beside the story (the
+// goldsmith and the gold mine, Plans/goudmijn-zoektocht.md), the story's otherwise.
+export function stepFor(view, who) {
+  const own = view && (view.lines || []).find((l) => l.giver === who);
+  return own || (view && view.active) || null;
+}
+// Whether somebody gives quests in the story (the pirate and the Kraken's crew) - a giver of another
+// line with that line told has nothing to say about the story's.
+const STORY_GIVERS = new Set(['pirate', ...CREW_IDS]);
+
 export function giverSpeech(view, who = 'pirate', idle = null) {
+  const own = view && (view.lines || []).find((l) => l.giver === who);
+  if (own) {
+    if (own.talk === who) {
+      return {
+        title: own.title, lines: [own.index === 0 ? own.text : ASK],
+        hint: own.index === 0 && own.rewards.length ? `On offer: ${own.rewards.join(', ')}` : own.goal,
+        button: own.index === 0 ? 'Accept' : 'Hand it over',
+      };
+    }
+    return { title: own.title, lines: [own.say], hint: own.goal, button: null };
+  }
+  if (!STORY_GIVERS.has(who)) return { title: null, lines: [idle || NOTHING_FOR_YOU], hint: null, button: null };
   const a = view && view.active;
   if (!a) return { title: who === 'pirate' ? 'The pirate' : null, lines: [NOTHING_LEFT], hint: null, button: null };
   if (a.talk === who) {
@@ -110,7 +134,7 @@ export function createQuestGiver(root, { log, onClose = null }) {
     el.querySelector('#pi-bye').addEventListener('click', close);
     const go = el.querySelector('#pi-go');
     if (go) go.addEventListener('click', () => {
-      const before = log.view().active;
+      const before = stepFor(log.view(), target.who);
       let result = null;
       try { result = target.talk(); } catch { /* the book is not the window's to fix */ }
       replied = pirateReply(before, result);
