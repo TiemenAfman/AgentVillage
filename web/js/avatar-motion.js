@@ -6,7 +6,8 @@ import { loadWanderers } from './player-bodies.js';
 import { swimPose, TREAD_SINK } from './diving.js';
 import { loadSet } from './models.js';
 import { meshAsset, createBuildingMaterial } from './buildings.js';
-import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
+import { createMount, gaitShare, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
+import { createPool, spendPool, canBoost, HORSE } from './stamina.js';
 import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
@@ -48,6 +49,21 @@ const RAVE_BPS=132/60;
 // Use the island material, including the horse's exported smooth skin normals.
 const horseMat=createBuildingMaterial();
 let horse=null, horseGait=1, horseHelper=null;
+// The horse's own breath (stamina.js HORSE), spent by the gait as walk.js's ride spends it
+// (mount.js gaitShare): a gallop on an empty pool is a trot, and the bar under the controls says
+// how much is left and how long it lasts at this gait - for judging the tempo. Vol and Leeg set it.
+const horsePool=createPool(HORSE);
+const staminaBar=document.querySelector('#motion-stamina');
+document.querySelector('#motion-stamina-fill').onclick=()=>{horsePool.level=1;horsePool.spent=false;horsePool.rest=Infinity;};
+document.querySelector('#motion-stamina-empty').onclick=()=>{horsePool.level=0;horsePool.spent=true;horsePool.rest=0;};
+function showHorsePool(riding,share){
+  staminaBar.hidden=!riding;
+  if(!riding)return;
+  staminaBar.querySelector('i').style.transform=`scaleX(${horsePool.level})`;
+  staminaBar.classList.toggle('spent',horsePool.spent);
+  const left=share>0?`nog ${(horsePool.level*HORSE.drain/share).toFixed(0)} s in deze gang`:horsePool.level<1?`vol over ${((1-horsePool.level)*HORSE.refill).toFixed(0)} s`:'vol';
+  staminaBar.querySelector('#motion-stamina-text').textContent=`${Math.round(horsePool.level*100)}%${horsePool.spent?' · op, geen galop':''} · ${left}`;
+}
 // ?rider=wanderer-female puts somebody else on the horse.
 const rider=figures.find(f=>f.id===(new URLSearchParams(location.search).get('rider')||'adventurer'))||figures.find(f=>f.id==='adventurer');
 const seatAt=new THREE.Vector3();
@@ -232,6 +248,7 @@ function tick(dt){
   if(horse)horse.visible=riding;
   if(horse&&!horseHelper){horseHelper=new THREE.SkeletonHelper(horse.object);horseHelper.visible=document.querySelector('#motion-bones').checked;scene.add(horseHelper);}
   if(horseHelper)horseHelper.visible=riding&&document.querySelector('#motion-bones').checked;
+  if(!riding){spendPool(horsePool,0,dt);showHorsePool(false,0);}
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
   // the one looked at closely, else the two's middle.
   for(const f of figures){
@@ -243,7 +260,11 @@ function tick(dt){
     if(riding)f.stand.visible=f===rider;
     if(riding){
       if(f!==rider)continue;
-      const speed=HORSE_GAITS[horseGait][1];
+      // Blown, a gallop asked for is a trot, as stepMount makes it on the island.
+      const speed=horseGait===2&&!canBoost(horsePool)?MOUNT_TOP:HORSE_GAITS[horseGait][1];
+      const share=gaitShare(speed);
+      spendPool(horsePool,share,dt);
+      showHorsePool(true,share);
       f.distance+=speed*dt;
       horse.place(0,0,f.distance,0);
       horse.pose({speed,graze:horseGait===3,dance:horseGait===4?time*RAVE_BPS:null},dt);
