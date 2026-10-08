@@ -27,8 +27,33 @@ import { avatarPlayerComponentGeometry, PLAYER_SCALE } from './avatar.js';
 import { HELD_ITEM_PARTS, heldItemGeometry } from './classic-avatar.js';
 import { goldBarGeometry } from './goldpit.js';
 import { DANCE_MOVES, dancePose } from './dance.js';
+import {
+  residentGeometry, skinnedMaterial, createPoseTexture, createPose, clearPose, poseJoints, jointMatrix,
+  residentRig, skinPartsFor, residentPartOf, gripOf, JOINT, POSE_FLOATS,
+} from './resident-skin.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
+
+// The residents in the Wanderer's style (Plans/inwoners-in-avonturierstijl.md) are drawn only
+// where somebody asked for them - `?skinned`, or Settings' debug flag `promptholm.debug.skinned` -
+// until every pose, garment and tool has moved over (fases 3 and 4). A function so the tests and
+// the rooms can ask for either crowd by `createFigures(..., { skinned })`.
+export function skinnedWanted() {
+  try {
+    if (globalThis.location && /[?&]skinned\b/.test(globalThis.location.search || '')) return true;
+    return globalThis.localStorage?.getItem('promptholm.debug.skinned') === '1';
+  } catch { return false; }
+}
+// What the skinned crowd wears until the wardrobe stream (fase 4) chooses: the old look's own
+// colours on the kit's peasant clothes, a woman's hair long and a man's parted, as the old crowd
+// gave only women hair.
+const SKINNED_SHOES = 0x5a3c28;
+const SKINNED_HAIR = 0x503a2d;
+// The walk's knees and elbows (radians, rotation.x as the stride's): a knee a touch bent even
+// under the body, up to KNEE_WALK more mid-swing (more at a run), and a forearm that hangs a
+// little forward and comes up with the arm as it swings in front.
+const KNEE_STAND = 0.06, KNEE_WALK = 0.75, KNEE_RUN = 1.05;
+const ELBOW_HANG = 0.2, ELBOW_SWING = 0.5;
 
 const tmpObj = new THREE.Object3D();
 // Yaw first, then pitch: a flinch rocks a body back about its own shoulders, and a settler
@@ -432,7 +457,7 @@ export function sitPose(f, time) {
 // starters in the sea: the four guest crowds' 36 shadow-pass calls were drawn into a shadow
 // map a few hundred units away from every one of them. The same sphere is what a ray tests
 // first when a figure is hovered (InstancedMesh.raycast), and it is right for that too.
-export function createFigures(scene, material, { armed = false, bounds = null } = {}) {
+export function createFigures(scene, material, { armed = false, bounds = null, skinned = skinnedWanted() } = {}) {
   const sphere = bounds ? new THREE.Sphere(new THREE.Vector3(bounds.x, 0, bounds.z), bounds.r) : null;
   const cull = (m) => {
     if (sphere) { m.boundingSphere = sphere; m.frustumCulled = true; } else m.frustumCulled = false;
@@ -488,11 +513,15 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       swapFloats(m.instanceMatrix.array, i * 16, j * 16, 16);
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) { swapFloats(m.instanceColor.array, i * 3, j * 3, 3); m.instanceColor.needsUpdate = true; }
+      // A skinned part's instance names its figure's pose row, and goes where its matrix goes.
+      const fa = m.geometry.attributes.aFigure;
+      if (fa) { swapFloats(fa.array, i, j, 1); fa.needsUpdate = true; }
     }
     const fi = b.figs[i], fj = b.figs[j];
     b.figs[i] = fj; b.figs[j] = fi;
     if (fi) fi[b.key] = j;
     if (fj) fj[b.key] = i;
+    if (b.onTrade) b.onTrade(i, j, fi, fj);
   }
   // No draw call, and no program set up for one, for a batch nobody in it is drawn from - the
   // same bargain as the tools: a guest island past NPC Distance costs its meshes nothing.
@@ -528,31 +557,34 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     f[b.key] = -1;
   }
 
-  const torso = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)]));
+  // The old crowd's body, made only when it is the one drawn: eleven meshes a figure moves part by
+  // part. The skinned crowd below makes none of them.
+  const old = (make) => (skinned ? null : make());
+  const torso = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.torso, WHITE)])));
   // No shadow from what lies on the body's own surface: the waistcoat, apron and buttons on
   // the shirt, the neck between head and collar, and the face's eyes, brows, sideburns and
   // hair cap on the head. Each is inside the silhouette of a batch that does cast, a figure
   // is some ten texels tall in the shadow map at its sharpest, and figures receive no
   // shadow, so none of it ever showed - but it was 142k of the 852k triangles the shadow
   // pass drew on a 150-settler island (the buttons alone are 300 a figure).
-  const trim = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]), { shadow: false });
-  const leftLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)]));
-  const rightLeg = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)]));
-  const leftArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)]));
-  const rightArm = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)]));
-  const leftHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)]));
-  const rightHand = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)]));
-  const skinCore = makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]), { shadow: false });
-  const head = makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)]));
-  const details = makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false });
+  const trim = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.trim, WHITE)]), { shadow: false }));
+  const leftLeg = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftLeg, WHITE)])));
+  const rightLeg = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightLeg, WHITE)])));
+  const leftArm = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftArm, WHITE)])));
+  const rightArm = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightArm, WHITE)])));
+  const leftHand = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.leftHand, WHITE)])));
+  const rightHand = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.rightHand, WHITE)])));
+  const skinCore = old(() => makeMesh(mergeParts([residentNamedPart(RESIDENT_PIECES.skinCore, WHITE)]), { shadow: false }));
+  const head = old(() => makeMesh(mergeParts([headGeometry(WHITE, -HEAD_Y)])));
+  const details = old(() => makeMesh(mergeParts([detailGeometry(-HEAD_Y)]), { shadow: false }));
   // Optional clothing and hair remain two population-wide batches, never a mesh
   // per woman. Each keeps its own slots, like the hats, so whoever does not wear one has no
   // instance in it at all: a skirt or a head of hair parked under everybody else was 166k
   // triangles a pass on Hoogezand. They follow the body and the head respectively.
-  const skirts = makeMesh(mergeParts([residentPart('skirt', WHITE)]));
-  const womanHair = makeMesh(mergeParts([residentPart('womanHair', null, -HEAD_Y)]));
-  skirts.name = 'resident-skirts';
-  womanHair.name = 'resident-woman-hair';
+  const skirts = old(() => makeMesh(mergeParts([residentPart('skirt', WHITE)])));
+  const womanHair = old(() => makeMesh(mergeParts([residentPart('womanHair', null, -HEAD_Y)])));
+  if (skirts) skirts.name = 'resident-skirts';
+  if (womanHair) womanHair.name = 'resident-woman-hair';
   // Untinted: the baked parts carry their own brass, steel and flame in the vertex colours,
   // and setColorAt is never called on these two, so there is no instance colour to multiply.
   // Counted every frame like the hammer, not given a slot each: a hand that is busy with
@@ -563,13 +595,70 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   if (swords) swords.name = 'resident-swords';
   if (torches) torches.name = 'resident-torches';
   // Everyone shares one slot number across the articulated meshes that everyone has, which is
-  // also what lets a ray hit on a torso or a head name the person it belongs to.
-  const body = batch([torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details], 'slot');
-  const skirted = batch([skirts], 'skirtSlot');
-  const haired = batch([womanHair], 'hairSlot');
-  torso.userData.bucket = { figs: body.figs };
-  head.userData.bucket = { figs: body.figs };
+  // also what lets a ray hit on a torso or a head name the person it belongs to. In the skinned
+  // crowd the same batch has no meshes: its slot is the figure's row in the pose texture, packed
+  // like every other batch so the texture goes up only as far as anybody is drawn.
+  const body = batch(skinned ? [] : [torso, trim, leftLeg, rightLeg, leftArm, rightArm, leftHand, rightHand, skinCore, head, details], 'slot');
+  const skirted = skinned ? null : batch([skirts], 'skirtSlot');
+  const haired = skinned ? null : batch([womanHair], 'hairSlot');
+  if (!skinned) {
+    torso.userData.bucket = { figs: body.figs };
+    head.userData.bucket = { figs: body.figs };
+  }
 
+  // ---- the skinned crowd ----------------------------------------------------------------
+  // One InstancedMesh per piece of the bake somebody here wears - a body, a garment, a hairstyle,
+  // a hat, per sex - made the first time somebody wears it, each its own batch, so a draw call is
+  // a variant and not a person. Every instance is placed by the figure's one matrix (as the old
+  // torso was) and bent by the figure's row in `pose`, which `aFigure` names.
+  const pose = skinned ? createPoseTexture() : null;
+  const skin = skinned ? skinnedMaterial(material, pose.uniform) : null;
+  const parts = new Map();
+  let partKey = 0;
+  function partBatch(sex, id) {
+    const k = `${sex}:${id}`;
+    let b = parts.get(k);
+    if (b) return b;
+    const m = new THREE.InstancedMesh(residentGeometry(residentPartOf(sex, id), CAPACITY), skin.material, CAPACITY);
+    m.customDepthMaterial = skin.depth;
+    cull(m);
+    m.castShadow = true;
+    m.count = 0;
+    m.visible = false;
+    m.name = `resident-${sex}-${id}`;
+    scene.add(m);
+    b = batch([m], `rs${partKey++}`);
+    if (id === 'skin') m.userData.bucket = { figs: b.figs };
+    parts.set(k, b);
+    batches.push(b);
+    return b;
+  }
+  // The pose row a figure's instances name, written into every part it wears.
+  function refigure(f) {
+    if (!f) return;
+    for (const b of worn.get(f)?.batches || []) {
+      if (b === body) continue;
+      const fa = b.meshes[0].geometry.attributes.aFigure;
+      fa.array[f[b.key]] = f.slot;
+      fa.needsUpdate = true;
+    }
+  }
+  if (skinned) {
+    body.onTrade = (i, j, fi, fj) => { pose.swap(i, j); refigure(fi); refigure(fj); };
+  }
+  const skinPose = skinned ? createPose() : null;
+  const handAt = new THREE.Matrix4(), gripShift = new THREE.Matrix4();
+  // What a fist holds hangs off the wrist: the old crowd's tools were built at its own grip, so
+  // they are moved from there to this body's and then go wherever the wrist goes.
+  const grips = skinned ? Object.fromEntries(['male', 'female'].map((sex) => [sex, {
+    right: gripOf(sex, 'right').map((v, k) => v - RESIDENT_GRIP[k]),
+    left: gripOf(sex, 'left').map((v, k) => v - (k ? RESIDENT_GRIP[k] : -RESIDENT_GRIP[k])),
+  }])) : null;
+  function skinnedHand(f, side, root) {
+    jointMatrix(pose.data, f.slot * POSE_FLOATS, JOINT[side + 'Wrist'], handAt);
+    const g = grips[f.sex][side];
+    return handAt.premultiply(root).multiply(gripShift.makeTranslation(g[0], g[1], g[2]));
+  }
   // `turn` is a turn about z after the swing about x - the same XYZ order classic-avatar.js
   // poses the player's arms in - which only a drinking arm uses, to bring its fist in.
   function setPosed(mesh, slot, base, pivot, angle, turn = 0) {
@@ -597,14 +686,16 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       .multiply(gripMat).multiply(uprightMat).multiply(ungripMat);
     pints.setMatrixAt(i, posedMat);
   }
-  // The hats keep their own slots: a settler is in exactly one of these meshes, or in
-  // none of them if it is bare-headed.
+  // Which slots the hats keep: a settler is in exactly one of these meshes, or in none of them
+  // if it is bare-headed.
   const hats = new Map();
-  for (const h of HAT_SHAPES) {
-    if (h.id === 'none') continue;
-    hats.set(h.id, batch([makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y)))], 'hatSlot'));
+  if (!skinned) {
+    for (const h of HAT_SHAPES) {
+      if (h.id === 'none') continue;
+      hats.set(h.id, batch([makeMesh(mergeParts(hatParts(h.id, WHITE, -HEAD_Y)))], 'hatSlot'));
+    }
   }
-  const batches = [body, skirted, haired, ...hats.values()];
+  const batches = skinned ? [body] : [body, skirted, haired, ...hats.values()];
   // Which of those each figure is in, body first, and its hat's mesh. Kept here rather than on
   // the figure, which is the caller's: a figure that held its batches held every mesh and every
   // other figure, and an assertion that failed on one tried to print all of it.
@@ -729,6 +820,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   function enrol(f, look, kind) {
     if (body.n >= CAPACITY) return false;
     join(body, f);
+    if (skinned) return enrolSkinned(f, look, kind);
     const slot = f.slot;
     tint(torso, slot, look.tunic);
     for (const mesh of [leftArm, rightArm]) tint(mesh, slot, look.tunic);
@@ -770,6 +862,44 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     return true;
   }
 
+  // The skinned crowd's dressing: the pieces of the bake this look comes to, each in its batch,
+  // each instance naming the figure's pose row. Until the wardrobe stream (fase 4) it is the old
+  // look on the kit's clothes: shirt in the tunic's colour, trousers or skirt in the trim's.
+  function enrolSkinned(f, look, kind) {
+    pose.ensure(body.n);
+    const sex = look.presentation === 'woman' ? 'female' : 'male';
+    const bottom = look.outfit === 'skirt' ? 'skirt' : 'trousers';
+    const feet = 'shoes';
+    const wear = [
+      ...skinPartsFor(sex, bottom, feet).map((id) => [id, look.skin]),
+      ['shirt', look.tunic], [bottom, look.trim], [feet, SKINNED_SHOES],
+      [sex === 'female' ? 'hair:long' : 'hair:parted', SKINNED_HAIR],
+    ];
+    if (look.hatShape && look.hatShape !== 'none' && residentPartOf(sex, 'hat:' + look.hatShape)) wear.push(['hat:' + look.hatShape, look.hat]);
+    const wears = [body], tints = [];
+    for (const [id, hex] of wear) {
+      const b = partBatch(sex, id);
+      join(b, f);
+      const m = b.meshes[0];
+      tint(m, f[b.key], hex);
+      const fa = m.geometry.attributes.aFigure;
+      fa.array[f[b.key]] = f.slot;
+      fa.needsUpdate = true;
+      wears.push(b);
+      // A blow reddens the skin and the shirt, as it did the old torso, arms and head.
+      if (id === 'skin' || id === 'shirt') tints.push([b, hex]);
+    }
+    worn.set(f, { batches: wears, hat: null, tints });
+    f.sex = sex;
+    f.look = look;
+    f.baseScale = kind === 'apprentice' ? 0.62 : 1;
+    f.mBody = new THREE.Matrix4().makeScale(look.build, look.height, look.build);
+    const rng = makeRng(hash32(f.id + ':gait'));
+    f.gait = rng.range(10.2, 11.8);
+    f.phase = rng.range(0, 6.28);
+    return true;
+  }
+
   // Somebody has been hit. Only starts the clock - draw() does the lean and the colour - and
   // a second blow while the first is showing starts it again.
   function flinch(f) {
@@ -792,6 +922,14 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   // Their colours, pushed `k` of FLINCH_TINT towards red, or put back exactly when `k` is 0.
   function tintFlinch(f, k) {
     const t = k * FLINCH_TINT;
+    if (skinned) {
+      for (const [b, hex] of worn.get(f).tints) {
+        const m = b.meshes[0];
+        m.setColorAt(f[b.key], tmpColor.setHex(hex).lerp(FLINCH_RED, t));
+        m.instanceColor.needsUpdate = true;
+      }
+      return;
+    }
     const put = (mesh, hex) => { mesh.setColorAt(f.slot, tmpColor.setHex(hex).lerp(FLINCH_RED, t)); mesh.instanceColor.needsUpdate = true; };
     put(torso, f.look.tunic);
     put(leftArm, f.look.tunic);
@@ -821,6 +959,50 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   // Everything the eye sees, from where the walk has put everybody. `f.anim` is the whole
   // of what it is told: the four animations below are derived from it and from this file's
   // own clock, and none of them can move a body.
+  // The skinned body's pose for a frame: the same angles the old crowd turned its legs and arms by,
+  // on the hip and shoulder joints, and - walking - the knees and elbows the old pieces never had.
+  // Every piece it wears is placed by the figure's one matrix; the bending is all in its row.
+  // Returns the right elbow's angle, which the pint needs to stand upright in the fist.
+  function poseSkinned(f, dress, root, legL, legR, left, right, rightTurn, gaitPhase, fast) {
+    const P = clearPose(skinPose);
+    P.build = f.look.build; P.height = f.look.height; P.head = f.look.head;
+    P.x[JOINT.leftHip] = legL;
+    P.x[JOINT.rightHip] = legR;
+    P.x[JOINT.leftShoulder] = left;
+    P.x[JOINT.rightShoulder] = right;
+    P.z[JOINT.rightShoulder] = rightTurn;
+    let elbow = 0;
+    if (gaitPhase != null) {
+      // A leg bends at the knee while it swings through and is all but straight while it carries
+      // the body: the stride's angle goes as sin, so it moves forward while cos is below zero for
+      // the left leg and above it for the right (which takes -stride). Most bend mid-swing, as
+      // the leg passes under the hip - where a stiff one would scuff the ground.
+      const c = Math.cos(gaitPhase), knee = fast ? KNEE_RUN : KNEE_WALK;
+      P.x[JOINT.leftKnee] = KNEE_STAND + knee * Math.max(0, -c);
+      P.x[JOINT.rightKnee] = KNEE_STAND + knee * Math.max(0, c);
+      // The forearm comes forward with the arm and hangs back nearly straight behind.
+      P.x[JOINT.leftElbow] = -(ELBOW_HANG + ELBOW_SWING * Math.max(0, -left));
+      elbow = -(ELBOW_HANG + ELBOW_SWING * Math.max(0, -right));
+      P.x[JOINT.rightElbow] = elbow;
+    }
+    for (const b of dress.batches) if (b !== body) b.meshes[0].setMatrixAt(f[b.key], root);
+    poseJoints(residentRig(f.sex), P, pose.data, f.slot * POSE_FLOATS);
+    return elbow;
+  }
+  // The pint in a skinned fist: off the wrist, then the arm's whole turn - shoulder, turn in,
+  // elbow - taken back off about the old grip it was built at, and tipped to the mouth by `roll`,
+  // as setPint does for the old arm.
+  const armTurn = new THREE.Matrix4(), elbowTurn = new THREE.Matrix4();
+  function setPintSkinned(i, f, root, angle, turn, elbow, roll) {
+    const hand = skinnedHand(f, 'right', root);
+    armTurn.makeRotationX(angle).multiply(rollMat.makeRotationZ(turn)).multiply(elbowTurn.makeRotationX(elbow));
+    gripMat.makeTranslation(RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]);
+    ungripMat.makeTranslation(-RESIDENT_GRIP[0], -RESIDENT_GRIP[1], -RESIDENT_GRIP[2]);
+    uprightMat.copy(armTurn).invert().multiply(rollMat.makeRotationZ(roll));
+    posedMat.copy(hand).multiply(gripMat).multiply(uprightMat).multiply(ungripMat);
+    pints.setMatrixAt(i, posedMat);
+  }
+
   const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
@@ -897,10 +1079,12 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
-      torso.setMatrixAt(f.slot, bodyMat);
-      if (f.skirtSlot >= 0) skirts.setMatrixAt(f.skirtSlot, bodyMat);
-      trim.setMatrixAt(f.slot, bodyMat);
-      skinCore.setMatrixAt(f.slot, bodyMat);
+      if (!skinned) {
+        torso.setMatrixAt(f.slot, bodyMat);
+        if (f.skirtSlot >= 0) skirts.setMatrixAt(f.skirtSlot, bodyMat);
+        trim.setMatrixAt(f.slot, bodyMat);
+        skinCore.setMatrixAt(f.slot, bodyMat);
+      }
       const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering || work || dance || sit ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
@@ -927,18 +1111,30 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
         rightTurn = -drunk.z * drunk.w;       // inward, which for the right arm is -z
       }
       // Not less the nod, as a chore's legs are: the nod is the trunk's, and the thighs stay on the bench.
-      setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, sit ? sit.legL : work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride);
-      setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, sit ? sit.legR : work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride);
-      setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
-      setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
-      setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
-      setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle, rightTurn);
+      const legL = sit ? sit.legL : work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride;
+      const legR = sit ? sit.legR : work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride;
+      let rightElbow = 0;
+      if (skinned) {
+        rightElbow = poseSkinned(f, dress, tmpObj.matrix, legL, legR, leftArmAngle, rightArmAngle, rightTurn,
+          walking ? gaitPhase : null, f.speed > 0.8);
+      } else {
+        setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, legL);
+        setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, legR);
+        setPosed(leftArm, f.slot, bodyMat, RESIDENT_PIVOTS.leftArm, leftArmAngle);
+        setPosed(leftHand, f.slot, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+        setPosed(rightArm, f.slot, bodyMat, RESIDENT_PIVOTS.rightArm, rightArmAngle, rightTurn);
+        setPosed(rightHand, f.slot, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle, rightTurn);
+      }
+      // What a fist holds: about the old body's shoulder, or off the skinned body's wrist.
+      const hold = (mesh, i, side, angle) => (skinned
+        ? mesh.setMatrixAt(i, skinnedHand(f, side, tmpObj.matrix))
+        : setPosed(mesh, i, bodyMat, RESIDENT_PIVOTS[side + 'Hand'], angle));
       // The right fist holds one thing: a beer puts down the hammer or the tool.
-      if (hammering && !drunk) setPosed(hammers, hammerCount++, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+      if (hammering && !drunk) hold(hammers, hammerCount++, 'right', rightArmAngle);
       const tool = drunk ? null : TOOL_OF[f.anim];
       if (tool) {
         const n = toolCount.get(tool) || 0;
-        setPosed(tool, n, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
+        hold(tool, n, 'right', rightArmAngle);
         toolCount.set(tool, n + 1);
       }
       if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
@@ -965,14 +1161,18 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
         const inTray = f.anim === 'carry' ? TRAY_BARS.length : loading ? 1 : 0;
         for (let i = 0; i < inTray; i++) trayBars.setMatrixAt(trayCount++, partMat.copy(frameMat).multiply(trayAt[i]));
       }
-      if (drunk && pintCount < PINTS) setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
+      if (drunk && pintCount < PINTS) {
+        if (skinned) setPintSkinned(pintCount++, f, tmpObj.matrix, rightArmAngle, rightTurn, rightElbow, drunk.roll * drunk.w);
+        else setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
+      }
       if (armed) {
         // A settler at work puts the sword away for the hammer, the tool or a beer rather
         // than holding both in one fist; the torch stays lit in the other hand unless that
         // one is at work too.
-        if (!(hammering || work || hauling || pushing || drunk)) setPosed(swords, swordCount++, bodyMat, RESIDENT_PIVOTS.rightHand, rightArmAngle);
-        if (!((work && f.anim !== 'fish') || pushing)) setPosed(torches, torchCount++, bodyMat, RESIDENT_PIVOTS.leftHand, leftArmAngle);
+        if (!(hammering || work || hauling || pushing || drunk)) hold(swords, swordCount++, 'right', rightArmAngle);
+        if (!((work && f.anim !== 'fish') || pushing)) hold(torches, torchCount++, 'left', leftArmAngle);
       }
+      if (skinned) continue;
       headMat.multiplyMatrices(tmpObj.matrix, f.mHead);
       head.setMatrixAt(f.slot, headMat);
       details.setMatrixAt(f.slot, headMat);
@@ -980,10 +1180,11 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       if (f.hatSlot >= 0) dress.hat.setMatrixAt(f.hatSlot, headMat);
     }
     for (const b of batches) if (b.live) for (const m of b.meshes) upload(m);
+    if (skinned && body.live) pose.upload();
     // With no island's sphere to hang on (the tests, the rave), three works the one a ray is
     // tested against out once, from wherever the instances stood then, and keeps it. It used
     // to be saved by the parked bodies at y = -999, which stretched it over everything.
-    if (!sphere) { torso.boundingSphere = null; head.boundingSphere = null; }
+    if (!sphere) for (const m of pickables()) m.boundingSphere = null;
     if (armed) {
       for (const [m, n] of [[swords, swordCount], [torches, torchCount]]) {
         m.count = n;
@@ -1016,7 +1217,9 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
   // lets you hover someone halfway down a street and read who it is. Only the torso and
   // the head are offered: a ray that grazes a hat brim carries on into the head behind
   // it, and leaving the other meshes out halves the instances every hover has to test.
-  const pickables = () => [torso, head].filter((m) => m.count > 0);
+  const pickables = () => (skinned
+    ? [...parts.values()].map((b) => b.meshes[0]).filter((m) => m.userData.bucket && m.count > 0)
+    : [torso, head].filter((m) => m.count > 0));
   // Only a slot under `count` is somebody drawn: past it are the undrawn, whose slots a ray
   // can never have come back with.
   const figureAt = (mesh, i) => {
@@ -1041,6 +1244,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       m.dispose();
     }
     for (const b of batches) { b.figs.length = 0; b.live = 0; b.n = 0; }
+    if (skinned) { pose.dispose(); skin.dispose(); }
   }
 
   return { enrol, hide, free, flinch, strike, drinkBeer, draw, pickables, figureAt, dispose };

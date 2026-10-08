@@ -8,7 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
-import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf } from '../scripts/model-rules.mjs';
+import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf, checkResidents, RESIDENT_FIGURE } from '../scripts/model-rules.mjs';
+import { RESIDENTS } from '../web/js/residents-mesh.js';
 import { KINDS, knownShape } from '../shared/shapes.mjs';
 import { GOLDPIT } from '../web/js/goldpit-mesh.js';
 import { GOLDMINE } from '../web/js/goldmine-mesh.js';
@@ -698,4 +699,25 @@ test('the sea set is one flat slot each, kelp is tall and finely cut, and a fish
     assert.ok(vs.every((v) => v[2] > -0.11 || Math.abs(v[0]) < 1e-6), `${name} has a body where its tail should be`);
     assert.ok(Math.max(...vs.map((v) => v[2])) - Math.min(...vs.map((v) => v[2])) < 0.35, `${name} is longer than a fish`);
   }
+});
+
+// The residents in the Wanderer's style (scripts/build-residents.py): skinned pieces worn in
+// combinations by a crowd, so the budget is per piece and per dressed figure, and every corner
+// carries a joint pair and a weight the shader can trust.
+test('the residents bake stays within a crowd budget', () => {
+  assert.deepEqual(checkResidents(RESIDENTS), []);
+  for (const sex of ['male', 'female']) {
+    const body = RESIDENTS[sex];
+    assert.equal(body.rig.joints.length, body.rig.parents.length);
+    assert.equal(body.rig.joints.length, body.rig.points.length);
+    assert.ok(body.rig.parents.every((p, i) => p < i), 'a joint comes after its parent');
+    assert.ok(body.parts.some((p) => p.id === 'skin' && p.shows.length === 4), 'one skin part shows with every outfit');
+  }
+  // And a bake that outgrew it is refused, not passed.
+  const heavy = structuredClone(RESIDENTS);
+  const shirt = heavy.male.parts.find((p) => p.id === 'shirt');
+  for (const k of ['positions', 'normals', 'colors', 'joints', 'weights']) shirt[k] = [].concat(...Array(3).fill(shirt[k]));
+  const bad = checkResidents(heavy);
+  assert.ok(bad.some((b) => b.includes('residents/male/shirt')), bad.join('; '));
+  assert.ok(bad.some((b) => b.includes(`over ${RESIDENT_FIGURE}`)), bad.join('; '));
 });

@@ -292,6 +292,10 @@ export function createBuildingMaterial({ seeThrough = false } = {}) {
       mat.userData.fadeOn = on;
       mat.needsUpdate = true;
       depth.needsUpdate = true;
+      // And every material made from this one that runs its hook (resident-skin.js
+      // skinnedMaterial): a clone's program is only asked for again when the clone itself
+      // is flagged, so without this a skinned crowd kept the fade it was compiled with.
+      for (const m of mat.userData.followers || []) m.needsUpdate = true;
     }
     // Out of range as well as off: a range of 0 has to read as "no fade", never as
     // "distance divided by zero, so everything within an inch is gone".

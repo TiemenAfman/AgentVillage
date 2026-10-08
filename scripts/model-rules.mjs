@@ -231,6 +231,71 @@ export function checkAll(sets) {
   return bad;
 }
 
+// The residents (scripts/build-residents.py, Plans/inwoners-in-avonturierstijl.md) are not a set of
+// buildings: they are skinned pieces a crowd of up to a thousand wears in combinations, drawn in both
+// passes. So their budget is per piece and per dressed figure. RESIDENT_FIGURE is the plan's decision -
+// the old villager came to about 2.3k to 2.9k with hair and hat, and a resident in the Wanderer's
+// style may cost no more, or three hundred of them on Hoogezand cost what ten times as many did.
+// RESIDENT_BUDGETS is longest prefix first, by the part's id; a piece matching none is refused.
+export const RESIDENT_FIGURE = 3000;
+export const RESIDENT_BUDGETS = [
+  ['skin:', 200], ['skin', 900], ['hair:', 320], ['hat:', 150],
+  ['shirt', 500], ['dress', 800], ['trousers', 350], ['skirt', 300], ['shoes', 150], ['clogs', 150],
+  ['vest', 160], ['apron', 120], ['scarf', 100], ['straps', 120],
+];
+// What one figure can wear at once: one of each row (null = nothing from it). A dress is a top and a
+// bottom in one, so it is the alternative to both; the skin shown is the always part plus the bare
+// pieces whose `shows` holds the outfit's `<bottom>/<feet>`.
+export const RESIDENT_OUTFITS = {
+  body: [['shirt', 'trousers'], ['shirt', 'skirt'], ['dress']],
+  feet: ['shoes', 'clogs'],
+  over: [null, 'vest', 'apron'],
+  neck: [null, 'scarf'],
+  straps: [null, 'straps'],
+};
+
+export function residentBudgetOf(id) {
+  for (const [prefix, tris] of RESIDENT_BUDGETS) if (id.startsWith(prefix)) return tris;
+  return null;
+}
+
+// Every way the residents' bake could be wrong, as sentences; empty means it may be committed.
+export function checkResidents(data) {
+  const bad = [];
+  if (!data || typeof data !== 'object') return ['residents: not a bake'];
+  for (const [sex, body] of Object.entries(data)) {
+    const parts = new Map(body.parts.map((p) => [p.id, p]));
+    const n = (p) => p.positions.length / 9;
+    const joints = body.rig.joints.length;
+    for (const p of body.parts) {
+      const where = `residents/${sex}/${p.id}`;
+      const corners = p.positions.length / 3;
+      if (p.positions.length % 9) bad.push(`${where}: ${p.positions.length} position numbers is not whole triangles`);
+      for (const [key, per] of [['normals', 3], ['colors', 3], ['joints', 2], ['weights', 1]]) {
+        if (p[key]?.length !== corners * per) bad.push(`${where}: ${p[key]?.length} ${key} for ${corners} corners`);
+      }
+      if (!p.joints.every((j) => Number.isInteger(j) && j >= 0 && j < joints)) bad.push(`${where}: a joint index outside the ${joints} joints`);
+      if (!p.weights.every((w) => w >= 0 && w <= 1)) bad.push(`${where}: a weight outside 0..1`);
+      const budget = residentBudgetOf(p.id);
+      if (budget === null) bad.push(`${where}: no budget for a piece called that`);
+      else if (n(p) > budget) bad.push(`${where}: ${n(p)} triangles over a budget of ${budget}`);
+    }
+    // The heaviest figure: every outfit, the heaviest hair and hat on top.
+    const heaviest = (prefix) => Math.max(0, ...body.parts.filter((p) => p.id.startsWith(prefix)).map(n));
+    const one = (id) => (id && parts.has(id) ? n(parts.get(id)) : 0);
+    let worst = 0, what = '';
+    for (const top of RESIDENT_OUTFITS.body) for (const feet of RESIDENT_OUTFITS.feet) {
+      const bottom = top.includes('trousers') ? 'trousers' : 'skirt';
+      const skin = body.parts.filter((p) => p.kind === 'skin' && p.shows?.includes(`${bottom}/${feet}`)).reduce((s, p) => s + n(p), 0);
+      const extra = ['over', 'neck', 'straps'].reduce((s, k) => s + Math.max(...RESIDENT_OUTFITS[k].map(one)), 0);
+      const tris = skin + top.reduce((s, id) => s + one(id), 0) + one(feet) + extra + heaviest('hair:') + heaviest('hat:');
+      if (tris > worst) { worst = tris; what = [...top, feet].join(' + '); }
+    }
+    if (worst > RESIDENT_FIGURE) bad.push(`residents/${sex}: ${what} dressed comes to ${worst} triangles, over ${RESIDENT_FIGURE}`);
+  }
+  return bad;
+}
+
 // One line per set for the console: what came out, and how much of its budget it used.
 export function describeSet(set, data) {
   const assets = assetsOf(set, data);

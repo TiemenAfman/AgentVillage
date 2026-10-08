@@ -44,6 +44,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
+  van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
+  ellebogen), losse kleding (Peasant + schort, vest, rok/jurk, sjaal), vijf kapsels, huid- en
+  haarkleuren; ≤ 3k driehoeken per figuur, dus performance neutraal. Plan; de bake vraagt Blender.
 - 🚧 [start-op-land.md](start-op-land.md) — wie geen eiland heeft (app en web) begint op land: op het
   plein van een vrije starter, anders op een eilandje bij een spelerseiland, anders bij de vulkaan, met
   de eigen skiff afgemeerd voor de kust; bij het claimen van de starter een vriendelijk bericht en de
