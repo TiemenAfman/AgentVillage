@@ -905,7 +905,16 @@ the floating statue is dragged to the gun (treasure.js `drag`/`reelAboard`), lan
 only while no other page steps her (`web/js/harpoon-tow.js` via walk.js `onGunTow`, after `stepUnderSail`). A line in
 land or a ship stays fast when the gun is left: C at the gun or E at the hook puts you on it (walk.js `takeRope`,
 `onLine` - not the ladder's `onRope`): walked flat, slid down steep, never climbed up steep, Space jumps off with the
-way you had. Sounds `harpoon`/`ratchet`/`creak` on the part `harpoons`. Nothing of it is on the wire yet (fase B).
+way you had; the rig holds its arms out walking one (`roping: 'walk'`) and hangs by Mixamo's Hanging Idle sliding
+down (`hang`, `roping: 'zip'`). Sounds `harpoon`/`ratchet`/`creak` on the part `harpoons`. On the sea (fase B,
+`lib/harpoons.mjs`, a patch with no `SEA_V`): `{t:'harpoon', a:'line'}` says a line's state a few times a second,
+passed on only from somebody aboard that ship - every page draws it from that ship's harpoon (harpoon-play.js
+remote lines) and her pilot's page draws her along a line of her crew's (`towByCrew`); `a:'hook'` on a player is
+checked (on foot or swimming, in reach, never on their own island) and told to them alone as `a:'hooked'`, and
+their own walk mode reels them in (`pullTo`, Space struggles free); a loose boat is drawn in by the gunner's page
+and said as `{t:'boat', a:'tow', by}` (lib/boats.mjs `tow`: nobody at her helm or aboard, not a skiff, a step at a
+time), whose echo main.js leaves for as long as the line holds her. Others see any of it only once the open sea
+runs this code.
 
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing

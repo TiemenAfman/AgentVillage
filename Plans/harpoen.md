@@ -205,10 +205,20 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
 5. ✅ Het eigen schip naar land of een ander schip slepen (`harpoon-tow.js`, walk.js `onGunTow` na `stepUnderSail`),
    alleen een romp die deze pagina stapt. Een lijn die niemand inspoelt knapt als het schip wegdrijft.
 6. ✅ Over het touw: `takeRope` (C aan het harpoen, E bij de haak): lopen, glijden en eraf springen, met een echte
-   walk-mode-test. **Open**: een eigen houding. Nu loopt het lijf met de gewone gang en hangt het bij het glijden in
-   de ladderhouding (`climbing: { rise: 0 }`). Mixamo's *Hanging Idle* / *Hanging* en een balansloop (zodra
-   `/mixamo-fetch` klaar is; op 8 oktober stond het op 1317/2446) gaan via de `mixamo-clips`-route en worden getoond
-   in `/avatar-motion.html`.
+   walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging Idle* (clip `hang`), bij het lopen de gewone gang
+   met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js). Allebei te zien in `/avatar-motion.html` onder
+   *Touwlopen* en *Zipline*. De Reiziger, die geen clips heeft, reikt bij het glijden omhoog zoals op een ladder.
+   **Open**: een echte balansloop van Mixamo, zodra `/mixamo-fetch` klaar is (op 8 oktober om 16:00 stond het op
+   1531/2446) en er een tussen zit.
 7. ✅ Geluid: part `harpoons`, families `harpoon`, `ratchet` en `creak`.
-8. 🚧 Fase B, de zee: het touw laten zien aan anderen, spelers grijpen (besluit 3: altijd), een losse boot slepen
-   (besluit 4), de trek naar de schipper als de harpoenier crew is. Patch plus een redeploy van de open zee.
+8. ✅ Fase B, de zee (`lib/harpoons.mjs`, lib/boats.mjs `tow`, net.js, harpoon-play.js):
+   - **Het touw voor anderen**: `{t:'harpoon', a:'line'}`, alleen van wie aan boord is. Andere pagina's tekenen het
+     vanaf het harpoen van dat schip.
+   - **De trek naar de schipper**: de pagina die het schip vaart, trekt het langs de lijn van de bemanning
+     (`towByCrew`).
+   - **Spelers grijpen**: `a:'hook'` gaat via de zee alleen naar de gegrepen speler, en nooit op diens eigen eiland.
+     Die wordt door de eigen pagina naar de reling gehaald (walk.js `pullTo`); Space rukt los.
+   - **Een losse boot slepen**: de schutter haalt hem binnen en zegt de zee `{t:'boat', a:'tow'}`.
+   - Een patch zonder `SEA_V`, maar anderen zien het pas na een redeploy van de open zee (stack 28, met de hand).
+   - **Open**: een speler die bij de reling aankomt, valt meestal naast het schip in het water: er is geen landing
+     op het dek uit de lucht. En van een gesleepte boot ziet een ander alleen de stappen die de zee doorgeeft.
