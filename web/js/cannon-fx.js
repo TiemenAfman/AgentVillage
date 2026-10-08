@@ -118,15 +118,18 @@ export function createCannonFx({ scene }) {
   // The muzzle: a flash, a jet of fire down the bore's line, and a bank of white smoke.
   function flash(at, dir) {
     seed = 1 + ((Math.abs(at[0] * 131 + at[2] * 71) | 0) % 9973);
-    emit(fire, at, [dir[0] * 2, dir[1] * 2, dir[2] * 2], 0.12, 0.9, 1.4, 'flash', [1.0, 0.75, 0.35]);
+    emit(fire, [at[0] + dir[0] * 0.25, at[1] + dir[1] * 0.25, at[2] + dir[2] * 0.25], [dir[0] * 2, dir[1] * 2, dir[2] * 2], 0.12, 0.5, 0.9, 'flash', [1.0, 0.75, 0.35]);
     for (let k = 0; k < 8; k++) {
       const s = 3 + rnd() * 6;
       emit(fire, at, [dir[0] * s + (rnd() - 0.5), dir[1] * s + (rnd() - 0.5), dir[2] * s + (rnd() - 0.5)], 0.18 + rnd() * 0.1, 0.25, 0.05, 'spark', [1, 0.6, 0.2]);
     }
+    // The bank starts a pace out of the mouth and thin: the gunner's eye is a metre behind it, and
+    // a puff on the lens was a white glare over the whole view.
+    const out = [at[0] + dir[0] * 0.5, at[1] + dir[1] * 0.5, at[2] + dir[2] * 0.5];
     for (let k = 0; k < 14; k++) {
-      const s = 0.6 + rnd() * 2.6;
-      emit(smoke, at, [dir[0] * s + (rnd() - 0.5) * 0.6, dir[1] * s + rnd() * 0.4, dir[2] * s + (rnd() - 0.5) * 0.6],
-        2.2 + rnd() * 1.6, 0.25, 1.1 + rnd() * 0.6, 'smoke', [0.86, 0.85, 0.82]);
+      const s = 1.2 + rnd() * 2.6;
+      emit(smoke, out, [dir[0] * s + (rnd() - 0.5) * 0.6, dir[1] * s + rnd() * 0.4, dir[2] * s + (rnd() - 0.5) * 0.6],
+        2.2 + rnd() * 1.6, 0.12, 0.8 + rnd() * 0.5, 'smoke', [0.86, 0.85, 0.82]);
     }
   }
   // A ball coming down on something hard: a fireball, sparks and black smoke rising.
@@ -203,7 +206,7 @@ export function createCannonFx({ scene }) {
       if (q.kind === 'spray' && q.y < 0) { q.age = q.life; continue; }
       const alpha = q.kind === 'flash' ? (1 - f) * 2.2
         : q.kind === 'spark' || q.kind === 'ember' ? (1 - f) * 1.6
-        : q.kind === 'smoke' ? 0.55 * (1 - f) * Math.min(1, f * 8)
+        : q.kind === 'smoke' ? 0.4 * (1 - f) * Math.min(1, f * 5)
         : q.kind === 'soot' ? 0.8 * (1 - f) * Math.min(1, f * 6)
         : q.kind === 'spray' ? 0.85 * (1 - f * f)
         : 0.6 * (1 - f);

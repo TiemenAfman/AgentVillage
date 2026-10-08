@@ -2283,10 +2283,10 @@ function walkCallbacks() {
 function gunPrompt() {
   const g = state.walk && state.walk.gun();
   if (!g) return 'leave the cannon';
-  if (g.inside) return 'click to fire yourself - C to climb out';
-  if (g.loading > 0) return 'ramming a ball home...';
-  if (g.loaded) return 'click to fire - R to unload cannonball';
-  return 'R to load cannonball - C to climb in - E to leave';
+  if (g.inside) return 'leave the cannon - right mouse button to fire yourself, C to climb out';
+  if (g.loading > 0) return 'leave the cannon - ramming a ball home...';
+  if (g.loaded) return 'leave the cannon - right mouse button to fire, R to unload cannonball';
+  return 'leave the cannon - R to load cannonball, C to climb in';
 }
 let shotsFired = 0;
 // A gun fired from our deck: the muzzle and the way out of it in the scene, read off the transform

@@ -914,9 +914,18 @@ export function createWalkMode({
     if (!state.active) return;
     const side = SIDE_OF[e.button];
     if (!side) return;
-    // At a gun the left button is its linstock - under the lock; a click that takes the lock does not fire.
-    if (state.gun && e.button === 0 && document.pointerLockElement === dom) { fireGun(); return; }
-    if (state.gun && e.button === 2) return;
+    // At a gun the right button is its linstock (the keeper: "rechtermuisknop om te vuren"), and so is
+    // the left one under the lock. Without a lock (refused in the desktop app's browser pane) the left
+    // button drags to lay the gun instead, and never swings a fist.
+    if (state.gun) {
+      const locked = document.pointerLockElement === dom;
+      if (e.button === 2 || (e.button === 0 && locked)) { fireGun(); return; }
+      if (e.button !== 0) return;
+      if (wantLock()) requestLock(true);
+      dragging = true; pressMoved = false; pressLocks = false;
+      lastX = pressX = e.clientX; lastY = pressY = e.clientY;
+      return;
+    }
     if (shieldIn(side) && canFight()) guardUp(side, true);
     if (e.button === 2) { if (!shieldIn(side)) act(side); return; }
     if (document.pointerLockElement === dom) { if (!shieldIn(side)) act(side); return; }
@@ -930,7 +939,7 @@ export function createWalkMode({
     if (!side) return;
     guardUp(side, false);
     if (e.button === 2) return;
-    if (dragging && !pressMoved && !pressLocks && !shieldIn(side)) act(side);
+    if (dragging && !pressMoved && !pressLocks && !shieldIn(side) && !state.gun) act(side);
     dragging = false; pressLocks = false;
   };
   // A second button pressed while one is already down is no pointerdown: Pointer Events
@@ -2027,10 +2036,14 @@ export function createWalkMode({
   // How far the camera's pitch is from the elevation: a level bore has the camera a little above it
   // and looking a little down, as anybody standing behind a gun does.
   const GUN_CAM_PITCH = 0.14;
-  const GUN_CAM_BACK = 1.4, GUN_CAM_UP = 0.55;
+  const GUN_CAM_BACK = 0.95, GUN_CAM_UP = 0.62;
   // How far a gun runs back on its trucks when it fires: back in the first sixth of RECOIL_S, and run
   // out again over the rest.
   const GUN_KICK = 0.14;
+  // Head over heels out of a gun (afterMove): radians a second, and the turn so far.
+  const LAUNCH_SPIN = 11;
+  let launchTumble = 0;
+  const launchMid = new THREE.Vector3();
   const mountsOf = () => { const sp = specOf(deckBoat); return (sp && sp.mounts) || []; };
   const wrapAngle = (a) => a - Math.round(a / (Math.PI * 2)) * Math.PI * 2;
   function gunPitchRange() {
@@ -3346,6 +3359,15 @@ export function createWalkMode({
       avatar.position.set(state.pos.x, state.pos.y - classicAvatar.hipY + SEAT_FLESH, state.pos.z);
       avatar.rotation.set(0, v.yaw + Math.PI, roll * 0.3);
       if (v.craft.object) avatar.quaternion.premultiply(hullTiltOf(v, rowTilt));
+    } else if (state.launched && !state.grounded) {
+      // Out of a gun's mouth (launchSelf): tucked up (the rig's crouch, below) and turning head over
+      // heels about the middle of the body, a somersault every half second or so - which is how a
+      // body flying a ball's arc reads at a glance, and needs no pose of its own on anybody's screen.
+      launchTumble += dt * LAUNCH_SPIN;
+      const mid = classicAvatar.hipY || 0.25;
+      avatar.rotation.set(launchTumble, state.yaw, 0);
+      launchMid.set(0, mid, 0).applyEuler(avatar.rotation);
+      avatar.position.set(state.pos.x - launchMid.x, state.pos.y + mid - launchMid.y, state.pos.z - launchMid.z);
     } else if (state.sitting) {
       // The rig provides its own seated pose; a drunk on a stool sways at half the reach.
       avatar.position.set(state.pos.x, state.pos.y, state.pos.z);
@@ -3385,8 +3407,11 @@ export function createWalkMode({
 
     stepOffEase(dt);
 
-    // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
-    const stoop = state.crouching && !state.dive;
+    // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it. A body flying out
+    // of a gun is tucked up as a crouch is.
+    const flying = state.launched && !state.grounded;
+    if (!flying) launchTumble = 0;
+    const stoop = (state.crouching && !state.dive) || flying;
     classicAvatar.update({
       moving: state.moving, running: state.running, sprinting: state.sprinting, grounded: state.grounded, distance: frameDistance,
       crouching: stoop, sitting: !!state.sitting || !!oarsman(), lying: state.lying,
@@ -3396,8 +3421,6 @@ export function createWalkMode({
       horseback: state.mount ? state.riderMotion || true : false,
       dancing: dancingNow(),
       dying: state.dying,
-      // Out of a gun's mouth (launchSelf): curled up on the way up, opening out as it comes down.
-      launched: state.launched && !state.grounded ? { rise: state.vy } : null,
       climbing: climb ? state.climbing : null,
       // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
       // its pose across the ends of (classic-avatar.js LADDER_FADE)
@@ -3434,8 +3457,9 @@ export function createWalkMode({
     else armLen = Infinity;
     // A boom pulled in to within a head's width of the eye would put the lens inside the figure: the
     // body goes, as in first person, and comes back as the boom lets out again.
-    // And inside a gun there is nobody to see: only the barrel.
-    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE) && !(state.gun && state.gun.inside);
+    // And at a gun the view is the gun's: our own body would stand between the lens and the bore (and
+    // inside one there is nobody to see). Everybody else still sees the gunner behind it.
+    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE) && !state.gun;
 
     // what is within reach?
     return reach();
