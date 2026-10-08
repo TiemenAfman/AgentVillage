@@ -12,6 +12,8 @@ import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
 import { DECK_Y } from 'shared/hull.mjs';
 import { createBoat } from './boat.js';
+import { climbWay, climbWayDown, climbAlong, onWay } from './ladder-way.js';
+import { pathAt } from 'shared/deck.mjs';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -147,13 +149,43 @@ function showNest(){
   // out (ox, oz) onto +z: a turn of yaw sends (x, z) to (x cos + z sin, -x sin + z cos)
   nest.rotation.y=Math.atan2(-ALOFT.out[0],ALOFT.out[1]);
 }
+// Or on and off a ladder (Op- en afstappen, Plans/DONE/ladder-op-en-af.md): each body walks up to the foot
+// of a rope ladder, steps onto it (Start Climbing Ladder on the Adventurer), climbs it, comes up over
+// its top onto a plank (Climbing Up A Ladder To Standing), stands, and goes back down it to the floor -
+// along web/js/ladder-way.js's way, which is walk.js's, so this is the climb the island draws at the
+// Salty Kraken's ladder up its hull (a plank STEP_LAND past the rungs, as there).
+let onStep=false;
+const STEP_H=24*RUNG_STEP, STEP_LAND=.46, STEP_FROM=.3, STEP_REST=.9;
+const stepRope=[{x:0,y:0,z:0},{x:0,y:STEP_H+.06,z:0},{x:0,y:STEP_H,z:-STEP_LAND}];
+const stepUp=climbWay(stepRope,{x:0,y:0,z:STEP_FROM}), stepDown=climbWayDown(stepRope,{x:0,y:STEP_H,z:-STEP_LAND});
+let stepState={dir:1,d:0,rest:STEP_REST};
+const stepRigs=figures.map(f=>{
+  const g=new THREE.Group();
+  for(const x of [-ROPE_HW,ROPE_HW]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,STEP_H+.08,.012),ropeMat);r.position.set(x,(STEP_H+.08)/2,RUNG_OUT-CLIMB_OUT);g.add(r);}
+  for(let k=1;k*RUNG_STEP<STEP_H+.01;k++){const r=new THREE.Mesh(new THREE.BoxGeometry(2*ROPE_HW+.012,2*RUNG_R,2*RUNG_R),ropeMat);r.position.set(0,k*RUNG_STEP,RUNG_OUT-CLIMB_OUT);g.add(r);}
+  // the plank the ladder leads up to, from just behind its ropes on past where the way lands
+  const plank=new THREE.Mesh(new THREE.BoxGeometry(.3,.04,STEP_LAND+.4),new THREE.MeshStandardMaterial({color:0x7a5a3a,roughness:1}));
+  plank.position.set(0,STEP_H-.02,RUNG_OUT-CLIMB_OUT-.02-(STEP_LAND+.4)/2);plank.castShadow=plank.receiveShadow=true;g.add(plank);
+  g.visible=false;scene.add(g);return g;
+});
+// One step of it, for every body alike: up, a rest on the plank, down, a rest on the floor.
+function stepTick(dt){
+  const w=stepState.dir>0?stepUp:stepDown;
+  if(stepState.rest>0){stepState.rest-=dt;return {w,moving:false};}
+  const was=stepState.d;
+  stepState.d=climbAlong(w,stepState.d,stepState.dir>0?1:-1,dt);
+  if(stepState.dir>0&&stepState.d>=w.len){stepState={dir:-1,d:stepDown.len,rest:STEP_REST};return {w,moving:true};}
+  if(stepState.dir<0&&stepState.d<=0){stepState={dir:1,d:0,rest:STEP_REST};return {w,moving:true};}
+  return {w,moving:stepState.d!==was};
+}
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
   climbDir=Number(button.dataset.climb);
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
 };
 for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
-  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';climbY=0;
+  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';climbY=0;
+  stepState={dir:1,d:0,rest:STEP_REST};
   if(onMast)showMast();
   if(onNest)showNest();
   for(const b of document.querySelectorAll('[data-ladder]'))b.setAttribute('aria-pressed',String(b===button));
@@ -206,7 +238,9 @@ function tick(dt){
   const masted=mode==='climb'&&(onMast||onNest), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
-  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&(close<0||i===climber);
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&(close<0||i===climber);
+  for(const [i,g] of stepRigs.entries())g.visible=mode==='climb'&&onStep&&(close<0||i===climber);
+  const stepped=mode==='climb'&&onStep?stepTick(dt):null;
   if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted&&onMast;
   if(nest)nest.visible=masted&&onNest;
@@ -256,6 +290,17 @@ function tick(dt){
       f.stand.rotation.set(0,0,0);
       f.stand.position.y=kind==='drown'?-.1-DROWN_SINK*Math.max(0,Math.min(t,loop-.8)-.3):0;
       f.rig.update(down?{dying:{kind,t},distance:0}:{grounded:true,distance:0},dt);
+      continue;
+    }
+    if(stepped){
+      // where the way has the feet, from this body's own spot; facing the ladder (-z) all along
+      const p=pathAt(stepped.w.path,stepState.d,{x:0,y:0,z:0}), on=onWay(stepped.w,stepState.d);
+      stepRigs[figures.indexOf(f)].position.set(f.stand.position.x,0,f.distance);
+      f.stand.rotation.set(0,Math.PI,0);f.stand.position.set(f.x,p.y,f.distance+p.z);
+      const rise=p.y-(f.stepY??p.y), step=Math.hypot(p.x-(f.stepAt?.x??p.x),p.z-(f.stepAt?.z??p.z));
+      f.stepY=p.y;f.stepAt={x:p.x,z:p.z};
+      f.rig.update({moving:stepped.moving&&!on,grounded:true,distance:on?0:step,onLadder:stepState.rest<=0||!!on,
+        climbing:on?{rise,at:p.y,top:on.top,floor:true}:null},dt);
       continue;
     }
     if(mode==='climb'){

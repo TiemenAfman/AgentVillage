@@ -474,7 +474,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const mast = seat && seat.local && !swimming && !airborne
         ? aloftHolding(craftOf(p.deckTo.boat), seat.local.x, seat.local.z, seat.local.y) : null;
       const climbY = hold ? sentY : mast ? seat.local.y : null;
-      const climbing = hold || mast ? { rise: p.climbY == null ? 0 : climbY - p.climbY, at: (hold || mast).at } : null;
+      // (and over its top, `top`, and whether its foot is a floor: walk.js ladderAt, web/js/ladder-way.js)
+      const climbing = hold || mast ? { rise: p.climbY == null ? 0 : climbY - p.climbY, at: (hold || mast).at, top: hold ? hold.top ?? null : null, floor: hold ? !!hold.floor : true } : null;
       p.climbY = climbY;
       if (hold) yaw = hold.yaw;
       const base = seat ? seat.y

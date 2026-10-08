@@ -1789,11 +1789,22 @@ ladders pit to crow's nest and the hatch ladder up from the nest (`MAST_CLIMBS` 
 whose `exit` makes its head a way out (`onTop` in walk.js: leave for the deck, E at its foot still works).
 Drawn but not climbable: the water tower's (its deck is 5 cm round the tank), the quarry's, the Batavia's
 and the shipyard's (no walkable decks); the Kraken's roof/fore ladders and the hall's west/east ladders
-are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise, at }` on the rungs only (`onRungs`:
-not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.29 (it was 1.8 - fifteen cycles a
-second - then 0.45 with the limbs sliding). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
+are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise, at, top, floor }` on
+the rungs and over the top (`climbingAt`: not the reach to the foot, nor on from the top), at `CLIMB_SPEED` 0.29 (it
+was 1.8 - fifteen cycles a second - then 0.45 with the limbs sliding). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
 ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
 and draws them there - before this a climbing peer was drawn standing on the ground under the ladder.
+**A ladder is stepped onto and off by clips, along their own way** ([Plans/DONE/ladder-op-en-af.md](Plans/DONE/ladder-op-en-af.md)):
+every ladder's way (walk.js's three and the workbench's) is `web/js/ladder-way.js` `climbWay`: the rungs end a
+step below the top, and the way over it is Mixamo's Climbing Up A Ladder To Standing (`climbTop`, its baked
+`way` per row, `STEPS` in the bake), walked by the clip's time (`climbAlong`, `topPace`) so `top` 0..1 is the
+clip's moment; Start Climbing Ladder (`climbOn`, a window of it) is played by height off a floor (`floor`, not
+from the water). Never a coordinate where a ladder lands that differs from its way's end, or the feet jump on
+arrival. Whatever still changes owner at an edge is faded: the rig keeps last frame's joints and eases the new
+pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`, the rungs and the clip
+changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
+under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
+`tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
