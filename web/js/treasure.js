@@ -11,14 +11,16 @@
 //                                     keys here are `bottleDay` (the world day the bottle was
 //                                     last opened), `dug` (map seeds already dug up: one chest
 //                                     is never counted twice) and `statue` (where the statue
-//                                     lies once it has been dug up). Every write reads the whole
+//                                     lies once it has been dug up, or wherever it was last set
+//                                     down or let go of: Plans/schatkaarten.md, "Neerzetten en
+//                                     laten vallen"). Every write reads the whole
 //                                     object and writes it whole with only our own keys touched,
 //                                     the way quest-log.js does for `card`, so neither loses
 //                                     the other's.
 //   the island    data/treasure.json - whether the statue stands in the town and how many chests
 //                                     have been found; the keeper's page alone writes it.
 import { hash32 } from 'shared/rng.mjs';
-import { worldToScene } from 'shared/regions.mjs';
+import { worldToScene, sceneToWorld } from 'shared/regions.mjs';
 import { isletById, isletHeight } from 'shared/islets.mjs';
 import {
   cardOf, bottleOf, bottleWashesUp, rewardOf, rowboatSpot, FIRST_HUNT_SEED, SHOVEL,
@@ -34,6 +36,9 @@ export const DIG_REACH = 1.6;
 export const DIG_TOLERANCE = 1.15;
 // How near a bottle or a statue has to be for E.
 export const PICKUP_REACH = 1.6;
+// A spot within this of an islet's middle, past its radius, counts as on that islet: a statue set
+// down or washed up on its beach.
+export const ISLET_SLACK = 4;
 // The radius round the town's centre where the statue may be set down: the square and the
 // streets that leave it.
 export const SQUARE_REACH = 5.5;
@@ -59,13 +64,19 @@ const isDay = (n) => Number.isInteger(n) && Math.abs(n) < 1e9;
 const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 
 // Where the statue lies once it has been dug up, as it comes back from storage: strict about
-// every field the page reads, because it is a place anybody can edit.
+// every field the page reads, because it is a place anybody can edit. `spot` is in the world's
+// frame - an islet never moves - except with `local`, set down on this page's own island, where it
+// is in the island's own (scene) coordinates: the island keeps those whatever berth it is given.
+// `isletId` is the islet she lies on, or null on an island (set down, or dropped, off every islet) -
+// ours (`local`) or anybody's, a starter's or a neighbour's beach (the world's frame: islands never move).
 export function parseStatue(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const { islandId, isletId, spot, y } = raw;
-  if (typeof isletId !== 'string' || !isletId || isletId.length > 200) return null;
+  if (isletId !== null && (typeof isletId !== 'string' || !isletId || isletId.length > 200)) return null;
   if (!spot || !finite(spot.x) || !finite(spot.z) || !finite(y)) return null;
-  return { islandId: typeof islandId === 'string' ? islandId : null, isletId, spot: { x: spot.x, z: spot.z }, y };
+  const out = { islandId: typeof islandId === 'string' ? islandId : null, isletId, spot: { x: spot.x, z: spot.z }, y };
+  if (raw.local === true) out.local = true;
+  return out;
 }
 
 // `storage` is getItem/setItem/removeItem, as quest-log.js takes it. What could not be written
@@ -245,7 +256,9 @@ export function createTreasureHunt(deps) {
     if (!h) return [];
     const id = islandId() || 'open-sea';
     const list = islets();
-    const has = (isletId) => !!list && list.some((i) => i.id === isletId);
+    // A statue on an island (isletId null) is there for as long as the island is; one on an islet
+    // only while the fleet still holds that islet.
+    const has = (isletId) => isletId === null || (!!list && list.some((i) => i.id === isletId));
     const placed = placedNow();
     const out = [];
 
@@ -254,7 +267,7 @@ export function createTreasureHunt(deps) {
     let rec = finds.statue();
     if (placed && rec) { finds.setStatue(null); rec = null; }
     if (rec && rec.islandId === id && has(rec.isletId) && !carried()) {
-      const [x, z] = worldToScene([rec.spot.x, rec.spot.z], h);
+      const [x, z] = rec.local ? [rec.spot.x, rec.spot.z] : worldToScene([rec.spot.x, rec.spot.z], h);
       out.push({ id: 'statue', kind: 'statue', stage: 'unearthed', x, y: rec.y, z, rot: turnOf('statue'), seed: null });
     }
 
@@ -428,6 +441,43 @@ export function createTreasureHunt(deps) {
     refresh();
   }
 
+  // The hands let go of her (walk.js onLetGo): set down with H, or slipped out of them in deep water,
+  // a fall or a death. Wherever it was, `at` is dry ground (scene coordinates, the ground's height),
+  // and that is where she lies now - kept in the finds like the spot she was dug up at, so a reload
+  // finds her there, and the island told she is not carried any more ('dropped': lifted -> buried,
+  // lib/treasure.mjs). The quest does not move: the book waits at whichever step it was on, and the
+  // next lift is a late 'lifted' it ignores.
+  const LET_GO_WORDS = {
+    set: 'You set the statue down. <b>E</b> lifts her again.',
+    water: 'She is too heavy to swim with: the statue slips from your arms. She lies on the shore you waded in from.',
+    fall: 'You land hard, and the statue tumbles out of your arms. <b>E</b> lifts her again.',
+    die: 'The statue stays behind where you fell. She will wait for you.',
+    home: 'The statue stays behind where you stood. She will wait for you.',
+  };
+  function letGo(item, at) {
+    if (item !== 'statue' || !at || !finite(at.x) || !finite(at.z) || !finite(at.y)) return false;
+    const id = islandId() || 'open-sea';
+    const h = home();
+    const t = terrain();
+    // On our own island: in its own frame. Anywhere else (an islet, a starter, a neighbour's beach):
+    // the world's, and the islet she is on if any. With no berth known there is no world frame, and
+    // her old spot stands - she goes back to where she lay, never nowhere.
+    const own = !!islandId() && t && finite(t.half) && Math.abs(at.x) <= t.half && Math.abs(at.z) <= t.half;
+    let rec = null;
+    if (own) rec = { islandId: id, isletId: null, spot: { x: at.x, z: at.z }, y: at.y, local: true };
+    else if (h) {
+      const [wx, wz] = sceneToWorld([at.x, at.z], h);
+      const islet = (islets() || []).find((i) => dist(wx, wz, i.x, i.z) <= i.r + ISLET_SLACK);
+      rec = { islandId: id, isletId: islet ? islet.id : null, spot: { x: wx, z: wz }, y: at.y };
+    }
+    if (rec) finds.setStatue(rec);
+    if (keeper()) Promise.resolve(post('dropped')).catch(() => null);
+    if (rec) say(LET_GO_WORDS[at.why] || LET_GO_WORDS.set);
+    else say('The statue slips from your arms, and goes back to where she lay.');
+    refresh();
+    return true;
+  }
+
   function liftStatue() {
     if (!walk.lift('statue')) return;
     if (keeper()) Promise.resolve(post('lifted')).catch(() => null);
@@ -457,7 +507,8 @@ export function createTreasureHunt(deps) {
   function huntIslet() {
     const id = islandId() || 'open-sea';
     const rec = finds.statue();
-    if (rec && rec.islandId === id && !placedNow()) return { isletId: rec.isletId, at: rec.spot };
+    // Set down on an island she needs no rowing boat called to an islet.
+    if (rec && rec.islandId === id && !placedNow()) return rec.isletId ? { isletId: rec.isletId, at: rec.spot } : null;
     const card = quests.card();
     if (card && card.status === 'awake' && !finds.hasDug(card.seed)) return { isletId: card.isletId, at: card.spot };
     return null;
@@ -589,7 +640,7 @@ export function createTreasureHunt(deps) {
   }
 
   return {
-    refresh, interactables, interact, onDigDone, onDigCancelled, frame, boot, layOnBoat, boardedWith, afloat, onDeck,
+    refresh, interactables, interact, onDigDone, onDigCancelled, frame, boot, layOnBoat, boardedWith, afloat, onDeck, letGo,
     // Read by tests and by main.js's boat prompt.
     bottle: () => bottle, sites: () => sites, digging: () => !!digging,
   };

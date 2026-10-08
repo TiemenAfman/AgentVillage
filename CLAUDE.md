@@ -800,8 +800,11 @@ silently never appears anywhere else. It is the same asymmetry `buildBundle`/`pa
 have always had; it only became possible to get wrong when a second door was cut beside them.
 
 **A crowd is rebuilt on every publish, and the difference between two of them is the only
-thing that knows who is new** (and the one thing carried over whole is the gold errand -
-see the gold pit below). `createCrowd(island, { known })` is handed the ids the crowd
+thing that knows who is new** (and the two things carried over whole are the gold errand -
+see the gold pit below - and the gathering: out to the square, on it, or on the way home, through
+the same `walk.adopt`; a working island republishes every minute, and the lunch walk on Hoogezand
+is longer than that, so without it the whole procession was stood back at its doors each minute
+and never arrived, `tests/gathering-republish.test.mjs`). `createCrowd(island, { known })` is handed the ids the crowd
 before it had; anybody not in that set walks up from the landing beach. `known` is null for
 the first crowd an island ever has — and after a sea restart — so a whole village never
 comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
@@ -1199,6 +1202,11 @@ while riding" check in walk.js asks `rides()`, and net.js/main.js read `s.bike |
 not only a jump (the rider's head is `MOUNT_HEAD` higher); the gait is a band of the speed (`gaitOf`, the
 horse's own edges, not the feet's), the cadence saturates near 2 Hz, and `mountPose` lays the gait over
 fauna.js's own `'still'` pose, so standing it breathes, swishes and shifts its weight like the stable's horse.
+The gallop is `HORSE_GALLOP` 4.8, 1.8 times the Adventurer's sprint (at 3.4 a route ridden from above was slower
+than run); a hoof covers no more than its reach a stance (`v * duty / hz`), so its cadence is 3.0 Hz and its
+`duty` .16 - raise the speed and those go with it. The gallop is paid from the horse's own pool (`HORSE` in stamina.js, `state.stamina.horse`, handed to
+`stepMount` as `pool`; `gaitShare`: gallop all, trot `MOUNT_TROT_SHARE`, at or under `MOUNT_WALK` it fills),
+never the rider's; the yellow bar turns chestnut with a horse while riding (`setStamina(pool, { horse })`).
 Peers: no new bit - `FLAG_RIDING` on an Adventurer's look is a horse (`mounted` in peers.js).
 
 **There are three processes now, and only one of them is dangerous.** The *sea*
@@ -1211,7 +1219,10 @@ reconnects. The *islander* (`serve.mjs`) owns this machine: the scan, `data/`, t
 the mail, the tickets, and it listens on loopback only. The *client* draws both.
 
 Single player is not a mode. `serve.mjs` starts a sea in its own process bound to loopback
-and joins it with one island in it; hosting is that same sea bound to the network; joining
+- on a **worker thread** of its own (`lib/sea-thread.mjs`: `listen`, `address`, `close`, and
+`setTime` as a promise), because a scan holds the islander's event loop 1.5 to 2 s every minute
+(sync `discover` over ~1400 transcripts, then placeAll; once over half a minute) and the sea's beat
+on that same loop froze every settler on every screen, `tests/sea-thread.test.mjs` - and joins it with one island in it; hosting is that same sea bound to the network; joining
 is somebody else's address (`config.multiplayer.sea.mode`, changed at runtime through
 `POST /api/sea`). One code path — the difference between being alone and being in company
 is how many rows are in `world.islands`. There is deliberately no offline mode to keep in
@@ -1814,11 +1825,22 @@ ladders pit to crow's nest and the hatch ladder up from the nest (`MAST_CLIMBS` 
 whose `exit` makes its head a way out (`onTop` in walk.js: leave for the deck, E at its foot still works).
 Drawn but not climbable: the water tower's (its deck is 5 cm round the tank), the quarry's, the Batavia's
 and the shipyard's (no walkable decks); the Kraken's roof/fore ladders and the hall's west/east ladders
-are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise, at }` on the rungs only (`onRungs`:
-not the reach to the foot or the step over the top), at `CLIMB_SPEED` 0.29 (it was 1.8 - fifteen cycles a
-second - then 0.45 with the limbs sliding). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
+are steep stairs, walked as `stair` slopes. walk.js says so as `state.climbing = { rise, at, top, floor }` on
+the rungs and over the top (`climbingAt`: not the reach to the foot, nor on from the top), at `CLIMB_SPEED` 0.29 (it
+was 1.8 - fifteen cycles a second - then 0.45 with the limbs sliding). Peers carry no bit for it: peers.js asks walk.js `ladderAt` (fixed
 ladders and every ship's, `ladderHolding` in shared/deck.mjs) whether a peer's sent height hangs on one,
 and draws them there - before this a climbing peer was drawn standing on the ground under the ladder.
+**A ladder is stepped onto and off by clips, along their own way** ([Plans/DONE/ladder-op-en-af.md](Plans/DONE/ladder-op-en-af.md)):
+every ladder's way (walk.js's three and the workbench's) is `web/js/ladder-way.js` `climbWay`: the rungs end a
+step below the top, and the way over it is Mixamo's Climbing Up A Ladder To Standing (`climbTop`, its baked
+`way` per row, `STEPS` in the bake), walked by the clip's time (`climbAlong`, `topPace`) so `top` 0..1 is the
+clip's moment; Start Climbing Ladder (`climbOn`, a window of it) is played by height off a floor (`floor`, not
+from the water). Never a coordinate where a ladder lands that differs from its way's end, or the feet jump on
+arrival. Whatever still changes owner at an edge is faded: the rig keeps last frame's joints and eases the new
+pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`, the rungs and the clip
+changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
+under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
+`tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
@@ -1993,15 +2015,23 @@ up to the soffit) are walls the same way stairs are.
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
 `ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
 parked walk in orbit without touching the camera. It walks only a route from above
-(`goTo`, fed by `walkBodyTo` in main.js: `findPath` over cells, blocked by the feet's own
-`blockedAt`), from a click on bare ground or the dossier's Walk here. The search is told what a settler's
+(`goTo`, fed by `walkBodyTo` in main.js through `web/js/body-route.js planRoute`: `findPath` over cells,
+blocked by the feet's own `blockedAt`), from a click on bare ground or the dossier's Walk here. **A step
+between two cells is a way only if a body fits along the whole line between them** (`clear`, sampled every
+0.2 with a body 0.1 wider, `blockedAt(x, z, pad)`): houses stand at free angles, and their corners reached in
+between two free cell middles - the route ran into one and stopped (102 of 300 trips in
+`tests/body-route.test.mjs`). The route is pulled straight (`straighten`), the body keeps to the planned line
+(`routeAim`: aims along it, passes a point at 0.1), and stuck anyway it calls `onStuck` and main.js plans again
+round that cell (`REPLANS` 3, then a toast). A route of `RIDE_FROM` (20) cells or more is ridden on the body's
+own ride (`goTo(points, { ride })`, `rideInput`: horse or bicycle, gallop on straights for nothing as the
+feet's sky sprint, off where the saddle is at the end; Plans/paard-in-plaats-van-fiets.md "Van boven op pad"). The search is told what a settler's
 is not (`findPath` options in shared/settlerwalk.mjs): the decks of hand-built bridges are open over the
 water but entered only at their ends (`step`: a deck is a cell like its bank and two metres higher at
 the crown - boarded from the side halfway across, the walker swam), roads are cheaper (`prefer`, and the
 bridge's axis is a road), and a hamlet's boundary fence costs twelve steps except where a road passes
 (`crossing`); guards and settlers pass none of it; `enterWalk` starts
 where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
-`afoot`. At a tiller or on a deck exitWalk still flies up the old way.
+`afoot`, and not sent while a route is being walked or ridden. At a tiller or on a deck exitWalk still flies up the old way.
 
 **A page closed inside a room opens outside its door and walks back in** (`web/js/room-spot.js`,
 `recalledRoom` in main.js). While you are inside, `promptholm.walk.room.<seed>` keeps the room, the step
@@ -2406,6 +2436,12 @@ before `walk.dig` (the hole is `DIG_REACH` 0.6 ahead of the feet; `DIG_TOLERANCE
 Late quest events are caught up (delivering also reports lifted and boarded), the book ignores one that is not
 its current step. Once the statue stands in the town, a second browser's first-hunt map digs an ordinary chest
 and is told the rest at once (`dug statue` and the late events, so its book waits on the word with the pirate).
+**What the arms carry is never lost** (Plans/schatkaarten.md, "Neerzetten en laten vallen"): H / pad ↓ / a touch
+button (`putDown`, `walk.setDown`) sets her down a step ahead on dry ground within a step of the feet; deep water
+(`canDive`, not the rowing boat's shallows), a fall over `CARRY_FALL`, `die` and `sentHome` make walk.js let go
+(`letGo`), where the feet are if dry, else the last dry ground she was carried over. Both end in walk's
+`onLetGo` -> `hunt.letGo`, which keeps the spot in `finds.statue` (`local: true` in our island's own frame,
+else the world's with `isletId` or null) and posts `dropped`; E lifts her again and the book does not move.
 `?hunt` puts `__state` on window.
 **The statue goes home in a rowing boat** ([Plans/roeiboot-en-schat.md](Plans/roeiboot-en-schat.md)). The boat is
 our own skiff (`boat:w-<player>`, which any page may launch - lib/boats.mjs needs nothing new): coming within
@@ -2413,8 +2449,12 @@ our own skiff (`boat:w-<player>`, which any page may launch - lib/boats.mjs need
 lay it at `rowboatSpot` (shared/treasure.mjs: the nearest water `ROW_DEPTH` deep from the X along eight bearings,
 bow to the X) and let it go, unless it lies within `ROWBOAT_NEAR` already, has us in it or holds the statue.
 Walking into any rowing boat we may take with the statue in the arms lays her in it (`touchRowboat`, no key: the
-`boarded` step); E boards, stepping ashore hands her back as before. **A ship is reached by her ladder, which nobody
-climbs carrying her**, so from the rowing boat at a ladder foot (`HOIST_REACH`) E hoists her (`walk.hoistOnto`: her
+`boarded` step); E boards, stepping ashore hands her back as before. **A ladder is climbed with her on the back**
+(issue of 8 Oct 2026, `tests/ladder-carry.test.mjs`): walk.js no longer refuses a rope ladder - a ship's, the
+Kraken's - to a carrier, the rig moves the load to `CARRIED_BACK` while `pose.climbing` (the arms are the climb's;
+peers.js needs nothing, CARRYING and the height already cross), at a ship's top she becomes her cargo (`putOnBoat`,
+`onBoarded(b, { stowed })` -> main.js tells the book `boarded`), and a climb down from a deck she is on takes her
+along (`cargoToArms`). Besides that, from the rowing boat at a ladder foot (`HOIST_REACH`) E hoists her (`walk.hoistOnto`: her
 the ship's cargo, you on the planks where that ladder lands, crew 300 ms later), and beside her on the deck
 (`LOWER_REACH`) E lowers her (`walk.lowerOff`, the skiff relaunched at the foot of the ladder that looks at the
 nearer land, and you boarded at its oars). Cargo is still this page's alone: nothing of it is on the wire.

@@ -97,6 +97,9 @@ def measure(clip, path):
     arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
     scene = bpy.context.scene
     f0, f1 = (int(v) for v in arm.animation_data.action.frame_range)
+    # A transition may be only a stretch of its clip (WINDOWS).
+    if clip in WINDOWS:
+        f0, f1 = WINDOWS[clip]
     world = arm.matrix_world.to_quaternion()
 
     def bone(n):
@@ -128,7 +131,7 @@ def measure(clip, path):
     travel.z = 0
     # A gait (walk, run, sprint) is played by distance and needs its stride; a clip that stands
     # (idle) or is timed (jump) is played by time and may be In Place.
-    timed = clip in TIMED or clip in CLIMBS
+    timed = clip in TIMED or clip in CLIMBS or clip in STEPS
     # A climb is played by height (classic-avatar.js: per metre climbed), so it needs its rise, as
     # a gait needs its stride: one In Place has none.
     scene.frame_set(f0)
@@ -150,7 +153,9 @@ def measure(clip, path):
     if travel.length >= 0.05 and not timed:
         heading = Quaternion(Vector((0, 0, 1)), math.atan2(-1, 0) - math.atan2(travel.y, travel.x))
     else:
-        scene.frame_set(f0)
+        # A step on or off a ladder faces the ladder the way it ends (on the rungs, or over the top),
+        # however it came to it: Start Climbing Ladder turns round to the rungs.
+        scene.frame_set(f1 if clip in STEPS else f0)
         across = head('LeftUpLeg') - head('RightUpLeg')
         heading = Quaternion(Vector((0, 0, 1)), -math.atan2(across.y, across.x))
 
@@ -158,8 +163,10 @@ def measure(clip, path):
     rows = []
     ankles = []
     both = []
+    ahead = []
     for i in range(samples):
-        t = f0 + (f1 - f0) * i / samples
+        # a step is read to its last frame, which is where it stands (or hangs) at the end
+        t = f0 + (f1 - f0) * i / (samples - 1 if clip in STEPS else samples)
         scene.frame_set(int(t), subframe=t - int(t))
         delta = {}
         for n in rest:
@@ -181,6 +188,8 @@ def measure(clip, path):
         rows.append((local, head('Hips').z))
         ankles.append(head('LeftFoot').z)
         both.append(min(head('LeftFoot').z, head('RightFoot').z))
+        # how far forward the hips have gone, in the clip's heading (forward is Blender's -Y)
+        ahead.append(-(heading @ head('Hips')).y)
     # The hips' drop below their rest height. A climb rises through its cycle and is lifted by the
     # caller along the ladder, so its hips and feet lose that steady rise first, and the hips are
     # measured from where the lower foot is on average - its rung - rather than from the floor.
@@ -188,6 +197,20 @@ def measure(clip, path):
         steady = [rise * i / samples for i in range(samples)]
         feet = sum(b - k for b, k in zip(both, steady)) / samples
         rows = [(local, (rest_hips - (z - k - feet)) / leg) for (local, z), k in zip(rows, steady)]
+    elif clip in STEPS:
+        # A step onto or off a ladder carries the body somewhere: up from the floor onto the rungs,
+        # or up over the top and forward onto what the ladder leads to. walk.js moves the feet along
+        # that way itself (`way`, below) and the rig plays the clip on them, so the hips are measured
+        # from where the feet are reckoned at each moment: the lower ankle, less its height at rest,
+        # at the clip's two ends - standing on the rungs or the floor - and in between that rise
+        # shared out as the hips rise, so the feet go up no faster than the body does.
+        ankle0 = (arm.matrix_world @ arm.data.bones['mixamorig:LeftFoot'].head_local).z
+        h0, h1 = rows[0][1], rows[-1][1]
+        g0, g1 = both[0] - ankle0, both[-1] - ankle0
+        ground = [g0 + (g1 - g0) * ((z - h0) / (h1 - h0) if abs(h1 - h0) > 1e-6 else i / (samples - 1))
+                  for i, (_, z) in enumerate(rows)]
+        rows = [(local, (rest_hips - (z - g)) / leg) for (local, z), g in zip(rows, ground)]
+        way = [[round((a - ahead[0]) / leg, 4), round((g - g0) / leg, 4)] for a, g in zip(ahead, ground)]
     else:
         rows = [(local, (rest_hips - z) / leg) for local, z in rows]
     # Mixamo's shoulders drop some twenty degrees from its T-pose as soon as the arms come down,
@@ -252,6 +275,8 @@ def measure(clip, path):
         out['air'] = [round(up[0] / samples, 4), round((up[-1] + 1) / samples, 4)] if up else [0, 1]
     if clip in CLIMBS:
         out['rise'] = round(rise / leg, 4)
+    if clip in STEPS:
+        out['way'] = way
     if not timed:
         out.update(stride=round(travel.length / leg, 4), speed=round(travel.length / seconds / leg, 4))
     return out
@@ -263,6 +288,16 @@ TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig', 'die', 'drown')
 # Played by height: a ladder's rungs (`rise`, leg lengths a cycle, in place of a gait's stride).
 # They face the way their hips face, like a timed clip, since what they travel is up.
 CLIMBS = ('climb',)
+# Played by where the body is on a ladder's way at its ends (classic-avatar.js ladderStep): onto the
+# rungs from the floor at its foot (`climbOn`, Mixamo's Start Climbing Ladder) and up over its top onto
+# what it leads to (`climbTop`, Climbing Up A Ladder To Standing), each backwards on the way down. Each
+# row carries how far forward and up the feet are then (`way`, leg lengths from where it starts), which
+# walk.js lays the ladder's way out by (Plans/DONE/ladder-op-en-af.md).
+STEPS = ('climbOn', 'climbTop')
+# The stretch of a clip that is the step: Start Climbing Ladder stands with its back to the ladder,
+# sidesteps and turns round to it first; only its last second is the step up onto the rungs. Climbing
+# Up A Ladder To Standing stands still for its last second, which walk.js would wait out.
+WINDOWS = {'climbOn': (37, 61), 'climbTop': (1, 96)}
 out = {name: measure(name, path) for name, path in clips.items()}
 out.update(kept)
 out = dict(sorted(out.items()))

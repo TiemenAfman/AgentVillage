@@ -76,6 +76,18 @@ const BORREL_RANGE = 70;
 const PUB_OPEN = 1200;
 const PUB_SHUT = 600;
 const PUB_OPEN_R = 5;
+// How loud the chatter is outside: this times how full the house is (and the evening), at most
+// PUB_CHATTER_MAX, hung at the door with an exponential rolloff from PUB_REF. It was 0.22 (at most
+// 0.25) with rolloffs of 2.2 for the village and 2.0 for the Kraken, and from the street it went
+// under the wind inland and under the surf at the Kraken's rock (the keeper, 8 October 2026:
+// "kan buiten de tavern en jazz geluiden iets harder?"). Now 0.38 (+4.7 dB at the door) and
+// rolloffs of 1.6 and 1.5, so it carries a few houses further (+7 dB ten units off). Inside is
+// pub.in, a bed of its own, and untouched; the door's lowpass (PUB_OPEN/PUB_SHUT) is too, so it is
+// still a room through a wall. tests/sound.test.mjs ("heard outside") holds these numbers.
+export const PUB_CHATTER = 0.38;
+export const PUB_CHATTER_MAX = 0.4;
+export const PUB_REF = 6;
+export const PUB_ROLLOFF = Object.freeze({ village: 1.6, kraken: 1.5 });
 // The Salty Kraken always has its crew in (Plans/piratenkroeg.md), so it hums even when nobody
 // from the village is at its door; this much of a full house.
 const KRAKEN_CREW = 0.35;
@@ -1516,8 +1528,12 @@ function* shantySong(ctx) {
 // a few houses on. Lowpassed to 480 outside, not the rave's 320 - a shanty lives in the middle,
 // and at 320 only the boots came through.
 const SHANTY_LOUD = 0.5;
-const SHANTY_OUT = 0.22;
-const SHANTY_RANGE = 22;
+// Outside it was 0.22 out to 22, and from the gangway it sank under the surf the Kraken stands in
+// (the keeper, 8 October 2026): now 0.28 out to 30 - +3 dB at the stair, where it was already over
+// the sea, and +6 dB ten units off, where it was not. shantyHeard in main.js hands a distance up to
+// 40, so the range still ends before that cut.
+const SHANTY_OUT = 0.28;
+const SHANTY_RANGE = 30;
 
 // --- the village tavern's jazz ----------------------------------------------
 //
@@ -1709,11 +1725,29 @@ function* jazzSong(ctx) {
 // How loud: in the village tavern it is under the chatter, a band in the corner; outside it is a
 // dull beat through the wall that is gone before the end of the square.
 const JAZZ_LOUD = 0.34;
-const JAZZ_OUT = 0.1;
-const JAZZ_RANGE = 22;
+// Outside it was 0.1 out to 22, and in front of the door it was under the wind (the keeper,
+// 8 October 2026, "iets harder"): now 0.18 out to 28 - +5.7 dB at the door, +8 dB ten units off.
+// tavernHeard in main.js hands a distance up to 30, so 28 still fades out before that cut.
+const JAZZ_OUT = 0.18;
+const JAZZ_RANGE = 28;
 // Outside, the band through the wall: the bass and the kick, the piano a murmur, the cymbal gone.
 // It was 700 and came across as a band playing out on the square (the keeper, 8 October 2026).
 const JAZZ_CUT = 360;
+
+// How loud a room's song is out of doors, `dist` from its building: the one sum steerSong and
+// steerTracks make, here so tests/sound.test.mjs can measure it without a graph.
+const SONG_OUTSIDE = { rave: [RAVE_OUT, RAVE_RANGE], shanty: [SHANTY_OUT, SHANTY_RANGE], tavern: [JAZZ_OUT, JAZZ_RANGE] };
+export function songOutside(kind, dist) {
+  const [out, range] = SONG_OUTSIDE[kind];
+  return out * Math.pow(Math.min(1, Math.max(0, 1 - (dist || 0) / range)), 2);
+}
+// And the chatter at a door `d` off: the want steerPubs gives the loop (before the panner).
+const edgeOf = (d, range) => Math.min(1, Math.max(0, (range - d) / (0.2 * range)));
+export function pubOutside(full, evening, d) {
+  return Math.min(PUB_CHATTER_MAX, full * PUB_CHATTER * evening) * edgeOf(d, TAVERN_RANGE);
+}
+// What three's PositionalAudio does to it on the way, 'exponential' as mkVoice sets it.
+export const pannerGain = (d, ref, rolloff) => Math.pow(Math.max(d, ref) / ref, -rolloff);
 
 // --------------------------------------------------------------- every family, by name
 
@@ -1953,12 +1987,12 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // when you are inside it. One village tavern and one Salty Kraken an island at most.
       pubs: {
         village: {
-          out: mkLoop({ ref: 6, rolloff: 2.2, volume: 0, part: 'tavern', cut: PUB_SHUT }),
+          out: mkLoop({ ref: PUB_REF, rolloff: PUB_ROLLOFF.village, volume: 0, part: 'tavern', cut: PUB_SHUT }),
           in: mkBed(null, 'tavern'),
           buffer: 'murmur', busy: 0, at: null, clinkIn: CLINK_GAP[0],
         },
         kraken: {
-          out: mkLoop({ ref: 6, rolloff: 2.0, volume: 0, part: 'tavern', cut: PUB_SHUT }),
+          out: mkLoop({ ref: PUB_REF, rolloff: PUB_ROLLOFF.kraken, volume: 0, part: 'tavern', cut: PUB_SHUT }),
           in: mkBed(null, 'tavern'),
           buffer: 'kraken', busy: 0, at: null, clinkIn: CLINK_GAP[0],
         },
@@ -2146,8 +2180,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (heard && !built.tracks[kind]) built.tracks[kind] = makeTracks(kind);
     const t = built.tracks[kind];
     if (!t) return;
-    t.want = !heard ? 0 : heard.inside ? o.loud
-      : o.out * Math.pow(clamp(1 - (heard.dist || 0) / o.range, 0, 1), 2);
+    t.want = !heard ? 0 : heard.inside ? o.loud : songOutside(kind, heard.dist);
     const now = ctx.currentTime;
     t.filter.frequency.setTargetAtTime(heard && heard.inside ? 16000 : o.cut, now, 0.12);
     t.audio.gain.gain.setTargetAtTime(t.want, now, t.want > 0 ? 0.25 : 0.6);
@@ -2215,8 +2248,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (heard && !built[kind]) built[kind] = makeSong(kind);
     const r = built[kind];
     if (!r) return;
-    r.want = !heard ? 0 : heard.inside ? o.loud
-      : o.out * Math.pow(clamp(1 - (heard.dist || 0) / o.range, 0, 1), 2);
+    r.want = !heard ? 0 : heard.inside ? o.loud : songOutside(kind, heard.dist);
     if (r.making) return;                 // still being written; it starts when it is done
     const now = ctx.currentTime;
     r.filter.frequency.setTargetAtTime(heard && heard.inside ? 16000 : o.cut, now, 0.12);
@@ -2347,7 +2379,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
 
   // The last fifth of a range is a slope to nothing, so a source leaving the pool, or the island
   // falling behind you, fades rather than clicks off.
-  const edge = (d, range) => clamp((range - d) / (0.2 * range), 0, 1);
+  const edge = edgeOf;
   const flat = (at) => Math.hypot(at[0] - camera.position.x, at[2] - camera.position.z);
 
   // A loop with a place: given its buffer the moment there is one, glided to `want`, started on the
@@ -2438,7 +2470,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Outside: through the door, by the distance to it.
       let want = 0;
       if (chatter && site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
-        want = Math.min(0.25, pub.full * 0.22 * evening) * edge(pub.d, TAVERN_RANGE);
+        want = pubOutside(pub.full, evening, pub.d);
       }
       pub.want = want;
       const buf = want > 0 ? chatter : null;

@@ -6,12 +6,15 @@ import { loadWanderers } from './player-bodies.js';
 import { swimPose, TREAD_SINK } from './diving.js';
 import { loadSet } from './models.js';
 import { meshAsset, createBuildingMaterial } from './buildings.js';
-import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
+import { createMount, gaitShare, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
+import { createPool, spendPool, canBoost, HORSE } from './stamina.js';
 import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
 import { DECK_Y } from 'shared/hull.mjs';
 import { createBoat } from './boat.js';
+import { climbWay, climbWayDown, climbAlong, onWay } from './ladder-way.js';
+import { pathAt } from 'shared/deck.mjs';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -48,6 +51,21 @@ const RAVE_BPS=132/60;
 // Use the island material, including the horse's exported smooth skin normals.
 const horseMat=createBuildingMaterial();
 let horse=null, horseGait=1, horseHelper=null;
+// The horse's own breath (stamina.js HORSE), spent by the gait as walk.js's ride spends it
+// (mount.js gaitShare): a gallop on an empty pool is a trot, and the bar under the controls says
+// how much is left and how long it lasts at this gait - for judging the tempo. Vol and Leeg set it.
+const horsePool=createPool(HORSE);
+const staminaBar=document.querySelector('#motion-stamina');
+document.querySelector('#motion-stamina-fill').onclick=()=>{horsePool.level=1;horsePool.spent=false;horsePool.rest=Infinity;};
+document.querySelector('#motion-stamina-empty').onclick=()=>{horsePool.level=0;horsePool.spent=true;horsePool.rest=0;};
+function showHorsePool(riding,share){
+  staminaBar.hidden=!riding;
+  if(!riding)return;
+  staminaBar.querySelector('i').style.transform=`scaleX(${horsePool.level})`;
+  staminaBar.classList.toggle('spent',horsePool.spent);
+  const left=share>0?`nog ${(horsePool.level*HORSE.drain/share).toFixed(0)} s in deze gang`:horsePool.level<1?`vol over ${((1-horsePool.level)*HORSE.refill).toFixed(0)} s`:'vol';
+  staminaBar.querySelector('#motion-stamina-text').textContent=`${Math.round(horsePool.level*100)}%${horsePool.spent?' · op, geen galop':''} · ${left}`;
+}
 // ?rider=wanderer-female puts somebody else on the horse.
 const rider=figures.find(f=>f.id===(new URLSearchParams(location.search).get('rider')||'adventurer'))||figures.find(f=>f.id==='adventurer');
 const seatAt=new THREE.Vector3();
@@ -147,13 +165,43 @@ function showNest(){
   // out (ox, oz) onto +z: a turn of yaw sends (x, z) to (x cos + z sin, -x sin + z cos)
   nest.rotation.y=Math.atan2(-ALOFT.out[0],ALOFT.out[1]);
 }
+// Or on and off a ladder (Op- en afstappen, Plans/DONE/ladder-op-en-af.md): each body walks up to the foot
+// of a rope ladder, steps onto it (Start Climbing Ladder on the Adventurer), climbs it, comes up over
+// its top onto a plank (Climbing Up A Ladder To Standing), stands, and goes back down it to the floor -
+// along web/js/ladder-way.js's way, which is walk.js's, so this is the climb the island draws at the
+// Salty Kraken's ladder up its hull (a plank STEP_LAND past the rungs, as there).
+let onStep=false;
+const STEP_H=24*RUNG_STEP, STEP_LAND=.46, STEP_FROM=.3, STEP_REST=.9;
+const stepRope=[{x:0,y:0,z:0},{x:0,y:STEP_H+.06,z:0},{x:0,y:STEP_H,z:-STEP_LAND}];
+const stepUp=climbWay(stepRope,{x:0,y:0,z:STEP_FROM}), stepDown=climbWayDown(stepRope,{x:0,y:STEP_H,z:-STEP_LAND});
+let stepState={dir:1,d:0,rest:STEP_REST};
+const stepRigs=figures.map(f=>{
+  const g=new THREE.Group();
+  for(const x of [-ROPE_HW,ROPE_HW]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,STEP_H+.08,.012),ropeMat);r.position.set(x,(STEP_H+.08)/2,RUNG_OUT-CLIMB_OUT);g.add(r);}
+  for(let k=1;k*RUNG_STEP<STEP_H+.01;k++){const r=new THREE.Mesh(new THREE.BoxGeometry(2*ROPE_HW+.012,2*RUNG_R,2*RUNG_R),ropeMat);r.position.set(0,k*RUNG_STEP,RUNG_OUT-CLIMB_OUT);g.add(r);}
+  // the plank the ladder leads up to, from just behind its ropes on past where the way lands
+  const plank=new THREE.Mesh(new THREE.BoxGeometry(.3,.04,STEP_LAND+.4),new THREE.MeshStandardMaterial({color:0x7a5a3a,roughness:1}));
+  plank.position.set(0,STEP_H-.02,RUNG_OUT-CLIMB_OUT-.02-(STEP_LAND+.4)/2);plank.castShadow=plank.receiveShadow=true;g.add(plank);
+  g.visible=false;scene.add(g);return g;
+});
+// One step of it, for every body alike: up, a rest on the plank, down, a rest on the floor.
+function stepTick(dt){
+  const w=stepState.dir>0?stepUp:stepDown;
+  if(stepState.rest>0){stepState.rest-=dt;return {w,moving:false};}
+  const was=stepState.d;
+  stepState.d=climbAlong(w,stepState.d,stepState.dir>0?1:-1,dt);
+  if(stepState.dir>0&&stepState.d>=w.len){stepState={dir:-1,d:stepDown.len,rest:STEP_REST};return {w,moving:true};}
+  if(stepState.dir<0&&stepState.d<=0){stepState={dir:1,d:0,rest:STEP_REST};return {w,moving:true};}
+  return {w,moving:stepState.d!==was};
+}
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
   climbDir=Number(button.dataset.climb);
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
 };
 for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
-  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';climbY=0;
+  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';climbY=0;
+  stepState={dir:1,d:0,rest:STEP_REST};
   if(onMast)showMast();
   if(onNest)showNest();
   for(const b of document.querySelectorAll('[data-ladder]'))b.setAttribute('aria-pressed',String(b===button));
@@ -168,6 +216,14 @@ document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.che
 let close=-1;
 document.querySelector('#motion-close').onclick=e=>{close=close+1<figures.length?close+1:-1;e.target.textContent=close<0?'Dichtbij':CHARACTERS[close].name;};
 document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time;};
+// The treasure statue in both arms (Plans/schatkaarten.md): lifting it and setting it down are a stoop
+// (classic-avatar.js setCarry), and carried it is a slow walk - judge both here, as walk.js's H and E do.
+document.querySelector('#motion-carry').onclick=e=>{
+  const on=!figures[0].rig.carrying();
+  for(const f of figures)f.rig.setCarry(on);
+  e.target.textContent=on?'Beeld neerzetten':'Beeld optillen';
+  document.querySelector('#motion-note').textContent=on?'Optillen · bukken, het beeld laag in de handen, en ermee omhoog':'Neerzetten · bukken met lege handen tot de grond, en weer rechtop';
+};
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
 const horseNote=()=>{const[name,speed]=HORSE_GAITS[horseGait];return`Paard · ${name}${speed?` op ${speed.toFixed(1)} per seconde`:''} · alleen de Avonturier rijdt (F); Sprint of Shift is galop; Paard wisselt stilstaan, draf, grazen en dansen (zoals in de rave)`;};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
@@ -206,7 +262,9 @@ function tick(dt){
   const masted=mode==='climb'&&(onMast||onNest), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
-  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&(close<0||i===climber);
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&(close<0||i===climber);
+  for(const [i,g] of stepRigs.entries())g.visible=mode==='climb'&&onStep&&(close<0||i===climber);
+  const stepped=mode==='climb'&&onStep?stepTick(dt):null;
   if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted&&onMast;
   if(nest)nest.visible=masted&&onNest;
@@ -224,16 +282,23 @@ function tick(dt){
   if(horse)horse.visible=riding;
   if(horse&&!horseHelper){horseHelper=new THREE.SkeletonHelper(horse.object);horseHelper.visible=document.querySelector('#motion-bones').checked;scene.add(horseHelper);}
   if(horseHelper)horseHelper.visible=riding&&document.querySelector('#motion-bones').checked;
+  if(!riding){spendPool(horsePool,0,dt);showHorsePool(false,0);}
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
   // the one looked at closely, else the two's middle.
   for(const f of figures){
     const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
+    // Only what the climb put on her back comes off when the climb ends; Beeld optillen keeps hers.
+    if(mode!=='climb'&&f.backLaden){f.rig.setCarry(false);f.backLaden=false;}
     if(riding)f.stand.visible=f===rider;
     if(riding){
       if(f!==rider)continue;
-      const speed=HORSE_GAITS[horseGait][1];
+      // Blown, a gallop asked for is a trot, as stepMount makes it on the island.
+      const speed=horseGait===2&&!canBoost(horsePool)?MOUNT_TOP:HORSE_GAITS[horseGait][1];
+      const share=gaitShare(speed);
+      spendPool(horsePool,share,dt);
+      showHorsePool(true,share);
       f.distance+=speed*dt;
       horse.place(0,0,f.distance,0);
       horse.pose({speed,graze:horseGait===3,dance:horseGait===4?time*RAVE_BPS:null},dt);
@@ -258,6 +323,17 @@ function tick(dt){
       f.rig.update(down?{dying:{kind,t},distance:0}:{grounded:true,distance:0},dt);
       continue;
     }
+    if(stepped){
+      // where the way has the feet, from this body's own spot; facing the ladder (-z) all along
+      const p=pathAt(stepped.w.path,stepState.d,{x:0,y:0,z:0}), on=onWay(stepped.w,stepState.d);
+      stepRigs[figures.indexOf(f)].position.set(f.stand.position.x,0,f.distance);
+      f.stand.rotation.set(0,Math.PI,0);f.stand.position.set(f.x,p.y,f.distance+p.z);
+      const rise=p.y-(f.stepY??p.y), step=Math.hypot(p.x-(f.stepAt?.x??p.x),p.z-(f.stepAt?.z??p.z));
+      f.stepY=p.y;f.stepAt={x:p.x,z:p.z};
+      f.rig.update({moving:stepped.moving&&!on,grounded:true,distance:on?0:step,onLadder:stepState.rest<=0||!!on,
+        climbing:on?{rise,at:p.y,top:on.top,floor:true}:null},dt);
+      continue;
+    }
     if(mode==='climb'){
       f.stand.rotation.set(0,Math.PI,0);f.stand.position.y=climbY;
       ladders[figures.indexOf(f)].position.z=f.distance-CLIMB_OUT;
@@ -267,6 +343,10 @@ function tick(dt){
         const cx=ALOFT.x+ALOFT.out[0]*CLIMB_OUT, cz=ALOFT.z+ALOFT.out[1]*CLIMB_OUT, a=nest.rotation.y;
         nest.position.set(f.stand.position.x-(cx*Math.cos(a)+cz*Math.sin(a)),-(DECK_Y+ALOFT.foot),f.distance-(-cx*Math.sin(a)+cz*Math.cos(a)));
       }
+      // With the statue (Met de schatkist): on the back for the climb, as walk.js carries her up a ladder.
+      const laden=document.querySelector('#motion-carry-back').checked;
+      // only on a change of the box, so a statue lifted with Beeld optillen climbs on the back too
+      if(laden!==!!f.backLaden){f.rig.setCarry(laden);f.backLaden=laden;}
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
       f.stand.updateMatrixWorld(true);
       showHoldsFor(figures.indexOf(f),f,climbRise);

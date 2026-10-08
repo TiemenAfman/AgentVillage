@@ -434,7 +434,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       | (s.dancing ? FLAG_DANCING : 0)
       | (s.carry && !s.vehicle ? FLAG_CARRYING : 0)
       | (s.digging && !s.vehicle && !s.swimming ? FLAG_DIGGING : 0)
-      | (s.parked && !s.moving ? FLAG_ASLEEP : 0);
+      | (s.parked && !s.route && !s.moving ? FLAG_ASLEEP : 0);
     const now = Date.now();
     // A berth that moved is a body that moved, as far as the sea is concerned: our feet
     // did not stir but their world position did, so it goes out on this beat.

@@ -56,6 +56,12 @@ into `assets/mixamo/` as below.
      Download it **without** In Place: the bake reads `rise` (leg lengths a cycle) off how far the
      hips go up, takes that steady rise out of the hips' `drop`, and measures the drop from where
      the lower foot is on average (its rung). The rig plays it per height gained (`climbStep`).
+   - **as a step that carries the body** (onto a ladder, `climbOn`, and over its top, `climbTop`):
+     add the name to `STEPS`, and to `WINDOWS` (first and last frame) when only a stretch of the clip
+     is the step. Download it without In Place: the bake writes `way` per row (how far forward and up
+     the feet are, leg lengths), which web/js/ladder-way.js lays the walk's path out by, and measures
+     each row's `drop` from those feet. Played at a moment, not looped (`sampleOnce`, classic-avatar.js
+     `ladderStep`).
    - **by time** (idle, a jump, swim, dig, `die`, `drown`, any action): add the name to `TIMED`. A jump also
      gets `air` (the stretch with both feet off the ground) when it is listed where `air` is
      worked out.

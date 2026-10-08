@@ -17,6 +17,7 @@ import { clamp } from 'shared/rng.mjs';
 import { createAnimal, createPose, stepPose, stepDance, applyPose, saddleOf } from './fauna.js';
 import { HORSE_TROT, HORSE_GALLOP, HORSE_PATTERNS, horseCadence, hoofPath, horseBody } from './horse-gait.js';
 import { solidMaterial } from './buildings.js';
+import { canBoost, spendPool } from './stamina.js';
 
 // ---- the way --------------------------------------------------------------------------------
 // Speeds match the small horse’s stride length. Sprint/Shift selects gallop.
@@ -51,6 +52,13 @@ const SCRAPE_DRAG = 6.0;
 const CREEP = 0.08;
 const MAX_STEP = 0.04;                // one slice never jumps a wall, as boat.js promises
 
+// What each gait costs the horse's own pool (stamina.js HORSE), as a share of its full drain: a
+// gallop all of it, a trot a tenth (forty seconds of gallop, four hundred of trot), and anything
+// at or under MOUNT_WALK - a walk on a half-pressed stick, reined in, standing - nothing, which is
+// where the pool fills. Measured off the horse's speed, as the gait is, after the step.
+export const MOUNT_TROT_SHARE = 0.1;
+export const MOUNT_WALK = 1.0;
+
 const TAU = Math.PI * 2;
 const damp = (from, to, rate, dt) => to + (from - to) * Math.exp(-rate * dt);
 function axis(v) {
@@ -76,21 +84,39 @@ export function turnRate(v) {
 // *ground* may be under a lid there (a deck overhead less the rider's head), or omitted. Unlike
 // the bicycle's, the ceiling stops the ride, not only a jump: a rider sits 0.35 higher than a
 // walker, so a low deck, a bridge or the quay is a wall to a horse a walker passes under.
-export function stepMount(m, { rein = 0, turn = 0, gallop = false, hop = false } = {}, dt,
+//
+// `pool` is the horse's own breath (stamina.js createPool(HORSE)): given one, `gallop` is only
+// asked for - the horse gallops while the pool lets it and drops back to a trot once it is spent,
+// as an empty body drops from a sprint - and the gait it went at is paid for after the step
+// (`gaitShare`). `m.gallop` says whether this step was a gallop. Without a pool `gallop` is
+// obeyed as it always was (the workbench, older tests).
+export function stepMount(m, { rein = 0, turn = 0, gallop = false, hop = false, pool = null } = {}, dt,
   { ground, blocked = () => false, ceiling = null } = {}) {
   if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0 || typeof ground !== 'function') return m;
   if (hop === true && !m.air && !m.splash) { m.vy = MOUNT_HOP; m.air = true; m.floor = m.y; }
+  const boost = gallop === true && (!pool || canBoost(pool));
+  m.gallop = boost;
   const yaw0 = m.yaw;
   let left = dt;
   while (left > 1e-9 && !m.splash) {
     const step = Math.min(left, MAX_STEP);
     left -= step;
-    slice(m, axis(rein), axis(turn), gallop === true, step, ground, blocked, ceiling);
+    slice(m, axis(rein), axis(turn), boost, step, ground, blocked, ceiling);
   }
   let d = m.yaw - yaw0;
   if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
   m.rate = d / dt;
+  if (pool) spendPool(pool, gaitShare(m.v), dt);
   return m;
+}
+
+// The share of the pool's drain a horse going at `v` spends: the gait bands (gaitOf, without its
+// hysteresis - the pool needs no flicker guard, it only adds up) with a walk carved out of the trot.
+export function gaitShare(v) {
+  const s = Math.abs(v);
+  if (s > GAIT_EDGES[1]) return 1;
+  if (s > MOUNT_WALK) return MOUNT_TROT_SHARE;
+  return 0;
 }
 
 function slice(m, p, r, boost, step, ground, blocked, ceiling) {
@@ -178,7 +204,7 @@ function slice(m, p, r, boost, step, ground, blocked, ceiling) {
 // rider and every peer work it out of how fast the horse goes, so nothing about it is on the wire.
 // Normal reins select trot; sprint selects gallop. Hysteresis prevents flicker.
 export const GAITS = ['stand', 'trot', 'gallop'];
-export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (3.4)
+export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (4.8)
 export const GAIT_MARGIN = .05;
 export function gaitOf(v, was = null) {
   const speed=Math.abs(v);
@@ -186,8 +212,8 @@ export function gaitOf(v, was = null) {
   const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
   return speed>threshold?'gallop':'trot';
 }
-export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,2.6]};
-export const CADENCE_MAX=2.7;
+export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,3.0]};
+export const CADENCE_MAX=3.1;
 export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
 export const PATTERN=HORSE_PATTERNS;
 const frac=(x)=>x-Math.floor(x);

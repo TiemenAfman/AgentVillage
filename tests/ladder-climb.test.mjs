@@ -214,6 +214,19 @@ test('walk mode says when the feet are on the rungs, and how far they went up or
   assert.equal(walk.ladderAt(s.pos.x, s.pos.y, s.pos.z), null, 'nor is anybody on the plank');
 });
 
+test('the Salty Kraken\'s ladder is climbed with the statue in the arms, and she is still in them on the plank', () => {
+  const walk = onTheLanding();
+  const s = walk.state;
+  push(walk, [L.lo.x, L.lo.z + 0.2], 3);
+  assert.equal(walk.lift('statue'), true, 'lifted on the landing');
+  const going = push(walk, [L.hi.x, L.hi.z], 25);
+  const on = going.filter((f) => f.climbing);
+  assert.ok(on.length > 10, `climbed carrying (${on.length} frames)`);
+  assert.equal(s.climbing, null, 'off the ladder');
+  assert.ok(s.pos.y > L.hi.y - 0.2, `up on the plank: ${s.pos.y.toFixed(2)} for ${L.hi.y.toFixed(2)}`);
+  assert.equal(walk.carrying(), 'statue', 'and in the arms there');
+});
+
 test('a ship\'s ladder is found from where a body hangs in her frame', () => {
   const ship = CRAFTS.galleon;
   const l = ship.ladders[0], s = l.x < 0 ? -1 : 1;

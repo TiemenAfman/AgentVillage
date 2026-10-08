@@ -42,6 +42,7 @@ const dayOf = (ms) => worldTime(ms, 0).day;
 
 // A 200-cell island whose beach is the ring at 8 cells from the landing; the town's centre at 110.
 const terrain = {
+  half: 100,
   inGrid: () => true,
   isBeach: (gx, gz) => Math.hypot(gx - 100, gz - 100) >= 3 && Math.hypot(gx - 100, gz - 100) <= 4,
   cellWorld: (gx, gz) => [gx - 100 + 0.5, gz - 100 + 0.5],
@@ -69,6 +70,9 @@ function fakeWalk() {
     putDown() { const c = carry; carry = null; return c; },
     putOnBoat(hull) { if (!carry) return false; cargo = { item: carry, hull }; carry = null; return true; },
     takeOffBoat() { if (!cargo) return false; carry = cargo.item; cargo = null; return true; },
+    // walk.js's own letting go (setDown, letGo): the hands empty, and main.js's onLetGo after.
+    onLetGo: null,
+    drop(at, why = 'set') { const item = w.putDown(); if (item && w.onLetGo) w.onLetGo(item, { ...at, why }); return !!item; },
     dig(seconds) { w.calls.push(['dig', seconds]); if (dig || carry) return false; dig = { t: 0, total: seconds }; return true; },
     digProgress: () => (dig ? dig.t / dig.total : null),
     digged() { const n = flung; flung = 0; return n; },
@@ -96,9 +100,9 @@ function fakeView() {
 }
 
 // One page: a book with the storage behind it, the unlocks, and a hunt on a fake walker.
-function page({ keeper = true, now = NOON, village = villageOf(), answer = null, rowboat = null } = {}) {
+// `storage` hands a page the one an earlier page wrote: a reload.
+function page({ keeper = true, now = NOON, village = villageOf(), answer = null, rowboat = null, storage = memory(), berth = { at: HOME } } = {}) {
   U.resetUnlocks();
-  const storage = memory();
   const toasts = [], posts = [];
   const clockState = { now };
   const walk = fakeWalk();
@@ -121,7 +125,7 @@ function page({ keeper = true, now = NOON, village = villageOf(), answer = null,
     quests: log, events, finds: T.createFinds(storage),
     unlocks: { isUnlocked: U.isUnlocked, unlocked: U.unlocked, unlock: U.unlock },
     walk, view,
-    home: () => HOME, islandId: () => ISLAND, islets: () => ISLETS,
+    home: () => berth.at, islandId: () => ISLAND, islets: () => ISLETS,
     village: () => vil.current, terrain: () => terrain,
     clock: () => worldTime(clockState.now, 0), dayOf,
     groundAt: () => 0.5,
@@ -137,8 +141,9 @@ function page({ keeper = true, now = NOON, village = villageOf(), answer = null,
     refetchVillage: async () => { fetches.n++; vil.current = { ...vil.current, treasure: { placed: true, found: 0 } }; },
     rowboat,
   });
+  walk.onLetGo = (item, at) => hunt.letGo(item, at);
   return {
-    hunt, log, storage, walk, view, toasts, posts, clockState, changes, fetches, village: vil,
+    hunt, log, storage, walk, view, toasts, posts, clockState, changes, fetches, village: vil, berth,
     // E on whatever `kind` is within the list.
     press(kind) {
       const it = hunt.interactables().find((i) => i.kind === kind);
@@ -719,4 +724,115 @@ test('a second browser whose first map is dug after the statue stands goes on to
   assert.equal(p.log.view().active.goal, 'Tell the pirate it is done', 'nothing to carry: she is home already');
   assert.equal(p.walk.carrying(), null);
   assert.ok(p.toasts.some((t) => /already stands/.test(t)), 'and is told why');
+});
+
+// ---- setting her down, and letting go (Plans/schatkaarten.md, "Neerzetten en laten vallen") ----
+
+test('set down on the island she lies there, the island hears "dropped", and E lifts her again', async () => {
+  const p = firstHunt();
+  await p.dig(p.hunt.sites()[0]);
+  p.press('lift');
+  assert.equal(p.log.view().active.goal, 'Put the statue in the rowing boat');
+  assert.equal(p.walk.drop({ x: 5, y: 0.7, z: -6 }), true);
+  assert.equal(p.walk.carrying(), null);
+  assert.deepEqual(p.posts, ['lifted', 'dropped']);
+  const [lying] = p.hunt.sites();
+  assert.equal(lying.kind, 'statue');
+  assert.equal(lying.stage, 'unearthed');
+  assert.deepEqual([lying.x, lying.y, lying.z], [5, 0.7, -6], 'in our own frame, at the ground she was set on');
+  assert.match(p.toasts.at(-1), /set the statue down/);
+  assert.equal(p.log.view().active.goal, 'Put the statue in the rowing boat', 'the story waits where it was');
+  assert.equal(p.hunt.interactables().some((i) => i.kind === 'deliver'), false, 'nothing in the arms to deliver');
+  const kept = T.createFinds(p.storage).statue();
+  assert.deepEqual(kept, { islandId: ISLAND, isletId: null, spot: { x: 5, z: -6 }, y: 0.7, local: true });
+  // And up again: the same lift, the island told, the story not moved back or on.
+  p.press('lift');
+  assert.equal(p.walk.carrying(), 'statue');
+  assert.deepEqual(p.posts, ['lifted', 'dropped', 'lifted']);
+  assert.equal(p.hunt.sites().length, 0);
+  assert.equal(p.log.view().active.goal, 'Put the statue in the rowing boat');
+  // The quest goes on from there: the boat, then the square.
+  p.hunt.layOnBoat({ id: 'boat:a' });
+  assert.equal(p.log.view().active.goal, 'Stand the statue in your town');
+});
+
+test('a reload finds her where she was set down, and the story where it was', async () => {
+  const p = firstHunt();
+  await p.dig(p.hunt.sites()[0]);
+  p.press('lift');
+  p.hunt.layOnBoat({ id: 'boat:a' });
+  p.walk.takeOffBoat();
+  p.hunt.frame(0.016, 0);
+  p.walk.drop({ x: -12, y: 1.25, z: 30 });
+  // The page closes and opens again: a new hunt on the same storage.
+  const again = page({ storage: p.storage, answer: { read: { statue: 'buried' } } });
+  await again.hunt.boot();
+  const [lying] = again.hunt.sites();
+  assert.deepEqual([lying.kind, lying.x, lying.y, lying.z], ['statue', -12, 1.25, 30]);
+  assert.equal(again.log.view().active.goal, 'Stand the statue in your town', 'the boat step stays done');
+  again.walk.state.pos.x = -12; again.walk.state.pos.z = 29;
+  again.press('lift');
+  assert.equal(again.walk.carrying(), 'statue');
+  // Straight to the square: delivered, and the story on to the pirate.
+  const [cx, cz] = terrain.cellWorld(110, 110);
+  again.walk.state.pos.x = cx; again.walk.state.pos.z = cz;
+  again.press('deliver');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(again.log.view().active.goal, 'Tell the pirate it is done');
+  assert.equal(T.createFinds(again.storage).statue(), null);
+});
+
+test('let go on an islet she keeps to that islet, in the world\'s frame', async () => {
+  const p = firstHunt();
+  const card = p.log.card();
+  await p.dig(p.hunt.sites()[0]);
+  p.press('lift');
+  const islet = ISLETS.find((i) => i.id === card.isletId);
+  const [sx, sz] = worldToScene([islet.x + 1, islet.z - 1], HOME);
+  p.walk.drop({ x: sx, y: 0.3, z: sz }, 'water');
+  const kept = T.createFinds(p.storage).statue();
+  assert.equal(kept.isletId, islet.id);
+  assert.deepEqual(kept.spot, { x: islet.x + 1, z: islet.z - 1 });
+  assert.equal(kept.local, undefined);
+  assert.match(p.toasts.at(-1), /too heavy to swim with/);
+  const [lying] = p.hunt.sites();
+  assert.ok(Math.abs(lying.x - sx) < 1e-9 && Math.abs(lying.z - sz) < 1e-9);
+  p.press('lift');
+  assert.equal(p.walk.carrying(), 'statue');
+});
+
+test('off our island she is kept in the world frame; with no berth known she goes back to where she lay', async () => {
+  const p = firstHunt();
+  await p.dig(p.hunt.sites()[0]);
+  const dugAt = T.createFinds(p.storage).statue();
+  p.press('lift');
+  assert.equal(p.hunt.letGo('chest', { x: 1, y: 1, z: 1, why: 'set' }), false, 'only the statue is carried');
+  assert.equal(p.hunt.letGo('statue', { x: NaN, y: 1, z: 1, why: 'set' }), false);
+  // A neighbour's beach, past our island's half: the world's frame, no islet.
+  p.walk.drop({ x: 400, y: 1, z: -30 }, 'fall');
+  assert.deepEqual(T.createFinds(p.storage).statue(), { islandId: ISLAND, isletId: null, spot: { x: 400 + HOME[0], z: -30 + HOME[1] }, y: 1 });
+  assert.match(p.toasts.at(-1), /tumbles out of your arms/);
+  const [lying] = p.hunt.sites();
+  assert.deepEqual([lying.x, lying.z], [400, -30]);
+  // Lifted again, and let go while the page has no berth: no frame to keep a spot in, so she is
+  // back where she last lay - still a place, never nowhere.
+  p.walk.state.pos.x = 400; p.walk.state.pos.z = -31;
+  p.press('lift');
+  p.berth.at = null;
+  p.walk.drop({ x: 420, y: 1, z: -30 }, 'die');
+  assert.deepEqual(T.createFinds(p.storage).statue().spot, { x: 400 + HOME[0], z: -30 + HOME[1] });
+  assert.match(p.toasts.at(-1), /back to where she lay/);
+  assert.equal(p.walk.carrying(), null);
+  assert.deepEqual(p.posts.slice(-1), ['dropped'], 'the island hears she is not carried');
+  assert.ok(dugAt);
+});
+
+test('parseStatue takes a spot on an island as well as on an islet, and refuses what it cannot draw', () => {
+  assert.deepEqual(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0.5, local: true }),
+    { islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0.5, local: true });
+  assert.deepEqual(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0.5, local: 'yes' }),
+    { islandId: 'a', isletId: null, spot: { x: 1, z: 2 }, y: 0.5 });
+  assert.equal(T.parseStatue({ islandId: 'a', isletId: '', spot: { x: 1, z: 2 }, y: 0.5 }), null);
+  assert.equal(T.parseStatue({ islandId: 'a', isletId: 3, spot: { x: 1, z: 2 }, y: 0.5 }), null);
+  assert.equal(T.parseStatue({ islandId: 'a', isletId: null, spot: { x: 1 }, y: 0.5 }), null);
 });

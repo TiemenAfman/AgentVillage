@@ -117,3 +117,27 @@ test('a change into the Traveller takes the Adventurer off his horse', () => {
   assert.equal(walk.state.mount, null);
   assert.equal(walk.state.bike, null);
 });
+
+test('the horse gallops on its own pool, and the rider spends nothing', () => {
+  const { walk } = make('adventurer');
+  run(walk, 0.2);
+  tap('f');
+  const s = walk.state;
+  key('w', true); key('Shift', true);
+  run(walk, 8);
+  assert.ok(s.mount.v > MOUNT_TOP * 1.5, `galloping at ${s.mount.v}`);
+  assert.equal(s.stamina.body.level, 1, "the rider's legs paid for the gallop");
+  assert.ok(s.stamina.horse.level < 0.9 && s.stamina.horse.level > 0.6, `horse at ${s.stamina.horse.level}`);
+  // Blown: Shift held, and it is a trot.
+  s.stamina.horse.level = 0.001;
+  run(walk, 3);
+  assert.equal(s.stamina.horse.spent, true);
+  assert.ok(Math.abs(s.mount.v - MOUNT_TOP) < 0.05, `blown horse at ${s.mount.v}`);
+  key('Shift', false); key('w', false);
+  // Off it, the horse rests: back on later it is as full as standing made it.
+  run(walk, 3);
+  tap('f');
+  assert.equal(s.mount, null);
+  run(walk, 30);
+  assert.ok(s.stamina.horse.level > 0.9, `rested to ${s.stamina.horse.level}`);
+});

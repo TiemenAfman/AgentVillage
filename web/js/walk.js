@@ -15,10 +15,11 @@ import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
-import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
+import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
+import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
-import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
-import { createPool, stepPool, BODY, BOAT } from './stamina.js';
+import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
+import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
 import { canon, ctrlIsKey } from './keybinds.js';
@@ -86,6 +87,11 @@ const CROUCH_SCALE = 0.62;
 // The treasure statue in both arms (Plans/schatkaarten.md): a walk at this share of the ordinary one,
 // no run (so no stamina spent either), no jump. Named because the gait's step rate follows it too.
 const CARRY_SPEED = 0.55;
+// Setting her down (H, `setDown`) puts her this far ahead of the feet - in front of the arms, where the
+// rig holds her - and only where a body could stand: dry, within a step of the feet, nothing in the way.
+// A fall of more than CARRY_FALL (a cell, four metres) with her in the arms throws her out of them.
+export const SET_AHEAD = 0.6;
+export const CARRY_FALL = 1.0;
 // A dig (`dig`) takes this long unless the caller says otherwise, and the shovel goes in this far ahead
 // of the feet - where `onDigDone` says the hole is, so a spot is found at the hole and not under the boots.
 const DIG_SECONDS = 2.5;
@@ -234,6 +240,12 @@ export function createWalkMode({
   // struck), 'paused', 'reset' (a seat, a boat, leaving walk mode) or 'blocked'. `onBlocked('carry')`
   // is a thing refused because both hands are full - main.js turns it into a toast.
   onDigDone = null, onDigCancelled = null, onBlocked = null,
+  // The hands letting go of what they carried, anywhere but onto a hull: `onLetGo(item, { x, y, z, why })`
+  // with where it lies now - always dry ground, never the water. `why` is 'set' (H: set down on purpose,
+  // ahead of the feet), 'water' (deep water: nobody swims with her), 'fall' (a drop of CARRY_FALL or
+  // more), 'die' or 'home' (main.js sentHome: the body is taken somewhere else, and she stays). The
+  // hunt keeps the spot (treasure.js letGo); `onBlocked('set')` is H refused here.
+  onLetGo = null,
 }) {
   const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
@@ -381,7 +393,7 @@ export function createWalkMode({
     turbo: false,
     // What Shift spends. Running and swimming share the body's; the boat has its own, and
     // both fill whenever they are not being drawn on - see web/js/stamina.js.
-    stamina: { body: createPool(BODY), boat: createPool(BOAT) },
+    stamina: { body: createPool(BODY), boat: createPool(BOAT), horse: createPool(HORSE) },
     // What the beer has done so far, and the clock the stagger runs on.
     tipsy: tipsy || createTipsy(),
     sway: 0,
@@ -479,6 +491,7 @@ export function createWalkMode({
   function lift(item = 'statue') {
     if (!item || state.carry || state.cargo || !canHandle()) return false;
     state.carry = item;
+    lastDry = dryHere();
     // Both hands: no shield up, no dance, no crouch, and the sprint toggle is dropped with the rest.
     lowerShields();
     state.dancing = false;
@@ -496,6 +509,48 @@ export function createWalkMode({
     if (classicAvatar.setCarry) classicAvatar.setCarry(false);
     return item;
   }
+  // Letting go of her on the ground (Plans/schatkaarten.md, "Neerzetten en laten vallen"). Nothing a
+  // body carries is ever lost: she lies on dry ground, and `onLetGo` says where, for the hunt to keep.
+  // `lastDry` is where the feet last stood on dry ground with her in the arms - set by lift() and every
+  // frame after - which is where she ends up when the hands give out somewhere she cannot lie: in
+  // deep water she is back on the shore you waded in from, never on the bed.
+  let lastDry = null;
+  // Where a fall began (walked off an edge, or over a ship's side), for CARRY_FALL.
+  let airTop = -Infinity;
+  const DRY_ABOVE = WATER_Y + 0.02;
+  // The feet's own spot, when it is one she may lie on.
+  function dryHere() {
+    if (!state.grounded || state.swimming || state.dive || state.vehicle || state.deck || climb) return null;
+    const { x, y, z } = state.pos;
+    return y >= DRY_ABOVE ? { x, y, z } : null;
+  }
+  function letGoAt(why, at) {
+    const item = putDown();
+    if (!item) return false;
+    lastDry = null;
+    if (onLetGo) onLetGo(item, { x: at.x, y: at.y, z: at.z, why });
+    return true;
+  }
+  // The hands give out (deep water, a fall, a death, a jump home): where the feet are if that is dry
+  // ground, else the last dry ground she was carried over.
+  function letGo(why = 'drop') {
+    if (!state.carry) return false;
+    const at = dryHere() || lastDry || { x: state.pos.x, y: Math.max(state.pos.y, WATER_Y), z: state.pos.z };
+    return letGoAt(why, at);
+  }
+  // H: set her down on purpose, a step ahead - on dry ground within a step of the feet, never in the
+  // water, on a roof or a wall, and only from a body standing on its own two feet.
+  const canSet = () => state.active && !state.paused && !state.working && !state.parked && state.grounded
+    && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !rides()
+    && !state.sitting && !state.lying && !state.dying;
+  function setDown() {
+    if (!state.carry) return false;
+    if (!canSet()) { blockedBy('set'); return false; }
+    const x = state.pos.x + Math.sin(state.yaw) * SET_AHEAD, z = state.pos.z + Math.cos(state.yaw) * SET_AHEAD;
+    const y = groundAt(x, z, state.pos.y);
+    if (!(y >= DRY_ABOVE) || Math.abs(y - state.pos.y) > STEP_UP || blocked(x, z, y, true)) { blockedBy('set'); return false; }
+    return letGoAt('set', { x, y, z });
+  }
   // Aboard nothing is held: the statue goes onto the hull instead (boat.js setCargo hangs it on the
   // deck, where it swells with her), and the arms are free for the tiller. board() does this itself for
   // whoever comes aboard carrying, so the pose never says CARRYING at the wheel.
@@ -512,17 +567,22 @@ export function createWalkMode({
   // the same thing for a body that got off some other way (a jump, a ladder, walk mode left and
   // re-entered), standing wherever it now is.
   function takeOffBoat() {
+    if (!state.cargo || state.vehicle || state.deck || climb) return false;
+    cargoToArms();
+    return true;
+  }
+  function cargoToArms() {
     const c = state.cargo;
-    if (!c || state.vehicle || state.deck || climb) return false;
     state.cargo = null;
     if (c.hull.craft && c.hull.craft.setCargo) c.hull.craft.setCargo(null);
     state.carry = c.item;
     if (classicAvatar.setCarry) classicAvatar.setCarry(true);
-    return true;
   }
 
   // The statue up a ship's side and down it again (Plans/roeiboot-en-schat.md, "de sloep van het
-  // schip"). A rope ladder wants both hands, so nobody climbs one carrying her: from a rowing boat
+  // schip"). A rope ladder is climbed with her on the back (classic-avatar.js CARRIED_BACK): walked
+  // into from the water or a quay in the arms, she goes onto the deck as cargo at the top, and a
+  // climb down from a deck she is on takes her along. Besides that, from a rowing boat
   // lying at one of a ship's ladders, `hoistOnto` takes her up with you - her onto the ship's deck as
   // her cargo, you onto the planks where that ladder lands, crew from there (the caller tells the
   // sea). `lowerOff` is the way back: off her deck, her into the rowing boat `row` the caller has laid
@@ -685,6 +745,8 @@ export function createWalkMode({
     // Hand the settler in front of you a beer, when there is a glass in your hand and
     // somebody within reach - main.js decides both and puts the offer on screen.
     if (k === 'g' && !e.repeat) { e.preventDefault(); state.onGive && state.onGive(); }
+    // Set down what the arms carry (the statue), a step ahead of the feet.
+    if (k === 'h' && !e.repeat) { e.preventDefault(); setDown(); }
     // The first Escape only frees the mouse (the browser ends the lock itself); the next one
     // leaves walk mode.
     if (k === 'escape') {
@@ -1272,7 +1334,10 @@ export function createWalkMode({
   // Set PASS_TREES_AND_FENCES false to have them back.
   const PASS_TREES_AND_FENCES = true;
   const passedThrough = (b) => PASS_TREES_AND_FENCES && (b.tree === true || b.fence === true);
-  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
+  // `pad`: a body that much wider, against the solids alone - what a route from above asks of the way
+  // between two of its points, so a corner that slips between two samples of the line still meets one
+  // (body-route.js clear).
+  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded, pad = 0) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
@@ -1310,7 +1375,7 @@ export function createWalkMode({
       for (const c of inNow) depth += Math.max(0, depthInSolid(c, x, z, BODY_R));
       return depth < depthNow - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => walls(b) && inside(b, x, z, BODY_R)
+    if (blockerIndex.some(x, z, BODY_R + pad, (b) => walls(b) && inside(b, x, z, BODY_R + pad)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
@@ -1482,15 +1547,42 @@ export function createWalkMode({
   // Adventurer, a cycle per 0.12 of height, and at 1.8 that was fifteen cycles a second (the keeper
   // chose slower over a body gliding past its hands, 6 Oct 2026). The ship's side now takes ~4 s.
   const CLIMB_SPEED = 0.29;
+  // Onto a ladder and off it, where the body is drawn changes in one frame although the feet do
+  // not move: a swimmer is drawn treading water TREAD_SINK under where the feet are reckoned
+  // (diving.js swimPose), a climber at the feet - so the body dropped 0.28 coming off the foot of the
+  // galleon's ladder into the water and rose as much taking it - and a swimmer is pitched forward. So
+  // when a climb begins or ends, the body is drawn from where it was a frame ago and eased onto where
+  // it now belongs over STEP_OFF_S, as the rig eases its pose (classic-avatar.js LADDER_FADE). Drawing
+  // only: the feet, the camera and what the sea is told are where walk mode put them.
+  const STEP_OFF_S = 0.5;
+  let onRope = false, stepOff = 0;
+  const drawnAt = new THREE.Vector3(), drawnQ = new THREE.Quaternion(), stepOffAt = new THREE.Vector3(), stepOffQ = new THREE.Quaternion(), stepOffTo = new THREE.Quaternion();
+  function stepOffEase(dt) {
+    if (!!climb !== onRope) {
+      onRope = !!climb;
+      stepOff = 1;
+      stepOffAt.copy(drawnAt);
+      stepOffQ.copy(drawnQ);
+    }
+    if (stepOff > 0) {
+      stepOff = Math.max(0, stepOff - dt / STEP_OFF_S);
+      const k = 1 - stepOff, t = k * k * (3 - 2 * k);
+      avatar.position.lerpVectors(stepOffAt, avatar.position, t);
+      avatar.quaternion.slerpQuaternions(stepOffQ, stepOffTo.copy(avatar.quaternion), t);
+    }
+    drawnAt.copy(avatar.position);
+    drawnQ.copy(avatar.quaternion);
+  }
   const CLIMB_DEAD = 0.3;
   const climbAt = { x: 0, z: 0, y: 0 }, climbWas = { x: 0, z: 0, y: 0 };
-  // Whether `d` along a climb's path is on the rungs - a stretch going more up than along - rather
-  // than the reach from where you stood to the foot or the step over the top: only there does the
-  // rig climb (classic-avatar.js `climbing`, Mixamo's Climbing Up A Ladder on the Adventurer).
-  const rungA = { x: 0, z: 0, y: 0 }, rungB = { x: 0, z: 0, y: 0 };
-  function onRungs(path, d) {
-    const a = pathAt(path, d - 0.02, rungA), b = pathAt(path, d + 0.02, rungB);
-    return Math.abs(b.y - a.y) > Math.hypot(b.x - a.x, b.z - a.z);
+  // What the rig is to make of where a climb is (web/js/ladder-way.js): on the rungs - `rise` and `at`,
+  // the height gained this frame and the height above the foot - and over the top, `top` 0..1 through
+  // Mixamo's Climbing Up A Ladder To Standing; `floor` whether its foot is a floor to step onto it from
+  // (classic-avatar.js plays Start Climbing Ladder there). Null on the reach to the foot and on from
+  // the top: only on the rungs and over the top does the rig climb.
+  function climbingAt(c, rise, at) {
+    const on = onWay(c.way, c.d);
+    return on ? { rise, at, top: on.top, floor: c.floor } : null;
   }
   // How hard the stick pushes along the hull's own x (+ to starboard), from where the camera
   // looks: the one number a ladder asks of it, since a ladder is on the side of the hull. What
@@ -1557,7 +1649,7 @@ export function createWalkMode({
   function startFixedClimb(l, dir) {
     const at = { x: state.pos.x, y: state.pos.y, z: state.pos.z };
     const top = { x: l.lo.x, y: l.hi.y + 0.06, z: l.lo.z };
-    const path = dir > 0 ? [at, l.lo, top, l.hi] : [l.lo, top, l.hi, at];
+    const way = dir > 0 ? climbWay([l.lo, top, l.hi], at) : climbWayDown([l.lo, top, l.hi], at);
     standUp();
     lowerShields();
     state.crouching = false;
@@ -1565,8 +1657,7 @@ export function createWalkMode({
     state.grounded = true;
     state.vy = 0;
     drift = null;
-    const len = pathLength(path);
-    climb = { boat: null, fixed: l, path, len, d: dir > 0 ? 0 : len, letGo: false };
+    climb = { boat: null, fixed: l, way, path: way.path, len: way.len, d: dir > 0 ? 0 : way.len, floor: true, letGo: false };
   }
   function stepFixedClimb(dt, ix, iz) {
     const c = climb, l = c.fixed;
@@ -1576,11 +1667,11 @@ export function createWalkMode({
     const toward = -pushOut(l, ix, iz);
     const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
     const was = pathAt(c.path, c.d, climbWas).y;
-    c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
+    c.d = climbAlong(c.way, c.d, wish, dt, CLIMB_SPEED);
     const p = pathAt(c.path, c.d, climbAt);
     // `at`: how high on the ladder, from its foot - rung 0 - which is what puts the hands and feet of
     // the climb on its rungs (classic-avatar.js climbPhase).
-    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was, at: p.y - l.lo.y } : null;
+    state.climbing = climbingAt(c, p.y - was, p.y - l.lo.y);
     state.pos.set(p.x, p.y, p.z);
     state.yaw = Math.atan2(-l.out[0], -l.out[1]);
     state.moving = wish !== 0;
@@ -1632,11 +1723,17 @@ export function createWalkMode({
   // this page knows - a ship's or a fixed one - and which way they face it, or null. peers.js asks it
   // of every other player: a climber is a walker at a height (no pose bit), and it is the one place
   // a walker is drawn at the height they sent rather than on the ground under them.
+  // On the step over a ladder's top (web/js/ladder-way.js) it says how far over (`top`), so the
+  // other page plays the same clip there as this one.
   function ladderAt(x, y, z) {
     for (const l of fixedLadders) {
+      const yaw = Math.atan2(-l.out[0], -l.out[1]);
+      if (!l.way) l.way = climbWay([l.lo, { x: l.lo.x, y: l.hi.y + 0.06, z: l.lo.z }, l.hi]);
+      const top = y > l.way.path[1].y - 0.01 ? topNear(l.way, { x, y, z }) : null;
+      if (top !== null) return { yaw, at: y - l.lo.y, top, floor: true };
       if (Math.hypot(x - l.lo.x, z - l.lo.z) > 0.2) continue;
       if (y < l.lo.y + 0.15 || y > l.hi.y + 0.08) continue;
-      return { yaw: Math.atan2(-l.out[0], -l.out[1]), at: y - l.lo.y };
+      return { yaw, at: y - l.lo.y, floor: true };
     }
     const sea = (WATER_Y - SWIM_SINK) - DECK_Y;
     for (const b of boatsOf()) {
@@ -1646,10 +1743,17 @@ export function createWalkMode({
       const frame = frameOf(b);
       const [lx, lz] = toLocal(frame, x, z);
       const ly = y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
+      for (const q of spec.ladders) {
+        const w = climbWay(ladderPath(spec, q, sea));
+        const top = ly > w.path[1].y - 0.01 ? topNear(w, { x: lx, y: ly, z: lz }) : null;
+        if (top === null) continue;
+        const [fx, fz] = dirToWorld(frame, q.x < 0 ? 1 : -1, 0);
+        return { yaw: Math.atan2(fx, fz), at: ly - q.foot, top, floor: false };
+      }
       const l = ladderHolding(spec, lx, lz, ly, sea);
       if (!l) continue;
       const [fx, fz] = dirToWorld(frame, l.x < 0 ? 1 : -1, 0);
-      return { yaw: Math.atan2(fx, fz), at: ly - l.foot };
+      return { yaw: Math.atan2(fx, fz), at: ly - l.foot, floor: false };
     }
     return null;
   }
@@ -1660,7 +1764,13 @@ export function createWalkMode({
     const spec = specOf(b);
     const sea = (WATER_Y - SWIM_SINK) - DECK_Y;
     const rope = ladderPath(spec, ladder, sea);
-    const path = dir > 0 ? [at, ...rope] : [...rope, at];
+    // Where the ladder lands is a place on the model, and the nearest free one is where you step
+    // down: a cannon can stand where a table of numbers said there was nothing. Worked out here, as
+    // the end of the way up, and not on arriving - found then, it moved the feet 0.14 in one frame.
+    const last = rope[rope.length - 1];
+    const land = b.craft && b.craft.walk ? nearestStand(b.craft.walk, last.x, last.z, last.y) : null;
+    if (land) rope[rope.length - 1] = { x: land.x, z: land.z, y: land.y };
+    const way = dir > 0 ? climbWay(rope, at) : climbWayDown(rope, at);
     offDeck();
     standUp();
     lowerShields();
@@ -1669,9 +1779,9 @@ export function createWalkMode({
     state.grounded = true;
     state.vy = 0;
     drift = null;
-    const len = pathLength(path);
-    // `crew`: whether the sea has us aboard, which is whether we came off the deck.
-    climb = { boat: b, ladder, path, len, d: dir > 0 ? 0 : len, side: ladder.x < 0 ? -1 : 1, crew: dir < 0, letGo: false };
+    // `crew`: whether the sea has us aboard, which is whether we came off the deck. Her ladder's foot is
+    // in the water (or at a quay's edge), so there is no step onto it from a floor.
+    climb = { boat: b, ladder, way, path: way.path, len: way.len, d: dir > 0 ? 0 : way.len, side: ladder.x < 0 ? -1 : 1, crew: dir < 0, floor: false, letGo: false };
   }
   function stepClimb(dt, ix, iz) {
     if (climb.fixed) return stepFixedClimb(dt, ix, iz);
@@ -1687,9 +1797,9 @@ export function createWalkMode({
     const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
     // The rise along the rope in the hull's frame, so her swell is not a climb.
     const was = pathAt(c.path, c.d, climbWas).y;
-    c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
+    c.d = climbAlong(c.way, c.d, wish, dt, CLIMB_SPEED);
     const p = pathAt(c.path, c.d, climbAt);
-    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was, at: p.y - c.ladder.foot } : null;
+    state.climbing = climbingAt(c, p.y - was, p.y - c.ladder.foot);
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
     const x = state.pos.x, z = state.pos.z;
@@ -1706,18 +1816,22 @@ export function createWalkMode({
     state.bob += dt * (wish !== 0 ? 7 : 1.5);
     if (wish > 0 && c.d >= c.len) {
       // Off the top: on the deck, where the ladder lands, crew from here on.
+      // (where the ladder lands: the nearest free place on her model, worked out in startClimb)
       const last = c.path[c.path.length - 1];
-      // Where the ladder lands is a place on the model, and the nearest free one is where you step
-      // down: a cannon can stand where a table of numbers said there was nothing.
-      const land = b.craft && b.craft.walk ? nearestStand(b.craft.walk, last.x, last.z, last.y) : null;
       climb = null;
       deckBoat = b;
-      state.deck = { boat: b.id, x: land ? land.x : last.x, z: land ? land.z : last.z, y: land ? land.y : last.y, vy: 0, grounded: true, yaw: state.yaw - b.yaw };
+      state.deck = { boat: b.id, x: last.x, z: last.z, y: last.y, vy: 0, grounded: true, yaw: state.yaw - b.yaw };
       place(camBack * 1.5);
-      if (state.onBoarded) state.onBoarded(b);
+      // Up with the statue on the back: on her deck as cargo, as a hull takes whatever comes aboard
+      // carried (board()); `stowed` tells main.js the book wants to hear of it.
+      const stowed = !!state.carry && putOnBoat(b);
+      if (state.onBoarded) state.onBoarded(b, { stowed });
     } else if (c.letGo) {
       // Let go where you hang: falling from there, with the hull's way on you like any jump off her.
       const away = hullVelocity(frame, b.v || 0);
+      // Over deep water the statue on the back stays with the ship (her cargo again), since nobody swims
+      // with her (letGo 'water') and the shore she was carried from may be an islet away.
+      if (state.carry && canDive(groundAt(x, z, WATER_Y), WATER_Y)) putOnBoat(b);
       climb = null;
       state.grounded = false;
       state.vy = 0;
@@ -1732,6 +1846,9 @@ export function createWalkMode({
       const first = c.path[0];
       const [wx, wz] = toWorld(frame, first.x, first.z);
       const g = groundAt(wx, wz, WATER_Y);
+      // Not into deep water with the statue on the back (nobody swims with her): you hang at the foot,
+      // and up again she goes back on her deck. Lowered into the rowing boat (lowerOff) is the way down.
+      if (state.carry && canDive(g, WATER_Y)) { blockedBy('carry'); return afterMove(dt); }
       climb = null;
       state.pos.set(wx, g < 0 ? WATER_Y - SWIM_SINK : g, wz);
       state.floor = g;
@@ -1754,14 +1871,13 @@ export function createWalkMode({
     const d = state.deck;
     const at = { x: d.x, z: d.z, y: d.y };
     const rope = aloftPath(l);
-    const path = dir > 0 ? [at, ...rope] : [...rope, at];
+    const way = dir > 0 ? climbWay(rope, at) : climbWayDown(rope, at);
     standUp();
     lowerShields();
     state.crouching = false;
     state.dancing = false;
     deckJump = false;
-    const len = pathLength(path);
-    climb = { boat: b, aloft: l, path, len, d: dir > 0 ? 0 : len, crew: true, letGo: false };
+    climb = { boat: b, aloft: l, way, path: way.path, len: way.len, d: dir > 0 ? 0 : way.len, crew: true, floor: true, letGo: false };
   }
   function stepMastClimb(dt, ix, iz) {
     const c = climb, b = c.boat, l = c.aloft;
@@ -1776,9 +1892,9 @@ export function createWalkMode({
     const toward = -(px * l.out[0] + pz * l.out[1]);
     const wish = toward > CLIMB_DEAD ? 1 : toward < -CLIMB_DEAD ? -1 : 0;
     const was = pathAt(c.path, c.d, climbWas).y;
-    c.d = clamp(c.d + wish * CLIMB_SPEED * dt, 0, c.len);
+    c.d = climbAlong(c.way, c.d, wish, dt, CLIMB_SPEED);
     const p = pathAt(c.path, c.d, climbAt);
-    state.climbing = onRungs(c.path, c.d) ? { rise: p.y - was, at: p.y - l.foot } : null;
+    state.climbing = climbingAt(c, p.y - was, p.y - l.foot);
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
     const [fx, fz] = dirToWorld(frame, -l.out[0], -l.out[1]);
@@ -1899,9 +2015,14 @@ export function createWalkMode({
     // Out over the side at the head of a ladder: down it, rather than against the rail.
     if (d.grounded && state.moving) {
       const ladder = ladderDown(spec, d.x, d.z, lx);
-      // Not with the statue on the hull: a climber leaves it behind, and it goes ashore only in arms.
-      if (ladder && state.cargo) blockedBy('carry');
-      else if (ladder) { startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y }); return stepClimb(dt, ix, iz); }
+      // With the statue on this hull she comes down too, on the back: a climber never leaves her
+      // behind on a ship there is no other way back onto.
+      if (ladder) {
+        const taking = state.cargo && state.cargo.hull === b;
+        startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y });
+        if (taking) cargoToArms();
+        return stepClimb(dt, ix, iz);
+      }
       // Into the foot of a ladder up her mast, or out over the head of one from her top. The statue on
       // her deck stays there: the mast is still her.
       const mast = aloftUp(spec, d.x, d.z, d.y, lx, lz) || aloftDown(spec, d.x, d.z, d.y, lx, lz);
@@ -1946,6 +2067,7 @@ export function createWalkMode({
       const away = hullVelocity(frame, b.v || 0);
       offDeck();
       state.grounded = false;
+      airTop = state.pos.y;
       state.swimming = false;
       state.vy = d.vy;
       state.floor = groundAt(x, z, WATER_Y);
@@ -2012,7 +2134,8 @@ export function createWalkMode({
   function rides() { return state.bike || state.mount; }
   let horse = null;
   function mount() {
-    if (!bikes || !state.active || state.paused || state.working || state.vehicle || rides()) return false;
+    // A parked body mounts too: a long route from above is ridden (goTo's `ride`).
+    if (!bikes || !(state.active || state.parked) || state.paused || state.working || state.vehicle || rides()) return false;
     if (state.carry) { blockedBy('carry'); return false; }
     if (state.digging) return false;
     if (!state.grounded || state.swimming || state.sitting || state.lying) return false;
@@ -2047,13 +2170,14 @@ export function createWalkMode({
   // Off it, and put away. Stepped off to the left, then the right, then where the saddle was,
   // whichever is somewhere to stand - the same "somewhere legal" test a landing from a boat uses.
   // A horse is wider than a frame: off it at 0.45 rather than 0.3.
-  function dismount() {
+  // `here`: where the saddle was first - the end of a ridden route, which is where the keeper clicked.
+  function dismount({ here = false } = {}) {
     const b = rides();
     if (!b) return false;
     const reach = state.mount ? 0.45 : 0.3, shore = state.mount ? MOUNT_SHORE : BIKE_SHORE;
     const lx = Math.cos(b.yaw), lz = -Math.sin(b.yaw);   // the rider's left hand
     let at = [b.x, b.z];
-    for (const side of [reach, -reach]) {
+    for (const side of here ? [0, reach, -reach] : [reach, -reach]) {
       const x = b.x + lx * side, z = b.z + lz * side;
       if (!blocked(x, z, b.y, true) && groundAt(x, z, b.y) >= shore) { at = [x, z]; break; }
     }
@@ -2183,16 +2307,27 @@ export function createWalkMode({
 
   // Walk the parked body along `points` ([[x, z], ...], local coordinates - findPath's own
   // output). Null stops it where it is. Refused unless parked: on foot the feet are yours.
-  function goTo(points) {
+  // `ride`: get on the body's own ride (F: the horse, or the Traveller's bicycle) for the way and
+  // off it at the end - main.js asks for it on a long route (RIDE_FROM). `onStuck({ x, z, next })` is
+  // called when the body gets no nearer to its next point for ROUTE_GIVE_UP on foot, with the route
+  // dropped, for main.js to plan again from where it stands; a rider stuck gets off first and walks on.
+  function goTo(points, { ride = false, onStuck = null } = {}) {
     if (!state.parked) return false;
     state.route = points && points.length ? points.map(([x, z]) => [x, z]) : null;
     state.routeBest = Infinity;
     state.routeSince = 0;
+    state.routeRide = !!(ride && state.route);
+    state.routeStuck = onStuck;
+    state.routeEnd = state.route ? state.route[state.route.length - 1] : null;
+    state.routeFrom = [state.pos.x, state.pos.z];
+    // A new route on foot gets off a ride the last one left it on.
+    if (!state.routeRide && rides()) dismount();
     return true;
   }
   // Where an A* over cells may not go, for main.js to hand findPath: the same test the feet
   // make, asked at a cell's middle.
-  const blockedAt = (x, z) => blocked(x, z, undefined, true);
+  // `pad` widens the body (see blocked).
+  const blockedAt = (x, z, pad = 0) => blocked(x, z, undefined, true, undefined, pad);
   // The floor a body standing at `from` finds at (x, z), or null when it could not be put there.
   const standFloor = (x, z, from = Infinity) => {
     const y = groundAt(x, z, from);
@@ -2214,7 +2349,7 @@ export function createWalkMode({
     if (state.bike && rideKind() !== 'bike') dismount();
     if (state.mount && rideKind() !== 'horse') dismount();
     // A new look must not drop what the hands are doing: the rig starts from empty hands.
-    if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true);
+    if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true, { quiet: true });
     if (state.digging && classicAvatar.dig) classicAvatar.dig(true);
   }
 
@@ -2260,6 +2395,7 @@ export function createWalkMode({
     padJump = p.down('jump');
     if (p.hit('crouch') && !rides()) crouchToggle();
     if (p.hit('dance')) danceToggle();
+    if (p.hit('putDown')) setDown();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
     const held = p.down('crouch');
@@ -2305,21 +2441,116 @@ export function createWalkMode({
 
   // A parked body's input: towards the next point of its route, as the (ix, iz) the keys
   // would give with the camera looking along +z (camYaw 0: forward is +z, right is -x).
-  // A point is reached at ROUTE_NEAR; a body that has not got nearer for ROUTE_GIVE_UP
-  // seconds (a wall the cell grid did not know about, another player) stops and sleeps.
-  const ROUTE_NEAR = 0.35, ROUTE_GIVE_UP = 2;
-  function routeInput(dt) {
+  // The body keeps to the line it was planned on (body-route.js asks a body CLEAR_PAD wider along
+  // it, no more): it aims ROUTE_LOOK along the line from the point it last passed, and passes a point
+  // within ROUTE_NEAR of it, or once it is beyond it along the line and no further than that off it.
+  // Passing at 0.35 and heading straight for the next point from there walked a line beside the planned
+  // one, into the corner of a house it had been planned past. A body that has not got nearer for
+  // ROUTE_GIVE_UP seconds (another player, a building put up meanwhile) is stuck (routeStuck).
+  const ROUTE_NEAR = 0.1, ROUTE_LOOK = 0.3, ROUTE_GIVE_UP = 2;
+  // Drops the points passed at (x, z) with `near` as above; the point to steer at, or null at the end.
+  function routeAim(x, z, near, look) {
     const r = state.route;
-    while (r && r.length && Math.hypot(r[0][0] - state.pos.x, r[0][1] - state.pos.z) < (r.length > 1 ? ROUTE_NEAR : 0.15)) {
-      r.shift();
+    while (r && r.length) {
+      const p = r[0], o = state.routeFrom || p;
+      const sx = p[0] - o[0], sz = p[1] - o[1], len = Math.hypot(sx, sz);
+      const d = Math.hypot(p[0] - x, p[1] - z);
+      const end = r.length === 1;
+      const beyond = len > 1e-6 && ((x - p[0]) * sx + (z - p[1]) * sz) / len > 0
+        && Math.abs(((x - o[0]) * sz - (z - o[1]) * sx) / len) < near;
+      if (d >= (end ? Math.max(near, 0.15) : near) && !(beyond && !end)) break;
+      state.routeFrom = r.shift();
       state.routeBest = Infinity;
     }
-    if (!r || !r.length) { state.route = null; return [0, 0]; }
-    const dx = r[0][0] - state.pos.x, dz = r[0][1] - state.pos.z;
+    if (!r || !r.length) { state.route = null; return null; }
+    const p = r[0], o = state.routeFrom;
+    if (!o) return p;
+    const sx = p[0] - o[0], sz = p[1] - o[1], len = Math.hypot(sx, sz);
+    if (len < 1e-6) return p;
+    const along = ((x - o[0]) * sx + (z - o[1]) * sz) / len + look;
+    return along >= len ? p : [o[0] + (sx * Math.max(0, along)) / len, o[1] + (sz * Math.max(0, along)) / len];
+  }
+  // How far the body is from the point it is making for, counted as progress: a body held up gets no
+  // nearer for ROUTE_GIVE_UP and is stuck.
+  function routeProgress(x, z, dt) {
+    const p = state.route[0];
+    const d = Math.hypot(p[0] - x, p[1] - z);
+    if (d < state.routeBest - 0.02) { state.routeBest = d; state.routeSince = 0; return true; }
+    if ((state.routeSince += dt) > ROUTE_GIVE_UP) { routeStuck(); return false; }
+    return true;
+  }
+  function routeInput(dt) {
+    const aim = routeAim(state.pos.x, state.pos.z, ROUTE_NEAR, ROUTE_LOOK);
+    if (!aim || !routeProgress(state.pos.x, state.pos.z, dt)) return [0, 0];
+    const dx = aim[0] - state.pos.x, dz = aim[1] - state.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d < state.routeBest - 0.02) { state.routeBest = d; state.routeSince = 0; }
-    else if ((state.routeSince += dt) > ROUTE_GIVE_UP) { state.route = null; return [0, 0]; }
+    if (d < 1e-6) return [0, 0];
     return [-dx / d, dz / d];
+  }
+  // Got no nearer for ROUTE_GIVE_UP: off the ride and on along the same route on foot (a horse is wider
+  // than a body and turns wide), or, on foot, the route dropped and main.js told, which plans again.
+  function routeStuck() {
+    state.routeBest = Infinity;
+    state.routeSince = 0;
+    if (rides()) { state.routeRide = false; dismount(); return; }
+    const next = state.route && state.route[0];
+    const cb = state.routeStuck;
+    state.route = null;
+    state.routeRide = false;
+    state.routeStuck = null;
+    if (cb) cb({ x: state.pos.x, z: state.pos.z, next });
+  }
+
+  // A route ridden (goTo's `ride`): the reins and the bars as a rider would hold them. Turned towards
+  // the next point, at a pace the turn and what is left of the way allow - a trot along the streets, a
+  // gallop on a long straight while the body's pool lasts (the same pool Shift spends, so a spent one is
+  // a trot), a walk into a tight corner and up to the end. Returns [turn, rein, gallop], walk.js's ix/iz.
+  const RIDE_NEAR = 0.5;           // a point is passed this close on horseback: it turns wider than feet
+  const RIDE_LOOK = 0.8;           // and it looks further along the line, or it weaves along it
+  const RIDE_CORNER = 0.55;        // radians off the next point: slow to the corner pace
+  const RIDE_CORNER_V = 1.2;       // the corner pace: at MOUNT_TURN a turn this fast is 0.46 round, inside RIDE_NEAR
+  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/s²)
+  const RIDE_GALLOP_RUN = 2.5;     // units of straight way ahead before a gallop is worth it
+  const BIKE_CRUISE = 3.5;         // a bicycle on a route keeps to this, well under BIKE_TOP
+  function rideInput(dt) {
+    const b = rides();
+    const aim = routeAim(b.x, b.z, RIDE_NEAR, RIDE_LOOK);
+    if (!aim || !routeProgress(b.x, b.z, dt)) return [0, 0, false];
+    const r = state.route;
+    const ax = aim[0] - b.x, az = aim[1] - b.z;
+    const dx = r[0][0] - b.x, dz = r[0][1] - b.z;
+    const d = Math.max(1e-6, Math.hypot(dx, dz));
+    let err = Math.atan2(ax, az) - b.yaw;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    // What is left, and how much of it runs on straight ahead of the next point.
+    let left = d, straight = d, bent = false;
+    for (let i = 1; i < r.length; i++) {
+      const ax = r[i][0] - r[i - 1][0], az = r[i][1] - r[i - 1][1], len = Math.hypot(ax, az);
+      left += len;
+      if (!bent && len > 1e-6 && (ax * dx + az * dz) / (len * d) > 0.97) straight += len;
+      else bent = true;
+    }
+    const top = state.mount ? MOUNT_TOP * MOUNT_GALLOP : BIKE_CRUISE;
+    // Whatever is ahead (a corner at the corner pace, the end at a walk) is reached in time: a pace
+    // that can still come down to it in the way there is left.
+    const reach = (v, way) => Math.sqrt(v * v + 2 * RIDE_BRAKE * Math.max(0, way));
+    let want = Math.min(top, reach(0.5, left - 0.3));
+    if (bent) want = Math.min(want, reach(RIDE_CORNER_V, straight - RIDE_NEAR));
+    if (Math.abs(err) > RIDE_CORNER) want = Math.min(want, RIDE_CORNER_V * (Math.abs(err) > 1.6 ? 0.4 : 1));
+    const gallop = !!state.mount && Math.abs(err) < 0.2 && straight > RIDE_GALLOP_RUN && want > MOUNT_TOP * 1.1;
+    const pace = state.mount ? (gallop ? MOUNT_TOP * MOUNT_GALLOP : MOUNT_TOP) : BIKE_TOP;
+    // Going too fast for that: the reins or the brakes, not only easing off (which a bicycle takes
+    // seconds to feel).
+    const rein = b.v > want + 0.3 ? -clamp((b.v - want) / 1.5, 0.2, 1) : clamp(want / pace, 0, 1);
+    // `yaw -= turn * rate` in both stepMount and stepBike: a positive turn is to the right.
+    return [clamp(-err * 3, -1, 1), rein, gallop];
+  }
+  // On at the start of a ridden route, off at its end - or, where there is no room for the horse, the
+  // route is simply walked.
+  function rideRoute() {
+    if (!state.route || !state.routeRide || rides()) return;
+    if (!mount()) state.routeRide = false;
   }
 
   // Sent home by the sea (`evicted` after a capture or a drowning), the body first goes down
@@ -2331,6 +2562,9 @@ export function createWalkMode({
   // body cannot (a hull, a saddle, a ladder, a seat) and the jump should be at once. In the
   // water whatever did it, the body sinks: drowning or not, nobody falls over afloat.
   function die(kind) {
+    // What the arms carry stays behind where the body goes down - before any answer, since a body
+    // that cannot play a death is still taken home.
+    if (state.carry) letGo('die');
     if (!state.active || state.parked || state.vehicle || rides() || state.deck || climb || state.sitting) return 0;
     cancelDig('hit');
     state.dancing = false;
@@ -2381,6 +2615,11 @@ export function createWalkMode({
       state.camYaw = 0;
     }
     if (ownTipsy) stepTipsy(state.tipsy, dt);
+    // The horse's pool fills whenever nobody is on it, whatever the body is doing meanwhile (as the
+    // boat's does): ridden, stepMount below spends or fills it by the gait. One pool per walk mode,
+    // not per horse - F always gives you the same one - so a horse left blown is blown when you
+    // get back on, unless it has stood long enough.
+    if (!state.mount) stepPool(state.stamina.horse, false, dt);
     if (state.dying) return stepDying(dt);
     // Quicker on the move and quicker still at a run, going by last frame's gait. A phase
     // that is added to rather than a time that is multiplied, or every change of gait would
@@ -2398,7 +2637,7 @@ export function createWalkMode({
 
     // Shift, or the pad's sprint toggle (which the phone's touchpad drives too). What it
     // means depends on where you are, and is decided below; this is only the asking.
-    const boost = keys.has('shift') || stick.run;
+    let boost = keys.has('shift') || stick.run;
     let ix = 0, iz = 0;
     if (keys.has('w') || keys.has('arrowup')) iz += 1;
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
@@ -2409,7 +2648,24 @@ export function createWalkMode({
     const keyX = ix, stickX = stick.x, stickZ = stick.z;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
-    if (state.parked) [ix, iz] = routeInput(dt);
+    if (state.parked) {
+      rideRoute();
+      if (state.routeRide && rides()) [ix, iz, boost] = rideInput(dt);
+      else [ix, iz] = routeInput(dt);
+      // There: reined in, off where the saddle is, and the last step or two on foot.
+      if (!state.route && state.routeRide) state.routeRide = false;
+      if (!state.route && rides() && Math.abs(rides().v) < 0.3) {
+        dismount({ here: true });
+        const end = state.routeEnd;
+        state.routeEnd = null;
+        if (end && Math.hypot(end[0] - state.pos.x, end[1] - state.pos.z) > 0.15) {
+          state.route = [end];
+          state.routeFrom = [state.pos.x, state.pos.z];
+          state.routeBest = Infinity;
+          state.routeSince = 0;
+        }
+      }
+    }
 
     plane = null;
     if (climb) return stepClimb(dt, ix, iz);
@@ -2521,20 +2777,27 @@ export function createWalkMode({
 
     // ---- on horseback -----------------------------------------------------------------
     // The bicycle's shape, on four legs (web/js/mount.js): W and S the reins, A and D the turn,
-    // Shift the gallop out of the body's pool. A rider's head is MOUNT_HEAD higher than a walker's,
-    // so a lid low enough to duck under on foot (a deck, the quay) stops the horse, not only a jump.
+    // Shift the gallop out of the horse's own pool (stamina.js HORSE, spent and filled by the gait in
+    // stepMount); the rider sits and spends nothing, so both of his pools fill underneath. A rider's
+    // head is MOUNT_HEAD higher than a walker's, so a lid low enough to duck under on foot (a deck,
+    // the quay) stops the horse, not only a jump.
     if (state.mount) {
       const m = state.mount;
-      const turbo = stepPool(state.stamina.body, boost && iz > 0.02, dt);
+      stepPool(state.stamina.body, false, dt);
       stepPool(state.stamina.boat, false, dt);
-      state.turbo = turbo;
+      // A route ridden from above gallops for nothing, as feet on one sprint for nothing (below): the
+      // horse's pool is a game in the saddle (Martijn, 8 October 2026: "gratis paard sprint van
+      // boven"), so it is handed no pool and fills meanwhile as if standing.
+      const skyRide = state.parked && state.routeRide;
+      if (skyRide) stepPool(state.stamina.horse, false, dt);
       const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
-      stepMount(m, { rein: iz, turn, gallop: turbo, hop: hopWanted }, dt, {
+      stepMount(m, { rein: iz, turn, gallop: boost && iz > 0.02, hop: hopWanted, pool: skyRide ? null : state.stamina.horse }, dt, {
         ground: (x, z) => groundAt(x, z, m.air ? m.floor : m.y),
         blocked: (x, z) => blocked(x, z, m.y),
         ceiling: (x, z) => ceilingAt(x, z, m.floor) - HEAD - MOUNT_HEAD,
       });
       hopWanted = false;
+      state.turbo = m.gallop;
       if (m.splash) {
         putBikeAway();
         state.pos.set(m.x, WATER_Y - SWIM_SINK, m.z);
@@ -2566,13 +2829,11 @@ export function createWalkMode({
     // ---- at the foot of a rope ladder --------------------------------------------------
     // From the water or a quay, pushing at the hull of a ship: no key, you just climb.
     if (state.grounded && !state.sitting && !state.lying && !state.parked) {
+      // Carrying is no bar: the load goes on the back for the climb (classic-avatar.js CARRIED_BACK).
       const at = ladderAhead(ix, iz);
-      // A rope ladder wants both hands.
-      if (at && state.carry) blockedBy('carry');
-      else if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
-      const still = !at && !state.swimming && !state.dive && !rides() ? fixedAhead(ix, iz) : null;
-      if (still && state.carry) blockedBy('carry');
-      else if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
+      if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
+      const still = !state.swimming && !state.dive && !rides() ? fixedAhead(ix, iz) : null;
+      if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
     }
 
     const push = Math.min(1, Math.hypot(ix, iz));
@@ -2730,7 +2991,7 @@ export function createWalkMode({
       // the island, a hand or a storey alike (the keeper: "instant omlaag teleporteren ipv
       // vallen"). A step down within STEP_DOWN is still followed, so stairs, slopes and kerbs
       // are walked as they always were.
-      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; }
+      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; airTop = state.pos.y; }
       else state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
@@ -2749,10 +3010,21 @@ export function createWalkMode({
         if (plunge) { state.dive = true; state.vy = plunge; }
         else { state.pos.y = underfoot; state.vy = 0; }
         state.grounded = true;
+        // Down from too high with her in the arms: she is thrown out of them where you land (or, in
+        // the water, onto the shore you came from - letGo).
+        if (state.carry && airTop - state.pos.y > CARRY_FALL) letGo('fall');
+        airTop = -Infinity;
       }
     }
     state.swimming = state.dive || (state.grounded && inWater && !state.sitting);
     state.diving = state.dive && headUnder(state.pos.y, WATER_Y);
+    // The statue is too heavy to swim with: in water deep enough to dive in she slips out of the arms
+    // and lies on the last dry ground she was carried over. Wading the shallows - the rowing boat lies
+    // at ROW_DEPTH, well above that - keeps her.
+    if (state.carry) {
+      if (state.dive || (state.swimming && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y))) letGo('water');
+      else { const d = dryHere(); if (d) lastDry = d; }
+    }
 
     // Standing still with C held long enough is a decision to stop for the day, and it
     // outlasts the key: once down, the settler stays down until they move or press C
@@ -2878,6 +3150,8 @@ export function createWalkMode({
       if (state.crouching) avatar.scale.set(1, 0.82, 1);
     }
 
+    stepOffEase(dt);
+
     // C is "swim down" to a diver, not a crouch: the rig would fold its legs for it.
     const stoop = state.crouching && !state.dive;
     classicAvatar.update({
@@ -2890,6 +3164,9 @@ export function createWalkMode({
       dancing: dancingNow(),
       dying: state.dying,
       climbing: climb ? state.climbing : null,
+      // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
+      // its pose across the ends of (classic-avatar.js LADDER_FADE)
+      onLadder: !!climb,
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');
@@ -3245,6 +3522,9 @@ export function createWalkMode({
     // Going down before the jump home (main.js sentHome): die('fall' | 'drown') -> seconds, 0 when
     // this body cannot; revive() ends it (exit() does too); dying() is { kind, t } or null.
     die, revive, dying: () => state.dying,
+    // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
+    // giving out - both end in the constructor's onLetGo with where she lies.
+    setDown, letGo,
     lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
