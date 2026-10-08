@@ -912,6 +912,9 @@ function sentHome(m) {
   const settled = m.why === 'settled';
   // Asked for (Respawn to town, issue #74), by the sea or by respawnHere: nobody sent us.
   const asked = m.why === 'respawn';
+  // Whatever the arms carried stays where the body was: nobody is carried home with the statue -
+  // a Respawn to town with her in the arms would be the quickest delivery there is.
+  if (state.walk && state.walk.carrying()) state.walk.letGo('home');
   // Black until the island we land on has its people placed (respawnFade): it may not have been
   // followed (`want`), and they come one round trip after we do.
   respawnFade();
@@ -2574,7 +2577,7 @@ function touchHud(near, walk) {
       : near.kind === 'board' || near.kind === 'issues' ? 'Read'
         : near.kind === 'bed' ? '' : 'Talk';
   state.touch.caption(word);
-  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater(), walk.riding && walk.riding(), walk.rideKind ? walk.rideKind() : 'bike');
+  state.touch.setHands(walk.onFoot() ? { leftArm: walk.handAction('leftArm'), rightArm: walk.handAction('rightArm') } : null, walk.inWater(), walk.riding && walk.riding(), walk.rideKind ? walk.rideKind() : 'bike', !!(walk.carrying && walk.carrying()));
 }
 
 // A tap on the look side of the phone: who is that? The mouse's hover label, asked for once.
@@ -9167,7 +9170,11 @@ Everything is copied and checked first; the island then starts again there. The 
     onDigCancelled: (reason) => { if (state.hunt) state.hunt.onDigCancelled(reason); },
     onBlocked: (reason) => {
       if (reason === 'carry') state.ui.toast('Your hands are full: you are carrying the statue.');
+      if (reason === 'set') state.ui.toast('Not here: set her down on dry ground in front of you.');
     },
+    // The statue out of the arms and onto the ground (H, deep water, a fall, a death): the hunt keeps
+    // where she lies (treasure.js letGo).
+    onLetGo: (item, at) => { if (state.hunt) state.hunt.letGo(item, at); },
   });
   state.walk.setBoats(() => state.boats);   // the ladders on their sides
   handOutDecks();                    // buildScene ran before there was a walk mode to tell

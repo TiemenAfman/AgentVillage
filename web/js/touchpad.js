@@ -55,6 +55,8 @@ const ICONS = {
   horse: '<path d="M8 21l1-6-4-2 2-5 5-4 1-2 2 3c3 2 4 6 4 10v6"/><path d="M10 9h.01"/>',
   sword: '<path d="M19 4l1 1-10.5 10.5-2-2zM6 12l6 6M4.5 19.5l3-3"/>',
   shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+  // Setting the statue down: a load over a line of ground, an arrow down onto it.
+  putDown: '<path d="M12 3v9M8 8l4 4 4-4"/><path d="M7 15h10v4H7zM4 21h16"/>',
   mug: '<path d="M6 8h9v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM15 11h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2M6 8c0-2 2-3 4-2 1-2 5-2 5 1"/>',
 };
 
@@ -73,6 +75,7 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
     + btn('tp-foot', 'data-b="Y" aria-label="Bicycle" hidden', -32, -24, ICONS.bike, 'Y')
     + btn('tp-foot', 'data-b="B" aria-label="Crouch" hidden', 84, -44, ICONS.crouch, 'B')
     + btn('tp-x', 'data-b="X" aria-label="Interact"', -72, 70, ICONS.talk, 'X').replace('</button>', '<span class="tp-say"></span></button>')
+    + btn('tp-carry', 'data-b="DOWN" aria-label="Set down" hidden', -78, 14, ICONS.putDown, null)
     + btn('tp-hand tp-foot', 'data-hand="leftArm" aria-label="Left hand" hidden', 92, 26, '', null)
     + btn('tp-hand tp-foot', 'data-hand="rightArm" aria-label="Right hand" hidden', 40, 86, '', null)
     + '</div>';
@@ -223,7 +226,11 @@ export function createTouchPad(root = document.body, { onTap = null, onHand = nu
   // with the hands left a rider who could never get down.
   // `ride` is what Y gives the body worn: 'horse' (the Adventurer) or 'bike'.
   let rideIcon = 'bike';
-  function setHands(what, swimming = false, riding = false, ride = 'bike') {
+  // `carrying` shows the set-down button (the pad's d-pad down, walk.js setDown) while the arms hold
+  // the statue, and only then: there is nothing else on foot to put down.
+  const carryBtn = layer.querySelector('[data-b="DOWN"]');
+  function setHands(what, swimming = false, riding = false, ride = 'bike', carrying = false) {
+    if (carryBtn) carryBtn.hidden = !carrying;
     if (ride !== rideIcon) {
       rideIcon = ride === 'horse' ? 'horse' : 'bike';
       const y = layer.querySelector('[data-b="Y"]');

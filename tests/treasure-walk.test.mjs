@@ -45,13 +45,22 @@ const memory = () => {
   return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } };
 };
 
+// A key pressed or let go of, through the handlers walk.js registered on the global window.
+const key = (k, down = true) => {
+  const e = { key: k, repeat: false, ctrlKey: false, metaKey: false, altKey: false, target: {}, preventDefault: noop };
+  for (const fn of handlers[down ? 'keydown' : 'keyup']) fn(e);
+};
 function assemble() {
   handlers.keydown.length = 0;
   handlers.keyup.length = 0;
   U.resetUnlocks();
   const scene = new THREE.Scene();
   const material = new THREE.MeshBasicMaterial();
-  const sea = { height: () => 1, bedAt: () => 1, regionAt: () => null, levelKey: () => null };
+  // The ground under the walker: dry at 1 everywhere unless a test reshapes it (`land.at`), the
+  // sea bed and the surface reading the same function.
+  const land = { at: () => 1 };
+  const sea = { height: (x, z) => land.at(x, z), bedAt: (x, z) => land.at(x, z), regionAt: () => null, levelKey: () => null };
+  const blocked = [];
   const terrain = { half: 64, size: 128, worldHeight: () => 1 };
   const toasts = [], posts = [];
   let hunt;
@@ -60,6 +69,8 @@ function assemble() {
     dom: { addEventListener: noop, removeEventListener: noop, requestPointerLock: undefined, style: {} },
     onDigDone: (x, z, info) => hunt.onDigDone(x, z, info),
     onDigCancelled: (why) => hunt.onDigCancelled(why),
+    onBlocked: (why) => blocked.push(why),
+    onLetGo: (item, at) => hunt.letGo(item, at),
   });
   const log = createQuestLog({
     storage: memory(), unlock: U.unlock,
@@ -86,7 +97,15 @@ function assemble() {
   walk.enter({ at: [site.x - 1.2, site.z], facing: [site.x, site.z], blockers: [], interactables: hunt.interactables(), onExit: noop });
   // What main.js does every frame, in its order: the walker, then the hunt.
   const run = (seconds) => { let peak = 0; for (let i = 0; i < Math.round(seconds / FRAME); i++) { walk.update(FRAME); hunt.frame(FRAME, i * FRAME); peak = Math.max(peak, view.grains()); } return peak; };
-  return { walk, hunt, view, scene, material, toasts, posts, log, site, run };
+  // Dug up and lifted, standing where the dig left the walker: the start of every carrying test.
+  const carry = () => {
+    run(0.1);
+    hunt.interact(hunt.interactables().find((i) => i.kind === 'dig'));
+    run(3);
+    hunt.interact(hunt.interactables().find((i) => i.kind === 'lift'));
+    assert.equal(walk.carrying(), 'statue');
+  };
+  return { walk, hunt, view, scene, material, toasts, posts, log, site, run, land, carry, blocked };
 }
 
 test('E at the statue X: the body turns, the shovel goes in for 2.5 s and the statue comes up out of the sand', () => {
@@ -170,4 +189,127 @@ test('on a boat she is the baked statue, sized for the rowing boat, and the hull
   mesh.geometry.addEventListener('dispose', () => disposed++);
   craft.setCargo(null);
   assert.equal(disposed, 1, 'a geometry made for the boat is freed with the cargo');
+});
+
+// ---- setting her down and letting go (Plans/schatkaarten.md, "Neerzetten en laten vallen") ----
+
+// Walk the way the body faces until `until()` (or `frames` run out), the hunt stepped after the walk.
+function walkOn(walk, hunt, until, frames = 600) {
+  walk.state.camYaw = walk.state.yaw;
+  key('w');
+  for (let i = 0; i < frames && !until(); i++) { walk.update(FRAME); hunt.frame(FRAME, i * FRAME); }
+  key('w', false);
+}
+
+test('H sets the statue down a step ahead; she lies there and E lifts her again', () => {
+  const { walk, hunt, posts, log, run, carry } = assemble();
+  carry();
+  const { x, z } = walk.state.pos, yaw = walk.state.yaw;
+  key('h'); key('h', false);
+  assert.equal(walk.carrying(), null, 'the arms are empty');
+  run(0.1);
+  const [lying] = hunt.sites();
+  assert.equal(lying.kind, 'statue');
+  assert.equal(lying.stage, 'unearthed');
+  assert.ok(Math.abs(lying.x - (x + Math.sin(yaw) * 0.6)) < 1e-6 && Math.abs(lying.z - (z + Math.cos(yaw) * 0.6)) < 1e-6, 'a step ahead');
+  assert.equal(lying.y, 1, 'on the ground');
+  assert.deepEqual(posts, ['lifted', 'dropped']);
+  assert.equal(log.view().active.goal, 'Put the statue in the rowing boat');
+  const lift = hunt.interactables().find((i) => i.kind === 'lift');
+  assert.ok(lift, 'within reach to lift again');
+  hunt.interact(lift);
+  assert.equal(walk.carrying(), 'statue');
+  assert.equal(log.view().active.goal, 'Put the statue in the rowing boat', 'and the story is where it was');
+});
+
+test('H refuses water and a ledge too high to stand on, and says so', () => {
+  const { walk, hunt, run, land, carry, blocked } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const edge = walk.state.pos.x + dir * 0.3;
+  // Water half a step ahead.
+  land.at = (x) => ((x - edge) * dir > 0 ? -1 : 1);
+  assert.equal(walk.setDown(), false);
+  assert.equal(walk.carrying(), 'statue');
+  assert.deepEqual(blocked, ['set']);
+  // A ledge too high to stand on: a roof, a wall of rock.
+  land.at = (x) => ((x - edge) * dir > 0 ? 2.5 : 1);
+  assert.equal(walk.setDown(), false);
+  assert.equal(walk.carrying(), 'statue');
+  land.at = () => 1;
+  run(0.1);
+  assert.equal(walk.setDown(), true);
+  assert.equal(hunt.sites()[0].kind, 'statue');
+});
+
+test('into deep water she slips from the arms and lies on the shore you waded in from', () => {
+  const { walk, hunt, posts, log, land, carry } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const shore = walk.state.pos.x + dir * 0.8;
+  // Dry to the shore, then the shallows, then deep water.
+  land.at = (x) => { const d = (x - shore) * dir; return d < 0 ? 1 : d < 1 ? -0.2 : -2; };
+  let lastDryX = null;
+  walkOn(walk, hunt, () => {
+    if (walk.carrying() && (walk.state.pos.x - shore) * dir < 0) lastDryX = walk.state.pos.x;
+    return !walk.carrying();
+  });
+  assert.equal(walk.carrying(), null, 'out of her arms');
+  assert.equal(walk.state.swimming, true, 'the walker swims on');
+  const [lying] = hunt.sites();
+  assert.equal(lying.kind, 'statue');
+  assert.ok((lying.x - shore) * dir < 0, `on dry ground before the shore, not in the water (${lying.x} vs ${shore})`);
+  assert.ok(Math.abs(lying.x - lastDryX) < 0.1, 'where the feet last stood dry');
+  assert.equal(lying.y, 1);
+  assert.equal(posts.at(-1), 'dropped');
+  assert.equal(log.view().active.goal, 'Put the statue in the rowing boat');
+});
+
+test('wading the shallows - where the rowing boat lies - keeps her in the arms', () => {
+  const { walk, hunt, run, land, carry } = assemble();
+  carry();
+  // Low dry sand, then the shallows at ROW_DEPTH out past the end of the walk.
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const shore = walk.state.pos.x + dir * 0.3;
+  land.at = (x) => ((x - shore) * dir < 0 ? 0.1 : -0.3);
+  walk.state.pos.y = 0.1; walk.state.floor = 0.1;
+  walkOn(walk, hunt, () => false, 240);
+  assert.equal(walk.state.swimming, true, 'in the water');
+  assert.equal(walk.carrying(), 'statue');
+  assert.equal(hunt.sites().length, 0);
+});
+
+test('a fall of more than a cell throws her out of the arms where you land', () => {
+  const { walk, hunt, run, land, carry } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const edge = walk.state.pos.x + dir * 0.5;
+  // The walker stands on a rock 3 high; past its edge the ground is 1.
+  land.at = (x) => ((x - edge) * dir < 0 ? 3 : 1);
+  walk.state.pos.y = 3; walk.state.floor = 3;
+  run(0.05);
+  assert.equal(walk.carrying(), 'statue', 'still on the rock');
+  walkOn(walk, hunt, () => !walk.carrying(), 300);
+  assert.equal(walk.carrying(), null);
+  const [lying] = hunt.sites();
+  assert.ok((lying.x - edge) * dir > 0, 'below, where the body landed');
+  assert.equal(lying.y, 1);
+});
+
+test('a short drop keeps her; a death leaves her where the body went down', () => {
+  const { walk, hunt, land, carry } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const edge = walk.state.pos.x + dir * 0.4;
+  land.at = (x) => ((x - edge) * dir < 0 ? 1.6 : 1);   // 0.6 down: a fall, but not of a cell
+  walk.state.pos.y = 1.6; walk.state.floor = 1.6;
+  walkOn(walk, hunt, () => (walk.state.pos.x - edge) * dir > 0.3, 300);
+  assert.ok((walk.state.pos.x - edge) * dir > 0 && walk.state.grounded, 'down the bank');
+  assert.equal(walk.carrying(), 'statue', 'a hop down a bank is carried on');
+  const { x, z } = walk.state.pos;
+  assert.ok(walk.die('fall') > 0);
+  assert.equal(walk.carrying(), null);
+  const [lying] = hunt.sites();
+  assert.ok(Math.abs(lying.x - x) < 1e-6 && Math.abs(lying.z - z) < 1e-6);
+  walk.revive();
 });

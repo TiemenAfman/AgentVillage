@@ -1139,13 +1139,27 @@ function buildRig(spec, material) {
   carriedMesh.castShadow = true;
   carried.add(carriedMesh);
   object.add(carried);
+  // Taking her up or setting her down (Plans/schatkaarten.md, "Neerzetten en laten vallen") is a stoop:
+  // a bow at the hips with the arms down to the ground, HANDLE_S long. Lifting starts bowed with her
+  // low in the hands and comes up with her; setting down bows, the hands empty at the ground (she lies
+  // there already: treasure-site.js draws her the same moment) and comes back up. `handling` is
+  // { t, on }; drawn by update() only, so the hands are free (or full) from the call on.
+  const HANDLE_S = 0.55, STOOP_LEAN = 0.42, STOOP_ARM = -0.85, CARRY_DROP = 0.16 * PLAYER_SCALE;
+  let handling = null;
+  // How far bowed, 0 upright .. 1 at the ground: a lift unbends, a set-down bows and unbends.
+  const stoopOf = (h) => {
+    const u = Math.min(1, h.t / HANDLE_S);
+    return h.on ? 1 - u * u * (3 - 2 * u) : Math.sin(Math.PI * u);
+  };
   // True when this call changed it. A dig in progress is put down first: the hands cannot do both.
-  function setCarry(on = true) {
+  // `{ quiet: true }` skips the stoop (a new look, a rig swapped mid-carry).
+  function setCarry(on = true, { quiet = false } = {}) {
     on = !!on;
     if (on === carrying) return false;
     if (on) dig(false);
     carrying = on;
     carried.visible = on;
+    handling = quiet ? null : { t: 0, on };
     for (const side of ['leftArm', 'rightArm']) if (heldMesh[side]) heldMesh[side].visible = !on;
     return true;
   }
@@ -1549,6 +1563,11 @@ function buildRig(spec, material) {
     // and how far the whole body bows (positive: forward) - dig() and setCarry() above.
     const armZ = { leftArm: null, rightArm: null };
     let lean = 0, digPose = null;
+    // Taking her up or setting her down: not from a saddle, a seat, the water or a ladder.
+    if (handling && (ride || horse || pose.sitting || pose.lying || pose.swimming || ladder || dead)) handling = null;
+    if (handling) { handling.t += dt; if (handling.t >= HANDLE_S) handling = null; }
+    const stoop = handling ? stoopOf(handling) : 0;
+    if (!handling) carried.position.y = CARRIED_AT[1];
     if (dug) {
       const was = dug.t;
       dug.t += dt;
@@ -1565,10 +1584,21 @@ function buildRig(spec, material) {
       targets.rightLeg = dug.side === 'rightArm' ? DIG_STANCE.back : DIG_STANCE.front;
       lean = digByClip ? 0 : digPose.lean * (fp ? 0.3 : 1);
     } else if (carryOn) {
-      targets.leftArm = targets.rightArm = CARRY_ARM;
+      const s = stoop;
+      targets.leftArm = targets.rightArm = CARRY_ARM + (STOOP_ARM - CARRY_ARM) * s;
       armZ.leftArm = CARRY_Z;
       armZ.rightArm = -CARRY_Z;
-      lean = CARRY_LEAN;
+      lean = CARRY_LEAN + (STOOP_LEAN - CARRY_LEAN) * s;
+      // The legs take the bow back off, as a dance's do, so it is a bend at the hips and not a fall.
+      if (s > 0) targets.leftLeg = targets.rightLeg = -lean;
+      carried.position.y = CARRIED_AT[1] - CARRY_DROP * s;
+    } else if (stoop > 0) {
+      // Setting her down: empty hands down to the ground and up again.
+      targets.leftArm = targets.rightArm = STOOP_ARM * stoop;
+      armZ.leftArm = CARRY_Z * stoop;
+      armZ.rightArm = -CARRY_Z * stoop;
+      lean = STOOP_LEAN * stoop;
+      targets.leftLeg = targets.rightLeg = -lean;
     } else if (rowing) {
       // At the oars (Plans/roeiboot-en-schat.md): seated on the thwart facing aft, both hands on the
       // looms. `reachOut` is 1 at the catch - blades forward, so the handles out towards the stern in
@@ -1674,7 +1704,7 @@ function buildRig(spec, material) {
     // The arms hang from a leaning torso, so the lean is added to where each one points.
     // In the air the lean is the leap's (a long jump goes forward over the front leg), and it is
     // eased either way, so neither the take-off nor the landing snaps the torso upright.
-    const bowWant = !G.leanAtHip || dug || carryOn || fp || horse ? 0
+    const bowWant = !G.leanAtHip || dug || carryOn || stoop > 0 || fp || horse ? 0
       : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend
         : flying ? mixOf(G.lean, 1, .5) * .8 * leap : 0;
     bowNow = damp(bowNow, bowWant, 10, dt);
@@ -1782,7 +1812,7 @@ function buildRig(spec, material) {
       object.rotation.set(dead.tip, 0, 0);
       if (dead.head) pieces.head.pivot.rotation.x = dead.head;
     }
-    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back, ladder });
+    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn: carryOn || stoop > 0, ride: ride || horse, gaitPose, back, ladder });
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.
@@ -2005,7 +2035,7 @@ export function createClassicAvatar(spec, material) {
     dig: (on, side) => rig.dig(on, side),
     digged: () => rig.digged(),
     digging: () => rig.digging(),
-    setCarry: (on) => rig.setCarry(on),
+    setCarry: (on, opts) => rig.setCarry(on, opts),
     carrying: () => rig.carrying(),
     get carried() { return rig.carried; },
   };
