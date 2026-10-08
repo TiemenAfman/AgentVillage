@@ -62,9 +62,10 @@ const HAMMERS = 4;
 const GULLS = 2;
 
 // Past these a voice is not placed at all, so a village that stretches across the grid
-// costs nothing for the half of it you are nowhere near. Measured in island units; the
-// grid is 64 across, so 70 is "anywhere on this island" and no further.
-const HAMMER_RANGE = 70;
+// costs nothing for the half of it you are nowhere near. Measured in island units. The hammers
+// were 70 ("anywhere on a 64 island") and carried across the whole town (the keeper, 8 October
+// 2026): a builder is heard from a street or two off now, and softly.
+const HAMMER_RANGE = 30;
 const GULL_RANGE = 75;
 const TAVERN_RANGE = 35;
 const BORREL_RANGE = 70;
@@ -88,6 +89,10 @@ const BELLS = 2;
 const CRAFTS = 4;
 const WORKERS = 4;
 const CRAFT_RANGE = 55;
+// The smith's anvil rang across half the island at CRAFT_RANGE (the keeper, 8 October 2026):
+// heard from his own street and not much further.
+const SMITH_RANGE = 25;
+const SMITH_LOUD = 0.4;
 const WORK_RANGE = 45;
 const SAW_RANGE = 45;
 // What each word in the crowd sounds like, and how often it is heard while somebody keeps at it.
@@ -564,9 +569,16 @@ const burst = (n, sr, rng, f, q, d, a = 1) => {
 };
 const add = (a, b) => { for (let i = 0; i < a.length; i++) a[i] += b[i]; return a; };
 const CRAFT_SHOTS = {
-  // Steel on steel: the anvil's inharmonic ring over the tick of the hammer face.
-  anvil: (c) => shot(c, 0.8, 'anvil', (n, sr, rng) => add(ring(n, sr, [[820, 1, 0.5], [2263, 0.6, 0.3], [4428, 0.35, 0.16], [7323, 0.2, 0.08]]),
-    burst(n, sr, rng, 4200, 1.5, 0.005, 2)), 0.1),
+  // Steel on steel: a dull clank, not a note. It was four clean sines ringing for half a second,
+  // which is a xylophone (the keeper, 8 October 2026); now the ring is narrow bands of noise that
+  // die in a tenth of a second, under the knock of the hammer face, so no pitch is left to hear.
+  anvil: (c) => shot(c, 0.45, 'anvil', (n, sr, rng) => {
+    const out = burst(n, sr, rng, 1350, 14, 0.07, 1);
+    add(out, burst(n, sr, rng, 2870, 18, 0.05, 0.6));
+    add(out, burst(n, sr, rng, 4630, 20, 0.03, 0.35));
+    add(out, ring(n, sr, [[310, 0.5, 0.03]]));
+    return add(out, lowpass(burst(n, sr, rng, 2600, 1.2, 0.004, 1.6), sr, 5000));
+  }, 0.1),
   // A cleaver through meat into the block: a wet thwack and the wood under it.
   cleaver: (c) => shot(c, 0.3, 'cleaver', (n, sr, rng) => add(burst(n, sr, rng, 360, 1.4, 0.04, 2), ring(n, sr, [[180, 0.7, 0.06], [310, 0.3, 0.035]])), 0.1),
   // The oven's iron door: a low knock, the ring of the plate, and the creak of the hinge before it.
@@ -1005,7 +1017,8 @@ function hammerBuffer(ctx) {
     const wood = Math.exp(-t / 0.045) * Math.sin(2 * Math.PI * t * 196) * 0.50
       + Math.exp(-t / 0.028) * Math.sin(2 * Math.PI * t * 337) * 0.30
       + Math.exp(-t / 0.016) * Math.sin(2 * Math.PI * t * 521) * 0.16;
-    out[i] = att * (tick[i] * Math.exp(-t / 0.010) * 2.2 + wood);
+    // The tick is what carries; at 2.2 it rang out over the whole town, so it is under the board now.
+    out[i] = att * (tick[i] * Math.exp(-t / 0.008) * 1.3 + wood);
   }
   const chs = [out];
   level(chs, 0.11);
@@ -1506,6 +1519,202 @@ const SHANTY_LOUD = 0.5;
 const SHANTY_OUT = 0.22;
 const SHANTY_RANGE = 22;
 
+// --- the village tavern's jazz ----------------------------------------------
+//
+// A trio in the corner of the village tavern: brushes and a ride cymbal, a walking upright bass,
+// a piano comping on the swung offbeats and a vibraphone with the tune. Its own part ('jazz', on
+// the music bus), so it is dimmed and switched apart from the tavern's chatter (Settings -> Audio;
+// the keeper, 8 October 2026). The keeper's own tracks in HOME/audio/kroeg replace it, as they
+// replace the Kraken's shanties.
+//
+// The form is thirty-two bars in F, AABA, on changes that are the common stock of a thousand
+// standards and nobody's tune; the melody is drawn from the chord tones off a seeded stream, the
+// same phrase for every A, so it comes round like a tune and not like a dice roll. Made like the
+// shanties - a bar a step, everything written modulo the loop so there is no seam - and at the
+// placed voices' 22 kHz: through a wall and a lowpass, and even inside, a vibraphone and a brush
+// lose nothing a listener in a tavern would miss, and the loop is 6 MB instead of 12.
+export const JAZZ_SONG = { bpm: 112, bars: 32 };
+const JAZZ_A = [['F:maj7'], ['D:7'], ['G:m7'], ['C:7'], ['A:m7', 'D:7'], ['G:m7', 'C:7'], ['F:maj7', 'D:7'], ['G:m7', 'C:7']];
+const JAZZ_B = [['C:m7', 'F:7'], ['Bb:maj7'], ['Bb:m7', 'Eb:7'], ['A:m7', 'D:7'], ['G:7'], ['G:7'], ['G:m7'], ['C:7']];
+const JAZZ_FORM = [...JAZZ_A, ...JAZZ_A.slice(0, 7), ['F:maj7'], ...JAZZ_B, ...JAZZ_A.slice(0, 7), ['F:maj7']];
+const PITCH = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+// Root, third, fifth, seventh, ninth over the root, in semitones.
+const QUALITY = { maj7: [0, 4, 7, 11, 14], 7: [0, 4, 7, 10, 14], m7: [0, 3, 7, 10, 14] };
+const chordOf = (name) => { const [r, q] = name.split(':'); return { root: PITCH[r], iv: QUALITY[q] }; };
+const hzOf = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+
+function* jazzSong(ctx) {
+  const sr = HIT_SR;
+  const beat = 60 / JAZZ_SONG.bpm;
+  const n = Math.round(sr * beat * 4 * JAZZ_SONG.bars);
+  const mix = new Float32Array(n);
+  const rng = makeRng('jazz');
+  const put = (src, i0, gain) => { for (let i = 0; i < src.length; i++) mix[(i0 + i) % n] += src[i] * gain; };
+  const env = (len, fn) => { const a = new Float32Array(Math.floor(len * sr)); for (let i = 0; i < a.length; i++) a[i] = fn(i / sr, i); return a; };
+  const att = (t, s = 0.002) => Math.min(1, t / s);
+  // A time in beats from the top of the loop; an offbeat is swung, two thirds of the way through.
+  const at = (bar, b) => Math.round((bar * 4 + b) * beat * sr);
+  const SWUNG = 2 / 3;
+  // The chord sounding at beat `b` of `bar`: the first half of a two-chord bar, then the second.
+  const chordAt = (bar, b) => { const cs = JAZZ_FORM[bar % JAZZ_FORM.length]; return chordOf(cs[cs.length > 1 && b >= 2 ? 1 : 0]); };
+
+  // The kit, made once. The ride: a wash of high noise and four inharmonic rings that outlast it.
+  const rideNoise = highpass(noise(Math.floor(0.7 * sr), rng), sr, 5200);
+  const ride = env(0.7, (t, i) => (rideNoise[i] * 0.6 * Math.exp(-t / 0.18)
+    + 0.05 * Math.exp(-t / 0.45) * (Math.sin(2 * Math.PI * 3170 * t) + Math.sin(2 * Math.PI * 4630 * t) + 0.7 * Math.sin(2 * Math.PI * 5890 * t) + 0.5 * Math.sin(2 * Math.PI * 7410 * t))) * att(t, 0.001));
+  // The hi-hat closed by the foot on two and four: a short chick.
+  const chickNoise = resonate(noise(Math.floor(0.05 * sr), rng), sr, 7000, 2);
+  const chick = env(0.05, (t, i) => chickNoise[i] * Math.exp(-t / 0.012) * att(t, 0.002));
+  // The brush slapped on two and four, and the bass drum feathered on every beat.
+  const slapNoise = resonate(noise(Math.floor(0.14 * sr), rng), sr, 2400, 0.9);
+  const slap = env(0.14, (t, i) => slapNoise[i] * Math.exp(-t / 0.045) * att(t, 0.003));
+  let kp = 0;
+  const feather = env(0.16, (t) => { kp += (52 + 30 * Math.exp(-t / 0.015)) / sr; return Math.sin(2 * Math.PI * kp) * Math.exp(-t / 0.06) * att(t, 0.002); });
+  // The brush swept round the snare under all of it: noise in a band, swelling over each half bar.
+  const sweep = resonate(noise(n, rng), sr, 3000, 0.7);
+  yield;
+
+  // An upright bass note: the fundamental and a little of the octave, plucked - a thump in the
+  // first hundredth of a second, then the string dying away, and lifted off before the next.
+  const bassNotes = new Map();
+  const bassNote = (midi) => {
+    if (!bassNotes.has(midi)) {
+      const f = hzOf(midi), L = beat * 0.95;
+      bassNotes.set(midi, env(L, (t) => {
+        const a = att(t, 0.004) * Math.exp(-t / 0.5) * Math.min(1, (L - t) / 0.03);
+        return a * (Math.sin(2 * Math.PI * f * t) + 0.35 * Math.sin(4 * Math.PI * f * t) + 0.12 * Math.sin(6 * Math.PI * f * t) * Math.exp(-t / 0.05));
+      }));
+    }
+    return bassNotes.get(midi);
+  };
+  // A piano note: six partials, each a hair sharp of whole (a string's stiffness), the higher dying
+  // sooner, and a knock of the hammer at the front.
+  const pianoNotes = new Map();
+  const pianoNote = (midi, len) => {
+    const key = `${midi}:${len}`;
+    if (!pianoNotes.has(key)) {
+      const f = hzOf(midi), L = len * beat + 0.08;
+      pianoNotes.set(key, env(L, (t) => {
+        let v = 0;
+        for (let k = 1; k <= 6; k++) v += Math.sin(2 * Math.PI * f * k * (1 + 0.0004 * k * k) * t) * Math.exp(-t * (0.9 + 0.8 * k)) / Math.pow(k, 1.3);
+        return v * att(t, 0.003) * Math.min(1, (L - t) / 0.06);
+      }));
+    }
+    return pianoNotes.get(key);
+  };
+  // A vibraphone bar: the fundamental and the bar's own overtone near four times it, the motor's
+  // tremolo over both, ringing until the next note damps it.
+  const vibe = (midi, len) => {
+    const f = hzOf(midi), L = len + 0.12;
+    return env(L, (t) => (Math.sin(2 * Math.PI * f * t) + 0.22 * Math.sin(2 * Math.PI * f * 3.98 * t) * Math.exp(-t / 0.15))
+      * Math.exp(-t / 1.6) * (1 - 0.18 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 5.2 * t))) * att(t, 0.002) * Math.min(1, (L - t) / 0.1));
+  };
+  // The piano's shell voicing: third, seventh and ninth, kept between E3 and E4.
+  const voicing = (c) => [c.iv[1], c.iv[3], c.iv[4]].map((iv) => { let m = 48 + ((c.root + iv) % 12); if (m < 52) m += 12; return m; });
+  // Where the piano lands in a bar, in beats: the and of one and three, the and of two, a
+  // charleston, two pushes. One picked a bar.
+  const COMPS = [[SWUNG, 2 + SWUNG], [1 + SWUNG], [0, 1 + SWUNG], [1, 3 + SWUNG], [SWUNG, 2]];
+  yield;
+
+  // The tune: a phrase a bar for the A, another for the bridge, drawn once each and played every
+  // time the section comes round. A note is [start in beats, length in beats]; its pitch is the
+  // chord tone nearest a line that wanders a step or two from the last note.
+  const RHYTHMS = [
+    [[0, 1.5], [1 + SWUNG, 1.33], [3, 1]],
+    [[SWUNG, 0.8], [1 + SWUNG, 2]],
+    [[0, 2.5], [3, 1]],
+    [[0, 0.67], [SWUNG, 0.33], [1, 1], [2 + SWUNG, 1.33]],
+    [[0, 3.5]],
+    [],
+  ];
+  const phrases = (seed, bars) => {
+    const r = makeRng(`jazz:${seed}`);
+    let last = 69;
+    return bars.map((cs, bar) => {
+      // Every fourth bar breathes out: a long note or nothing, which is where a phrase ends.
+      const rhythm = bar % 4 === 3 ? RHYTHMS[4 + Math.floor(r.next() * 2)] : RHYTHMS[Math.floor(r.next() * 4)];
+      return rhythm.map(([b, len]) => {
+        const c = chordOf(cs[cs.length > 1 && b >= 2 ? 1 : 0]);
+        const aim = Math.min(79, Math.max(62, last + Math.round((r.next() - 0.5) * 7)));
+        let best = last, bestD = Infinity;
+        for (let m = 60; m <= 81; m++) {
+          if (!c.iv.slice(1).some((iv) => (c.root + iv) % 12 === m % 12)) continue;
+          const d = Math.abs(m - aim) + (m === last ? 2 : 0);
+          if (d < bestD) { best = m; bestD = d; }
+        }
+        last = best;
+        return [b, len, best];
+      });
+    });
+  };
+  const tuneA = phrases('a', JAZZ_A), tuneB = phrases('b', JAZZ_B);
+  yield;
+
+  for (let bar = 0; bar < JAZZ_SONG.bars; bar++) {
+    const section = Math.floor(bar / 8);           // A A B A
+    const b0 = at(bar, 0), len = at(bar + 1, 0) - b0;
+    // The drums: ding, ding-da-ding on the ride, the foot's chick and the brush on two and four.
+    for (let b = 0; b < 4; b++) {
+      put(ride, at(bar, b), b % 2 ? 0.34 : 0.26);
+      if (b % 2) {
+        put(ride, at(bar, b + SWUNG), 0.18);
+        put(chick, at(bar, b), 0.3);
+        put(slap, at(bar, b), 0.16);
+      }
+      put(feather, at(bar, b), 0.12);
+    }
+    for (let i = 0; i < len; i++) {
+      const k = (i / len) * 2;
+      mix[(b0 + i) % n] += sweep[(b0 + i) % n] * 0.05 * (0.4 + 0.6 * Math.sin(Math.PI * (k - Math.floor(k))));
+    }
+    // The bass walks: the root on the chord's first beat, a chord tone or two, and the last beat
+    // of each chord a half step off the next root, from above or below.
+    for (let b = 0; b < 4; b++) {
+      const c = chordAt(bar, b);
+      const twoChords = JAZZ_FORM[bar % JAZZ_FORM.length].length > 1;
+      const span = twoChords ? 2 : 4, k = b % span;
+      const nb = b + 1 < 4 ? [bar, b + 1] : [bar + 1, 0];
+      const next = chordAt(nb[0], nb[1]);
+      const low = (pc) => 36 + (((pc % 12) + 12) % 12);
+      let midi;
+      if (k === 0) midi = low(c.root);
+      else if (k === span - 1) midi = low(next.root) + (rng.next() < 0.5 ? 1 : -1);
+      else midi = low(c.root + c.iv[k === 1 ? (rng.next() < 0.6 ? 2 : 1) : (rng.next() < 0.5 ? 1 : 3)]);
+      put(bassNote(midi), at(bar, b), 0.55);
+    }
+    // The piano.
+    const comp = COMPS[Math.floor(rng.next() * COMPS.length)];
+    for (const b of comp) {
+      const c = chordAt(bar, b);
+      const long = rng.next() < 0.3 ? 1.2 : 0.45;
+      for (const m of voicing(c)) put(pianoNote(m, long), at(bar, b) + Math.floor(rng.next() * 0.008 * sr), 0.07);
+    }
+    // The vibraphone, from the second chorus of the A on, so the loop begins with the rhythm section
+    // vamping and the tune comes in.
+    const phrase = section === 2 ? tuneB[bar - 16] : tuneA[bar % 8];
+    if (bar >= 2) for (const [b, l, m] of phrase) put(vibe(m, l * beat), at(bar, b), 0.16);
+    yield;
+  }
+
+  const out = new Float32Array(n);
+  for (let q = 0; q < 4; q++) {
+    for (let i = Math.floor(n * q / 4); i < Math.floor(n * (q + 1) / 4); i++) out[i] = Math.tanh(mix[i] * 1.3);
+    yield;
+  }
+  const chs = [out];
+  level(chs, 0.18);
+  return intoBuffer(ctx, chs, sr);
+}
+
+// How loud: in the village tavern it is under the chatter, a band in the corner; outside it is a
+// dull beat through the wall that is gone before the end of the square.
+const JAZZ_LOUD = 0.34;
+const JAZZ_OUT = 0.1;
+const JAZZ_RANGE = 22;
+// Outside, the band through the wall: the bass and the kick, the piano a murmur, the cymbal gone.
+// It was 700 and came across as a band playing out on the square (the keeper, 8 October 2026).
+const JAZZ_CUT = 360;
+
 // --------------------------------------------------------------- every family, by name
 
 // Every buffer this module makes, by the name sound.js and the keeper's samples know it by
@@ -1548,6 +1757,14 @@ function* once(make, c) { yield; return make(c); }
 // One family made whole, at once: what tests/sound-samples.test.mjs measures SFX_LEVEL against.
 export function synthFamily(ctx, name) {
   const gen = LAZY[name](ctx);
+  for (;;) { const step = gen.next(); if (step.done) return step.value; }
+}
+
+// One room's song made whole, at once - 'rave', 'shanty' or 'tavern' (the jazz): for the tests,
+// and for listening to one outside the island (scripts/render-song.mjs).
+const SONG_MAKERS = { rave: raveSong, shanty: shantySong, tavern: jazzSong };
+export function synthSong(ctx, kind) {
+  const gen = SONG_MAKERS[kind](ctx);
   for (;;) { const step = gen.next(); if (step.done) return step.value; }
 }
 
@@ -1728,7 +1945,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Sticky slots: a builder keeps the same voice for as long as they keep hammering,
       // so a blow does not jump between panners and the rhythm survives a re-pick.
       hammers: Array.from({ length: HAMMERS }, () => ({
-        ...mkVoice(buffers.hammer, { ref: 7, rolloff: 1.9, volume: 0.5, part: 'work' }),
+        ...mkVoice(buffers.hammer, { ref: 4, rolloff: 2.1, volume: 0.3, part: 'work' }),
         id: null, f: null, next: 0,
       })),
       gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42, part: 'birds' })),
@@ -1787,6 +2004,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Kraken's shanty, made the first time you come near the harbour (makeSong).
       rave: null,
       shanty: null,
+      // The village tavern's jazz, made the first time you come near the tavern.
+      tavern: null,
     };
     built.clinkRoom.audio.setLoop(false);
     built.bellRoom.audio.setLoop(false);
@@ -1819,6 +2038,14 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (built.buffers[name]) return built.buffers[name];
     if (!built.making[name] && LAZY[name]) built.making[name] = LAZY[name](ctx);
     return null;
+  }
+
+  // A loop that is only ever a recording: the keeper's own joined loop for `name` once it is made,
+  // else null - never the computed family. Asked for like need(), so the file is fetched.
+  function recorded(name) {
+    if (Object.hasOwn(SFX_FAMILIES, name)) asked.add(name);
+    const own = samples[name];
+    return own && own.loop ? own.loop : null;
   }
 
   // The keeper's own recordings (Plans/meer-geluiden.md, phase 9; HOME/audio/sfx, named by
@@ -1863,12 +2090,13 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   }
 
   // The songs, and how each is heard: loud and whole inside, a muffled tune through the walls
-  // outside, nothing past `range`. The village tavern has no song of its own - only the
-  // keeper's tracks, when there are some (setPlaylists).
+  // outside, nothing past `range`. The village tavern's is the jazz trio, on a part of its own so
+  // it is dimmed apart from the chatter; the keeper's tracks, when there are some, replace any of
+  // them (setPlaylists).
   const SONGS = {
-    rave: { make: raveSong, loud: RAVE_LOUD, out: RAVE_OUT, range: RAVE_RANGE, cut: 320 },
-    shanty: { make: shantySong, loud: SHANTY_LOUD, out: SHANTY_OUT, range: SHANTY_RANGE, cut: 480 },
-    tavern: { make: null, loud: 0.45, out: 0.2, range: 22, cut: 480 },
+    rave: { make: raveSong, loud: RAVE_LOUD, out: RAVE_OUT, range: RAVE_RANGE, cut: 320, part: 'songs' },
+    shanty: { make: shantySong, loud: SHANTY_LOUD, out: SHANTY_OUT, range: SHANTY_RANGE, cut: 480, part: 'songs' },
+    tavern: { make: jazzSong, loud: JAZZ_LOUD, out: JAZZ_OUT, range: JAZZ_RANGE, cut: JAZZ_CUT, part: 'jazz' },
   };
 
   // The keeper's own tracks (lib/music.mjs: HOME/audio/kroeg, rave, pirates), per song, as urls.
@@ -1940,7 +2168,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // positional, like the bed - turning your head in a hall that loud changes nothing - and the
   // loudness outside is the distance to the building, which main.js measures.
   function makeSong(kind) {
-    const a = built.route(new THREE.Audio(listener), 'songs');
+    const a = built.route(new THREE.Audio(listener), SONGS[kind].part);
     a.setLoop(true);
     a.setVolume(0);
     const filter = ctx.createBiquadFilter();
@@ -1982,6 +2210,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       return;
     }
     if (!o.make) return;
+    // A part switched off is not heard, and its song is not even made until it is switched on.
+    if (!live(o.part)) heard = null;
     if (heard && !built[kind]) built[kind] = makeSong(kind);
     const r = built[kind];
     if (!r) return;
@@ -2199,13 +2429,19 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub.at = site ? site.at : null;
       const full = clamp(pub.busy / 9, 0, 1);
       pub.full = kind === 'kraken' ? KRAKEN_CREW + (1 - KRAKEN_CREW) * full : full;
+      // The chatter is a recording or nothing (the keeper, 8 October 2026): the computed murmur
+      // came across as surf or static rather than voices. The recording is the keeper's own
+      // (HOME/audio/sfx/murmur.*, kraken.*) or else the island's (web/audio, island-sfx.js), both
+      // handed in by sfx-loader.js once a tavern is within earshot - which is what asking here does;
+      // until one has arrived the tavern is heard by its music and its glasses alone.
+      const chatter = recorded(pub.buffer);
       // Outside: through the door, by the distance to it.
       let want = 0;
-      if (site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
+      if (chatter && site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
         want = Math.min(0.25, pub.full * 0.22 * evening) * edge(pub.d, TAVERN_RANGE);
       }
       pub.want = want;
-      const buf = want > 0 || pub.out.audio.isPlaying ? need(pub.buffer) : null;
+      const buf = want > 0 ? chatter : null;
       if (pub.at) pub.out.holder.position.set(pub.at[0], pub.at[1] + 1, pub.at[2]);
       pub.out.filter.frequency.setTargetAtTime(
         PUB_SHUT + (PUB_OPEN - PUB_SHUT) * Math.exp(-(Number.isFinite(pub.d) ? pub.d : 99) / PUB_OPEN_R), now, 0.2);
@@ -2213,12 +2449,13 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Last, for the reason given in fire(): a panner that is not playing ignores this.
       if (pub.at) pub.out.holder.updateMatrixWorld(true);
       // Inside: the room itself, unmuffled, as a bed. In the village tavern it is the room's whole
-      // sound (it has no song of its own) and goes down under the keeper's tracks when there are
-      // some; in the Kraken it sits under the jukebox.
+      // sound but for its trio, and goes down under the jazz or the keeper's tracks when either
+      // plays; in the Kraken it sits under the jukebox.
       const inside = room === (kind === 'village' ? 'tavern' : 'piratetavern');
       pub.inside = inside;
-      const inWant = inside && live('tavern') ? (kind === 'village' ? (playlists.tavern ? 0.12 : 0.26) : 0.11) : 0;
-      loopTo(pub.in, inWant > 0 || pub.in.audio.isPlaying ? need(pub.buffer) : null, inWant);
+      const music = playlists.tavern || live('jazz');
+      const inWant = chatter && inside && live('tavern') ? (kind === 'village' ? (music ? 0.12 : 0.26) : 0.11) : 0;
+      loopTo(pub.in, inWant > 0 ? chatter : null, inWant);
     }
   }
 
@@ -2539,13 +2776,15 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (c.kind === 'saw') { if (d < sawD) { saw = c; sawD = d; } continue; }
       const was = seenCraft.get(c.id);
       seenCraft.set(c.id, { hits: c.hits, phase: c.phase });
-      if (d > CRAFT_RANGE) continue;
+      const range = c.kind === 'smith' ? SMITH_RANGE : CRAFT_RANGE;
+      if (d > range) continue;
       if (c.kind === 'smith' || c.kind === 'butcher') need(c.kind === 'smith' ? 'anvil' : 'cleaver');
       if (c.kind === 'baker') { need('oven'); need('thud'); }
       if (!was) continue;
       let buf = null, volume = 0.6, rate = 1;
       if ((c.kind === 'smith' || c.kind === 'butcher') && c.hits > was.hits) {
         buf = need(c.kind === 'smith' ? 'anvil' : 'cleaver');
+        if (c.kind === 'smith') volume = SMITH_LOUD;
         rate = 0.95 + Math.random() * 0.1;
       } else if (c.kind === 'baker' && c.phase !== was.phase) {
         if (c.phase === 'bake') buf = need('oven');
@@ -2554,7 +2793,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (!buf) continue;
       const v = built.crafts.find((s) => !s.audio.isPlaying) || built.crafts[0];
       if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
-      v.audio.setVolume(volume * edge(d, CRAFT_RANGE));
+      v.audio.setVolume(volume * edge(d, range));
       fire(v, c.at[0], c.at[1], c.at[2], rate);
     }
     if (seenCraft.size > 64) seenCraft.clear();
@@ -3008,6 +3247,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       rave: songStats('rave'),
       // The Salty Kraken's shanty, the same way: null until somebody has been near the harbour.
       shanty: songStats('shanty'),
+      // The village tavern's jazz, the same way: null until somebody has been near the tavern.
+      jazz: songStats('tavern'),
       // The keeper's own tracks, per song that has some: which is playing and how loud.
       tracks: built && built.tracks ? Object.fromEntries(Object.entries(built.tracks).map(([k, t]) => [k, {
         playing: t.playing, index: t.index, src: t.el.src, want: Math.round(t.want * 100) / 100,

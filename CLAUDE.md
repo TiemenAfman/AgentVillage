@@ -968,6 +968,15 @@ picks the move from the dancer's id (`danceStep` in `web/js/dance.js`, the one c
 moves the rave's settlers dance too) and dances them to the beat *it* plays (`danceBeat` in
 main.js: the hall, else the music, else the wall clock at the song's tempo).
 
+**A room is one place for the whole sea** ([Plans/DONE/gedeelde-kamers.md](Plans/DONE/gedeelde-kamers.md)).
+The bare room name (`tavern`, `rave`, `piratetavern`) is the instance: whoever is in a tavern, through
+whichever island's door, is in the same one. So a position in a room crosses the socket *without* the
+berth (`indoors` in net.js, both ways; `boat` keeps it) - with it, two players from two islands stood a
+berth apart, outside the walls. The sea's `<islandId>:<slug>` room form is deliberately unused. A
+neighbour's tavern, Kraken and castle gate are interactables too (`roomDoors` in main.js, guest ids
+`guest:<island>:<id>`), and the Kraken's hatch leads out onto the deck of the Kraken you went into
+(`deckOut`), not ours.
+
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
 renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page
@@ -1704,11 +1713,13 @@ the head slot's dye; the hat's colour is in the hat picker, `pickerDye`) and ski
 parts** on every body: corner colours divided by a base and multiplied by the look's colour in
 `buildFigure` - the Adventurer's base is the look's default (so he draws as before), the Wanderer's
 the kit map's own mean. **Who you are is apart from what you wear**: the inventory's *Edit character*
-(the same frame, `data-view="character"`) holds the body, man or woman, skin, hair, and the shape's
-sliders (`SHAPES`, `spec.shape`, each -1..1): height, hips, head, hands and feet are bone scale in
-classic-avatar.js `applyShape` (the object's mirror kept; `rig.hipY`/`rig.eye` follow height), build
-and bust are moved vertices in avatar.js `shapeGeometry` (along the normal / forward round `bustOf`),
-held items excluded. The sea passes `body`, `wear`, `hairStyle`, `hair`, `shape` in `lookOf`; an older sea
+(the same frame, `data-view="character"`) holds the body, man or woman, skin and hair. **There are no
+sliders for the body's size**: seven of them (height, build, hips, bust, head, hands, feet) came in
+0.10.3 and went out again ("it upsets everything"), because clothes, the horse and the ladders are
+measured at one size only. `normalizeAvatar` and `lookOf` drop a `shape`, so a look saved with one is
+drawn at the standard size. They may come back once all of that is measured per size
+(Plans/basislichamen-en-outfits.md; the old code is commit a069daf). The sea passes `body`, `wear`,
+`hairStyle`, `hair` in `lookOf`; an older sea
 drops them and everybody sees the Adventurer. Gear is the Adventurer's refitted (`refit_gear`).
 **A Wanderer's triangles are loaded only when somebody wears one** (the fourth exception to "Nothing is
 fetched at boot"): `bodies-mesh.js` is 19.5 MB, so the boot imports only `bodies-meta.js` (the same bake
@@ -2468,8 +2479,9 @@ Chests counts the day's chest), and **repeatable quests count alongside the stor
 with no pub would stop the day's chest for good. `businessWith(state)` is who the `!` hangs over (the log's
 `talk` is that id now, not a boolean); `QUEST_STATE_V` stayed 1, so an old book goes on at the captain.
 `web/js/pirate.js` is one window for every giver (`createQuestGiver`; `createPirate` opens it on him).
-**Music in rooms**: `web/js/sound.js` has two computed songs on one bed (`makeSong`, `steerSong`,
-`songClock`, `clockOf(room.music)`) - the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
+**Music in rooms**: `web/js/sound.js` has three computed songs on one bed (`makeSong`, `steerSong`,
+`songClock`, `clockOf(room.music)`) - the village tavern's jazz trio (`jazzSong`, its own part `jazz`, apart
+from the chatter; `node scripts/render-song.mjs tavern x.wav` to listen), the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
 on the same 0.6 s count, the hall's `beat` a dancing player follows; the crew do not nod to it - on
 every count it read as headbanging; 44.1 kHz, 13.5 MB, made only near the pub) - and
 **the keeper's own tracks**: `HOME/audio/{kroeg,rave,pirates}` (`lib/music.mjs`, `/api/music`, not on
@@ -2518,6 +2530,10 @@ running) and a loop's joined buffer, and the computed family is never made; ever
 one-shot asks `need()` (or passes its answer to `fire(..., buf)`) at the moment it plays, never a buffer
 kept from build(). A playing bed is restarted on its new buffer (`keepBuffer`): three's `setBuffer` only
 changes the next `play()`.
+**The island ships recordings of its own too** (`web/audio`, listed in `web/js/island-sfx.js`, CC0 only, sources in
+`web/audio/CREDITS.md`): sfx-loader.js's `defaults`, played on every page - visitors, the phone and the web included
+(`/audio/` is on `PUBLIC_PREFIX`) - for a family the keeper has no file for - the taverns' chatter and four takes each of `baa`, `moo`, `cluck`, `bleat`. The taverns' chatter (`murmur`, `kraken`)
+is a recording or nothing: sound.js `recorded()` never computes it, since the synthesised murmur sounded like surf.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is

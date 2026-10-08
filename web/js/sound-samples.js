@@ -39,8 +39,8 @@ export const SFX_BEDS = new Set(['surf', 'wind', 'dawn', 'crickets', 'rain', 'ro
 export const SFX_LEVEL = {
   surf: 0.1467, wind: 0.1600, murmur: 0.1397, kraken: 0.1497, borrel: 0.1294, river: 0.0896,
   lava: 0.1056, rumble: 0.1398, rain: 0.1199, roofs: 0.0798, dawn: 0.0560, crickets: 0.0518,
-  under: 0.0900, saw: 0.0800, cart: 0.0791, gull: 0.1130, clink: 0.0726, hammer: 0.1236,
-  bell: 0.1200, anvil: 0.1000, cleaver: 0.1095, oven: 0.0835, thud: 0.0600, chop: 0.1322,
+  under: 0.0900, saw: 0.0800, cart: 0.0791, gull: 0.1130, clink: 0.0726, hammer: 0.1447,
+  bell: 0.1200, anvil: 0.1341, cleaver: 0.1095, oven: 0.0835, thud: 0.0600, chop: 0.1322,
   hoe: 0.0500, weed: 0.0400, squeak: 0.0335, load: 0.0641, owl: 0.0877, cuckoo: 0.0706,
   foghorn: 0.1239, baa: 0.0800, moo: 0.0900, cluck: 0.0948, quack: 0.0938, bleat: 0.0700,
   snort: 0.0700, peck: 0.0566, scratch: 0.0404, chirp: 0.0661, bonk: 0.0985, flap: 0.0500,

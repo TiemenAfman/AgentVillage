@@ -67,3 +67,49 @@ test('changed files are loaded again; files gone give the computed voice back', 
   for (let i = 0; i < 6; i++) await settle();
   assert.deepEqual(r.handed.slice(2), [['gull', 0], ['surf', 2]]);
 });
+
+// The island's own recordings (web/js/island-sfx.js): played for a family the keeper has no file
+// for - and on a page with no islander, or one refused the list - and given way to the moment the
+// keeper puts one in.
+test('the island\'s own recordings stand in where the keeper has none, and give way to theirs', async () => {
+  const files = { surf: ['surf.ogg'] };
+  const r = rig(files);
+  const fromWeb = [];
+  const loader = createSfxLoader({
+    sound: { context: () => ({}), wanted: () => [...r.wanted], setSamples: (name, list) => r.handed.push([name, list.length]) },
+    list: async () => files,
+    bytes: async (name) => { r.fetched.push(name); return name; },
+    decode: async (_ctx, data) => ({ data }),
+    defaults: { murmur: ['tavern-chatter.ogg'], surf: ['island-surf.ogg'] },
+    fetchDefault: async (name) => { fromWeb.push(name); return name; },
+  });
+  r.wanted.add('murmur'); r.wanted.add('surf');
+  await loader.refresh();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual(fromWeb, ['tavern-chatter.ogg'], 'the island\'s own for the tavern; the keeper\'s surf wins');
+  assert.deepEqual(r.fetched, ['surf.ogg']);
+  files.murmur = ['murmur-mine.ogg'];
+  await loader.refresh();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.ok(r.fetched.includes('murmur-mine.ogg'), 'the keeper\'s file, once it is there');
+  delete files.murmur;
+  await loader.refresh();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(fromWeb.length, 2, 'and the island\'s own again once it is gone');
+  assert.ok(!r.handed.some(([name, n]) => name === 'murmur' && n === 0), 'never back to nothing in between');
+});
+
+test('a page refused the list (a visitor) still plays the island\'s own', async () => {
+  const handed = [];
+  const loader = createSfxLoader({
+    sound: { context: () => ({}), wanted: () => ['kraken'], setSamples: (name, list) => handed.push([name, list.length]) },
+    list: async () => null,
+    bytes: async () => { throw new Error('no folder'); },
+    decode: async (_ctx, data) => ({ data }),
+    defaults: { kraken: ['kraken-chatter.ogg'] },
+    fetchDefault: async (name) => name,
+  });
+  await loader.refresh();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual(handed, [['kraken', 1]]);
+});
