@@ -49,6 +49,8 @@ import { attachQuarry, updateQuarry } from './quarry.js';
 import { YARD_FLOOR, YARD_STAGES, YARD_STAGE_NAMES, YARD_W, YARD_D } from './shipyard.js';
 import { attachBatavia, updateBatavia } from './batavia.js';
 import { createBoat } from './boat.js';
+import { cannonShape, carriageGeometry, barrelGeometry } from './cannon.js';
+import { GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST } from 'shared/cannon.mjs';
 import { modelUrl } from './assets.js';
 
 const CIVIC = [
@@ -1034,6 +1036,23 @@ function shorePatch(originX, originZ, cells, { inlet }) {
   galleon.place(1.5 * 6.5, z, 0);
   galleon.object.position.y = FIELD_Y;
   tag(1.5 * 6.5, z + 8.2, 'Galleon', 'every island\'s first boat');
+  // Her gun (Plans/kanonnen.md, the keeper's own model) on its own, at twice its size: laid as low,
+  // as at rest and as high as it goes - the barrel turned on its trunnions, the carriage still.
+  const gun = cannonShape();
+  if (gun) {
+    [GUN_PITCH_MIN, GUN_PITCH_REST, GUN_PITCH_MAX].forEach((pitch, k) => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(carriageGeometry(), material));
+      const barrel = new THREE.Mesh(barrelGeometry(), material);
+      barrel.position.fromArray(gun.pin);
+      barrel.rotation.x = -(pitch - gun.rest);
+      g.add(barrel);
+      g.scale.setScalar(2);
+      g.position.set(-21 + k * 2.2, FIELD_Y, z);
+      scene.add(g);
+    });
+    tag(-18.8, z + 2.2, 'Cannon', `${models.assetTris('cannon')} tris · laid low, at rest, high`);
+  }
   row += 5;
 }
 

@@ -8,7 +8,7 @@ licence asks of us. Kept as assets/pirateship/source/pirateship-greggoryfisher.g
 
 The source is 73k triangles in 27 parts, one per material and no textures. Material
 colours become vertex paint, and all parts share one material in the exported mesh.
-Cannon contours are preserved and the decks receive clipped, staggered planks.
+Its own eight guns are taken out (Plans/kanonnen.md) and the decks receive clipped, staggered planks.
 The bow faces -Y (game +Z), the length is 13, and the keel is on z = 0.
 """
 import bpy
@@ -26,7 +26,7 @@ PREVIEW = args[0] if args else None
 VIEW = args[1] if len(args) > 1 else 'side'
 
 LENGTH = 13.0         # island units, hull and bowsprit: ten Benchies (~1.3) - five read as a toy beside a settler
-# Cannon assemblies keep their contours; small shot and rigging can lose more detail.
+# Small shot and rigging can lose more detail.
 # Small parts remain whole because reducing a low-poly sail can erase it entirely.
 KEEP = {'M_Cannon_Balls': 0.25, 'M_Rope': 0.12,
         'M_Barrel_Wood_1': 0.25, 'M_Barrel_Wood_2': 0.25,
@@ -73,8 +73,6 @@ for o in parts:
         bm.to_mesh(o.data)
         bm.free()
     want = count if count < KEEP_UNDER else int(count * KEEP.get(mname, 0.3))
-    if mname.startswith('M_Cannon') and mname != 'M_Cannon_Balls':
-        want = count
     if count > want:
         # Coplanar triangles first, which costs no shape at all; then collapse what is left.
         flat = o.modifiers.new('Flat', 'DECIMATE'); flat.decimate_type = 'DISSOLVE'; flat.angle_limit = math.radians(3)
@@ -115,117 +113,67 @@ for o in parts:
         if v.co.z < bottom + 0.1:
             v.co.z -= bottom * max(0, 1 - (v.co.z - bottom) / 0.1)
 
-# A barrel is split across two materials in the download. Reorienting each material
-# separately treats open strips as solid objects and turns half the tube inside out.
-# Join all cannon materials first, retaining corner paint, then weld and orient their
-# complete surfaces. Planar dissolve saves triangles without collapsing wheels or bores.
-cannons = [o for o in parts if o.data.materials[0].name.startswith('M_Cannon')]
-bpy.ops.object.select_all(action='DESELECT')
-for o in cannons:
-    o.select_set(True)
-bpy.context.view_layer.objects.active = cannons[0]
-bpy.ops.object.join()
-cannon = bpy.context.object
-parts = [o for o in parts if o not in cannons] + [cannon]
-bm = bmesh.new()
-bm.from_mesh(cannon.data)
-bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=0.0001)
-# The carriage cheeks in the source are two offset skins with no faces around their
-# stepped perimeter. Recalculating normals cannot close that slit: pair the matching
-# wooden boundary loops and bridge their thickness, leaving the barrel bores alone.
-bm.edges.ensure_lookup_table()
-wood = {i for i, mat in enumerate(cannon.data.materials) if mat.name.startswith('M_Cannon_Wood')}
-remaining = {e for e in bm.edges if e.is_boundary and e.link_faces[0].material_index in wood}
-loops = []
-while remaining:
-    first = min(remaining, key=lambda e: e.index)
-    remaining.remove(first)
-    edges, todo = [first], [first]
-    while todo:
-        edge = todo.pop()
-        for vertex in edge.verts:
-            for adjacent in vertex.link_edges:
-                if adjacent in remaining:
-                    remaining.remove(adjacent)
-                    edges.append(adjacent)
-                    todo.append(adjacent)
-    verts = {v for edge in edges for v in edge.verts}
-    center = sum((v.co for v in verts), Vector()) / len(verts)
-    loops.append((edges, center))
-paint_layer = bm.loops.layers.float_color['Paint']
-bridges = 0
-cheeks = []
-while loops:
-    edges, center = loops.pop(0)
-    candidates = [(i, (other_center - center).length) for i, (other, other_center) in enumerate(loops) if len(other) == len(edges)]
-    if not candidates:
-        raise ValueError('Unpaired open cannon carriage skin')
-    partner, distance = min(candidates, key=lambda p: p[1])
-    if distance > 0.02:
-        raise ValueError(f'Cannon carriage skins are not adjacent: {distance}')
-    other, other_center = loops.pop(partner)
-    normal = (other_center - center).normalized()
-    tangent = Vector((-normal.y, normal.x, 0)).normalized()
-    cheeks.append(((center + other_center) / 2, normal, tangent))
-    material = edges[0].link_faces[0].material_index
-    colour = colour_of(cannon.data.materials[material])
-    result = bmesh.ops.bridge_loops(bm, edges=edges + other)
-    for face in result['faces']:
-        face.material_index = material
-        for loop in face.loops:
-            loop[paint_layer] = colour
-    bridges += 1
-bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-wood_boundaries = [e for e in bm.edges if e.is_boundary and e.link_faces[0].material_index in wood]
-if wood_boundaries:
-    raise ValueError(f'{len(wood_boundaries)} open edges remain on cannon carriages')
-print(f'Closed {bridges} carriage cheeks; wooden boundary edges: 0', flush=True)
-print('cannon boundary edges:', sum(e.is_boundary for e in bm.edges), flush=True)
-bm.to_mesh(cannon.data)
-bm.free()
-flat = cannon.modifiers.new('Preserve cannon contours', 'DECIMATE')
-flat.decimate_type = 'DISSOLVE'
-flat.angle_limit = math.radians(0.5)
-flat.delimit = {'MATERIAL'}
-bpy.ops.object.modifier_apply(modifier=flat.name)
-
-# The small iron bolt heads share the source's open-skin problem. Close only complete
-# metal boundary loops inside the carriage cheeks; this must not cap a cannon muzzle
-# or an unrelated ring elsewhere on the ship.
-closed_fittings = 0
-for obj in parts:
-    if obj.data.materials[0].name not in ('M_Metal_Dark', 'M_Metal_Light'):
-        continue
-    metal = bmesh.new()
-    metal.from_mesh(obj.data)
-    metal.edges.ensure_lookup_table()
-    pending = {e for e in metal.edges if e.is_boundary}
-    while pending:
-        first = min(pending, key=lambda e: e.index)
-        pending.remove(first)
-        edges, todo = [first], [first]
-        while todo:
-            edge = todo.pop()
-            for vertex in edge.verts:
-                for adjacent in vertex.link_edges:
-                    if adjacent in pending:
-                        pending.remove(adjacent)
-                        edges.append(adjacent)
-                        todo.append(adjacent)
-        vertices = {v for edge in edges for v in edge.verts}
-        if not any(all(abs((v.co - c).dot(n)) < 0.08 and abs((v.co - c).dot(t)) < 0.33 and abs(v.co.z - c.z) < 0.15 for v in vertices) for c, n, t in cheeks):
+# The source's eight guns, four a side through the waist's ports, are gone (Plans/kanonnen.md): the
+# ship carries two of the keeper's own instead (scripts/build-cannon.py), drawn by web/js/boat.js where
+# shared/crafts.mjs puts them, so they can be traversed and laid. Each carriage is found as a loose piece
+# of the cannon materials, and with it go the iron that was bolted to it (the M_Metal pieces inside its
+# box: cap squares, bolt heads, rings) - left behind, they would hang in the gun ports. The ports
+# themselves are the hull's and stay open; the shot (M_Cannon_Balls) stays in its racks.
+def islands(obj):
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    seen, out = set(), []
+    for f in bm.faces:
+        if f.index in seen:
             continue
-        colour = colour_of(obj.data.materials[0])
-        layer = metal.loops.layers.float_color['Paint']
-        result = bmesh.ops.holes_fill(metal, edges=edges, sides=32)
-        for face in result['faces']:
-            for loop in face.loops:
-                loop[layer] = colour
-        closed_fittings += len(result['faces'])
-    bmesh.ops.recalc_face_normals(metal, faces=list(metal.faces))
-    metal.to_mesh(obj.data)
-    metal.free()
-print(f'Closed carriage metal openings: {closed_fittings}', flush=True)
+        todo, group = [f], []
+        seen.add(f.index)
+        while todo:
+            g = todo.pop()
+            group.append(g.index)
+            for e in g.edges:
+                for h in e.link_faces:
+                    if h.index not in seen:
+                        seen.add(h.index)
+                        todo.append(h)
+        vs = {v for i in group for v in bm.faces[i].verts}
+        out.append((group, Vector((min(v.co.x for v in vs), min(v.co.y for v in vs), min(v.co.z for v in vs))),
+                    Vector((max(v.co.x for v in vs), max(v.co.y for v in vs), max(v.co.z for v in vs)))))
+    bm.free()
+    return out
+
+guns = [o for o in parts if o.data.materials[0].name.startswith('M_Cannon') and o.data.materials[0].name != 'M_Cannon_Balls']
+boxes = []
+for o in guns:
+    for _, lo, hi in islands(o):
+        # Pieces of one gun lie within a hand of each other: merge them into one box per gun.
+        for i, (blo, bhi) in enumerate(boxes):
+            if all(lo[k] < bhi[k] + 0.05 and hi[k] > blo[k] - 0.05 for k in range(3)):
+                boxes[i] = (Vector(map(min, blo, lo)), Vector(map(max, bhi, hi)))
+                break
+        else:
+            boxes.append((lo, hi))
+print('old guns found:', len(boxes), [tuple(round(v, 2) for v in (lo + hi) / 2) for lo, hi in boxes], flush=True)
+for o in guns:
+    bpy.data.objects.remove(o, do_unlink=True)
+parts = [o for o in parts if o not in guns]
+inside = lambda lo, hi: any(all(lo[k] > blo[k] - 0.03 and hi[k] < bhi[k] + 0.03 for k in range(3)) for blo, bhi in boxes)
+fittings = 0
+for o in parts:
+    if o.data.materials[0].name not in ('M_Metal_Dark', 'M_Metal_Light'):
+        continue
+    gone = [i for group, lo, hi in islands(o) if inside(lo, hi) for i in group]
+    if not gone:
+        continue
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.faces[i] for i in gone], context='FACES')
+    bm.to_mesh(o.data)
+    bm.free()
+    fittings += len(gone)
+print(f'Removed {fittings} faces of the old guns ironwork', flush=True)
 
 # Real plank faces follow the existing deck polygons, including the hull's taper and
 # openings. An offset grid of butt joints avoids drawing a checkerboard. The original

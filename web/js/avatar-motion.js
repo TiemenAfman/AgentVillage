@@ -239,7 +239,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 const syncHorseControls=()=>{
   document.querySelector('[data-gait="horse"]').textContent='Paard · '+HORSE_GAITS[horseGait][0];
@@ -321,6 +321,18 @@ function tick(dt){
       f.stand.rotation.set(0,0,0);
       f.stand.position.y=kind==='drown'?-.1-DROWN_SINK*Math.max(0,Math.min(t,loop-.8)-.3):0;
       f.rig.update(down?{dying:{kind,t},distance:0}:{grounded:true,distance:0},dt);
+      continue;
+    }
+    // Fired out of a gun (Plans/kanonnen.md): a stretch of the arc walk.js launchSelf flies, over and
+    // over - tucked (the rig's crouch) and head over heels about the middle of the body at walk.js's
+    // LAUNCH_SPIN, as its afterMove turns a launched body.
+    if(mode==='cannon'){
+      const T=1.6, t=time%T, mid=f.rig.hipY||.25;
+      f.stand.rotation.set(t*11,0,0);
+      const off=new THREE.Vector3(0,mid,0).applyEuler(f.stand.rotation);
+      // A low arc and a short one, scaled to the studio's frame (the island's is some 3 up and 26 on).
+      f.stand.position.set(f.x-off.x, 4*.45*(t/T)*(1-t/T)+mid-off.y, f.distance+t*.6-off.z);
+      f.rig.update({crouching:true,grounded:false,distance:0},dt);
       continue;
     }
     if(stepped){

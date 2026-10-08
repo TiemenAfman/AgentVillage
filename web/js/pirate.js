@@ -17,6 +17,15 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 const ASK = 'Well, matey?';
 const NOTHING_LEFT = "Ye've heard every tale I have, matey. The sea keeps the rest.";
 const NOTHING_FOR_YOU = "Nothin' for ye today, matey. Ask around.";
+// The words round a quest that are not the quest's own - the question before a hand-over, its
+// button and the goodbye - in the voice of whoever is spoken to. The pirate and the crew talk like
+// pirates; the goldsmith of the gold mine's line (Plans/goudmijn-zoektocht.md) does not, and with
+// the pirate's he asked "Well, matey?" and said "Aye" (Plans/speeltest-quests.md).
+const PIRATE_VOICE = { ask: ASK, handOver: 'Hand it over', bye: 'Aye' };
+const VOICES = {
+  goldsmith: { ask: 'Back again? Let us hear it.', handOver: 'Tell him', bye: 'Goodbye' },
+};
+export const voiceOf = (who) => VOICES[who] || PIRATE_VOICE;
 // The pirate's, while the story is with the crew: true below 52 settlers too, when there is no
 // Kraken yet, so it says where the pub will be rather than that it is there.
 export const PIRATE_IDLE = "The crew o' the Salty Kraken want a word with ye, matey. Their pub stands by the harbour once the lighthouse burns.";
@@ -42,10 +51,11 @@ export function giverSpeech(view, who = 'pirate', idle = null) {
   const own = view && (view.lines || []).find((l) => l.giver === who);
   if (own) {
     if (own.talk === who) {
+      const v = voiceOf(who);
       return {
-        title: own.title, lines: [own.index === 0 ? own.text : ASK],
+        title: own.title, lines: [own.index === 0 ? own.text : v.ask],
         hint: own.index === 0 && own.rewards.length ? `On offer: ${own.rewards.join(', ')}` : own.goal,
-        button: own.index === 0 ? 'Accept' : 'Hand it over',
+        button: own.index === 0 ? 'Accept' : v.handOver,
       };
     }
     return { title: own.title, lines: [own.say], hint: own.goal, button: null };
@@ -127,7 +137,7 @@ export function createQuestGiver(root, { log, onClose = null }) {
         ${hint ? `<p class="muted pi-hint">${esc(hint)}</p>` : ''}
         <p class="pi-actions">
           ${!replied && s.button ? `<button class="btn primary" id="pi-go">${esc(s.button)}</button>` : ''}
-          <button class="btn" id="pi-bye">${!replied && s.button ? 'Not now' : 'Aye'}</button>
+          <button class="btn" id="pi-bye">${!replied && s.button ? 'Not now' : voiceOf(target.who).bye}</button>
         </p>
       </div>`;
     el.querySelector('#pi-close').addEventListener('click', close);
