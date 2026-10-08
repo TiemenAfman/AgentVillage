@@ -47,11 +47,17 @@ const PART_IDS = new Set(MIX_PARTS.map(([id]) => id));
 const LEVEL_IDS = new Set(MIX_LEVELS.map(([id]) => id));
 export const busOf = (part) => (MIX_PARTS.find(([id]) => id === part) || [])[2] || null;
 
-// Everything at full and everything on: a page that never opened the tab sounds as it always did.
+// Parts that start switched off. They do not sound right yet (the keeper's word: "a bit broken"),
+// so they stay off until they are mended - then take them out of here. Not off in sound.js: whoever
+// switches one on in Settings -> Audio hears it, and since only what differs from the defaults is
+// kept, that `true` is kept and survives taking a part out of this list.
+export const MIX_OFF = Object.freeze(['sea', 'water', 'borrel']);
+
+// Every slider at full and every part on but MIX_OFF's.
 export function mixDefaults() {
   const out = {};
   for (const [id] of MIX_LEVELS) out[id] = 1;
-  for (const [id] of MIX_PARTS) out[id] = true;
+  for (const [id] of MIX_PARTS) out[id] = !MIX_OFF.includes(id);
   return out;
 }
 
@@ -106,7 +112,7 @@ export function saveMix(key, value, storage = browserStorage()) {
   } catch { /* kept for this page only */ }
 }
 
-// Back to everything at full.
+// Back to the defaults.
 export function forgetMix(storage = browserStorage()) {
   try { if (storage) storage.removeItem(MIX_KEY); } catch { /* nothing kept to forget */ }
 }

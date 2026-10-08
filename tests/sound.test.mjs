@@ -104,6 +104,11 @@ function removeListener(type, fn) { const s = listeners.get(type); if (s) s.dele
 function dispatch(type) { for (const fn of [...(listeners.get(type) || [])]) fn({ type }); }
 
 let store = {};
+// The parts that start off (MIX_OFF in web/js/sound-mix.js: the sea, the water and the borrel, until
+// they sound right) switched on, as a browser that ticked them in Settings -> Audio keeps them - for
+// the tests that are about how those parts sound, not about the defaults.
+const ON = { sea: true, water: true, borrel: true };
+const partsOn = () => ({ 'promptholm.sound.mix': JSON.stringify(ON) });
 // A tavern's chatter is a recording or nothing (the computed murmur sounded like surf): a test
 // about it hands the keeper's file in first, and gets back the loop it was joined into once a
 // second of frames has made it.
@@ -680,7 +685,7 @@ test('inside the village tavern the murmur is the room, whole, and outside it is
 });
 
 test('the borrel is a loop on the square while the village is out there, made only then', () => {
-  store = {};
+  store = partsOn();
   const look = village(3, { anim: 'still', tavern: false });
   look.square = [0, 0, 4];
   const sound = heardSound(look);
@@ -707,7 +712,7 @@ test('the borrel is a loop on the square while the village is out there, made on
 });
 
 test('Settings -> Audio: a bus or a part at zero silences what it says, and nothing else', () => {
-  store = {};
+  store = partsOn();
   const look = village(40);
   look.pubs = [{ kind: 'village', at: [-8, 0, -6] }];
   for (const f of look.crowds[0].values()) if (f.pos[0] < -6) f.anim = 'still';
@@ -728,10 +733,10 @@ test('Settings -> Audio: a bus or a part at zero silences what it says, and noth
   assert.equal(loudest(murmur) || 0, 0, 'Speech at zero: the tavern is silent');
   assert.ok(loudest(surf) > 0, 'and the sea is not');
   assert.ok(hammered() > 0, 'nor the hammers');
-  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { speech: 0 }, 'only what moved is kept');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { ...ON, speech: 0 }, 'only what moved is kept');
 
   sound.setMix('speech', 1);
-  assert.equal(store['promptholm.sound.mix'], undefined, 'a slider back at full leaves nothing behind');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), ON, 'a slider back at full leaves nothing behind');
   sound.setMix('work', false);
   run(sound, 0.2);
   assert.equal(hammered(), 0, 'Crafts and hammers off: no blow is even struck');
@@ -751,6 +756,19 @@ test('Settings -> Audio: a bus or a part at zero silences what it says, and noth
   assert.equal(sound.setMix('loudness', 3), false, 'a key that is not one of ours is refused');
   sound.resetMix();
   assert.equal(store['promptholm.sound.mix'], undefined, 'and the defaults keep nothing');
+});
+
+test('a fresh browser hears no sea: the part is off by default, its loops stopped, and a tick brings it back', () => {
+  store = {};
+  const sound = heardSound(village(3));
+  const surf = ctx.buffers[ctx.buffers.length - 6];
+  run(sound, 3);
+  assert.equal(sound.mix().sea, false);
+  assert.equal(loudest(surf), null, 'the surf is not playing at all');
+  sound.setMix('sea', true);
+  run(sound, 3);
+  assert.ok(loudest(surf) > 0, 'switched on, the sea is heard');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { sea: true }, 'and the choice is kept');
 });
 
 test('the mix is kept per browser and used from the first note', () => {
@@ -1150,7 +1168,7 @@ test('a field of three hundred sheep is four voices and a bleat every few second
 // --- the sea is heard at the sea -------------------------------------------
 
 test('the middle of the island does not hear the surf, even with a river through it', () => {
-  store = {};
+  store = partsOn();
   // Land everywhere but a river 0.55 deep running past the camera, and open sea from x = 60.
   const look = inland();
   look.depthAt = (x, z) => (x > 60 ? -2.5 : Math.abs(z - 3) < 2 ? -0.55 : 1.5);
@@ -1167,7 +1185,7 @@ test('the middle of the island does not hear the surf, even with a river through
 // --- water and fire (phase 7) ----------------------------------------------
 
 test('a river babbles where you stand by it, and not across the island', () => {
-  store = {};
+  store = partsOn();
   const look = inland({ river: [4, 0, 2] });
   const sound = heardSound(look);
   run(sound, 1);
@@ -1178,7 +1196,7 @@ test('a river babbles where you stand by it, and not across the island', () => {
 });
 
 test('the volcano rumbles louder towards its crater', () => {
-  store = {};
+  store = partsOn();
   const look = inland({ crater: [250, 30, 0] });
   const sound = heardSound(look);
   run(sound, 10);
@@ -1390,7 +1408,7 @@ test('a loop with recordings is joined from them, and its computed version is ne
 });
 
 test('recordings for something that is no family are refused, and a bed takes its own over while playing', () => {
-  store = {};
+  store = partsOn();
   const sound = heardSound(village(3));
   assert.equal(sound.setSamples('rave', [recording(2)]), false, 'the music has its own folders');
   assert.equal(sound.setSamples('constructor', [recording(2)]), false);

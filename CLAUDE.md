@@ -2587,7 +2587,8 @@ THREE.Audio`/`PositionalAudio`: three r170 connects `audio.gain` to the listener
 never touches that output again, so the one move holds. Master is `listener.setMasterVolume` (times the
 switch-on fade). Kept per browser in `promptholm.sound.mix`, only what differs from the defaults, written
 only by `sound.setMix` (main.js `onSoundMix` from ui.js); a part that is off is also not *fired*
-(`live(part)`), so muting is free. A family of buffers beyond the first six (surf, wind, murmur, hammer,
+(`live(part)`; the sea bed's two loops are stopped), so muting is free. `MIX_OFF` (sea, water, borrel)
+starts switched off until they sound right; a browser that switched one on keeps its `true`. A family of buffers beyond the first six (surf, wind, murmur, hammer,
 gull, clink) is a generator in `LAZY`, started by `need(name)` the first time something within reach wants
 it and stepped a frame at a time by `makeMore` - `stats().buffers` and `making` say which exist.
 What sound hears comes only through `soundSnapshot()` in main.js; a drawing module never calls sound, it

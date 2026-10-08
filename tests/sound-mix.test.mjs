@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  MIX_KEY, MIX_LEVELS, MIX_PARTS, MIX_BUSES, busOf, clampMix, loadMix, saveMix, forgetMix, mixDefaults,
+  MIX_KEY, MIX_LEVELS, MIX_PARTS, MIX_OFF, MIX_BUSES, busOf, clampMix, loadMix, saveMix, forgetMix, mixDefaults,
 } from '../web/js/sound-mix.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,10 +33,11 @@ test('every part sits on one of the three buses, and no id is used twice', () =>
   assert.deepEqual(MIX_LEVELS.map(([k]) => k), ['master', ...MIX_BUSES], 'a slider per bus and the master');
 });
 
-test('defaults are everything at full and everything on', () => {
+test('defaults are every slider at full, and every part on but the borrel, the sea and the water', () => {
   const d = mixDefaults();
   for (const [k] of MIX_LEVELS) assert.equal(d[k], 1);
-  for (const [k] of MIX_PARTS) assert.equal(d[k], true);
+  assert.deepEqual([...MIX_OFF].sort(), ['borrel', 'sea', 'water'], 'off until they sound right');
+  for (const [k] of MIX_PARTS) assert.equal(d[k], !MIX_OFF.includes(k), k);
   assert.deepEqual(loadMix(memory()), d);
   assert.deepEqual(loadMix(null), d, 'no storage at all');
 });
@@ -59,11 +60,30 @@ test('only what differs is kept, and a bad field spoils nothing else', () => {
   const m = loadMix(s);
   assert.equal(m.music, 1);
   assert.equal(m.speech, 0.3);
-  assert.equal(m.sea, true);
+  assert.equal(m.sea, false, 'not a boolean: the default, which is off');
   s.m[MIX_KEY] = '{not json';
   assert.deepEqual(loadMix(s), mixDefaults());
   forgetMix(s);
   assert.equal(s.m[MIX_KEY], undefined);
+});
+
+test('a part off by default is kept when switched on, and forgotten when switched off again', () => {
+  const s = memory();
+  for (const k of MIX_OFF) saveMix(k, true, s);
+  assert.deepEqual(JSON.parse(s.m[MIX_KEY]), { sea: true, water: true, borrel: true });
+  const m = loadMix(s);
+  for (const k of MIX_OFF) assert.equal(m[k], true, `${k} stays on`);
+  for (const k of MIX_OFF) saveMix(k, false, s);
+  assert.equal(s.m[MIX_KEY], undefined, 'off again is the default: nothing kept');
+  s.m[MIX_KEY] = JSON.stringify({ borrel: true });
+  assert.equal(loadMix(s).borrel, true, 'a browser that switched it on before keeps it');
+  assert.equal(loadMix(s).sea, false);
+});
+
+test('sound.js fires no part that is off, the sea bed included', () => {
+  const src = fs.readFileSync(path.join(HERE, '..', 'web', 'js', 'sound.js'), 'utf8');
+  assert.ok(/const live = \(part\) => !!mix\[part\]/.test(src), 'live() reads the part');
+  assert.ok(/live\('borrel'\)/.test(src) && /live\('water'\)/.test(src) && /live\('sea'\)/.test(src));
 });
 
 test('storage that throws costs nothing but the memory', () => {
