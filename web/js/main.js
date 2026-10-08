@@ -2260,8 +2260,11 @@ function walkCallbacks() {
     // Up a ship's rope ladder, and off her again by jumping or down it (walk.js): the sea counts a
     // crew, so it is told at the top and again once you are off. No room to change - on the deck
     // you are as outdoors as on the quay.
-    onBoarded: (b) => {
+    // `stowed`: up the ladder with the statue on the back, now on her deck as cargo - the book's
+    // `boarded`, as a rowing boat walked into with her is (takeBoat).
+    onBoarded: (b, { stowed = false } = {}) => {
       if (state.net) { state.net.boardBoat(b.id); state.net.setRoom(null, state.walk); }
+      if (stowed && state.hunt) state.hunt.boardedWith(false);
       state.walk.setInteractables(interactables());
     },
     onLeftDeck: (b) => {

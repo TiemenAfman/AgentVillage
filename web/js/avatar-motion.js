@@ -230,6 +230,7 @@ function tick(dt){
     const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
+    if(mode!=='climb'&&f.rig.carrying())f.rig.setCarry(false);
     if(riding)f.stand.visible=f===rider;
     if(riding){
       if(f!==rider)continue;
@@ -267,6 +268,9 @@ function tick(dt){
         const cx=ALOFT.x+ALOFT.out[0]*CLIMB_OUT, cz=ALOFT.z+ALOFT.out[1]*CLIMB_OUT, a=nest.rotation.y;
         nest.position.set(f.stand.position.x-(cx*Math.cos(a)+cz*Math.sin(a)),-(DECK_Y+ALOFT.foot),f.distance-(-cx*Math.sin(a)+cz*Math.cos(a)));
       }
+      // With the statue (Met de schatkist): on the back for the climb, as walk.js carries her up a ladder.
+      const laden=document.querySelector('#motion-carry').checked;
+      if(f.rig.carrying()!==laden)f.rig.setCarry(laden);
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
       f.stand.updateMatrixWorld(true);
       showHoldsFor(figures.indexOf(f),f,climbRise);
