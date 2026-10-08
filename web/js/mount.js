@@ -204,7 +204,7 @@ function slice(m, p, r, boost, step, ground, blocked, ceiling) {
 // rider and every peer work it out of how fast the horse goes, so nothing about it is on the wire.
 // Normal reins select trot; sprint selects gallop. Hysteresis prevents flicker.
 export const GAITS = ['stand', 'trot', 'gallop'];
-export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (3.4)
+export const GAIT_EDGES = [.02, 2.6];   // between the trot (1.9) and the gallop (4.8)
 export const GAIT_MARGIN = .05;
 export function gaitOf(v, was = null) {
   const speed=Math.abs(v);
@@ -212,8 +212,8 @@ export function gaitOf(v, was = null) {
   const threshold=GAIT_EDGES[1]+(was==='gallop'?-GAIT_MARGIN:was==='trot'?GAIT_MARGIN:0);
   return speed>threshold?'gallop':'trot';
 }
-export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,2.6]};
-export const CADENCE_MAX=2.7;
+export const CADENCE = {stand:0,trot:[.75,2.5],gallop:[1.7,3.0]};
+export const CADENCE_MAX=3.1;
 export const cadenceOf=(speed,gait)=>gait==='stand'?0:horseCadence(speed,gait);
 export const PATTERN=HORSE_PATTERNS;
 const frac=(x)=>x-Math.floor(x);

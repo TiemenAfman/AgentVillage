@@ -19,7 +19,7 @@
 export const BODY = { drain: 6, delay: 1, refill: 5 };
 export const BOAT = { drain: 4, delay: 1, refill: 6 };
 // The horse's own pool (Plans/paard-in-plaats-van-fiets.md, "Het paard heeft zijn eigen adem"):
-// forty seconds of gallop where a body has six - at HORSE_GALLOP 3.4 that is about 135 units, a
+// forty seconds of gallop where a body has six - at HORSE_GALLOP 4.8 that is about 190 units, a
 // gallop across a whole grown island rather than across the square - with a longer breath and
 // twenty seconds to fill again at a walk or standing. A trot draws on it too, at
 // mount.js's MOUNT_TROT_SHARE, so riding is not free for ever; how much each gait costs is

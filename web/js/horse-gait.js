@@ -30,11 +30,16 @@
 // The trot is now above a sprint and the gallop a good deal more; what pays for it is the
 // cadence and a shorter time on the ground, since a planted hoof covers at most the leg's
 // reach (~.29 a stance at this body height) and never slides: stance = v * duty / hz.
+// The gallop was 3.4, a quarter over the Adventurer's sprint, and the horse was hardly worth getting on
+// (a route from above measured slower ridden than run). Martijn, 8 October 2026: "paard sprint wordt
+// overal sneller" - 4.8, 1.8 times the sprint. A hoof still covers no more than its reach a stance: the
+// gallop's cadence goes up to 3.0 and its time on the ground down to .16 (4.8 * .16 / 3.0 = .26, what
+// .2 at 2.6 Hz gave the old 3.4).
 export const HORSE_TROT = 1.9;
-export const HORSE_GALLOP = 3.4;
+export const HORSE_GALLOP = 4.8;
 export const HORSE_PATTERNS = {
   trot: { land: [0, .5, .5, 0], duty: .36, lift: [.09, .066], flex: [1.35, .8], reach: [0, 0], peak: .38 },
-  gallop: { land: [.42, .6, 0, .17], duty: .2, lift: [.13, .11], flex: [1.55, 1.15], reach: [.02, -.016], peak: .32,
+  gallop: { land: [.42, .6, 0, .17], duty: .16, lift: [.13, .11], flex: [1.55, 1.15], reach: [.02, -.016], peak: .32,
     trail: [.035, .07], over: [.055, 0] },
   walk: { land: [.25, .75, 0, .5], duty: .72, lift: [.038, .03], flex: [.6, .35], reach: [0, 0], peak: .42 },
 };
@@ -43,7 +48,7 @@ export function horseCadence(speed, gait) {
   const v = Math.abs(speed);
   if (v < .001) return 0;
   // Below the normal pace shorten and slow the trot instead of sliding a stationary foot.
-  if (gait === 'gallop') return 1.7 + .9 * Math.min(1, v / HORSE_GALLOP);
+  if (gait === 'gallop') return 1.7 + 1.3 * Math.min(1, v / HORSE_GALLOP);
   if (gait === 'walk') return Math.max(.4, v / .29);
   return .75 + 1.75 * Math.min(1, v / HORSE_TROT);
 }
