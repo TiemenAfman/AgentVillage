@@ -129,8 +129,8 @@ export const CRAFTS = Object.freeze({
     // One over each side of the waist, where the hull is widest and lowest (the bulwark there
     // is the bake's 1.27 above DECK_Y, the hull's flare 2.35 out at that height, so ropes
     // hanging plumb at 2.42 clear it all the way to the water). At z 1.85, forward of the last of
-    // the four gun ports: the cannons and their hoods stand out to 2.63 at z -2, -1, 0 and 1, and
-    // between them there is a window of 0.4 to 0.5, too little for a ladder 0.5 wide, but from
+    // the four gun ports: the source's cannons and their hoods stood out to 2.63 at z -2, -1, 0 and 1
+    // (the guns are gone since - Plans/kanonnen.md - the hoods are the hull's and stay), and between them there is a window of 0.4 to 0.5, too little for a ladder 0.5 wide, but from
     // 1.4 to the end of the waist the side is clean (measured by level rays over the whole
     // height of the hull, as the rails were). The foot is well under the waterline - a swimmer
     // takes it from the surface - and the deck is stepped onto 1.35 from the middle, inside the
@@ -155,6 +155,16 @@ export const CRAFTS = Object.freeze({
     // the bow (`yaw` in the hull's frame, 0 forward). `y` is the seat, as a stool's is (walk.js sitOn);
     // `reach` how far from it E offers it, and `floor` the height a body must be above to be in the nest.
     nest: Object.freeze({ seat: Object.freeze({ x: 0, z: 0.17, y: 9.2, yaw: 0 }), reach: 0.65, floor: 8.6 }),
+    // Her two guns (Plans/kanonnen.md, the keeper's own model, scripts/build-cannon.py): one a side
+    // in the waist, between the mainmast (z 0) and the quarterdeck stairs (from z -1.4), square out
+    // over the bulwark - which is 0.16 over the deck there and the bore 0.3, so a gun clears it at
+    // any laying. `x`, `z` the middle of the carriage on the deck, `y` the deck under it (the walk
+    // map's 1.108), `yaw` the way it points at rest in her frame (0 forward, so +pi/2 is starboard,
+    // +x), `stand` where whoever mans it stands, behind the breech. The order is the gun's number on
+    // the wire ({t:'cannon', i}). web/js/boat.js welds both into the hull's one geometry.
+    cannons: Object.freeze([1, -1].map((s) => Object.freeze({
+      x: s * 1.5, z: -1.0, y: 1.108, yaw: s * Math.PI / 2, stand: Object.freeze([s * 0.85, -1.0]),
+    }))),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
     // falls back to the rowing boat's when it is missing): she takes 6 s to reach her top speed, and
     // let go of the helm - or of W - she runs out for most of a minute instead of four seconds

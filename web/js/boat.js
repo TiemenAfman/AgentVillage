@@ -26,6 +26,7 @@ import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { createSurface, createSide } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
 import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
+import { cannonShape, carriageGeometry, barrelGeometry, restLay, layPoint, muzzleOf } from './cannon.js';
 import * as models from './models.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
@@ -472,13 +473,33 @@ export function ladderBoxes(spec) {
 
 // The hull with its ladders hung on it. Both are the same attribute layout (position, colour,
 // emissive - no sheet, no normals), which is what lets them weld into one geometry.
-function withLadders(hull, spec) {
+// And her guns (Plans/kanonnen.md), last, so their corners are a run at the end of the merged
+// geometry that `layGuns` below can find again: each gun's carriage and barrel, as baked (around
+// their own origins), are kept beside it and turned into place again whenever the gun is laid.
+function withLadders(hull, spec, more = []) {
   const boxes = ladderBoxes(spec);
-  if (!boxes.length) return hull;
-  const merged = mergeGeometries([hull, ...boxes], false);
+  if (!boxes.length && !more.length) return hull;
+  const merged = mergeGeometries([hull, ...boxes, ...more], false);
   hull.dispose();
   for (const b of boxes) b.dispose();
+  for (const m of more) m.dispose();
   return merged;
+}
+
+// The guns as runs of the hull's geometry: per gun, per part, where its corners start, how many, and
+// the baked positions to turn. `layGun` writes them; the colours never move.
+function gunRuns(spec) {
+  if (!cannonShape()) return { parts: [], guns: [] };
+  const parts = [], guns = [];
+  for (const g of spec.cannons || []) {
+    const carriage = carriageGeometry(), barrel = barrelGeometry();
+    parts.push(carriage, barrel);
+    guns.push({ spec: g, lay: restLay(), kick: 0, runs: [
+      { barrel: false, local: carriage.attributes.position.array.slice(), count: carriage.attributes.position.count },
+      { barrel: true, local: barrel.attributes.position.array.slice(), count: barrel.attributes.position.count },
+    ] });
+  }
+  return { parts, guns };
 }
 
 // What a hull carries besides its crew: the treasure statue, put on the deck by walk.js (putOnBoat)
@@ -620,8 +641,36 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   // barrel() in props.js uses, and for the same reason: a set that is not there yet should
   // leave the island drawing something rather than throwing on the boot path.
   const rowing = !ship && models.hasAsset(ROWBOAT) ? rowboatGeometry() : null;
-  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon)
+  const armed = ship ? gunRuns(CRAFTS.galleon) : { parts: [], guns: [] };
+  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon, armed.parts)
     : rowing ? rowing.geometry : buildBoatGeometry();
+  // Where each gun's runs start: counted back from the end, since they were merged last.
+  const guns = armed.guns;
+  {
+    let at = geometry.attributes.position.count;
+    for (let i = guns.length - 1; i >= 0; i--) {
+      for (let k = guns[i].runs.length - 1; k >= 0; k--) { at -= guns[i].runs[k].count; guns[i].runs[k].from = at; }
+    }
+  }
+  const laid = [0, 0, 0];
+  // Lay gun `i` ([traverse, elevation], shared/cannon.mjs) and run it back by `kick`, moving its
+  // corners in the one geometry. Nothing is written when nothing changed, so a gun nobody touches
+  // costs nothing a frame.
+  function layGun(i, lay, kick = 0) {
+    const g = guns[i];
+    if (!g || (g.lay[0] === lay[0] && g.lay[1] === lay[1] && g.kick === kick && g.drawn)) return;
+    g.lay = [lay[0], lay[1]]; g.kick = kick; g.drawn = true;
+    const pos = geometry.attributes.position;
+    for (const r of g.runs) {
+      for (let k = 0; k < r.count; k++) {
+        layPoint(g.spec, g.lay, kick, r.barrel, r.local[k * 3], r.local[k * 3 + 1], r.local[k * 3 + 2], laid);
+        pos.setXYZ(r.from + k, laid[0], laid[1], laid[2]);
+      }
+    }
+    pos.needsUpdate = true;
+    geometry.computeBoundingSphere();
+  }
+  for (let i = 0; i < guns.length; i++) layGun(i, guns[i].lay, 0);
   const oars = rowing ? rowing.oars : [];
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
@@ -750,6 +799,14 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     },
     // How much way the swell thinks she is making, 0..1 (for tests).
     way: () => way,
+
+    // Her guns (Plans/kanonnen.md): how many, how one is laid, laying one, and its muzzle in her own
+    // frame (y above her waterline, as her geometry has it: web/js/cannon.js).
+    guns: guns.length,
+    gunSpec: (i) => (guns[i] ? guns[i].spec : null),
+    gunLay: (i) => (guns[i] ? { lay: guns[i].lay.slice(), kick: guns[i].kick } : null),
+    layGun,
+    gunMuzzle: (i) => (guns[i] ? muzzleOf(guns[i].spec, guns[i].lay, guns[i].kick) : null),
 
     // Where a body in it is, swell and all: a ship's pilot's feet at her wheel, a rower's seat
     // on the thwart (walk.js sits him there).
