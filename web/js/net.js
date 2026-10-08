@@ -130,6 +130,11 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   const berthKnown = () => Array.isArray(frame());
   const outgoing = (x, z) => sceneToWorld([x, z], homeAt());
   const incoming = (x, z) => worldToScene([x, z], homeAt());
+  // A room is one place for the whole sea (Plans/DONE/gedeelde-kamers.md): every tavern door, ours or a
+  // neighbour's, leads into the same tavern, so a position in it is the room's own and gains or
+  // loses no berth either way. Only a room that is a building - `boat` (main.js setRoom('boat')) is
+  // the pilot of a hull out of doors, and stays in the sea's frame.
+  const indoors = (r) => typeof r === 'string' && r !== 'boat';
   // A boat's row, if it carries a position. `moved` does, and so does every boat in a
   // welcome; `take` and `drop` may or may not, so it is the fields that decide.
   const boatIn = (b) => {
@@ -270,8 +275,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         case 's': {
           // Rows are [id, x, y, z, yaw, ...] in the sea's frame - lib/players.mjs - and x
           // and z come into ours here, before anything draws them.
+          // Not somebody in a room (row[6]): they stand where the room has them, see `indoors`.
           const [hx, hz] = homeAt();
-          if (hx || hz) for (const row of m.a || []) { row[1] -= hx; row[3] -= hz; }
+          if (hx || hz) for (const row of m.a || []) if (!indoors(row[6])) { row[1] -= hx; row[3] -= hz; }
           // `d` is who stands on which deck, in that hull's own frame, so it needs no
           // translating: the hull it is measured from already came in through boatIn.
           peers.snapshot(m.a, undefined, m.d);
@@ -447,7 +453,7 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       && room === last.r
       && hx === last.hx && hz === last.hz;
     if (still && now - last.at < KEEPALIVE_MS) return;
-    const [wx, wz] = outgoing(s.pos.x, s.pos.z);
+    const [wx, wz] = indoors(room) ? [s.pos.x, s.pos.z] : outgoing(s.pos.x, s.pos.z);
     const pose = { t: 'p', x: wx, y: s.pos.y, z: wz, yaw: s.yaw, f, r: room || undefined };
     if (cursor) { pose.b = cursor.id; pose.u = cursor.u; pose.v = cursor.v; }
     if (deck) { pose.on = deck.boat; pose.d = [deck.x, deck.y, deck.z, deck.yaw]; }
