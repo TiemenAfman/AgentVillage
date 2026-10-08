@@ -176,7 +176,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   de GPU tekende hem in beide passes (2 miljoen driehoeken op Hoogezand bij NPC 50). Nu staan wie
   getekend wordt aaneengesloten vooraan in elke batch (swap bij een wissel), met rokken en haar in
   eigen batches: geparkeerd is 0, en op NPC 50 scheelt het 37% van de kleurpas.
-- ✅ [website.md](DONE/website.md) — promptholm.com: een lichte, statische landingspagina in `site/` met
+- ✅ [website.md](DONE/website.md) — agentsofthesea.com: een lichte, statische landingspagina in `site/` met
   nieuwe screenshots uit de game en downloadknoppen die altijd naar de nieuwste release wijzen.
   Gebouwd op 29 september 2026; nog niet online (Pages en DNS aanzetten).
 - ✅ [tenten-vertrekken.md](DONE/tenten-vertrekken.md) — een inwoner met alleen een tent die een week
