@@ -146,7 +146,8 @@ const PROBE = Array.from({ length: 8 }, (_, i) => {
 // say "this one is somebody". The one you steer is the exception - it is composed by
 // hand in avatar.js - but it still wears the satchel this puts on.
 export function playerGeometry(style = 'sonnet') {
-  const base = figureGeometry(style);
+  // The old body: the hat and satchel below are placed on its head and hip.
+  const base = figureGeometry(style, { skinned: false });
   base.deleteAttribute('normal');   // the kit parts carry none; normals come after the merge
   const parts = [
     base,

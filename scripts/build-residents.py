@@ -32,7 +32,7 @@ What is different from the Wanderer, and why:
   the kit's: a skirt hangs from the hips and follows a thigh more the nearer it is to the hem.
 - **The face is geometry.** A decimated head loses what the texture drew, so eyes are small dark
   ellipsoids in the skin part (their corner colour dark, so the skin dye cannot lighten them), and
-  brows are two thin boxes in every hair part - bald (`hair:none`) is brows alone.
+  brows two thin boxes beside them, a shade of the skin: a bald head is then no part at all.
 - **Colour is a multiplier.** Every corner colour is shading round 1; the island multiplies it by
   the resident's own dye (`dye`: skin, hair, cloth, hat). Skin and hair keep their texture's hue
   over its mean, as the Wanderer's do; cloth keeps only its texture's light and dark over the
@@ -104,7 +104,8 @@ COVER_IN, COVER_OUT = B['COVER_IN'], B['COVER_OUT']
 # sank back into the shirt and only its hem and lapels showed.
 VEST_OFF = .022
 SKIRT_EASE = .018
-EYE_DARK = .14           # an eye's corner colour: dark under any skin dye
+EYE_DARK = .14
+BROW_DARK = .3           # a brow's: a shade of the skin's own colour, darker than any hair dye would make it           # an eye's corner colour: dark under any skin dye
 SAMPLE_IN = B['SAMPLE_IN']
 
 
@@ -643,20 +644,18 @@ def build(sex, spec):
             part('skin:' + '+'.join(shows), 'skin', 'skin', arr, shows=list(shows))
     for e in eye_objs:
         face.append(emit(e, plain(EYE_DARK)))
-    part('skin', 'skin', 'skin', concat(*face), shows=list(always))
-    parts.sort(key=lambda p: p['id'] != 'skin')
-
-    # Brows: two thin boxes where the kit's brows are, in every hair part.
+    # Brows: two thin boxes where the kit's brows are, in the skin part like the eyes - dark under
+    # any skin dye - so a bald head is no part of its own and costs no draw call.
     brow_pts = world_points(brows)
-    brow_objs = []
     for side, sign in (('left', -1), ('right', 1)):
         lo, hi = bounds([p for p in brow_pts if p.x * sign > 0])
         b = box_object(f'Brow {side}', (lo[0], lo[1] - .002, (lo[2] + hi[2]) / 2 - .003),
                        (hi[0], lo[1] + .006, (lo[2] + hi[2]) / 2 + .004))
         to_joints(b, [{J['head']: 1}] * len(b.data.vertices))
-        brow_objs.append(b)
-    brow_arr = concat(*(emit(b, plain(.85)) for b in brow_objs))
-    part('hair:none', 'hair', 'hair', brow_arr)
+        face.append(emit(b, plain(BROW_DARK)))
+    part('skin', 'skin', 'skin', concat(*face), shows=list(always))
+    parts.sort(key=lambda p: p['id'] != 'skin')
+
     for sid, (arm, meshes) in hairs.items():
         B['active'](meshes[0])
         for m in meshes[1:]:
@@ -665,7 +664,7 @@ def build(sex, spec):
             bpy.ops.object.join()
         h = bpy.context.view_layer.objects.active
         decimate(h, TARGET['hair'])
-        part('hair:' + sid, 'hair', 'hair', concat(emit(h, texture_colour(h, 'tint')), brow_arr))
+        part('hair:' + sid, 'hair', 'hair', emit(h, texture_colour(h, 'tint')))
 
     for slot in ('shirt', 'trousers', 'shoes', 'straps'):
         o = garments[slot]

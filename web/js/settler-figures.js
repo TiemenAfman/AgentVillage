@@ -16,7 +16,7 @@ import { residentPart, residentNamedPart, RESIDENT_HEAD_Y, RESIDENT_EYE_OFFSET }
 // of its look and its stride comes out of its height - so the half that decides where a
 // body is has to be able to ask what it looks like, from Node. Re-exported here because
 // this file has always been where the rest of the island asks.
-import { HAT_SHAPES, settlerLook, styleLook, kindOf, styleOf } from 'shared/palette.mjs';
+import { HAT_SHAPES, settlerLook, styleLook, kindOf, styleOf, residentWardrobe } from 'shared/palette.mjs';
 import { makeRng, hash32, clamp } from 'shared/rng.mjs';
 // The heading is ours. The walk names a direction to turn towards and how briskly; turning
 // that into an angle needs atan2, and shared/ may not have one - see the header there.
@@ -29,7 +29,7 @@ import { goldBarGeometry } from './goldpit.js';
 import { DANCE_MOVES, dancePose } from './dance.js';
 import {
   residentGeometry, skinnedMaterial, createPoseTexture, createPose, clearPose, poseJoints, jointMatrix,
-  residentRig, skinPartsFor, residentPartOf, gripOf, JOINT, POSE_FLOATS,
+  residentRig, residentPartOf, residentSkinGeometry, skinShow, gripOf, JOINT, POSE_FLOATS, skinPieces as RESIDENT_SKIN_PIECES,
 } from './resident-skin.js';
 import { residentPose, armTo, barrowGrip } from './resident-poses.js';
 
@@ -45,11 +45,6 @@ export function skinnedWanted() {
     return globalThis.localStorage?.getItem('promptholm.debug.skinned') === '1';
   } catch { return false; }
 }
-// What the skinned crowd wears until the wardrobe stream (fase 4) chooses: the old look's own
-// colours on the kit's peasant clothes, a woman's hair long and a man's parted, as the old crowd
-// gave only women hair.
-const SKINNED_SHOES = 0x5a3c28;
-const SKINNED_HAIR = 0x503a2d;
 // What the skinned body holds, at its size. The tools, the sword, the torch and the pint were made
 // for the old body's fist - a ball half a head across on a body three heads tall - and in this
 // body's hand, a fifth of that, a hammer came out as long as the forearm and the pint as big as
@@ -202,8 +197,13 @@ const RESIDENT_PIVOTS = {
 // One figure, merged, for everything that draws a settler as a plain mesh: walk mode, the
 // interiors and the model sheet. The crowd outside does not go through here - it is drawn
 // from the same parts as separate instanced meshes, see createFigures.
-export function figureGeometry(style, { sailor = false, look = null } = {}) {
+//
+// With the skinned residents wanted (`skinned`, skinnedWanted() by default) it is the same pieces
+// the crowd wears, from the same wardrobe (`id` is whose: the stream is hashed off it), merged
+// standing at rest with the look's proportions and every colour baked into the corners.
+export function figureGeometry(style, { sailor = false, look = null, skinned = skinnedWanted(), id = null } = {}) {
   const lk = look || styleLook(style, sailor);
+  if (skinned) return skinnedFigureGeometry(lk, id || `figure:${style}`, sailor ? 'sailor' : 'adult');
   const build = lk.build ?? 1, height = lk.height ?? 1, head = lk.head ?? 1;
   const bodyParts = [
     torsoGeometry(lk.tunic),
@@ -218,6 +218,54 @@ export function figureGeometry(style, { sailor = false, look = null } = {}) {
     ...hatParts(lk.hatShape, lk.hat, -HEAD_Y),
   ].map((g) => g.scale(head, head, head).translate(0, HEAD_Y * height, 0));
   return mergeParts([...bodyParts, ...headParts]);
+}
+
+function skinnedFigureGeometry(look, id, kind) {
+  const w = residentWardrobe(id, look, kind);
+  const c = w.colors;
+  const wear = [['skin', look.skin], [w.top, c.top]];
+  if (w.bottom) wear.push([w.bottom, c.bottom]);
+  wear.push([w.feet, c.feet]);
+  if (w.over) wear.push([w.over, c.over]);
+  if (w.scarf) wear.push(['scarf', c.scarf]);
+  if (w.hair) wear.push(['hair:' + w.hair, c.hair]);
+  if (look.hatShape && look.hatShape !== 'none' && residentPartOf(w.sex, 'hat:' + look.hatShape)) wear.push(['hat:' + look.hatShape, look.hat]);
+  const rig = residentRig(w.sex);
+  const P = clearPose(createPose());
+  P.build = look.build ?? 1; P.height = look.height ?? 1; P.head = look.head ?? 1;
+  const joints = poseJoints(rig, P, new Float32Array(POSE_FLOATS));
+  const show = skinShow(w.skin, w.feet);
+  const parts = [];
+  for (const [pid, hex] of wear) {
+    const dye = new THREE.Color(hex);
+    // The skin's bare pieces as the outfit shows them: only those whose `shows` holds it.
+    const pieces = pid === 'skin'
+      ? RESIDENT_SKIN_PIECES(w.sex).filter((p) => p.shows.length === 4 || (p.mask & show))
+      : [residentPartOf(w.sex, pid)];
+    for (const p of pieces) {
+      const n = p.positions.length / 3;
+      const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = p.joints[i * 2], b = p.joints[i * 2 + 1], wa = p.weights[i];
+        for (let k = 0; k < 3; k++) {
+          const rowA = a * 12 + k * 4, rowB = b * 12 + k * 4;
+          const x = p.positions[i * 3], y = p.positions[i * 3 + 1], z = p.positions[i * 3 + 2];
+          const va = joints[rowA] * x + joints[rowA + 1] * y + joints[rowA + 2] * z + joints[rowA + 3];
+          const vb = joints[rowB] * x + joints[rowB + 1] * y + joints[rowB + 2] * z + joints[rowB + 3];
+          pos[i * 3 + k] = va * wa + vb * (1 - wa);
+        }
+        col[i * 3] = p.colors[i * 3] * dye.r;
+        col[i * 3 + 1] = p.colors[i * 3 + 1] * dye.g;
+        col[i * 3 + 2] = p.colors[i * 3 + 2] * dye.b;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(n), 1));
+      parts.push(g);
+    }
+  }
+  return mergeParts(parts);
 }
 
 // Where each item sits in a resident's hand. The player's grip is its raw "Right hand"
@@ -519,8 +567,11 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) { swapFloats(m.instanceColor.array, i * 3, j * 3, 3); m.instanceColor.needsUpdate = true; }
       // A skinned part's instance names its figure's pose row, and goes where its matrix goes.
-      const fa = m.geometry.attributes.aFigure;
-      if (fa) { swapFloats(fa.array, i, j, 1); fa.needsUpdate = true; }
+      // And the outfit a skinned body's skin shows (resident-skin.js residentSkinGeometry).
+      for (const name of ['aFigure', 'aShow']) {
+        const a = m.geometry.attributes[name];
+        if (a) { swapFloats(a.array, i, j, 1); a.needsUpdate = true; }
+      }
     }
     const fi = b.figs[i], fj = b.figs[j];
     b.figs[i] = fj; b.figs[j] = fi;
@@ -624,7 +675,11 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     const k = `${sex}:${id}`;
     let b = parts.get(k);
     if (b) return b;
-    const m = new THREE.InstancedMesh(residentGeometry(residentPartOf(sex, id), CAPACITY), skin.material, CAPACITY);
+    // A piece the bake has not got (a wardrobe asking for something it has no mesh for) is left
+    // off the figure rather than taking the whole crowd down with it.
+    if (id !== 'skin' && !residentPartOf(sex, id)) return null;
+    const geo = id === 'skin' ? residentSkinGeometry(sex, CAPACITY) : residentGeometry(residentPartOf(sex, id), CAPACITY);
+    const m = new THREE.InstancedMesh(geo, skin.material, CAPACITY);
     m.customDepthMaterial = skin.depth;
     cull(m);
     m.castShadow = true;
@@ -873,34 +928,40 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     return true;
   }
 
-  // The skinned crowd's dressing: the pieces of the bake this look comes to, each in its batch,
-  // each instance naming the figure's pose row. Until the wardrobe stream (fase 4) it is the old
-  // look on the kit's clothes: shirt in the tunic's colour, trousers or skirt in the trim's.
+  // The skinned crowd's dressing (shared/palette.mjs residentWardrobe, the `:wardrobe` stream):
+  // the pieces of the bake it comes to, each in its batch, each instance naming the figure's pose
+  // row, the skin also which outfit it shows its bare pieces for.
   function enrolSkinned(f, look, kind) {
     pose.ensure(body.n);
-    const sex = look.presentation === 'woman' ? 'female' : 'male';
-    const bottom = look.outfit === 'skirt' ? 'skirt' : 'trousers';
-    const feet = 'shoes';
-    const wear = [
-      ...skinPartsFor(sex, bottom, feet).map((id) => [id, look.skin]),
-      ['shirt', look.tunic], [bottom, look.trim], [feet, SKINNED_SHOES],
-      [sex === 'female' ? 'hair:long' : 'hair:parted', SKINNED_HAIR],
-    ];
+    const w = residentWardrobe(f.id, look, kind);
+    const sex = w.sex, c = w.colors;
+    const wear = [['skin', look.skin], [w.top, c.top]];
+    if (w.bottom) wear.push([w.bottom, c.bottom]);
+    wear.push([w.feet, c.feet]);
+    if (w.over) wear.push([w.over, c.over]);
+    if (w.scarf) wear.push(['scarf', c.scarf]);
+    if (w.hair) wear.push(['hair:' + w.hair, c.hair]);
     if (look.hatShape && look.hatShape !== 'none' && residentPartOf(sex, 'hat:' + look.hatShape)) wear.push(['hat:' + look.hatShape, look.hat]);
     const wears = [body], tints = [];
     for (const [id, hex] of wear) {
       const b = partBatch(sex, id);
+      if (!b) continue;
       join(b, f);
       const m = b.meshes[0];
       tint(m, f[b.key], hex);
       const fa = m.geometry.attributes.aFigure;
       fa.array[f[b.key]] = f.slot;
       fa.needsUpdate = true;
+      if (id === 'skin') {
+        const show = m.geometry.attributes.aShow;
+        show.array[f[b.key]] = skinShow(w.skin, w.feet);
+        show.needsUpdate = true;
+      }
       wears.push(b);
       // A blow reddens the skin and the shirt, as it did the old torso, arms and head.
-      if (id === 'skin' || id === 'shirt') tints.push([b, hex]);
+      if (id === 'skin' || id === w.top) tints.push([b, hex]);
     }
-    worn.set(f, { batches: wears, hat: null, tints });
+    worn.set(f, { batches: wears, hat: null, tints, wardrobe: w });
     f.sex = sex;
     f.look = look;
     f.baseScale = kind === 'apprentice' ? 0.62 : 1;

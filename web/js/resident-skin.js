@@ -32,6 +32,38 @@ export function skinPartsFor(sex, bottom, feet) {
   const combo = `${bottom}/${feet}`;
   return RESIDENTS[sex].parts.filter((p) => p.kind === 'skin' && p.shows.includes(combo)).map((p) => p.id);
 }
+// A body's skin parts, each with `mask`: the outfits it shows under, as SKIN_COMBOS bits.
+export function skinPieces(sex) {
+  return RESIDENTS[sex].parts.filter((p) => p.kind === 'skin')
+    .map((p) => ({ ...p, mask: p.shows.reduce((m, c) => m | (1 << SKIN_COMBOS.indexOf(c)), 0) }));
+}
+// The outfits that decide which skin shows, as bits: what a skin geometry's corners carry
+// (`aMask`, the outfits a bare piece shows under) and what an instance says it wears (`aShow`).
+export const SKIN_COMBOS = ['trousers/shoes', 'trousers/clogs', 'skirt/shoes', 'skirt/clogs'];
+export function skinShow(bottom, feet) { return 1 << SKIN_COMBOS.indexOf(`${bottom}/${feet}`); }
+
+// A body's whole skin as one geometry: the part every outfit shows and every bare piece behind it,
+// each corner carrying the outfits it shows under. One draw call a body where a piece a combination
+// was one more each (Plans/inwoners-in-avonturierstijl.md, "Houd het onder ~40"); an instance that
+// does not show a piece folds its triangles to a point in the shader, which the GPU drops before it
+// rasterises a pixel. What it costs is the bare pieces' vertices for everybody, ~200 triangles.
+export function residentSkinGeometry(sex, capacity) {
+  const pieces = RESIDENTS[sex].parts.filter((p) => p.kind === 'skin');
+  const join = (key) => pieces.flatMap((p) => p[key]);
+  const merged = { positions: join('positions'), normals: join('normals'), colors: join('colors'), joints: join('joints'), weights: join('weights') };
+  const g = residentGeometry(merged, capacity);
+  const mask = new Float32Array(merged.positions.length / 3);
+  let at = 0;
+  for (const p of pieces) {
+    const n = p.positions.length / 3;
+    const bits = p.shows.length === SKIN_COMBOS.length ? 0 : p.shows.reduce((m, c) => m | (1 << SKIN_COMBOS.indexOf(c)), 0);
+    mask.fill(bits, at, at + n);
+    at += n;
+  }
+  g.setAttribute('aMask', new THREE.BufferAttribute(mask, 1));
+  g.setAttribute('aShow', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+  return g;
+}
 
 // One part of the bake as a geometry the skinned material draws: the corner arrays as they are,
 // the joints as bytes, no emissive (the building material reads it), and room for the per-instance
@@ -55,6 +87,8 @@ const SKIN_DECL = [
   'attribute vec2 aJoints;',
   'attribute float aWeight;',
   'attribute float aFigure;',
+  'attribute float aMask;',
+  'attribute float aShow;',
   'uniform highp sampler2D uPose;',
   'mat4 residentJoint(int j, int row) {',
   '  vec4 a = texelFetch(uPose, ivec2(j * 3, row), 0);',
@@ -75,7 +109,14 @@ export function patchSkin(shader, pose) {
   shader.uniforms.uPose = pose;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>\n${SKIN_DECL}`)
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (residentSkin() * vec4(transformed, 1.0)).xyz;');
+    .replace('#include <begin_vertex>', [
+      '#include <begin_vertex>',
+      // A bare piece this instance's outfit covers (residentSkinGeometry): every corner to one
+      // point, so its triangles have no area. aMask is 0 on everything else, and on every
+      // geometry that has no such attribute at all.
+      'if (aMask > 0.5 && (int(aMask + 0.5) & int(aShow + 0.5)) == 0) transformed = vec3(0.0);',
+      'transformed = (residentSkin() * vec4(transformed, 1.0)).xyz;',
+    ].join('\n'));
   if (shader.vertexShader.includes('#include <beginnormal_vertex>')) {
     shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>',
       '#include <beginnormal_vertex>\nobjectNormal = mat3(residentSkin()) * objectNormal;');

@@ -226,6 +226,33 @@ in de browser was in het verborgen paneel niet eerlijk te meten.
 - Nog op de oude maat: de kruiwagen zelf (bak en wiel), en de interieurs (de crew in de Kraken, de
   gasten in de taverne) zijn nog niet bekeken met `?skinned`.
 
+### Fase 4 (8 oktober 2026): de garderobe
+
+- `shared/palette.mjs residentWardrobe(seed, look, kind)`, de stream `<id>:wardrobe`: alle trekkingen
+  altijd in dezelfde volgorde, `:look` onaangeraakt (test). Hemd of (een vrouw met een rok, of een
+  dominee) jurk; broek of rok; laarzen of klompen (35%); vest, schort of geen van beide; een sjaal
+  (15%, een matroos altijd, in marineblauw); drie kapsels per lichaam - een vrouw lang, knot of
+  scheiding, een man scheiding, kort of kaal. Het hemd in de tunic-kleur en het onderstuk in de trim,
+  zoals voorheen, de rest uit de swatches van het eiland. Leerlingen en matrozen dragen geen vest of
+  schort. Dorpsfiguren krijgen via `KEEPERS[..].dress.wear` wat hun post vraagt: de herbergier een
+  schort, de burgemeester en de klerk een vest, de dominee en de schooljuf een jurk, de piraat vest en
+  sjaal.
+- **Onder ~40 calls**: de blote huidstukken zitten in de huid van hun lichaam
+  (`residentSkinGeometry`, een masker per hoek en `aShow` per instance; wat een outfit bedekt valt in
+  de shader tot een punt), de wenkbrauwen in de huid (kaal kost dus geen mesh), en de bretels blijven
+  in de la. Gemeten op de kopie van BierRum: **170 figuren, 33 calls en 389k driehoeken per pass**.
+- `figureGeometry` (de barman in de taverne, het modelvel, `characters.js`) is met de vlag aan
+  dezelfde stukken in rusthouding; walk.js `playerGeometry` houdt het oude lijf, want de hoed en
+  tas daar zitten op het oude hoofd.
+- **De vulkaan blijft op het oude pad** (crowd-view.js: het vijandige eiland): de Codex-bewoners en de
+  wachters zien eruit zoals ze eruitzagen.
+- `/residents.html` heeft een rij van 24 verschillend geklede inwoners voor de houdingen.
+- Gevonden en opgelost: de kleur van een hemd stond onder `top` in de `wear` van drie dorpsfiguren,
+  waar de garderobe een kledingstuk verwacht. De hele crowd van een eiland met een burgemeester werd
+  niet ingeschreven. Nu staan die kleuren onder `topColor`/`bottomColor`, er is een test die elke
+  dorpsfiguur aankleedt, en een stuk dat de bake niet heeft wordt overgeslagen in plaats van alles stil
+  te leggen.
+
 ### Keuzes van de keeper (8 oktober 2026)
 
 - Draw calls: houd het onder ~40 per pass; liever minder losse kledingvarianten.
