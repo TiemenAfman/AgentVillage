@@ -855,6 +855,10 @@ off main.js `seatOf`'s `rowing`), the origin a hip's height under the seat (`SEA
 above it and the sea lowers settlers to it, so the rowing boat's own heights are `DRAUGHT`, `SEAT`, `FLOORBOARDS`,
 `SEAT_Y` in shared/hull.mjs, and the page puts a body on `SEAT_Y` (`craft.deck()`) - no sea redeploy, and a sea or
 page from before draws the old heights a few centimetres off.
+Her floorboards are only 0.035 over still water and the swell is 0.09, so the sea is kept out of her by a
+**lid** (`rowboatLid`, `ROWBOAT_LID` in boat.js): her own outline at 0.2 over the keel, under her sheer, a
+child mesh that writes depth and no colour, `renderOrder` 10 so it is drawn after everything opaque (the rower,
+the statue) and before the transparent water (`tests/rowboat-lid.test.mjs`).
 
 The welcome carries **every** boat (`snapshot` in `lib/boats.mjs`), untouched ones at their
 mooring - leaving those out let two pages that had heard different things draw one ship in

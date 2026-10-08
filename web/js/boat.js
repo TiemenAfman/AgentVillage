@@ -551,6 +551,51 @@ function rowboatGeometry() {
   return { geometry: mergeParts(parts), oars };
 }
 
+// The sea inside the rowing boat. Her floorboards are 0.035 over still water (FLOORBOARDS less
+// DRAUGHT), and the water's swell (+-0.09, aWave in world.js) and her own bob and pitch come over
+// that, so the sea showed in the bottom of her and she looked to be sinking. Floating her higher
+// would lift her keel out of the water instead; so the water is kept out of her the way a boat in
+// any game does it: a lid over her opening that writes depth and no colour, drawn after everything
+// opaque (`renderOrder`) and so before the water, which is transparent and drawn last. What is in
+// the boat - the floorboards, the rower, the statue - is already drawn under it; the water behind
+// it fails the depth test. LID is its height over the keel: under the lowest of her sheer (0.21,
+// abaft amidships) and over anything the water reaches inside her, so from the side it never shows
+// a hole above her gunwale. Its outline is her own at that height, a hair inside her planking.
+export const ROWBOAT_LID = 0.2;
+const LID_BAND = 0.03, LID_SLICE = 0.05, LID_IN = 0.95;
+export function rowboatLid() {
+  const half = new Map();
+  for (const n of rowParts()) {
+    if (OAR.test(n)) continue;
+    const part = models.part(n);
+    const p = part.positions, at = part.at || [0, 0, 0];
+    for (let i = 0; i < p.length; i += 3) {
+      if (Math.abs(p[i + 1] + at[1] - ROWBOAT_LID) > LID_BAND) continue;
+      const k = Math.round((p[i + 2] + at[2]) / LID_SLICE);
+      half.set(k, Math.max(half.get(k) || 0, Math.abs(p[i] + at[0])));
+    }
+  }
+  const ks = [...half.keys()].sort((a, b) => a - b);
+  if (ks.length < 3) return null;
+  // Stern to stem down her starboard side, and back up the other: [x, z] in her own frame.
+  const side = ks.map((k) => [half.get(k) * LID_IN, k * LID_SLICE]);
+  return [...side, ...side.reverse().map(([x, z]) => [-x, z])];
+}
+
+function lidMesh() {
+  const outline = rowboatLid();
+  if (!outline) return null;
+  // A shape in (x, -z), laid flat: rotateX(-PI/2) takes (x, y, 0) to (x, 0, -y).
+  const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const geometry = new THREE.ShapeGeometry(shape);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, ROWBOAT_LID - DRAUGHT, 0);
+  const lid = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
+  lid.renderOrder = 10;
+  lid.raycast = () => {};
+  return lid;
+}
+
 export function createBoat({ scene, material, kind = 'rowboat' }) {
   const ship = kind === 'ship' && models.has(SHIP);
   // The rowing boat, if it has been baked; the drawn hull otherwise. The same `models.has` guard
@@ -562,6 +607,9 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   const oars = rowing ? rowing.oars : [];
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
+  // The water kept out of her (rowboatLid above): a child, so the swell carries it with her.
+  const lid = rowing ? lidMesh() : null;
+  if (lid) object.add(lid);
   scene.add(object);
   let heading = 0;
   let cargo = null;
@@ -674,6 +722,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
       cargo = null;
       scene.remove(object);
       geometry.dispose();
+      if (lid) { lid.geometry.dispose(); lid.material.dispose(); }
     },
   };
 }
