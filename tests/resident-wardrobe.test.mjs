@@ -11,7 +11,7 @@ const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { residentWardrobe, settlerLook, keeperLook, KEEPERS, RESIDENT_HAIR } = await import('shared/palette.mjs');
 const skin = await import('../web/js/resident-skin.js');
-const { figureGeometry } = await import('../web/js/settler-figures.js');
+const { figureGeometry, skinnedWanted, eyeHeight } = await import('../web/js/settler-figures.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
 
@@ -107,4 +107,36 @@ test('a room figure is the crowd own pieces, standing at the look height', () =>
   }
   // And without the flag it is the old figure, as walk.js's satchel and hat expect.
   assert.ok(figureGeometry('sonnet', { skinned: false }).attributes.position.count > 0);
+});
+
+// The keeper turned them on for 0.11.0 (8 October 2026): drawn unless a page or a browser asks for
+// the old body back.
+test('the new residents are the default, and ?skinned=0 or the browser flag is the way back', () => {
+  const was = { location: globalThis.location, localStorage: globalThis.localStorage };
+  const store = new Map();
+  try {
+    globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null) };
+    globalThis.location = { search: '' };
+    assert.equal(skinnedWanted(), true);
+    globalThis.location = { search: '?nointro&skinned=0' };
+    assert.equal(skinnedWanted(), false);
+    globalThis.location = { search: '?skinned=1' };
+    assert.equal(skinnedWanted(), true);
+    globalThis.location = { search: '' };
+    store.set('promptholm.debug.skinned', '0');
+    assert.equal(skinnedWanted(), false);
+    globalThis.location = { search: '?skinned=1' };
+    assert.equal(skinnedWanted(), true, 'the page asks over the browser');
+  } finally {
+    for (const [k, v] of Object.entries(was)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
+  }
+});
+
+test('a conversation looks a skinned resident in the eye, not on the chin', () => {
+  for (const sex of ['male', 'female']) {
+    const rig = skin.residentRig(sex);
+    assert.ok(Math.abs(eyeHeight({ sex }) - rig.eyeY) < 1e-9);
+    const tall = eyeHeight({ sex, look: { height: 1.1, head: 1 } });
+    assert.ok(tall > rig.eyeY && tall < rig.eyeY * 1.1, `${sex}: eyes at ${tall}`);
+  }
 });

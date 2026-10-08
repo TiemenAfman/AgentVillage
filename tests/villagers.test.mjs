@@ -20,7 +20,7 @@ const { HAT_SHAPES } = await import('../web/js/avatar.js');
 // instancing regression in createWalk/createFigures working together.
 function createSettlers(scene, material, terrain) {
   const walk = createWalk(terrain);
-  const view = createFigures(scene, material);
+  const view = createFigures(scene, material, { skinned: false });
   const figures = walk.figures;
 
   function add(id, spec, worldPos, opts = {}) {
@@ -49,7 +49,9 @@ test('all resident hats render with finite normals and no expedition equipment',
   for (const [presentation, outfit] of [['man','trousers'], ['woman','trousers'], ['woman','skirt']]) {
   for (const { id } of HAT_SHAPES) {
     const look = { ...settlerLook('resident', 'sonnet'), hatShape: id, presentation, outfit };
-    const g = figureGeometry('sonnet', { look });
+    // The old body, which the volcano still draws (crowd-view.js); the skinned one's own figure is
+    // tests/resident-wardrobe.test.mjs's.
+    const g = figureGeometry('sonnet', { look, skinned: false });
     g.computeBoundingBox();
     assert.equal(g.groups.length, 0);
     assert.equal(g.boundingBox.min.y, 0);
@@ -84,7 +86,7 @@ test('women are represented across roles with both skirts and trousers', () => {
 // wear one has no instance in it - not one parked out of sight, which the GPU still drew.
 test('women clothing and hair follow their owner, and nobody else has an instance of them', () => {
   const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
-  const view = createFigures(scene, material);
+  const view = createFigures(scene, material, { skinned: false });
   const figures = new Map();
   for (const [id, presentation, outfit] of [['woman-skirt','woman','skirt'],['woman-trousers','woman','trousers'],['man','man','trousers']]) {
     const f = { id, visible: true, pos: [2,3], y: .2, yaw: .6, anim: 'walk', mode: 'walk', speed: 1 };
@@ -179,7 +181,7 @@ test('crowd batches stay constant, new skin and face parts track and hide with t
 // again when they stop, without jumping back onto the route.
 test('a drunk settler zigzags round their route on the move and not off it standing', () => {
   const scene = new THREE.Scene();
-  const view = createFigures(scene, new THREE.MeshStandardMaterial());
+  const view = createFigures(scene, new THREE.MeshStandardMaterial(), { skinned: false });
   const f = { id: 'house:tipsy', pos: [0, 0], y: 0, yaw: 0, anim: 'walk', mode: 'walk', speed: 0.5, face: null, turn: 0.2, faceAngle: 0, visible: true, sway: 1 };
   assert.ok(view.enrol(f, settlerLook(f.id, 'sonnet', 'house'), 'house'));
   const torso = scene.children[0], m = new THREE.Matrix4(), at = new THREE.Vector3();
@@ -204,7 +206,7 @@ test('a drunk settler zigzags round their route on the move and not off it stand
 
 test('working hammers stay in the posed hand for every body size and beyond sixty builders', () => {
   const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
-  const view = createFigures(scene, material);
+  const view = createFigures(scene, material, { skinned: false });
   const figures = new Map();
   for (let i = 0; i < 80; i++) {
     const f = { id: `builder:${i}`, visible: true, pos: [i, -i], y: 0.4,

@@ -260,11 +260,21 @@ in de browser was in het verborgen paneel niet eerlijk te meten.
   in walk.js zet zijn hoed en tas op het oude hoofd. Wat niets meer las is weg (`skinPartsFor`).
 - CLAUDE.md heeft een alinea over de geskinde inwoners onder "A settler who is not drawn".
 
-**Nog open, aan de keeper:** de nieuwe inwoners standaard aanzetten. Nu staan ze achter `?skinned`.
-Aanzetten is één regel (`skinnedWanted` in settler-figures.js), verandert het beeld van elk eiland en
-hoort dus in een minor. Verder: de kruiwagen zelf (bak en wiel) staat nog op de oude maat, en de
-tijd per frame is nog niet in een echte Chrome gemeten (alleen draw calls, driehoeken en de CPU van
-`draw()` onder Node).
+### Standaard aan (8 oktober 2026, voor 0.11.0)
+
+De keeper koos "aan in de volgende minor". `skinnedWanted` geeft nu true, behalve met `?skinned=0`
+op de pagina of `promptholm.debug.skinned` = '0' in de browser (de pagina gaat voor de browser). De
+vulkaan blijft op het oude lichaam. Wat erbij kwam:
+
+- `eyeHeight` kent het nieuwe lichaam (een figuur met `sex`), zodat de gesprekscamera
+  (facetoface.js) iemand in de ogen kijkt en niet op de kin.
+- `createCrowdView({ skinned })` geeft een keuze door. De tests over het oude lichaam (de batches,
+  zitten, de hoeden, hameren) vragen het nu met naam (`skinned: false`); de kamertests (de crew van de
+  Kraken, de rave) werken met beide lichamen.
+- Bekeken met de standaard aan: het eiland, de gasten in de taverne en de crew in de Kraken.
+
+Nog open: de kruiwagen zelf (bak en wiel) staat op de oude maat, en de tijd per frame is niet in een
+echte Chrome gemeten (alleen draw calls, driehoeken en de CPU van `draw()` onder Node).
 
 ### Keuzes van de keeper (8 oktober 2026)
 

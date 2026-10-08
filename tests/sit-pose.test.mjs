@@ -18,7 +18,7 @@ else globalThis.document = previousDocument;
 
 function seated(seat, y = 0.06) {
   const scene = new THREE.Scene();
-  const view = createFigures(scene, new THREE.MeshBasicMaterial());
+  const view = createFigures(scene, new THREE.MeshBasicMaterial(), { skinned: false });
   // children: torso, trim, left leg, right leg, ... (createFigures' own order)
   const [torso, , leftLeg, rightLeg] = scene.children;
   const f = { id: 'sitter', visible: true, pos: [0.4, -0.3], y, yaw: 0, faceAngle: 0, anim: 'sit', mode: 'idle', speed: 0, seat };
