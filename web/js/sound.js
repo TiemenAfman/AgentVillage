@@ -107,6 +107,11 @@ const SMITH_RANGE = 25;
 const SMITH_LOUD = 0.4;
 const WORK_RANGE = 45;
 const SAW_RANGE = 45;
+// The guns (Plans/kanonnen.md): a gun is heard across a bay and a ball's blast nearly as far; four
+// voices, so a broadside and its splashes can all sound at once.
+const CANNON_VOICES = 4;
+const CANNON_RANGE = 260;
+const CANNON_LOUD = { boom: 1, blast: 0.85, splash: 0.6 };
 // What each word in the crowd sounds like, and how often it is heard while somebody keeps at it.
 // The crowd's own tempo is drawn in settler-figures.js off a private clock, so as with the hammer
 // it is the tempo that is matched, not the phase.
@@ -580,6 +585,45 @@ const burst = (n, sr, rng, f, q, d, a = 1) => {
   return r;
 };
 const add = (a, b) => { for (let i = 0; i < a.length; i++) a[i] += b[i]; return a; };
+// --- the guns ---------------------------------------------------------------
+//
+// A gun's boom, a ball bursting where it comes down and a ball into the sea (Plans/kanonnen.md): each
+// a one-shot made the first time a gun is fired within earshot, on the crafts' `shot()`.
+const CANNON_SHOTS = {
+  // A low thump under a crack, and the long rumble of the powder after it.
+  boom: (c) => shot(c, 2.2, 'boom', (n, sr, rng) => {
+    const out = ring(n, sr, [[48, 1.4, 0.35], [72, 0.9, 0.22], [130, 0.4, 0.08]]);
+    add(out, lowpass(burst(n, sr, rng, 900, 0.8, 0.05, 3), sr, 2400));
+    const rumble = lowpass(noise(n, rng), sr, 260);
+    for (let i = 0; i < n; i++) out[i] += rumble[i] * 1.6 * Math.exp(-i / sr / 0.8) * Math.min(1, i / (sr * 0.03));
+    return out;
+  }, 0.16),
+  // The ball bursting: a duller thud, a crackle of splinters or stones, and a shorter rumble.
+  blast: (c) => shot(c, 1.6, 'blast', (n, sr, rng) => {
+    const out = ring(n, sr, [[60, 1.1, 0.25], [95, 0.6, 0.12]]);
+    add(out, lowpass(burst(n, sr, rng, 1400, 0.7, 0.08, 2.4), sr, 3500));
+    const crackle = highpass(noise(n, rng), sr, 1800);
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      if (rng.next() < 0.0016 * Math.exp(-t / 0.4)) for (let k = 0; k < 120 && i + k < n; k++) out[i + k] += crackle[i + k] * 0.9 * Math.exp(-k / 30);
+    }
+    const rumble = lowpass(noise(n, rng), sr, 220);
+    for (let i = 0; i < n; i++) out[i] += rumble[i] * 1.2 * Math.exp(-i / sr / 0.5);
+    return out;
+  }, 0.14),
+  // Into the sea: the slap at the surface, the rush of the column going up and the patter coming down.
+  splash: (c) => shot(c, 1.3, 'splash', (n, sr, rng) => {
+    const out = add(ring(n, sr, [[85, 0.7, 0.07]]), burst(n, sr, rng, 700, 1, 0.03, 2));
+    const rush = lowpass(highpass(noise(n, rng), sr, 600), sr, 5000);
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      out[i] += rush[i] * 0.8 * Math.min(1, t / 0.04) * Math.exp(-t / 0.35);
+      out[i] += rush[i] * 0.35 * Math.exp(-((t - 0.7) * (t - 0.7)) / 0.04) * (0.5 + 0.5 * Math.sin(t * 90 + rng.next() * 6));
+    }
+    return out;
+  }, 0.1),
+};
+
 const CRAFT_SHOTS = {
   // Steel on steel: a dull clank, not a note. It was four clean sines ringing for half a second,
   // which is a xylophone (the keeper, 8 October 2026); now the ring is narrow bands of noise that
@@ -1768,6 +1812,7 @@ const LAZY = {
   borrel: (c) => murmurSong(c, 'borrel'),
   bell: (c) => bellSong(c),
   ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  ...Object.fromEntries(Object.entries(CANNON_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
   saw: (c) => once(sawBuffer, c),
   dawn: (c) => dawnSong(c),
   crickets: (c) => cricketSong(c),
@@ -2009,6 +2054,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       crafts: Array.from({ length: CRAFTS }, () => mkVoice(null, { ref: 5, rolloff: 1.7, volume: 0.6, part: 'work' })),
       workers: Array.from({ length: WORKERS }, () => ({ ...mkVoice(null, { ref: 5, rolloff: 1.9, volume: 0.45, part: 'work' }), id: null, f: null, next: 0 })),
       saw: { ...mkLoop({ ref: 5, rolloff: 1.6, volume: 0, part: 'work', cut: 3000 }), want: 0 },
+      // The guns: booms, blasts and splashes, wherever they happen (Plans/kanonnen.md).
+      cannons: Array.from({ length: CANNON_VOICES }, () => mkVoice(null, { ref: 14, rolloff: 1.0, volume: 1, part: 'cannons' })),
       // The hour and the weather: four beds, and one voice for the rare birds and the foghorn.
       hours: {
         dawn: { ...mkBed(null, 'birds'), want: 0, at: 0 },
@@ -2793,6 +2840,29 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     if (nextCall.size > 256) nextCall.clear();
   }
 
+  // The guns (look.cannons, from web/js/cannon-fx.js events): a counter and the last few booms,
+  // blasts and splashes with where each was. What went past since the last pick is played; the first
+  // sighting only remembers, like every other cue. Not from a room: no gun is heard through its walls.
+  let seenGuns = null;
+  function steerCannons(look) {
+    const c = look.cannons;
+    if (!c) return;
+    const was = seenGuns;
+    seenGuns = c.n;
+    if (was == null || c.n <= was || look.indoors || !live('cannons')) return;
+    for (const e of c.list) {
+      if (e.n <= was) continue;
+      const at = [e.x, e.y, e.z];
+      const d = flat(at);
+      if (d > CANNON_RANGE) continue;
+      const buf = need(e.kind);
+      if (!buf) continue;
+      const v = built.cannons.find((s) => !s.audio.isPlaying) || built.cannons[0];
+      v.audio.setVolume((CANNON_LOUD[e.kind] || 1) * edge(d, CANNON_RANGE));
+      fire(v, e.x, e.y, e.z, 0.92 + Math.random() * 0.16, buf);
+    }
+  }
+
   // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against
   // what it saw last pick. A counter that went up is a blow that landed (the smith's and the
   // butcher's `hits`); a word that changed is a step of the work (the baker's `phase`); `cutting` is
@@ -2956,6 +3026,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     steerBell(look);
     greet(look);
     steerCrafts(look);
+    steerCannons(look);
     steerWorkers(look);
     steerAnimals(look);
     steerWater(look);
@@ -3176,7 +3247,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2, round: ROUNDERS + 1,
+    craft: CRAFTS + 1, cannons: CANNON_VOICES, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2, round: ROUNDERS + 1,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -3185,7 +3256,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub: Object.values(built.pubs).map((p) => p.out),
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
-      craft: [...built.crafts, built.saw], worker: built.workers, rare: [built.rare, built.horn],
+      craft: [...built.crafts, built.saw], cannons: built.cannons, worker: built.workers, rare: [built.rare, built.horn],
       animal: built.animals, water: [built.river, built.lava], round: [...built.rounders, built.cart],
     };
   }

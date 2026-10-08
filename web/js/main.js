@@ -37,6 +37,8 @@ import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
+import { createCannonFx } from './cannon-fx.js';
+import { BALL_SPEED, HUMAN_SPEED } from 'shared/cannon.mjs';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
 import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
@@ -1261,6 +1263,15 @@ function interactables() {
     if (deck.helm < 1.0 && free) {
       out.push({ id: b.id, kind: 'helm', x: b.x, z: b.z, r: 99, label: 'the wheel', prompt: 'take the helm' });
     }
+    // At the breech of one of her guns (craft.mounts, Plans/kanonnen.md): E mans it. And while one is
+    // manned, what the keys do there - E is walk mode's own then, so this only says it.
+    const gunning = state.walk.gun();
+    if (gunning) {
+      out.push({ id: `${b.id}:gun:${gunning.i}`, kind: 'gunning', x: b.x, z: b.z, r: 99, label: 'the cannon', get prompt() { return gunPrompt(); } });
+      return out;
+    }
+    const gun = state.walk.gunNear();
+    if (gun != null) out.push({ id: `${b.id}:gun:${gun}`, kind: 'gun', i: gun, x: b.x, z: b.z, r: 99, label: 'the cannon', prompt: 'man the cannon' });
     // Up in her crow's nest, the seat against the topmast (craft.nest, walk.js sitOnDeck).
     if (deck.nest != null) {
       out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
@@ -2206,6 +2217,7 @@ function walkCallbacks() {
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
       else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'gun') { if (state.walk.manGun(it.i)) state.walk.setInteractables(interactables()); }
       else if (it.kind === 'nestseat') {
         if (state.walk.state.sitting) state.walk.standUp();
         else state.walk.sitOnDeck(it.seat);
@@ -2226,7 +2238,7 @@ function walkCallbacks() {
     onSendAway: (it) => {
       if (it.treasure) return;   // the bottle, the X and the statue are not settlers
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat', 'gun', 'gunning'].includes(it.kind)) askToSendAway(it.id);
     },
     // Up a ship's rope ladder, and off her again by jumping or down it (walk.js): the sea counts a
     // crew, so it is told at the top and again once you are off. No room to change - on the deck
@@ -2257,8 +2269,78 @@ function walkCallbacks() {
     onExit: () => { if (minimapMode === 'map') setMinimapMode('radar'); else exitWalk(); },
     onToggleMinimap: () => setMinimapMode(MINIMAP_NEXT[minimapMode]),
     onGive: () => giveBeer(),
+    onGunFire: (shot) => fireCannonHere(shot),
+    onGunEvent: (what) => {
+      if (what === 'empty') state.ui.toast('Load it first: R rams a ball home.');
+      // Manned or let go: E's offer changes with it.
+      if (what === 'manned' || what === 'left') state.walk.setInteractables(interactables());
+    },
   };
 }
+
+// ---- the galleon's guns (Plans/kanonnen.md) ----------------------------------------------------
+// What the prompt says at a manned gun, as it changes (a getter on the interactable).
+function gunPrompt() {
+  const g = state.walk && state.walk.gun();
+  if (!g) return 'leave the cannon';
+  if (g.inside) return 'click to fire yourself - C to climb out';
+  if (g.loading > 0) return 'ramming a ball home...';
+  if (g.loaded) return 'click to fire - R to unload cannonball';
+  return 'R to load cannonball - C to climb in - E to leave';
+}
+let shotsFired = 0;
+// A gun fired from our deck: the muzzle and the way out of it in the scene, read off the transform
+// the hull is drawn with this frame, so the ball leaves the bore that is drawn. A ball goes to the
+// effects and the sea; a body (`self`) is answered { at, v } for walk mode to fly along.
+const muzzleAt = new THREE.Vector3(), muzzleDir = new THREE.Vector3(), hullQ = new THREE.Quaternion();
+function fireCannonHere({ boat, i, self }) {
+  const craft = boat && boat.craft;
+  const m = craft && craft.gunMuzzle ? craft.gunMuzzle(i) : null;
+  if (!m) return null;
+  craft.object.updateMatrixWorld();
+  craft.object.localToWorld(muzzleAt.set(m.at[0], m.at[1], m.at[2]));
+  craft.object.getWorldQuaternion(hullQ);
+  muzzleDir.set(m.dir[0], m.dir[1], m.dir[2]).applyQuaternion(hullQ).normalize();
+  const speed = self ? HUMAN_SPEED : BALL_SPEED;
+  const o = [muzzleAt.x, muzzleAt.y, muzzleAt.z];
+  const v = [muzzleDir.x * speed, muzzleDir.y * speed, muzzleDir.z * speed];
+  const n = ++shotsFired;
+  const me = state.net ? state.net.id() : 'me';
+  if (state.cannonFx) state.cannonFx.fire({ o, v, b: boat.id, by: me, id: `${me}:${n}`, self });
+  if (state.net) state.net.fireCannon({ b: boat.id, i, o, v, self, n });
+  return { at: o, v };
+}
+// Somebody else's gun (net.js `cannon`): the shot flown here as it is there, the gun on their ship
+// laid to the way it went, and a ball the sea says came down on somebody ended where it did.
+const wrapPi = (a) => a - Math.round(a / (Math.PI * 2)) * Math.PI * 2;
+function onCannonMessage(m) {
+  if (!state.cannonFx) return;
+  if (m.a === 'fire' && Array.isArray(m.o) && Array.isArray(m.v)) {
+    state.cannonFx.fire({ o: m.o, v: m.v, b: m.b, by: m.id, id: `${m.id}:${m.n}`, self: !!m.self });
+    const hull = boatAt(m.b), spec = hull && hull.craft && hull.craft.spec;
+    const mount = spec && spec.mounts ? spec.mounts[m.i] : null;
+    if (mount && hull.craft.layGun) {
+      const len = Math.hypot(m.v[0], m.v[1], m.v[2]) || 1;
+      const across = wrapPi(Math.atan2(m.v[0], m.v[2]) - hull.yaw - mount.yaw);
+      hull.craft.layGun(m.i, [across, Math.asin(Math.max(-1, Math.min(1, m.v[1] / len)))], 0);
+    }
+  } else if (m.a === 'boom' && Array.isArray(m.at)) {
+    state.cannonFx.landed(`${m.by}:${m.n}`, m.at, m.kind || 'body');
+  }
+}
+// What a ball can come down on, in the scene: the archipelago's ground (islets and every island, the
+// sea floor between) and every ship's hull where she floats this frame.
+function cannonWorld() {
+  const hulls = [];
+  for (const b of state.boats || []) {
+    if (!isShip(b)) continue;
+    hulls.push({ id: b.id, x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw), y: b.craft.object ? b.craft.object.position.y : 0 });
+  }
+  return { height: (x, z) => state.sea.height(x, z), hulls };
+}
+// A point sprite's size in units to pixels: the drawing buffer's height over twice the tangent of
+// half the vertical field of view.
+const pointScale = () => renderer.domElement.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
 
 // --------------------------------------------------------------- standing at a board
 // Stepping up to a panel: the page on it takes the mouse and, through walk.js, every
@@ -8000,6 +8082,9 @@ function frame(nowMs) {
   // here and nowhere else (walk.js runOut), in every mode.
   if (state.walk) state.walk.runOut(dt);
   glideBoats();
+  // Balls in flight and what they come down on (Plans/kanonnen.md): after the boats are where they
+  // are drawn this frame, so a ball meets a hull where it is seen.
+  if (state.cannonFx) state.cannonFx.update(dt, state.sea ? cannonWorld() : null, pointScale());
   if (state.peers) {
     state.peers.setVisible(live);
     state.peers.update(dt, { beat: danceBeat() });
@@ -9310,8 +9395,11 @@ Everything is copied and checked first; the island then starts again there. The 
     onStatus: onSeaStatus,
     onPanels: (m) => applyPanelMessage(m),
     onSaid: (m) => state.islandchat.said(m),
+    onCannon: (m) => onCannonMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
+  // The guns' balls, flashes, smoke and spray (Plans/kanonnen.md): one set for every ship in sight.
+  state.cannonFx = createCannonFx({ scene });
   // What a shape looks like before anybody has agreed to it. Built after the world and
   // the props, because it aims at the ground mesh and measures against what is standing.
   state.ghost = createGhost({
@@ -9950,6 +10038,8 @@ function soundSnapshot() {
     rave: raveHeard(),
     shanty: shantyHeard(),
     tavern: tavernHeard(),
+    // The guns (web/js/cannon-fx.js events): a counter and the last few booms, blasts and splashes.
+    cannons: state.cannonFx ? state.cannonFx.events() : null,
   };
 }
 
