@@ -242,12 +242,99 @@ test('H refuses water and a ledge too high to stand on, and says so', () => {
   assert.equal(hunt.sites()[0].kind, 'statue');
 });
 
-test('into deep water she slips from the arms and lies on the shore you waded in from', () => {
+test('swimming she stays in the arms: she floats, and the swimmer keeps her', () => {
+  const { walk, hunt, land, carry, toasts } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const shore = walk.state.pos.x + dir * 0.4;
+  // Low sand, then straight into water deep enough to dive in: no drop worth a fall.
+  land.at = (x) => ((x - shore) * dir < 0 ? 0.1 : -2);
+  walk.state.pos.y = 0.1; walk.state.floor = 0.1;
+  let swum = 0;
+  walkOn(walk, hunt, () => (walk.state.swimming ? ++swum > 60 : false), 400);
+  assert.ok(swum > 60, 'out in deep water');
+  assert.ok((walk.state.pos.x - shore) * dir > 0.5);
+  assert.equal(walk.carrying(), 'statue');
+  assert.equal(hunt.sites().length, 0, 'nothing in the water');
+  assert.ok(!toasts.some((t) => /slips/.test(t)));
+  // C does not take her under: a carrier does not dive.
+  key('c'); walk.update(FRAME); walk.update(FRAME); key('c', false);
+  assert.equal(walk.state.dive, false);
+  assert.equal(walk.carrying(), 'statue');
+});
+
+test('H in deep water lets her go: she floats a step ahead, and E beside her lifts her again', () => {
+  const { walk, hunt, posts, land, carry, view } = assemble();
+  carry();
+  land.at = () => -2;
+  walk.state.pos.y = -0.07; walk.state.floor = -2;
+  walk.update(FRAME);
+  assert.equal(walk.state.swimming, true);
+  const { x, z } = walk.state.pos, yaw = walk.state.yaw;
+  key('h'); key('h', false);
+  assert.equal(walk.carrying(), null);
+  hunt.frame(FRAME, 0);
+  const [floating] = hunt.sites();
+  assert.equal(floating.afloat, true);
+  assert.equal(floating.y, 0, 'on the surface, not the bed');
+  assert.ok(Math.abs(floating.x - (x + Math.sin(yaw) * 0.6)) < 1e-6 && Math.abs(floating.z - (z + Math.cos(yaw) * 0.6)) < 1e-6, 'a step ahead');
+  assert.equal(posts.at(-1), 'dropped');
+  // Drawn on the water: no ring of sand, her foot under the surface and her figure out of it.
+  const e = view.entries().get('statue');
+  assert.equal(e.parts.mound.visible, false);
+  assert.ok(e.group.position.y < 0 && e.group.position.y > -0.4, `${e.group.position.y}`);
+  // Swimming beside her, E takes her back, and the swim goes on.
+  const lift = hunt.interactables().find((i) => i.kind === 'lift');
+  assert.ok(lift);
+  hunt.interact(lift);
+  assert.equal(walk.carrying(), 'statue');
+  assert.equal(walk.state.swimming, true);
+});
+
+test('a fall into deep water throws her out to float where you hit the water', () => {
+  const { walk, hunt, land, carry } = assemble();
+  carry();
+  const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
+  const edge = walk.state.pos.x + dir * 0.5;
+  // A rock 3 high, and past its edge the sea, deep.
+  land.at = (x) => ((x - edge) * dir < 0 ? 3 : -2.5);
+  walk.state.pos.y = 3; walk.state.floor = 3;
+  walkOn(walk, hunt, () => !walk.carrying(), 300);
+  assert.equal(walk.carrying(), null);
+  const [floating] = hunt.sites();
+  assert.equal(floating.afloat, true);
+  assert.equal(floating.y, 0);
+  assert.ok((floating.x - edge) * dir > 0, 'out in the water, not back on the rock');
+  assert.ok((floating.x - edge) * dir < 1.5, 'where the body went in');
+});
+
+test('afloat she rides the swell: her height stays round the surface and her lean small', () => {
+  const surface = (x, z, t) => 0.05 * Math.sin(x * 1.3 + t * 1.1) + 0.04 * Math.sin(z * 1.7 - t * 0.9);
+  const sink = S.FLOAT_SINK * 0.22 * 2.5;
+  let lo = Infinity, hi = -Infinity, ys = new Set();
+  for (let t = 0; t < 30; t += 0.25) {
+    const p = S.floatPose({ x: 3, z: -2, rot: 0.7, t, surface: (x, z) => surface(x, z, t) });
+    const off = p.y + sink - surface(3, -2, t);
+    assert.ok(Math.abs(off) <= S.FLOAT_BOB.heave + 1e-9, `foot ${off} off the surface at ${t}`);
+    assert.ok(Math.abs(p.rx) <= 0.35 && Math.abs(p.rz) <= 0.35);
+    lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); ys.add(p.rz.toFixed(3));
+  }
+  assert.ok(hi - lo > 0.05, 'she goes up and down');
+  assert.ok(ys.size > 10, 'and rocks');
+  // Without a surface (or with none to read) she bobs on still water at her own height.
+  const still = S.floatPose({ x: 0, z: 0, y0: 0, t: 1 });
+  assert.ok(Math.abs(still.y + sink) <= S.FLOAT_BOB.heave);
+  // The same clock, the same pose: every screen sees her alike.
+  assert.deepEqual(S.floatPose({ x: 1, z: 2, t: 12.5, surface: (x, z) => surface(x, z, 12.5) }),
+    S.floatPose({ x: 1, z: 2, t: 12.5, surface: (x, z) => surface(x, z, 12.5) }));
+});
+
+test('a tumble into the shallows lays her on the shore you came from', () => {
   const { walk, hunt, posts, log, land, carry } = assemble();
   carry();
   const dir = Math.sign(Math.sin(walk.state.yaw)) || 1;
   const shore = walk.state.pos.x + dir * 0.8;
-  // Dry to the shore, then the shallows, then deep water.
+  // Dry to the shore, then a drop of more than a cell into the shallows, then deep water.
   land.at = (x) => { const d = (x - shore) * dir; return d < 0 ? 1 : d < 1 ? -0.2 : -2; };
   let lastDryX = null;
   walkOn(walk, hunt, () => {

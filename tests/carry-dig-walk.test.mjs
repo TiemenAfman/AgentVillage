@@ -140,7 +140,7 @@ test('a carrier cannot crouch, dance, fight or get on a bicycle', () => {
 test('a carrier cannot dive: C in deep water is nothing', () => {
   const { walk } = make(() => -2.5);
   run(walk, 0.3);
-  walk.state.carry = 'statue';      // wading in with it (lift itself refuses the water)
+  walk.state.carry = 'statue';      // swum out with it
   press('c');
   run(walk, 1.5);
   assert.equal(walk.state.dive, false);
@@ -148,10 +148,13 @@ test('a carrier cannot dive: C in deep water is nothing', () => {
   release('c');
 });
 
-test('lift is for dry land: never from the water', () => {
+test('lift from the water too: she floats, so a swimmer takes her - but never a diver', () => {
   const { walk } = make(() => -2.5);
   run(walk, 0.3);
   assert.equal(walk.state.swimming, true);
+  assert.equal(walk.lift('statue'), true);
+  assert.equal(walk.putDown(), 'statue');
+  walk.state.dive = true;
   assert.equal(walk.lift('statue'), false);
 });
 

@@ -164,7 +164,34 @@ afleveren op het plein of in een roeiboot leggen maakte de armen leeg. Wat er nu
 
 Open: wie van een schip springt met het beeld als lading, krijgt haar in de armen en laat haar in het diepe
 water meteen weer los, op de wal waar ze aan boord ging - eerlijk, maar ver. Het chip "Schatkist aan boord
-klimmen" gaat over dat stuk.
+klimmen" gaat over dat stuk. *(Vervallen met het drijven hieronder.)*
+
+### Ze drijft (8 oktober 2026)
+
+Martijn: "de schatkist moet dobberen", "drijven", "dobberen op 't water". Terug naar de laatste droge plek
+voelde als een straf. Nu:
+
+- **Diep water** (`canDive`) is geen reden meer om los te laten: ze drijft, dus wie zwemt houdt haar in de
+  armen en zwemt op gewone zwemsnelheid verder (`CARRY_SPEED` geldt alleen op de voeten). Martijns keuze
+  ("gewoon oppakken"): de roeiboot is daarmee een hulp, niet meer de enige weg naar huis. Duiken met haar kan
+  niet (C doet niets zolang je draagt); een lichaam dat toch onder gaat - een plons van hoog - laat haar los
+  (`letGo('water')`). Van een scheepsladder in diep water afklimmen mag nu ook, met haar in de armen.
+- **Laat je haar los in diep water** - H zwemmend, een val (`CARRY_FALL`), doodgaan, naar huis - dan
+  **drijft ze waar ze het water raakte**: `walk.js floatAt` (diep genoeg, en geen dek of steiger lager dan
+  `FLOAT_LID` 1,5 erboven: onder planken geen deining, dan gaat ze toch naar de wal). `onLetGo` krijgt
+  `afloat: true` en y = `WATER_Y`. H zwemmend legt haar `SET_AHEAD` voor je op het water.
+- **Ondiep** (waden, `ROW_DEPTH`) blijft zoals het was: een val of dood daar legt haar op `lastDry`. Drijven in
+  een paar centimeter water zag eruit als liggen, en op de bodem liggen als verdwenen; de wal is duidelijker.
+- **Bewaard**: `finds.statue` krijgt `afloat: true` (`parseStatue` neemt alleen `true` aan), dus na een reload
+  drijft ze er weer. Het eiland hoort gewoon `dropped`; geen serverwijziging.
+- **Oppakken**: E zwemmend naast haar (`walk.lift` mag nu ook vanaf het oppervlak, `canHandleAfloat`). Duikend
+  niet: ze ligt op het oppervlak, en `reach()` biedt een duiker al niets aan.
+- **Dobberen** (`treasure-site.js floatPose`): haar hoogte en helling komen van `world.surfaceAt`, de getekende
+  deining op de klok van de zee (dezelfde `uTime` als het water), plus een eigen langzame deining, rol en knik
+  op de zeeseconden (`FLOAT_BOB`) - zo ziet elk scherm haar gelijk, ook waar de deining bij de kust uitdooft.
+  De helling van het water is een paar graden; `FLOAT_LEAN` 2,5 maal, begrensd op 0,35 rad. Een derde van haar
+  hoogte (`FLOAT_SINK`) zit onder water, het voetstuk; het zandringetje is weg zolang ze drijft.
+- Alleen deze pagina tekent haar; het beeld staat niet op de draad, net als op het zand.
 
 ## Wacht op de nieuwe tavern: de kist van de piraat "subtiel achter de tavern" (30 september 2026)
 

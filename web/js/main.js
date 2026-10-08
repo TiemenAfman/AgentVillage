@@ -3581,7 +3581,12 @@ function startTreasureHunt() {
     finds: createFinds(),
     unlocks: { isUnlocked, unlocked, unlock },
     walk: state.walk,
-    view: createTreasureView({ scene, material: buildingMat }),
+    // A statue afloat rides the drawn swell on the sea's clock, as the water does (world.js update).
+    view: createTreasureView({
+      scene, material: buildingMat,
+      surface: (x, z) => (state.world && state.world.surfaceAt ? state.world.surfaceAt(x, z) : null),
+      seaSeconds: () => (Date.now() + (state.seaSkewMs || 0)) / 1000,
+    }),
     home: () => state.homeOrigin,
     islandId: () => state.islandId,
     islets: worldIslets,
