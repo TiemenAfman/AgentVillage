@@ -36,10 +36,11 @@ export const MIX_PARTS = Object.freeze([
   ['rounds', 'The rounds', 'ambience'],
   ['water', 'Rivers and the volcano', 'ambience'],
   ['underwater', 'Under water', 'ambience'],
-  ['tavern', 'Taverns', 'speech'],
+  ['tavern', 'Tavern chatter', 'speech'],
   ['borrel', 'The borrel', 'speech'],
   ['greetings', 'Greetings', 'speech'],
   ['songs', 'The rave and the shanties', 'music'],
+  ['jazz', 'Tavern jazz', 'music'],
   ['tracks', 'Your own tracks', 'music'],
 ]);
 const PART_IDS = new Set(MIX_PARTS.map(([id]) => id));

@@ -2468,8 +2468,9 @@ Chests counts the day's chest), and **repeatable quests count alongside the stor
 with no pub would stop the day's chest for good. `businessWith(state)` is who the `!` hangs over (the log's
 `talk` is that id now, not a boolean); `QUEST_STATE_V` stayed 1, so an old book goes on at the captain.
 `web/js/pirate.js` is one window for every giver (`createQuestGiver`; `createPirate` opens it on him).
-**Music in rooms**: `web/js/sound.js` has two computed songs on one bed (`makeSong`, `steerSong`,
-`songClock`, `clockOf(room.music)`) - the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
+**Music in rooms**: `web/js/sound.js` has three computed songs on one bed (`makeSong`, `steerSong`,
+`songClock`, `clockOf(room.music)`) - the village tavern's jazz trio (`jazzSong`, its own part `jazz`, apart
+from the chatter; `node scripts/render-song.mjs tavern x.wav` to listen), the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
 on the same 0.6 s count, the hall's `beat` a dancing player follows; the crew do not nod to it - on
 every count it read as headbanging; 44.1 kHz, 13.5 MB, made only near the pub) - and
 **the keeper's own tracks**: `HOME/audio/{kroeg,rave,pirates}` (`lib/music.mjs`, `/api/music`, not on

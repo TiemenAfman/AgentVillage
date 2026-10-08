@@ -527,6 +527,34 @@ test('the keeper\'s own tracks play whole, one after the other, loud inside and 
   assert.equal(els.length, 1);
 });
 
+// The village tavern's jazz (the keeper, 8 October 2026): a song like the shanties, made the first
+// time you come near the tavern, on a part of its own so it is switched apart from the chatter.
+test('the village tavern has a jazz trio, on its own part, switched apart from the chatter', () => {
+  store = {};
+  const look = village(3);
+  const sound = made(look);
+  sound.setOn(true);
+  dispatch('pointerdown');
+  for (let i = 0; i < 30; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().jazz, null, 'nothing made before anybody is near');
+  look.tavern = { inside: false, dist: 8 };
+  sound.update(1 / 6);
+  assert.equal(sound.stats().jazz.making, true, 'made once somebody is near');
+  for (let i = 0; i < 120 && sound.stats().jazz.making; i++) sound.update(1 / 60);
+  assert.equal(sound.stats().jazz.making, false, 'a bar a step, and done within two seconds of frames');
+  sound.update(1 / 6);
+  const out = sound.stats().jazz;
+  assert.ok(out.playing && out.want > 0 && out.want < 0.12 && out.cut < 1000, 'muffled through the walls');
+  look.tavern = { inside: true };
+  sound.update(1 / 6);
+  assert.ok(sound.stats().jazz.want > 0.3, 'whole inside');
+  sound.setMix('tavern', true);
+  sound.setMix('jazz', false);
+  sound.update(1 / 6);
+  assert.equal(sound.stats().jazz.want, 0, 'Tavern jazz off: no jazz');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true, jazz: false }, 'and only those two kept');
+});
+
 test('without an element to play through, tracks are ignored and the rooms keep their own music', () => {
   store = {};
   const look = village(3);
