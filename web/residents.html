@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Inwoners · Houdingen</title>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/","shared/":"./shared/"}}</script>
+<style>
+body{margin:0;background:#9fb9c9;color:#f2e9d3;font:14px system-ui}#bench{display:block;width:100vw;height:100vh}
+.bench-controls{position:fixed;left:20px;top:18px;max-width:430px;background:#162a25e6;padding:16px 18px;border-radius:14px}
+.bench-controls h1{font-size:19px;margin:0 0 6px}.bench-controls p{color:#bed0c5;line-height:1.45;margin:0 0 10px}
+.bench-controls button{border:1px solid #8ba699;background:#324f43;color:#fff3d9;border-radius:8px;padding:7px 11px;cursor:pointer;margin:0 4px 6px 0;font:inherit}
+.bench-controls button[aria-pressed=true]{background:#d2b575;color:#1d3028;border-color:#d2b575}
+#bench-legend{font-size:12px;color:#d7e3db;line-height:1.5}
+</style></head><body>
+<canvas id="bench"></canvas>
+<section class="bench-controls"><h1>Inwoners</h1>
+<p>Elke houding van de inwoners naast elkaar (Plans/inwoners-in-avonturierstijl.md): voor het nieuwe, geskinde lichaam, en achter elke houding hetzelfde door het oude lichaam. Slepen draait, scrollen zoomt.</p>
+<div><button id="bench-old" aria-pressed="true">Oude rij tonen</button><button id="bench-pause" aria-pressed="false">Pauze</button><button id="bench-armed" aria-pressed="false">Gewapend</button></div>
+<div id="bench-legend"></div></section>
+<script type="module" src="js/residents-bench.js"></script></body></html>

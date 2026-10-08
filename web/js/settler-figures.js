@@ -31,6 +31,7 @@ import {
   residentGeometry, skinnedMaterial, createPoseTexture, createPose, clearPose, poseJoints, jointMatrix,
   residentRig, skinPartsFor, residentPartOf, gripOf, JOINT, POSE_FLOATS,
 } from './resident-skin.js';
+import { residentPose, armTo, barrowGrip } from './resident-poses.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
@@ -49,11 +50,12 @@ export function skinnedWanted() {
 // gave only women hair.
 const SKINNED_SHOES = 0x5a3c28;
 const SKINNED_HAIR = 0x503a2d;
-// The walk's knees and elbows (radians, rotation.x as the stride's): a knee a touch bent even
-// under the body, up to KNEE_WALK more mid-swing (more at a run), and a forearm that hangs a
-// little forward and comes up with the arm as it swings in front.
-const KNEE_STAND = 0.06, KNEE_WALK = 0.75, KNEE_RUN = 1.05;
-const ELBOW_HANG = 0.2, ELBOW_SWING = 0.5;
+// What the skinned body holds, at its size. The tools, the sword, the torch and the pint were made
+// for the old body's fist - a ball half a head across on a body three heads tall - and in this
+// body's hand, a fifth of that, a hammer came out as long as the forearm and the pint as big as
+// the head (seen on /residents.html). The bundle of sticks across the back likewise, a size down.
+const HELD_SCALE = 0.6;
+const BUNDLE_SCALE = 0.75;
 
 const tmpObj = new THREE.Object3D();
 // Yaw first, then pitch: a flinch rocks a body back about its own shoulders, and a settler
@@ -293,7 +295,9 @@ export const TRAY_BARS = [[-0.03, 0, -0.02, 0.1], [0.03, 0, 0.015, -0.08], [0, 0
 
 // Exported, with the wheel below, for the goldsmith's own barrow (web/js/goldrun.js): the
 // same barrow the settlers fetch their gold with, at the same size, since he is a villager.
-export function barrowGeometry() {
+// `grip` ({ x, y, z }) is where the fists close on the handles: the old body's own by default, a
+// skinned crowd's (resident-poses.js barrowGrip) for its barrows.
+export function barrowGeometry(grip = { x: BARROW.handleX, ...BARROW_GRIP }) {
   const wood = 0x9a6b42, dark = 0x6b4a2e;
   const box = (w, h, d, hex, x, y, z, rx = 0) => {
     const g = new THREE.BoxGeometry(w, h, d);
@@ -301,11 +305,12 @@ export function barrowGeometry() {
     g.translate(x, y, z);
     return paintGeo(g, hex);
   };
-  const { r, wheelZ, trayZ, trayY, handleX, legZ, legLift } = BARROW;
+  const { r, wheelZ, trayZ, trayY, legZ, legLift } = BARROW;
+  const handleX = grip.x;
   // A handle runs from the fist forwards and down past the tray to beside the wheel. A box
   // laid along +z and turned about x by `pitch` points along (dy, dz): rotateX takes +z to
   // (0, -sin, cos).
-  const gy = BARROW_GRIP.y, gz = BARROW_GRIP.z;
+  const gy = grip.y, gz = grip.z;
   const fy = r + 0.03, fz = wheelZ - 0.02;
   const dy = fy - gy, dz = fz - gz;
   const len = Math.sqrt(dy * dy + dz * dz), pitch = Math.atan2(-dy, dz);
@@ -647,17 +652,20 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     body.onTrade = (i, j, fi, fj) => { pose.swap(i, j); refigure(fi); refigure(fj); };
   }
   const skinPose = skinned ? createPose() : null;
-  const handAt = new THREE.Matrix4(), gripShift = new THREE.Matrix4();
+  const handAt = new THREE.Matrix4();
   // What a fist holds hangs off the wrist: the old crowd's tools were built at its own grip, so
-  // they are moved from there to this body's and then go wherever the wrist goes.
+  // they are moved from there to this body's, made the size of this body's hand (HELD_SCALE, about
+  // the grip, so the fist stays round the handle) and then go wherever the wrist goes.
+  const held = (grip, old) => new THREE.Matrix4().makeTranslation(grip[0], grip[1], grip[2])
+    .multiply(new THREE.Matrix4().makeScale(HELD_SCALE, HELD_SCALE, HELD_SCALE))
+    .multiply(new THREE.Matrix4().makeTranslation(-old[0], -old[1], -old[2]));
   const grips = skinned ? Object.fromEntries(['male', 'female'].map((sex) => [sex, {
-    right: gripOf(sex, 'right').map((v, k) => v - RESIDENT_GRIP[k]),
-    left: gripOf(sex, 'left').map((v, k) => v - (k ? RESIDENT_GRIP[k] : -RESIDENT_GRIP[k])),
+    right: held(gripOf(sex, 'right'), RESIDENT_GRIP),
+    left: held(gripOf(sex, 'left'), [-RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]]),
   }])) : null;
   function skinnedHand(f, side, root) {
     jointMatrix(pose.data, f.slot * POSE_FLOATS, JOINT[side + 'Wrist'], handAt);
-    const g = grips[f.sex][side];
-    return handAt.premultiply(root).multiply(gripShift.makeTranslation(g[0], g[1], g[2]));
+    return handAt.premultiply(root).multiply(grips[f.sex][side]);
   }
   // `turn` is a turn about z after the swing about x - the same XYZ order classic-avatar.js
   // poses the player's arms in - which only a drinking arm uses, to bring its fist in.
@@ -781,7 +789,10 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     scene.add(m);
     return m;
   };
-  const barrows = barrowMesh(barrowGeometry(), BARROWS);
+  // The skinned body's fists are not where the old one's were (its arms are a third shorter), so
+  // its barrows are made with the handles where its hands come to (resident-poses.js barrowGrip).
+  const skinnedGrip = skinned ? barrowGrip(residentRig('male')) : null;
+  const barrows = barrowMesh(barrowGeometry(skinnedGrip || undefined), BARROWS);
   const wheels = barrowMesh(wheelGeometry(), BARROWS);
   const trayBars = barrowMesh(goldBarGeometry({ l: 0.1, h: 0.032, w: 0.05 }), BARROWS * TRAY_BARS.length);
   barrows.name = 'resident-barrows';
@@ -955,54 +966,61 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     worn.delete(f);
     f.slot = null;
   }
+  // The skinned body's pose for a frame (resident-poses.js): the angles draw() works out, put on
+  // the joints with the knees, elbows and ankles the old pieces never had. Every piece the figure
+  // wears is placed by its one matrix, lifted or lowered by what the pose asks (a crouch, a seat);
+  // the bending is all in its row. `skinRoot` is that matrix, for what hangs off a fist this frame.
+  const skinState = {};
+  const skinRoot = new THREE.Matrix4();
+  function poseSkinned(f, dress, root, s) {
+    const P = clearPose(skinPose);
+    P.build = f.look.build; P.height = f.look.height; P.head = f.look.head;
+    const rig = residentRig(f.sex);
+    if (s.anim === 'barrow' || s.anim === 'carry') {
+      // Each body reaches the handles, which were placed for the man's (barrowGrip). In the
+      // figure's own frame, which the barrow (scaled by height alone) and the body (z by build)
+      // see differently.
+      s.barrow = armTo(rig, 'right', skinnedGrip.y, skinnedGrip.z * f.look.height / f.look.build);
+    } else s.barrow = null;
+    const dy = residentPose(P, s, rig);
+    skinRoot.copy(root);
+    skinRoot.elements[13] += dy;
+    for (const b of dress.batches) if (b !== body) b.meshes[0].setMatrixAt(f[b.key], skinRoot);
+    poseJoints(rig, P, pose.data, f.slot * POSE_FLOATS);
+  }
+  // The pint in a skinned fist: off the wrist, then the arm's whole turn - shoulder, turn in, elbow,
+  // as this frame's pose has them - taken back off about the old grip it was built at, and tipped
+  // to the mouth by `roll`, as setPint does for the old arm. Without PINT_OUT: that held the glass
+  // out past the old body's big face, and this fist is brought to the mouth itself (DRINK).
+  const armTurn = new THREE.Matrix4(), elbowTurn = new THREE.Matrix4(), pintBack = new THREE.Matrix4().makeTranslation(0, 0, -PINT_OUT);
+  function setPintSkinned(i, f, roll) {
+    const hand = skinnedHand(f, 'right', skinRoot);
+    const P = skinPose;
+    armTurn.makeRotationX(P.x[JOINT.rightShoulder]).multiply(elbowTurn.makeRotationY(P.y[JOINT.rightShoulder]))
+      .multiply(rollMat.makeRotationZ(P.z[JOINT.rightShoulder])).multiply(elbowTurn.makeRotationX(P.x[JOINT.rightElbow]));
+    gripMat.makeTranslation(RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]);
+    ungripMat.makeTranslation(-RESIDENT_GRIP[0], -RESIDENT_GRIP[1], -RESIDENT_GRIP[2]);
+    uprightMat.copy(armTurn).invert().multiply(rollMat.makeRotationZ(roll));
+    posedMat.copy(hand).multiply(gripMat).multiply(uprightMat).multiply(pintBack).multiply(ungripMat);
+    pints.setMatrixAt(i, posedMat);
+  }
+  // A bundle of sticks across the shoulders: built at the old body's shoulders, so moved up to
+  // this body's and carried by its chest.
+  const chestAt = new THREE.Matrix4(), bundleShift = new THREE.Matrix4();
+  // Shrunk about where the old bundle sat (its middle across the old shoulders), not about the feet.
+  const bundleSize = new THREE.Matrix4().makeTranslation(0, RESIDENT_PIVOTS.rightArm[1], -0.075)
+    .multiply(new THREE.Matrix4().makeScale(BUNDLE_SCALE, BUNDLE_SCALE, BUNDLE_SCALE))
+    .multiply(new THREE.Matrix4().makeTranslation(0, -RESIDENT_PIVOTS.rightArm[1], 0.075));
+  function bundleSkinned(f) {
+    jointMatrix(pose.data, f.slot * POSE_FLOATS, JOINT.chest, chestAt).premultiply(skinRoot);
+    const sh = residentRig(f.sex).points[JOINT.rightShoulder];
+    return chestAt.multiply(bundleShift.makeTranslation(0, sh[1] - RESIDENT_PIVOTS.rightArm[1], sh[2] + 0.02))
+      .multiply(bundleSize);
+  }
 
   // Everything the eye sees, from where the walk has put everybody. `f.anim` is the whole
   // of what it is told: the four animations below are derived from it and from this file's
   // own clock, and none of them can move a body.
-  // The skinned body's pose for a frame: the same angles the old crowd turned its legs and arms by,
-  // on the hip and shoulder joints, and - walking - the knees and elbows the old pieces never had.
-  // Every piece it wears is placed by the figure's one matrix; the bending is all in its row.
-  // Returns the right elbow's angle, which the pint needs to stand upright in the fist.
-  function poseSkinned(f, dress, root, legL, legR, left, right, rightTurn, gaitPhase, fast) {
-    const P = clearPose(skinPose);
-    P.build = f.look.build; P.height = f.look.height; P.head = f.look.head;
-    P.x[JOINT.leftHip] = legL;
-    P.x[JOINT.rightHip] = legR;
-    P.x[JOINT.leftShoulder] = left;
-    P.x[JOINT.rightShoulder] = right;
-    P.z[JOINT.rightShoulder] = rightTurn;
-    let elbow = 0;
-    if (gaitPhase != null) {
-      // A leg bends at the knee while it swings through and is all but straight while it carries
-      // the body: the stride's angle goes as sin, so it moves forward while cos is below zero for
-      // the left leg and above it for the right (which takes -stride). Most bend mid-swing, as
-      // the leg passes under the hip - where a stiff one would scuff the ground.
-      const c = Math.cos(gaitPhase), knee = fast ? KNEE_RUN : KNEE_WALK;
-      P.x[JOINT.leftKnee] = KNEE_STAND + knee * Math.max(0, -c);
-      P.x[JOINT.rightKnee] = KNEE_STAND + knee * Math.max(0, c);
-      // The forearm comes forward with the arm and hangs back nearly straight behind.
-      P.x[JOINT.leftElbow] = -(ELBOW_HANG + ELBOW_SWING * Math.max(0, -left));
-      elbow = -(ELBOW_HANG + ELBOW_SWING * Math.max(0, -right));
-      P.x[JOINT.rightElbow] = elbow;
-    }
-    for (const b of dress.batches) if (b !== body) b.meshes[0].setMatrixAt(f[b.key], root);
-    poseJoints(residentRig(f.sex), P, pose.data, f.slot * POSE_FLOATS);
-    return elbow;
-  }
-  // The pint in a skinned fist: off the wrist, then the arm's whole turn - shoulder, turn in,
-  // elbow - taken back off about the old grip it was built at, and tipped to the mouth by `roll`,
-  // as setPint does for the old arm.
-  const armTurn = new THREE.Matrix4(), elbowTurn = new THREE.Matrix4();
-  function setPintSkinned(i, f, root, angle, turn, elbow, roll) {
-    const hand = skinnedHand(f, 'right', root);
-    armTurn.makeRotationX(angle).multiply(rollMat.makeRotationZ(turn)).multiply(elbowTurn.makeRotationX(elbow));
-    gripMat.makeTranslation(RESIDENT_GRIP[0], RESIDENT_GRIP[1], RESIDENT_GRIP[2]);
-    ungripMat.makeTranslation(-RESIDENT_GRIP[0], -RESIDENT_GRIP[1], -RESIDENT_GRIP[2]);
-    uprightMat.copy(armTurn).invert().multiply(rollMat.makeRotationZ(roll));
-    posedMat.copy(hand).multiply(gripMat).multiply(uprightMat).multiply(ungripMat);
-    pints.setMatrixAt(i, posedMat);
-  }
-
   const toolCount = new Map();
   function draw(figures, dt) {
     time += dt;
@@ -1113,10 +1131,21 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
       // Not less the nod, as a chore's legs are: the nod is the trunk's, and the thighs stay on the bench.
       const legL = sit ? sit.legL : work ? work.legL - work.lean : dance ? dance.legL - dance.lean : stride;
       const legR = sit ? sit.legR : work ? work.legR - work.lean : dance ? dance.legR - dance.lean : -stride;
-      let rightElbow = 0;
       if (skinned) {
-        rightElbow = poseSkinned(f, dress, tmpObj.matrix, legL, legR, leftArmAngle, rightArmAngle, rightTurn,
-          walking ? gaitPhase : null, f.speed > 0.8);
+        const st = skinState;
+        st.legL = legL; st.legR = legR; st.left = leftArmAngle; st.right = rightArmAngle; st.rightTurn = rightTurn;
+        st.anim = loading ? 'load' : f.anim;
+        st.gait = walking ? gaitPhase : null;
+        st.fast = f.speed > 0.8;
+        st.work = work; st.dance = dance; st.drunk = drunk;
+        st.seat = sit ? (f.seat || { h: SIT_HIP }) : null;
+        st.sitBob = sit ? sit.bob : 0;
+        st.striking = f.strike > 0;
+        st.flinch = flinchK;
+        st.armed = armed;
+        st.scale = f.look.height * f.baseScale;
+        st.sex = f.sex;
+        poseSkinned(f, dress, tmpObj.matrix, st);
       } else {
         setPosed(leftLeg, f.slot, bodyMat, RESIDENT_PIVOTS.leftLeg, legL);
         setPosed(rightLeg, f.slot, bodyMat, RESIDENT_PIVOTS.rightLeg, legR);
@@ -1127,7 +1156,7 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
       }
       // What a fist holds: about the old body's shoulder, or off the skinned body's wrist.
       const hold = (mesh, i, side, angle) => (skinned
-        ? mesh.setMatrixAt(i, skinnedHand(f, side, tmpObj.matrix))
+        ? mesh.setMatrixAt(i, skinnedHand(f, side, skinRoot))
         : setPosed(mesh, i, bodyMat, RESIDENT_PIVOTS[side + 'Hand'], angle));
       // The right fist holds one thing: a beer puts down the hammer or the tool.
       if (hammering && !drunk) hold(hammers, hammerCount++, 'right', rightArmAngle);
@@ -1137,7 +1166,7 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
         hold(tool, n, 'right', rightArmAngle);
         toolCount.set(tool, n + 1);
       }
-      if (hauling) bundles.setMatrixAt(bundleCount++, bodyMat);
+      if (hauling) bundles.setMatrixAt(bundleCount++, skinned ? bundleSkinned(f) : bodyMat);
       // `barrowAtHome` is crowd-view.js's: hammering, on an island with a gold pit.
       const parkedAtHome = hammering && f.barrowAtHome;
       if ((pushing || loading || parkedAtHome) && barrowCount < BARROWS) {
@@ -1162,7 +1191,7 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
         for (let i = 0; i < inTray; i++) trayBars.setMatrixAt(trayCount++, partMat.copy(frameMat).multiply(trayAt[i]));
       }
       if (drunk && pintCount < PINTS) {
-        if (skinned) setPintSkinned(pintCount++, f, tmpObj.matrix, rightArmAngle, rightTurn, rightElbow, drunk.roll * drunk.w);
+        if (skinned) setPintSkinned(pintCount++, f, drunk.roll * drunk.w);
         else setPint(pintCount++, bodyMat, rightArmAngle, rightTurn, drunk.roll * drunk.w);
       }
       if (armed) {
