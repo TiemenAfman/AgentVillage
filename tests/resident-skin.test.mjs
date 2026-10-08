@@ -76,6 +76,10 @@ test('the skin goes into the crowd material and its shadow twin', () => {
   }
   // The source's fade flipping reaches the clone (buildings.js follows `followers`).
   assert.ok(base.userData.followers.includes(material) && base.userData.followers.includes(depth));
+  // And the source can still be cloned by anybody else (a player's rig clones the crowd's
+  // material), and a second crowd made from it too: userData goes through JSON in three's copy.
+  assert.doesNotThrow(() => base.clone());
+  assert.doesNotThrow(() => skin.skinnedMaterial(base, pose));
 });
 
 function crowd(n = 24) {
@@ -134,8 +138,16 @@ test('every drawn instance names its own figure\'s pose row, however the batches
   const row = (f, j) => [...data.subarray(f.slot * POSE_FLOATS + j * 12, f.slot * POSE_FLOATS + j * 12 + 12)];
   const walker = all.find((f) => f.visible && f.anim === 'walk' && f.slot != null);
   const still = all.find((f) => f.visible && f.anim === 'still' && f.slot != null);
-  assert.notDeepEqual(row(walker, JOINT.leftKnee), row(walker, JOINT.leftHip), 'a walker walks on straight knees');
-  assert.deepEqual(row(still, JOINT.leftKnee), row(still, JOINT.leftHip), 'somebody standing still bends a knee');
+  // How far a knee is bent: how far its matrix is from the thigh's above it. Standing is soft-kneed
+  // (resident-poses.js KNEE_IDLE) and a stride bends a knee a good deal more, at least on one leg.
+  const bent = (f, side) => {
+    const k = row(f, JOINT[side + 'Knee']), h = row(f, JOINT[side + 'Hip']);
+    return Math.hypot(...k.map((v, i) => v - h[i]));
+  };
+  const walking = Math.max(bent(walker, 'left'), bent(walker, 'right'));
+  const standing = Math.max(bent(still, 'left'), bent(still, 'right'));
+  assert.ok(standing < 0.1, `somebody standing still bends a knee by ${standing}`);
+  assert.ok(walking > 2 * standing, `a walker's knees bend ${walking}, hardly more than standing (${standing})`);
   k.view.dispose();
 });
 

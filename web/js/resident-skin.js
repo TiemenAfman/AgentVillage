@@ -114,7 +114,13 @@ export function skinnedMaterial(base, pose) {
     patchSkin(shader, pose);
   };
   depth.customProgramCacheKey = function () { return depthKey.call(this) + '-skin'; };
-  const followers = base.userData ? (base.userData.followers ||= []) : [];
+  // Not enumerable: three clones a material's userData through JSON, and every other clone of the
+  // crowd's material (a player's rig in classic-avatar.js, a room's walk) choked on a list of
+  // materials whose userData is this one - the circle.
+  if (base.userData && !base.userData.followers) {
+    Object.defineProperty(base.userData, 'followers', { value: [], enumerable: false });
+  }
+  const followers = base.userData ? base.userData.followers : [];
   followers.push(mat, depth);
   const dispose = () => {
     for (const m of [mat, depth]) {

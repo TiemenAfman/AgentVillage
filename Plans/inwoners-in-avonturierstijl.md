@@ -196,6 +196,41 @@ in de kleurpass bij de gewone kleding van nu, tegen 36. CPU (`draw()` onder Node
 lopend): oud 0,34-0,40 ms, skinned 0,50 ms per frame; `poseJoints` is daarvan ~0,15 ms. De tijd per frame
 in de browser was in het verborgen paneel niet eerlijk te meten.
 
+### Fase 3 (8 oktober 2026): alle houdingen op gewrichten
+
+- `web/js/resident-poses.js` (puur, getest in `tests/resident-poses.test.mjs`): `residentPose(P, s, rig)`
+  zet de hoeken die `draw()` al uitrekent op heup en schouder en voegt knie, elleboog en enkel toe, per
+  houding. Lopen en rennen (knie in de zwaai), werk (`WORK`: een hurk per klus - heup a, knie 2a, enkel
+  -a, zodat de voet plat blijft en het lijf zakt - en ellebogen), dansen (knieën die meeveren, armen die
+  vóór het lijf gebogen zijn en omhoog lang), hameren, sjouwen, de zwaai (elleboog gevouwen bij het
+  ophalen, gestrekt bij de klap), schrikken (onderarmen omhoog) en zitten.
+- **Zitten** rekent met de echte been-vectoren (de enkel staat iets achter de knie; met loodrechte
+  lengtes kwam een hurk 4 mm boven de grond en zakten de hielen door de vloer): heupen op de zitting,
+  scheen hangt zoals staand en de dij komt omhoog tot de hielen vrij zijn, en op een bank lager dan
+  de scheen lang is (de banken zijn voor het oude, kortbenige lijf gemaakt) liggen de dijen plat en
+  steken de schenen naar voren.
+- **Drinken** is per lichaam gezocht (`DRINK`): de bovenarm naar voren en om de verticale as naar
+  binnen gedraaid, zodat de onderarm naar het midden van het gezicht vouwt, de elleboog onder de
+  schouder. De vuist komt binnen 2 mm van de mond.
+- **De kruiwagen**: de nieuwe armen zijn een derde korter en haalden de oude handvatten niet. De
+  skinned crowd bouwt zijn kruiwagens met de handvatten waar de hand van de man komt (`barrowGrip`),
+  en elk lijf reikt ernaar met een twee-schakel-IK (`armTo`).
+- **Wat ze vasthouden** was gemaakt voor de vuist van het oude lijf (een bal van een half hoofd breed):
+  in de nieuwe hand werd de hamer zo lang als de onderarm en het glas zo groot als het hoofd. Alles in
+  de hand gaat op `HELD_SCALE` (0,6) om de greep, de takkenbos op 0,75.
+- `/residents.html` (`web/js/residents-bench.js`) is de werkbank: elke houding naast elkaar, het nieuwe
+  lijf vooraan en het oude erachter, drinken, zwaaien en schrikken om de paar seconden.
+- Opgelost onderweg: `followers` stond als gewone eigenschap op de `userData` van het crowd-materiaal, en
+  three kopieert die bij elke `clone()` als JSON. Met `?skinned` brak dat elke andere kloon van dat
+  materiaal (de rig van een speler, de walk van een kamer); hij is nu niet-enumereerbaar.
+- Nog op de oude maat: de kruiwagen zelf (bak en wiel), en de interieurs (de crew in de Kraken, de
+  gasten in de taverne) zijn nog niet bekeken met `?skinned`.
+
+### Keuzes van de keeper (8 oktober 2026)
+
+- Draw calls: houd het onder ~40 per pass; liever minder losse kledingvarianten.
+- Codex-bewoners: blijven zoals ze zijn. Het oude tekenpad blijft dus bestaan voor hen (fase 5).
+
 ## Besluiten
 
 - GPU-skinning per instance, twee invloeden per vertex, hoeken in een gedeelde DataTexture.
