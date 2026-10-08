@@ -17,8 +17,8 @@ export const SFX_FAMILIES = {
   // The beds and the loops with a place.
   surf: [true, 'the sea on the shore - the bed by the coast'],
   wind: [true, 'the wind - the bed inland and on the heights'],
-  murmur: [true, 'the village tavern\'s chatter, through its door and inside (without a file, no chatter)'],
-  kraken: [true, 'the Salty Kraken\'s crew, through its door and inside (without a file, no chatter)'],
+  murmur: [true, 'the village tavern\'s chatter, through its door and inside (replaces the island\'s own recording)'],
+  kraken: [true, 'the Salty Kraken\'s crew, through its door and inside (replaces the island\'s own recording)'],
   borrel: [true, 'the village out on the square for coffee, lunch or the Friday borrel'],
   river: [true, 'a river where you stand by it'],
   lava: [true, 'lava bubbling by a flow on the volcano'],

@@ -2430,9 +2430,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const full = clamp(pub.busy / 9, 0, 1);
       pub.full = kind === 'kraken' ? KRAKEN_CREW + (1 - KRAKEN_CREW) * full : full;
       // The chatter is a recording or nothing (the keeper, 8 October 2026): the computed murmur
-      // came across as surf or static rather than voices, so a tavern with no recording of its own
-      // (HOME/audio/sfx/murmur.*, kraken.*) is heard by its music and its glasses alone. Asked for
-      // all the same, so the keeper's file is fetched once a tavern is within earshot.
+      // came across as surf or static rather than voices. The recording is the keeper's own
+      // (HOME/audio/sfx/murmur.*, kraken.*) or else the island's (web/audio, island-sfx.js), both
+      // handed in by sfx-loader.js once a tavern is within earshot - which is what asking here does;
+      // until one has arrived the tavern is heard by its music and its glasses alone.
       const chatter = recorded(pub.buffer);
       // Outside: through the door, by the distance to it.
       let want = 0;

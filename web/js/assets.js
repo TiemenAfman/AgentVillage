@@ -24,3 +24,9 @@ export const MODEL_BASE = new URL('../models/', import.meta.url);
 export function modelUrl(name) {
   return new URL(name, MODEL_BASE).href;
 }
+
+// And the island's own recordings (web/audio, island-sfx.js), for the same reason.
+export const AUDIO_BASE = new URL('../audio/', import.meta.url);
+export function audioUrl(name) {
+  return new URL(name, AUDIO_BASE).href;
+}
