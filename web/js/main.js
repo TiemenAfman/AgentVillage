@@ -38,6 +38,7 @@ import { createRoadDebug } from './road-debug.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf, strikeSail, logOf, hullSpeed, nearestSail, sailOf } from './boat.js';
 import { createCannonFx } from './cannon-fx.js';
+import { createHarpoonPlay } from './harpoon-play.js';
 import { createHullBars } from './hull-bars.js';
 import { BALL_SPEED, HUMAN_SPEED, ROWBOAT_BOX } from 'shared/cannon.mjs';
 import { housePlacement } from './house-placement.js';
@@ -1271,11 +1272,15 @@ function interactables() {
     // manned, what the keys do there - E is walk mode's own then, so this only says it.
     const gunning = state.walk.gun();
     if (gunning) {
-      out.push({ id: `${b.id}:gun:${gunning.i}`, kind: 'gunning', x: b.x, z: b.z, r: 99, label: 'the cannon', get prompt() { return gunPrompt(); } });
+      out.push({ id: `${b.id}:gun:${gunning.i}`, kind: 'gunning', x: b.x, z: b.z, r: 99, label: `the ${gunning.kind}`, get prompt() { return gunPrompt(gunning.kind); } });
       return out;
     }
     const gun = state.walk.gunNear();
-    if (gun != null) out.push({ id: `${b.id}:gun:${gun}`, kind: 'gun', i: gun, x: b.x, z: b.z, r: 99, label: 'the cannon', prompt: 'man the cannon' });
+    if (gun != null) {
+      // A cannon or a harpoon (craft.mounts' `kind`): one way to man either.
+      const what = (b.craft && b.craft.spec && b.craft.spec.mounts && b.craft.spec.mounts[gun] && b.craft.spec.mounts[gun].kind) || 'cannon';
+      out.push({ id: `${b.id}:gun:${gun}`, kind: 'gun', i: gun, x: b.x, z: b.z, r: 99, label: `the ${what}`, prompt: `man the ${what}` });
+    }
     // Up in her crow's nest, the seat against the topmast (craft.nest, walk.js sitOnDeck).
     if (deck.nest != null) {
       out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
@@ -2273,19 +2278,23 @@ function walkCallbacks() {
     onExit: () => { if (minimapMode === 'map') setMinimapMode('radar'); else exitWalk(); },
     onToggleMinimap: () => setMinimapMode(MINIMAP_NEXT[minimapMode]),
     onGive: () => giveBeer(),
-    onGunFire: (shot) => fireCannonHere(shot),
-    onGunEvent: (what) => {
+    onGunFire: (shot) => (shot.kind === 'harpoon' ? fireHarpoonHere(shot) : fireCannonHere(shot)),
+    // A harpoon's line drawing our own hull along it (web/js/harpoon-play.js; walk.js stepGun).
+    onGunTow: (b, gun, dt) => { if (gun.kind === 'harpoon' && state.harpoons) state.harpoons.tow(b, gun, dt); },
+    onGunEvent: (what, gun) => {
       if (what === 'empty') state.ui.toast('Load it first: R rams a ball home.');
       if (what === 'in') state.ui.toast('In the barrel. Light the fuse and you are fired out of it!');
       // Manned or let go: E's offer changes with it.
       if (what === 'manned' || what === 'left') state.walk.setInteractables(interactables());
+      // Off a harpoon with its line out: the line is let go of, and reels home on its own.
+      if (what === 'left' && gun && gun.kind === 'harpoon' && state.harpoons) { const hb = boatAt(gun.boat); if (hb) state.harpoons.release(hb, gun.i); }
     },
   };
 }
 
 // ---- the galleon's guns (Plans/kanonnen.md) ----------------------------------------------------
 // What the prompt says at a manned gun, as it changes (a getter on the interactable).
-function gunPrompt() { return 'leave the cannon'; }
+function gunPrompt(kind = 'cannon') { return `leave the ${kind}`; }
 
 // The gun's own panel (the keeper: "instructies hud moet groter"), big and in the middle of the lower
 // screen while a gun is manned: what state it is in - empty, being loaded, loaded with its fuse, the
@@ -2304,7 +2313,18 @@ function syncGunHud() {
   const key = (k) => `<kbd>${k}</kbd>`;
   const fire = `${key('Right mouse')}`;
   let head, lines;
-  if (g.fuse > 0) {
+  // A harpoon (Plans/harpoen.md): fire, and with a line out, what it holds and letting go.
+  const hb = g.kind === 'harpoon' && state.harpoons ? boatAt(g.boat) : null;
+  const line = hb ? state.harpoons.lineAt(hb, g.i) : null;
+  if (g.kind === 'harpoon') {
+    const held = line && line.hooked();
+    const what = held ? (held.kind === 'statue' ? 'the statue' : held.kind === 'land' ? 'the shore' : 'a ship') : null;
+    if (!line || line.state === 'stowed') { head = 'Harpoon ready'; lines = [`${fire} fire the harpoon`, `${key('E')} leave`]; }
+    else if (line.state === 'flying') { head = 'The line runs out...'; lines = [`${fire} let go of the line`]; }
+    else if (held) { head = `Hooked on ${what}, reeling in`; lines = [`${fire} let go of the line`, `${key('E')} leave`]; }
+    else { head = 'Reeling the line home...'; lines = [`${key('E')} leave`]; }
+    gunHud.className = held ? 'loaded' : '';
+  } else if (g.fuse > 0) {
     head = g.inside ? `You are about to be fired! ${g.fuse.toFixed(1)} s` : `Fuse burning... ${g.fuse.toFixed(1)} s`;
     lines = [`${fire} snuff the fuse`];
     gunHud.className = 'burning';
@@ -2362,6 +2382,14 @@ function fireCannonHere({ boat, i, self }) {
   if (state.cannonFx) state.cannonFx.fire({ o, v, b: boat.id, by: me, id: `${me}:${n}`, self });
   if (state.net) state.net.fireCannon({ b: boat.id, i, o, v, self, n });
   return { at: o, v };
+}
+// A harpoon fired from our deck (Plans/harpoen.md): out on its line, or - with one out - let go of.
+// The line answers no { at, v }: nobody flies out of a harpoon.
+function fireHarpoonHere({ boat, i }) {
+  if (!state.harpoons || !boat) return null;
+  const did = state.harpoons.fire(boat, i);
+  if (did === 'released') state.ui.toast('You let go of the line. It reels home.');
+  return null;
 }
 // Somebody else's gun (net.js `cannon`): the shot flown here as it is there, the gun on their ship
 // laid to the way it went, and a ball the sea says came down on somebody ended where it did.
@@ -8378,6 +8406,10 @@ function frame(nowMs) {
   }
   if (state.crops) state.crops.update(dt);
 
+  // The harpoons' lines (web/js/harpoon-play.js): after walk mode has stepped, so a line leaves the
+  // mouth where the hull now is, and before the fleet loop sends her position.
+  if (state.harpoons) state.harpoons.frame(dt);
+
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.
   const mine = ownHull();
@@ -9520,6 +9552,16 @@ Everything is copied and checked first; the island then starts again there. The 
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   // The guns' balls, flashes, smoke and spray (Plans/kanonnen.md): one set for every ship in sight.
   state.cannonFx = createCannonFx({ scene });
+  // And her harpoons' lines (Plans/harpoen.md), this page's own for now: nothing of them is on the wire.
+  state.harpoons = createHarpoonPlay({
+    scene,
+    boats: () => state.boats,
+    sea: () => state.sea,
+    hunt: () => state.hunt,
+    kindOf: (b) => (isShip(b) ? 'galleon' : 'rowboat'),
+    followed: hullFollowed,
+    surfaceAt: (x, z) => (state.world && state.world.surfaceAt ? state.world.surfaceAt(x, z) : 0),
+  });
   // And a hull's health over every boat a ball has hit (web/js/hull-bars.js).
   state.hullBars = createHullBars(scene);
   // What a shape looks like before anybody has agreed to it. Built after the world and

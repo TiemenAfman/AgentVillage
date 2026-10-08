@@ -966,6 +966,8 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
       if (h) { h.boltShown = shown; h.rig.boltShown(shown); }
     },
     harpoons: () => harpoons.filter(Boolean).length,
+    // A free harpoon like the one in gun `i`'s barrel, to fly on its line (web/js/harpoon-play.js).
+    harpoonBoltClone: (i) => (harpoonsOf(i) ? harpoonsOf(i).rig.boltClone() : null),
     // The touch hole the fuse burns in, in the same frame.
     gunVent: (i) => {
       const g = guns[i], s = cannonShape();
