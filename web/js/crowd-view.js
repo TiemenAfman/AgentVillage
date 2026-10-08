@@ -32,7 +32,7 @@
 // cost on one guest island, and a crowd is not 41 but 274. And no faces on the wire: the
 // roster carries building ids, and settlerLook hashes the identical person out of one on
 // both sides, which is the promise the wardrobe has always made.
-import { createFigures, SETTLER_DRINK_S } from './settler-figures.js';
+import { createFigures, SETTLER_DRINK_S, skinnedWanted } from './settler-figures.js';
 import { createTipsy, drinkIn, stepTipsy, settlerSway, SETTLER_TIPSY } from './tipsy.js';
 import { createBoat } from './boat.js';
 import { DECK_Y, DRAUGHT, SEAT, FLOORBOARDS } from 'shared/hull.mjs';
@@ -125,6 +125,10 @@ export function createCrowdView({
   // and a guard swimming off the coast.
   const view = createFigures(scene, material, {
     armed,
+    // The volcano's people (every islander's Codex settlers, and its guards) keep the look they
+    // have: the keeper's choice, 8 October 2026 (Plans/inwoners-in-avonturierstijl.md). The island
+    // that is hostile is the volcano.
+    skinned: armed ? false : skinnedWanted(),
     bounds: Number.isFinite(region.half)
       ? { x: region.origin[0], z: region.origin[1], r: region.half * Math.SQRT2 + 32 } : null,
   });

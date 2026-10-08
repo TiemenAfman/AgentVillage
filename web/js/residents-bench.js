@@ -79,7 +79,20 @@ function build(armed) {
     });
     crowds.push({ view, figures, skinned });
   }
+  // And a row in front of everybody dressed by their own wardrobe (shared/palette.mjs
+  // residentWardrobe): every style and kind of resident, standing about.
+  const view = createFigures(scene, material, { skinned: true, armed });
+  const figures = new Map();
+  const styles = ['fable', 'opus', 'sonnet', 'haiku', 'unknown'], kinds = ['adult', 'adult', 'adult', 'sailor', 'apprentice'];
+  for (let i = 0; i < VARIETY; i++) {
+    const id = `bench:variety:${i}`, kind = kinds[i % kinds.length];
+    const f = { id, visible: true, pos: [i * PITCH, 0.8], y: 0, yaw: 0, faceAngle: 0, anim: 'still', mode: 'idle', speed: 0 };
+    view.enrol(f, settlerLook(id, styles[i % styles.length], kind), kind);
+    figures.set(id, f);
+  }
+  crowds.push({ view, figures, skinned: true });
 }
+const VARIETY = 24;
 // What the sitters sit on.
 for (const [i, p] of POSES.entries()) {
   if (!p.seat) continue;

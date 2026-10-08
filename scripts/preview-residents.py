@@ -83,7 +83,8 @@ def figure(data, look, x, pose=None):
     feet = 'clogs' if 'clogs' in wear else 'shoes'
     combo = f'{bottom}/{feet}'
     chosen = [(p, SKIN[skin]) for p in data['parts'] if p['kind'] == 'skin' and combo in p['shows']]
-    chosen.append((parts['hair:' + hair], HAIR[hair_c]))
+    if hair != 'none':
+        chosen.append((parts['hair:' + hair], HAIR[hair_c]))
     for gid, c in wear.items():
         chosen.append((parts[gid], CLOTH[c]))
     if hat:

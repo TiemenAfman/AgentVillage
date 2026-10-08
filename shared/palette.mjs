@@ -80,7 +80,8 @@ export const SWATCHES = {
   ],
   // The player's hair (the head slot's dye, Plans/basislichamen-en-outfits.md). The first is the
   // Traveller's own brown, the colour every body's hair is baked against, so it is the default.
-  // No settler picks from this row: the villagers' hair is their style's.
+  // The old villagers' hair is their style's; the skinned residents pick from this row in their
+  // own stream (residentWardrobe), never in `:look`.
   hair: [
     { name: 'Brown', hex: 0x503a2d }, { name: 'Chestnut', hex: 0x6e3b1f },
     { name: 'Auburn', hex: 0x8c3f22 }, { name: 'Copper', hex: 0xb5612e },
@@ -167,6 +168,62 @@ export function settlerLook(seed, style, kind = 'adult') {
   };
 }
 
+// What a resident in the Wanderer's style wears (Plans/inwoners-in-avonturierstijl.md, fase 4).
+// A stream of its own, `<id>:wardrobe`, and never a draw more in `:look`: that stream sets the
+// height, the height sets the stride, and the stride is where everybody on the sea is standing.
+// Everything here is cosmetic and only the page asks it. The draws are made in one fixed order
+// whatever the answers, so a choice added at the end can never change one made before it.
+//
+// What there is to wear is kept to what the crowd can draw in under ~40 calls a pass (the keeper's
+// limit, 8 October 2026): per body a shirt or (a woman, or a priest) a dress, trousers or a skirt,
+// shoes or clogs, a vest or an apron over it or neither, a scarf or not, three hairstyles (a man's
+// third is bald), and the hats as they always were. The bake's braces are left in the drawer.
+// Colours: the shirt is the look's tunic and the trousers or skirt its trim, as before; the rest
+// from the island's own swatches, in cloth that is not loud.
+// A keeper's `dress.wear` (KEEPERS above) settles what their post asks and leaves the rest to the
+// stream: `top` ('shirt' | 'dress'), `over` ('vest' | 'apron' | null), `feet`, `hair` - garments by
+// name - and `topColor`, `bottomColor`, `overColor`, `scarf` (a colour, which also puts one on).
+export const RESIDENT_HAIR = { female: ['long', 'buns', 'parted'], male: ['parted', 'buzzed', null] };
+const SHOE_LEATHER = [0x5a3c28, 0x3a3a3f, 0x6b4a2f, 0x4a3426];
+const CLOG_WOOD = [0xd9b98c, 0xc9a06a, 0xe3c896];
+const APRON_CLOTH = [0xf0e2c8, 0xe9e2d2, 0xd9cfb8, 0x6b4a2f, 0xa8a59e];
+export function residentWardrobe(seed, look, kind = 'adult') {
+  const rng = makeRng(hash32(`${seed}:wardrobe`));
+  const sex = look.presentation === 'woman' ? 'female' : 'male';
+  const sailor = kind === 'sailor';
+  const young = kind === 'apprentice';
+  // Every draw, always, in this order.
+  const dressRoll = rng.next(), overRoll = rng.next(), overPick = rng.next(), feetRoll = rng.next();
+  const scarfRoll = rng.next(), hair = rng.pick(RESIDENT_HAIR[sex]), hairColor = rng.pick(SWATCHES.hair).hex;
+  const shoes = rng.pick(SHOE_LEATHER), clogs = rng.pick(CLOG_WOOD), apron = rng.pick(APRON_CLOTH);
+  const vest = rng.pick(SWATCHES.trim).hex, scarf = rng.pick(SWATCHES.hat).hex;
+  const w = look.wear || {};
+  const skirted = sex === 'female' && look.outfit === 'skirt';
+  const top = w.top || (skirted && !sailor && dressRoll < 0.3 ? 'dress' : 'shirt');
+  const over = 'over' in w ? w.over : sailor || young ? null
+    : overRoll < 0.55 ? null : overPick < 0.5 ? 'vest' : 'apron';
+  const feet = w.feet || (sailor ? 'shoes' : feetRoll < 0.35 ? 'clogs' : 'shoes');
+  return {
+    sex,
+    top,
+    // A dress is a top and a bottom in one; it shows the skin a skirt shows.
+    bottom: top === 'dress' ? null : skirted ? 'skirt' : 'trousers',
+    skin: top === 'dress' || skirted ? 'skirt' : 'trousers',
+    over,
+    feet,
+    scarf: w.scarf != null || sailor || scarfRoll < 0.15,
+    hair: w.hair !== undefined ? w.hair : hair,
+    colors: {
+      top: w.topColor ?? look.tunic,
+      bottom: w.bottomColor ?? look.trim,
+      over: w.overColor ?? (over === 'apron' ? apron : vest),
+      feet: feet === 'clogs' ? clogs : shoes,
+      scarf: typeof w.scarf === 'number' ? w.scarf : sailor ? 0x2b4c7e : scarf,
+      hair: hairColor,
+    },
+  };
+}
+
 // Which of the three kinds of resident a plot houses, and whose palette they wear. Both
 // halves of the settlers need to agree about this - the walk sizes a shed-dweller's wander
 // radius by it and the wardrobe dresses them by it - so it is worked out in one place.
@@ -190,30 +247,31 @@ export function styleOf(spec) {
 // Neither is staying at the door and going along when everybody else goes. `aside` stands
 // them that far to one side of the doorway: the gold pit's open end is where the barrows
 // go in. `dress` is what they wear
-// over their own hashed face and height: everybody's height sets their stride, so the sea
+// over their own hashed face and height, and its `wear` what the skinned body puts on for it
+// (residentWardrobe below: an innkeeper's apron, the mayor's vest, the priest's cassock): everybody's height sets their stride, so the sea
 // and the page both call residentLook below and arrive at the same person.
 export const KEEPERS = {
   tavern: {
     post: 'innkeeper', name: 'The innkeeper', serves: true,
-    dress: { hatShape: 'none', tunic: 0xe9e2d2, trim: 0x6a4526, build: 1.18 },
+    dress: { hatShape: 'none', tunic: 0xe9e2d2, trim: 0x6a4526, build: 1.18, wear: { over: 'apron', overColor: 0xf0e8d8 } },
   },
   townhall: {
     post: 'mayor', name: 'The mayor', tours: true,
-    dress: { hatShape: 'dome', hat: 0x1d1c22, tunic: 0x28304a, trim: 0xb8923e, build: 1.04 },
+    dress: { hatShape: 'dome', hat: 0x1d1c22, tunic: 0x28304a, trim: 0xb8923e, build: 1.04, wear: { over: 'vest', overColor: 0xb8923e, topColor: 0xe8e4da, bottomColor: 0x28304a } },
   },
   goldpit: {
     post: 'clerk', name: 'The gold clerk', aside: 1.2,
-    dress: { hatShape: 'cap', hat: 0x3b3a36, tunic: 0x6e7a5a, trim: 0x2e2a24 },
+    dress: { hatShape: 'cap', hat: 0x3b3a36, tunic: 0x6e7a5a, trim: 0x2e2a24, wear: { over: 'vest', overColor: 0x6e7a5a, topColor: 0xe9e2d2 } },
   },
   // Asked for as a woman, so the dress says so rather than leaving it to the id's hash.
   school: {
     post: 'headmistress', name: 'The headmistress',
-    dress: { presentation: 'woman', outfit: 'skirt', hatShape: 'none', tunic: 0x7a2f3a, trim: 0x2b2530 },
+    dress: { presentation: 'woman', outfit: 'skirt', hatShape: 'none', tunic: 0x7a2f3a, trim: 0x2b2530, wear: { top: 'dress', scarf: 0x2b2530 } },
   },
   // A black cassock with the white of the collar in the trim.
   chapel: {
     post: 'priest', name: 'The priest', tours: true,
-    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'none', tunic: 0x18181c, trim: 0xe8e4da },
+    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'none', tunic: 0x18181c, trim: 0xe8e4da, wear: { top: 'dress', scarf: 0xe8e4da } },
   },
   // The pirate keeps a sea chest, `civic:pirate`, beside whichever building hosts it: the
   // tavern's pavement beside its door (Plans/schatkaarten.md), and from 52 settlers behind the
@@ -227,7 +285,7 @@ export const KEEPERS = {
   // cell where the statue of the seventieth settler stands.
   pirate: {
     post: 'pirate', name: 'The pirate',
-    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'wide', hat: 0x17161a, tunic: 0x7a2426, trim: 0xc9a13b, build: 1.06 },
+    dress: { presentation: 'man', outfit: 'trousers', hatShape: 'wide', hat: 0x17161a, tunic: 0x7a2426, trim: 0xc9a13b, build: 1.06, wear: { over: 'vest', overColor: 0x17161a, topColor: 0xe9e2d2, scarf: 0x7a2426, feet: 'shoes' } },
   },
 };
 

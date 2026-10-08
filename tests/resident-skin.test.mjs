@@ -71,7 +71,8 @@ test('the skin goes into the crowd material and its shadow twin', () => {
     const shader = { vertexShader: lib.vertexShader, fragmentShader: lib.fragmentShader, uniforms: {} };
     m.onBeforeCompile(shader);
     assert.equal(shader.uniforms.uPose, pose);
-    assert.match(shader.vertexShader, /#include <begin_vertex>\ntransformed = \(residentSkin\(\)/);
+    assert.match(shader.vertexShader, /#include <begin_vertex>\n[\s\S]*transformed = \(residentSkin\(\)/);
+    assert.match(shader.vertexShader, /aMask[\s\S]*aShow/);
     assert.match(shader.vertexShader, /attribute float aFigure;/);
   }
   // The source's fade flipping reaches the clone (buildings.js follows `followers`).
@@ -86,11 +87,13 @@ function crowd(n = 24) {
   const scene = new THREE.Scene();
   const view = createFigures(scene, new THREE.MeshBasicMaterial(), { skinned: true });
   const figures = new Map();
+  const styles = ['fable', 'opus', 'sonnet', 'haiku', 'unknown'], kinds = ['adult', 'adult', 'sailor', 'apprentice'];
   for (let i = 0; i < n; i++) {
     const id = `resident:${i}`;
     const [presentation, outfit] = [['woman', 'skirt'], ['woman', 'trousers'], ['man', 'trousers']][i % 3];
     const f = { id, visible: true, pos: [i, -i], y: 0, yaw: 0, anim: i % 2 ? 'walk' : 'still', mode: 'walk', speed: 0.5 };
-    assert.ok(view.enrol(f, { ...settlerLook(id, 'sonnet'), presentation, outfit }, 'adult'));
+    const kind = kinds[i % 4];
+    assert.ok(view.enrol(f, { ...settlerLook(id, styles[i % 5], kind), presentation, outfit }, kind));
     figures.set(id, f);
   }
   return { scene, view, figures };
@@ -152,10 +155,12 @@ test('every drawn instance names its own figure\'s pose row, however the batches
 });
 
 test('a skinned crowd draws a variant per call, not a person per call', () => {
-  const k = crowd(60);
+  // Three hundred, every style and kind, so every garment, hairstyle and hat the wardrobe has is
+  // worn by somebody: the keeper's limit is ~40 calls a pass for the people (8 October 2026).
+  const k = crowd(300);
   k.view.draw(k.figures, 0.016);
-  const calls = k.scene.children.filter((m) => m.isInstancedMesh && m.visible && m.count > 0).length;
-  assert.ok(calls <= 24, `${calls} instanced meshes for sixty people`);
+  const people = k.scene.children.filter((m) => m.isInstancedMesh && m.visible && m.count > 0 && /^resident-(male|female)-/.test(m.name));
+  assert.ok(people.length <= 36, `${people.length} instanced meshes for three hundred people: ${people.map((m) => m.name).join(', ')}`);
   k.view.dispose();
   assert.equal(k.scene.children.filter((m) => m.isInstancedMesh).length, 0, 'dispose left meshes in the scene');
 });
