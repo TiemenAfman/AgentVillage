@@ -918,9 +918,18 @@ export function createWalk(terrain, village = null) {
   // position, its path and the bar - is handed from the old figure to the new one, and only
   // that. Only when their doorstep is where it was: a house that moved gets a settler at
   // the new door, like everybody else. Returns whether anything was carried over.
+  //
+  // The gathering is carried over the same way, and for the same reason (8 October 2026: the
+  // lunch bell sent Hoogezand down a road longer than a minute's walk, and every republish
+  // put the whole procession back at its own doors - on screen, a line of people on the road
+  // that was simply gone). Out to the square, standing about on it, or on the way home: the
+  // walk, the pause and both errand records come along, and with them `home`, which on the
+  // square is the spot they stand on - so the doorstep checked is the one in the record.
   function adopt(id, old) {
     const f = figures.get(id);
-    if (!f || !old || !gold || !old.home) return false;
+    if (!f || !old || !old.home) return false;
+    if (old.gathering) return adoptGathering(f, old);
+    if (!gold) return false;
     if (dist(old.home[0] - f.home[0], old.home[1] - f.home[1]) > 0.01) return false;
     if (old.goldRng) f.goldRng = old.goldRng;
     const kind = old.after && old.after.kind;
@@ -946,6 +955,34 @@ export function createWalk(terrain, village = null) {
     f.turn = old.turn;
     f.y = old.y;
     goldTrips++;
+    return true;
+  }
+
+  // See `adopt`. Only the errand's own kinds are taken: a gatherer who is anything else by
+  // now (chartered, talked to) starts at the door like everybody else.
+  function adoptGathering(f, old) {
+    const rec = (old.after && old.after.kind && old.after.kind.startsWith('gather-')) ? old.after
+      : (old.then && old.then.kind === 'gather-home') ? old.then : null;
+    if (!rec || !rec.home || !old.pos || old.chartered || old.attend) return false;
+    if (dist(rec.home[0] - f.home[0], rec.home[1] - f.home[1]) > 0.01) return false;
+    // The roads may have changed under them; a route that no longer starts or ends on the
+    // network is still a line of points to walk, which is all a route ever was.
+    f.rng = old.rng;
+    f.pos = [old.pos[0], old.pos[1]];
+    f.home = [old.home[0], old.home[1]];
+    f.path = old.path;
+    f.pathI = old.pathI;
+    f.mode = old.mode;
+    f.speed = old.speed;
+    f.after = old.after;
+    f.then = old.then;
+    f.pause = old.pause;
+    f.target = old.target;
+    f.keepHome = old.keepHome;
+    f.gathering = true;
+    f.face = old.face;
+    f.turn = old.turn;
+    f.y = old.y;
     return true;
   }
 
