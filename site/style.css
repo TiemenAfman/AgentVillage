@@ -260,6 +260,13 @@ kbd {
 .sea-notes p + h3 { margin-top: 16px; }
 @media (max-width: 860px) { .sea-grid { grid-template-columns: minmax(0, 1fr); } .sea-big { grid-row: auto; } }
 
+/* ---------- adventure ---------- */
+.adventure { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 3vw, 36px); align-items: start; }
+.adventure figcaption { display: grid; gap: 8px; margin-top: 18px; font-size: 1rem; }
+.adventure figcaption h3 { color: var(--deep); }
+.adventure figcaption p { color: var(--tide); font-size: 0.98rem; }
+@media (max-width: 960px) { .adventure { grid-template-columns: minmax(0, 1fr); max-width: 40rem; } }
+
 /* ---------- keeper tools ---------- */
 .tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(16px, 2.4vw, 28px); }
 .tools article { background: var(--foam); border-radius: var(--radius); padding: 24px 22px 26px; box-shadow: 0 1px 0 var(--line), 0 12px 28px -22px rgba(13, 42, 56, 0.5); display: grid; gap: 10px; align-content: start; }
