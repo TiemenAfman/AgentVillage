@@ -2971,8 +2971,10 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     const windy = sk === 'rain' ? 1.5 : sk === 'overcast' ? 1.25 : sk === 'fog' ? 0.7 : 1;
     // In the woods the leaves join in: more of the wind's own brightness is let through.
     const woods = clamp(look.woods || 0, 0, 1);
-    bed.seaWant = SEA_QUIET + (SEA_LOUD - SEA_QUIET) * wet;
-    bed.windWant = (WIND_LOUD + (WIND_QUIET - WIND_LOUD) * wet) * windy * (1 + 0.3 * woods);
+    // Sea and wind are one part ('sea'): switched off, the bed glides to nothing and stops below.
+    const seaOn = live('sea');
+    bed.seaWant = seaOn ? SEA_QUIET + (SEA_LOUD - SEA_QUIET) * wet : 0;
+    bed.windWant = seaOn ? (WIND_LOUD + (WIND_QUIET - WIND_LOUD) * wet) * windy * (1 + 0.3 * woods) : 0;
     // Night takes the top off as well as turning it down: after dark the sea is further
     // away and the wind is in the trees rather than in your ears.
     const night = clamp(look.night || 0, 0, 1);
@@ -3046,8 +3048,16 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     bed.duckAt += (bed.duckWant - bed.duckAt) * (1 - Math.exp(-dt / 0.8));
     // Under the sea the surf is a dull rush (the master's lowpass does the dulling) and the wind is
     // nearly gone: it is a bed from above the water.
-    keepBuffer(built.sea.audio, need('surf'));
-    keepBuffer(built.wind.audio, need('wind'));
+    // Switched off (Settings -> Audio, off by default for now), the two loops are stopped once they
+    // have faded out and their families are not asked for, so the keeper's samples are not fetched.
+    const seaOn = live('sea');
+    for (const [v, at, fam] of [[built.sea, bed.seaAt, 'surf'], [built.wind, bed.windAt, 'wind']]) {
+      const a = v.audio;
+      if (seaOn) {
+        keepBuffer(a, need(fam));
+        if (a.buffer && !a.isPlaying) a.play();
+      } else if (a.isPlaying && at < 0.002) a.stop();
+    }
     built.sea.audio.setVolume(bed.seaAt * bed.duckAt * (1 - 0.4 * underwater));
     built.wind.audio.setVolume(bed.windAt * bed.duckAt * duckOver());
     // And the master comes up over a second and a half, because a bed that arrives all at
