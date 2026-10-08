@@ -109,7 +109,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, onRespawn = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
+  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, onRespawn = () => {}, onCannon = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
   quietMs = QUIET_MS } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
@@ -140,7 +140,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   const boatIn = (b) => {
     if (typeof b.x !== 'number' || typeof b.z !== 'number') return onBoat(b);
     const [x, z] = incoming(b.x, b.z);
-    return onBoat({ ...b, x, z });
+    // Sunk by gunfire (Plans/kanonnen.md): where she went down, also a position.
+    const sunk = Array.isArray(b.sunk) ? incoming(b.sunk[0], b.sunk[1]) : undefined;
+    return onBoat({ ...b, x, z, ...(sunk ? { sunk } : {}) });
   };
   let sock = null;
   let retry = RETRY_MIN;
@@ -267,6 +269,15 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
         // a swing coming down, a glass going up. Events, like the agents' own `swing`.
         case 'swung': peers.act(m.id, 'attack', m.side); break;
         case 'drank': peers.act(m.id, 'drink', m.side); break;
+        // A gun fired on somebody's deck, or where a ball of it came down on a body
+        // (Plans/kanonnen.md): the muzzle and the impact are positions, and come into our frame here.
+        case 'cannon': {
+          const [hx, hz] = homeAt();
+          if (Array.isArray(m.o)) m.o = [m.o[0] - hx, m.o[1], m.o[2] - hz];
+          if (Array.isArray(m.at)) m.at = [m.at[0] - hx, m.at[1], m.at[2] - hz];
+          onCannon(m);
+          break;
+        }
         // Somebody captured or drowned (lib/players.mjs evict): their body goes down where we
         // draw it before it is taken home. Not about us - the sea leaves the evicted one out.
         case 'fell': peers.act(m.id, m.how === 'drown' ? 'drown' : 'fall'); break;
@@ -578,6 +589,14 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // A sip, for everybody else to see (the sea passes it on as `drank`). Indoors too: the
     // bar is where a beer is drunk.
     drink(side) { if (walking && here && here.state && here.state.active) send({ t: 'drink', side }); },
+    // A gun fired (Plans/kanonnen.md): which ship and which of her mounts, the muzzle and the velocity
+    // out of it (world frame on the wire), and `self` for a body fired instead of a ball. `n` is our
+    // own number for the shot, which the sea echoes when it says where it came down on somebody.
+    fireCannon({ b, i, o, v, self = false, n }) {
+      if (!walking || !berthKnown()) return false;
+      const [wx, wz] = outgoing(o[0], o[2]);
+      return send({ t: 'cannon', a: 'fire', b, i, o: [wx, o[1], wz], v, self: !!self, n });
+    },
     // Our look, when the wardrobe changes it - and kept for the next connect.
     setLook(spec) { look = spec || null; if (look) send({ t: 'look', ...look }); },
     leaveBoat(id) { send({ t: 'boat', a: 'leave', id }); },

@@ -45,6 +45,7 @@ export const SFX_LEVEL = {
   foghorn: 0.1239, baa: 0.0800, moo: 0.0900, cluck: 0.0948, quack: 0.0938, bleat: 0.0700,
   snort: 0.0700, peck: 0.0566, scratch: 0.0404, chirp: 0.0661, bonk: 0.0985, flap: 0.0500,
   bubble: 0.0661, hoof: 0.1011, plank: 0.0986, swish: 0.0400, plop: 0.0759,
+  boom: 0.1338, blast: 0.1244, splash: 0.1059,
 };
 
 // Gated RMS over every channel (see the head of this file). 0 for a silent buffer.

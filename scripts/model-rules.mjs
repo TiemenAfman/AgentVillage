@@ -33,8 +33,9 @@ export const sheetNames = () => [...Object.keys(SHEETS), ...CANOPY];
 // Empties named `anchor.<name>` become the anchors main.js hangs smoke, flags and signs
 // on. A name nothing reads is a typo rather than a feature. `waterline` is a ship's draught
 // (scripts/build-batavia.py): she is modelled keel on the ground like everything else, and
-// this is the one number the island lowers her by.
-export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline'];
+// this is the one number the island lowers her by. `muzzle` is the mouth of a gun's bore at rest
+// (scripts/build-cannon.py): where a ball leaves it and the flash stands, turned with the barrel.
+export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline', 'muzzle'];
 // And what a ship measures of herself, for whoever walks or sails her later rather than for
 // anything that hangs on her now: `deck.<name>.lo|hi`, opposite corners of a rectangle of
 // planking at its height; `stair.<name>.lo|hi`, a ladder running fore and aft, `lo` the

@@ -290,6 +290,19 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 /* The beer offer, one card's height under the prompt (web/index.html #walk-give). */
 .walk-give { bottom: calc(56% - 46px); }
 .walk-keys { font-size: 11px; color: var(--ink-dim); display: flex; gap: 10px; align-items: center; }
+/* A manned gun's panel (main.js syncGunHud, Plans/kanonnen.md): big, low on the right, off the gun. */
+#gun-hud { position: fixed; right: 28px; bottom: 110px; z-index: 30; pointer-events: none;
+  background: rgba(14, 22, 30, .82); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 14px 24px;
+  color: #f1ead8; font-size: 20px; line-height: 1.6; text-align: center; min-width: 340px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+#gun-hud .gun-head { font-size: 26px; font-weight: 700; margin-bottom: 4px; letter-spacing: .02em; }
+#gun-hud kbd { font-family: inherit; font-size: 17px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
+  border-bottom-width: 3px; border-radius: 7px; padding: 1px 9px; margin-right: 6px; }
+#gun-hud.loaded .gun-head { color: #f3cf5c; }
+#gun-hud.burning { border-color: rgba(255,140,40,.7); }
+#gun-hud.burning .gun-head { color: #ff9a3c; }
+#gun-hud.inside { border-color: rgba(255,90,60,.7); }
+#gun-hud.inside .gun-head { color: #ff7a5a; }
+#gun-hud[hidden] { display: none; }
 .walk-keys kbd { font-family: inherit; font-size: 10.5px; background: rgba(255,255,255,.09); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
 
 /* Health over stamina over air over beer (web/js/vitals.js), each an emoji and a track. The fill is

@@ -4,6 +4,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
 - 🚧 [goudmijn-zoektocht.md](goudmijn-zoektocht.md) — een quest-lijn naast het piratenverhaal: blind graven naar de trap in 7 x 7 per verdieping, zeven verdiepingen, graaf-stamina, een drankje uit de taverne, edelstenen voor de goudsmid, een sleutel onderin.
+- 🚧 [speeltest-quests.md](speeltest-quests.md) — een agent speelde de schattenjacht met de roeiboot uit en de goudmijn tot verdieping 5: vier bugs gerepareerd (de goudsmid als piraat, de mijnladder, de tent-melding van het beeld, de onbereikbare toog), bevindingen (roeiboot door het galjoen, herladen zet je op het plein, de mijn betaalt zijn drankjes niet) en de besluiten van de keeper, gebouwd (graafplekken onzichtbaar, camera van boven; 7 x 7 en de ruimte blijven).
 - 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
 
 ## Besluiten die nog niet in een eigen plan zitten
@@ -44,6 +45,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [kanonnen.md](kanonnen.md) — de acht kanonnen uit de galjoen-bake weg, twee kanonnen van de keeper (eigen FBX) erop: bemannen, draaien, richten, laden, vuren, inslag met explosie, plons en geluid, en jezelf afvuren langs een kogelbaan.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
   ellebogen), losse kleding (Peasant + schort, vest, rok/jurk, sjaal), vijf kapsels, huid- en
