@@ -240,3 +240,47 @@ test('walk mode rides a horse for the Adventurer and the Wanderer, the bicycle f
   // And the lid a rider needs is a rider's: MOUNT_HEAD in the horse's branch.
   assert.match(WALK_SOURCE, /ceilingAt\(x, z, m\.floor\) - HEAD - MOUNT_HEAD/);
 });
+
+// ---- the horse's own breath (Plans/paard-in-plaats-van-fiets.md, "Het paard heeft zijn eigen adem")
+
+const { createPool, HORSE, BODY, RECOVER_AT } = await import('../web/js/stamina.js');
+
+test('the horse has lungs of its own, several times a body\'s', () => {
+  assert.ok(HORSE.drain >= 4 * BODY.drain, `a horse gallops ${HORSE.drain} s, a body sprints ${BODY.drain} s`);
+  // A gallop that long crosses a grown island, not only the square.
+  assert.ok(HORSE.drain * MOUNT_TOP * MOUNT_GALLOP > 120, 'a full gallop covers under 120 units');
+});
+
+test('a gallop empties the pool, and an empty horse drops back to a trot', () => {
+  const pool = createPool(HORSE);
+  const m = horse();
+  let galloped = 0;
+  for (let i = 0; i < Math.round((HORSE.drain + 10) / FRAME); i++) {
+    stepMount(m, { rein: 1, gallop: true, pool }, FRAME, { ground: MEADOW });
+    if (m.gallop) galloped += FRAME;
+  }
+  // A couple of seconds to get up to speed before the gallop's band starts paying.
+  assert.ok(galloped > HORSE.drain - 1 && galloped < HORSE.drain + 4, `galloped ${galloped.toFixed(1)} s`);
+  assert.equal(pool.spent, true);
+  assert.ok(Math.abs(m.v - MOUNT_TOP) < 0.05, `blown, it goes at ${m.v.toFixed(2)}, not a trot`);
+  assert.equal(m.gallop, false);
+});
+
+test('a trot costs a little, a walk and standing fill it again', () => {
+  const pool = createPool(HORSE);
+  const m = horse();
+  ride(m, { rein: 1, pool }, 20);
+  const afterTrot = pool.level;
+  assert.ok(afterTrot < 1 && afterTrot > 0.9, `twenty seconds of trot left ${afterTrot.toFixed(3)}`);
+  // Spent at a trot, it stays spent: only a walk or a halt gives the breath back.
+  pool.level = 0; pool.spent = true;
+  ride(m, { rein: 1, gallop: true, pool }, 5);
+  assert.equal(pool.level, 0);
+  assert.equal(m.gallop, false);
+  // At a walk (a half-pressed stick) it fills, and opens again at RECOVER_AT.
+  ride(m, { rein: 0.4, pool }, HORSE.delay + RECOVER_AT * HORSE.refill + 1);
+  assert.ok(Math.abs(m.v) <= M.MOUNT_WALK, `a walk at ${m.v.toFixed(2)}`);
+  assert.equal(pool.spent, false, `walked back to ${pool.level.toFixed(2)} and still spent`);
+  ride(m, { rein: 0, pool }, HORSE.refill + 2);
+  assert.equal(pool.level, 1);
+});

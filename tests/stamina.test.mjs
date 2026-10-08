@@ -118,3 +118,16 @@ test('a frame of rubbish changes nothing, and one long frame fills only past the
   stepPool(pool, false, 1.5);
   assert.ok(Math.abs(pool.level - (level + 0.5 / BODY.refill)) < 1e-9, `one long frame filled to ${pool.level}`);
 });
+
+test('in the saddle the bar is the horse\'s, and a share spends that much of it', async () => {
+  const { HORSE, spendPool } = await import('../web/js/stamina.js');
+  const st = { body: createPool(BODY), boat: createPool(BOAT), horse: createPool(HORSE) };
+  assert.equal(shownPool(st, false, true), st.horse);
+  assert.equal(shownPool(st, false, false), st.body);
+  const p = createPool(HORSE);
+  for (let i = 0; i < frames(10); i++) spendPool(p, 0.5, FRAME);
+  assert.ok(Math.abs(p.level - (1 - 5 / HORSE.drain)) < 1e-6, `half a share for ten seconds left ${p.level}`);
+  // A share of 0 is a rest, exactly as stepPool's.
+  for (let i = 0; i < frames(HORSE.delay + HORSE.refill); i++) spendPool(p, 0, FRAME);
+  assert.equal(p.level, 1);
+});

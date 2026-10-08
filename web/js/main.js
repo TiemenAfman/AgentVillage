@@ -8068,7 +8068,10 @@ function frame(nowMs) {
     if (w && w.near && w.near.room && !roomReady(w.near.room)) prepareRoom(w.near.room).catch(() => {});
     state.ui.setWalkPrompt(promptFor(w && w.near));
     touchHud(w && w.near, state.walk);
-    state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard()));
+    // In the saddle the bar is the horse's own (stamina.js HORSE), in its own colour and with a
+    // horse for the emoji; off it, yours again.
+    const onHorse = !!state.walk.state.mount;
+    state.vitals.setStamina(shownPool(state.walk.state.stamina, !!state.walk.aboard(), onHorse), { horse: onHorse });
     // What each mouse button does, for the key row: its hand's item picked up or put down in
     // the inventory changes it mid-walk, and ui.js redraws only on a change.
     state.ui.setMouse(state.walk.handAction('leftArm'), state.walk.handAction('rightArm'));

@@ -18,6 +18,13 @@
 // how long it then takes from empty to full. The one copy of each.
 export const BODY = { drain: 6, delay: 1, refill: 5 };
 export const BOAT = { drain: 4, delay: 1, refill: 6 };
+// The horse's own pool (Plans/paard-in-plaats-van-fiets.md, "Het paard heeft zijn eigen adem"):
+// forty seconds of gallop where a body has six - at HORSE_GALLOP 3.4 that is about 135 units, a
+// gallop across a whole grown island rather than across the square - with a longer breath and
+// twenty seconds to fill again at a walk or standing. A trot draws on it too, at
+// mount.js's MOUNT_TROT_SHARE, so riding is not free for ever; how much each gait costs is
+// mount.js's to say (`spendPool` below), the size of the lungs is here.
+export const HORSE = { drain: 40, delay: 1.5, refill: 20 };
 
 // Once a pool has run dry it stays shut until it is back to this. Without it an empty pool
 // held on Shift flickers: a frame of regen buys a frame of turbo, which spends it, and the
@@ -57,12 +64,32 @@ export function stepPool(pool, wants, dt) {
   return false;
 }
 
+// A pool drawn on by a share of its full drain - the horse's, whose trot costs a little and whose
+// gallop costs all (mount.js) - rather than by a yes or no. `share` 0 is a rest and fills exactly
+// as stepPool's does; any share above it spends `share * dt / drain`, holds the refill off and
+// locks the pool at empty the same way. A share is spent even from a pool that is locked out:
+// it is the gait being paid for, not a boost being asked for, and an empty horse at a trot
+// does not get its breath back until it walks.
+export function spendPool(pool, share, dt) {
+  if (typeof dt !== 'number' || !Number.isFinite(dt) || dt <= 0) return;
+  const s = typeof share === 'number' && Number.isFinite(share) ? Math.max(0, share) : 0;
+  if (s > 0) {
+    pool.level = Math.max(0, pool.level - s * dt / pool.spec.drain);
+    pool.rest = 0;
+    if (pool.level === 0) pool.spent = true;
+    return;
+  }
+  stepPool(pool, false, dt);
+}
+
 export function canBoost(pool) {
   return !pool.spent && pool.level > 0;
 }
 
 // The pool the yellow bar is about: whatever Shift would spend right now. Aboard that is the
-// boat's, and the body's quietly fills underneath where nobody needs to watch it.
-export function shownPool(stamina, aboard) {
+// boat's, in the saddle the horse's, and the body's quietly fills underneath where nobody needs
+// to watch it.
+export function shownPool(stamina, aboard, riding = false) {
+  if (riding && stamina.horse) return stamina.horse;
   return aboard ? stamina.boat : stamina.body;
 }

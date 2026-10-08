@@ -185,6 +185,35 @@ Wat dit zegt voor `mountPose`:
   hoort in `bodyY`/`bodyX`/`headX`; een ruiter op het zadelpunt deint dan vanzelf mee.
 - **Draf en kanter** heeft deze referentie niet (alleen Walk en Run). Daarvoor Muybridge.
 
+## Het paard heeft zijn eigen adem (8 oktober 2026)
+
+Martijns wens: "paard moet eigen stamina krijgen, veel hoger dan mens". Tot dan betaalde de ruiter
+de galop uit zijn eigen pool (BODY: 6 s sprint), dus een galop duurde zes seconden.
+
+- **Een derde pool**, `HORSE` in `web/js/stamina.js`, naast `BODY` en `BOAT`, op walk.js'
+  `state.stamina.horse`. Net als de boot: één pool per walk mode, niet per paard (F geeft altijd
+  hetzelfde paard), op de pagina alleen. Niets op de lijn, niets in `lib/` of de zee.
+- **Getallen** (bij te stellen):
+  - `HORSE = { drain: 40, delay: 1.5, refill: 20 }`: 40 s volle galop (6,7× de 6 s van een mens),
+    1,5 s op adem komen, 20 s van leeg tot vol. Op `HORSE_GALLOP` 3,4 is 40 s ongeveer 135 eenheden:
+    een galop over een flink gegroeid eiland, niet alleen over het plein.
+  - `MOUNT_TROT_SHARE = 0.1` (mount.js): een draf kost een tiende, dus 400 s draf maakt hem leeg.
+  - `MOUNT_WALK = 1.0` (mount.js): op of onder 1,0 per seconde (een halfingedrukte stick, inhouden,
+    stilstaan, grazen) kost het niets en loopt de pool vol. Met alleen het toetsenbord is W altijd
+    een draf, dus vult hij dan alleen in stilstand.
+- **Leeg = geen galop**: `stepMount` krijgt de pool mee (`pool`), vraagt de galop alleen zolang
+  `canBoost` ja zegt en betaalt na de stap naar de snelheid (`gaitShare`). Leeg valt hij terug op
+  draf, en net als bij een mens gaat hij pas weer open bij `RECOVER_AT` (een kwart). Een draf op een
+  lege pool houdt hem leeg: alleen stap of stilstand geeft adem terug.
+- **De ruiter verbruikt niets**: in het zadel vullen zijn eigen pools (body en boat) gewoon bij.
+- **HUD**: zolang je rijdt is de staminabalk die van het paard, kastanjebruin met 🐎 in plaats van
+  ⚡ (`setStamina(pool, { horse })` in vitals.js, `.vital.stamina.horse` in ui.css). Afgestapt zie je
+  weer de jouwe.
+- **Rust**: afgestapt (of te voet, op de boot, in gesprek) loopt de paardenpool bij zolang walk mode
+  draait, zoals de boot. Wie hem leeg wegzet, vindt hem na ~21 s weer vol.
+- **Workbench**: `/avatar-motion.html` → Paard toont een balkje met het percentage en hoe lang de
+  pool in deze gang nog duurt, met Vol en Leeg om het tempo te beoordelen.
+
 ## Wat weggaat
 
 > **Vervallen voor de fiets** (zie "Besluit: paardmaat en ruiter"): de Reiziger houdt de fiets, dus die blijft

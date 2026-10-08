@@ -314,6 +314,9 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .vital[hidden] { display: none; }
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
+/* The horse's own pool while riding (web/js/vitals.js setStamina { horse }): chestnut, not yellow. */
+.vital.stamina.horse i { background: linear-gradient(#d99a62, #9a5a2a); }
+.vital.stamina.horse.spent i { background: linear-gradient(#8a6a52, #5e4230); }
 .vital.full, .vital.empty { opacity: 0; transition: opacity 1.2s ease 1.5s; }
 /* A hit: the red bar flares and its track flushes for a moment (web/js/vitals.js). Two names
    for one animation, taken in turn, so a second blow restarts it without a reflow. */

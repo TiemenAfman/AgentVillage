@@ -18,7 +18,7 @@ import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, p
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathLength, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
-import { createPool, stepPool, BODY, BOAT } from './stamina.js';
+import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
 import { canon, ctrlIsKey } from './keybinds.js';
@@ -380,7 +380,7 @@ export function createWalkMode({
     turbo: false,
     // What Shift spends. Running and swimming share the body's; the boat has its own, and
     // both fill whenever they are not being drawn on - see web/js/stamina.js.
-    stamina: { body: createPool(BODY), boat: createPool(BOAT) },
+    stamina: { body: createPool(BODY), boat: createPool(BOAT), horse: createPool(HORSE) },
     // What the beer has done so far, and the clock the stagger runs on.
     tipsy: tipsy || createTipsy(),
     sway: 0,
@@ -2380,6 +2380,11 @@ export function createWalkMode({
       state.camYaw = 0;
     }
     if (ownTipsy) stepTipsy(state.tipsy, dt);
+    // The horse's pool fills whenever nobody is on it, whatever the body is doing meanwhile (as the
+    // boat's does): ridden, stepMount below spends or fills it by the gait. One pool per walk mode,
+    // not per horse - F always gives you the same one - so a horse left blown is blown when you
+    // get back on, unless it has stood long enough.
+    if (!state.mount) stepPool(state.stamina.horse, false, dt);
     if (state.dying) return stepDying(dt);
     // Quicker on the move and quicker still at a run, going by last frame's gait. A phase
     // that is added to rather than a time that is multiplied, or every change of gait would
@@ -2520,20 +2525,22 @@ export function createWalkMode({
 
     // ---- on horseback -----------------------------------------------------------------
     // The bicycle's shape, on four legs (web/js/mount.js): W and S the reins, A and D the turn,
-    // Shift the gallop out of the body's pool. A rider's head is MOUNT_HEAD higher than a walker's,
-    // so a lid low enough to duck under on foot (a deck, the quay) stops the horse, not only a jump.
+    // Shift the gallop out of the horse's own pool (stamina.js HORSE, spent and filled by the gait in
+    // stepMount); the rider sits and spends nothing, so both of his pools fill underneath. A rider's
+    // head is MOUNT_HEAD higher than a walker's, so a lid low enough to duck under on foot (a deck,
+    // the quay) stops the horse, not only a jump.
     if (state.mount) {
       const m = state.mount;
-      const turbo = stepPool(state.stamina.body, boost && iz > 0.02, dt);
+      stepPool(state.stamina.body, false, dt);
       stepPool(state.stamina.boat, false, dt);
-      state.turbo = turbo;
       const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
-      stepMount(m, { rein: iz, turn, gallop: turbo, hop: hopWanted }, dt, {
+      stepMount(m, { rein: iz, turn, gallop: boost && iz > 0.02, hop: hopWanted, pool: state.stamina.horse }, dt, {
         ground: (x, z) => groundAt(x, z, m.air ? m.floor : m.y),
         blocked: (x, z) => blocked(x, z, m.y),
         ceiling: (x, z) => ceilingAt(x, z, m.floor) - HEAD - MOUNT_HEAD,
       });
       hopWanted = false;
+      state.turbo = m.gallop;
       if (m.splash) {
         putBikeAway();
         state.pos.set(m.x, WATER_Y - SWIM_SINK, m.z);
