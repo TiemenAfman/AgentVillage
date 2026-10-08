@@ -10237,6 +10237,7 @@ function soundSnapshot() {
     tavern: tavernHeard(),
     // The guns (web/js/cannon-fx.js events): a counter and the last few booms, blasts and splashes.
     cannons: state.cannonFx ? state.cannonFx.events() : null,
+    harpoons: state.harpoons ? state.harpoons.events() : null,
   };
 }
 

@@ -110,6 +110,10 @@ const SAW_RANGE = 45;
 // The guns (Plans/kanonnen.md): a gun is heard across a bay and a ball's blast nearly as far; four
 // voices, so a broadside and its splashes can all sound at once.
 const CANNON_VOICES = 4;
+// The harpoons (Plans/harpoen.md): the shot, the reel's ratchet and the line creaking under a tow.
+const HARPOON_VOICES = 3;
+const HARPOON_RANGE = 120;
+const HARPOON_LOUD = { harpoon: 0.9, ratchet: 0.35, creak: 0.5 };
 const CANNON_RANGE = 260;
 const CANNON_LOUD = { boom: 1, blast: 0.85, splash: 0.6 };
 // What each word in the crowd sounds like, and how often it is heard while somebody keeps at it.
@@ -622,6 +626,31 @@ const CANNON_SHOTS = {
     }
     return out;
   }, 0.1),
+};
+
+// A harpoon gun's shot, its reel and its line (Plans/harpoen.md), one-shots like the guns'.
+const HARPOON_SHOTS = {
+  // A dry clack of the release and the thrum of the spring, then the line hissing off the drum.
+  harpoon: (c) => shot(c, 0.9, 'harpoon', (n, sr, rng) => {
+    const out = add(ring(n, sr, [[180, 0.8, 0.05], [340, 0.4, 0.03]]), burst(n, sr, rng, 2400, 1.2, 0.012, 2.2));
+    const hiss = highpass(noise(n, rng), sr, 2500);
+    for (let i = 0; i < n; i++) { const t = i / sr; out[i] += hiss[i] * 0.45 * Math.min(1, t / 0.05) * Math.exp(-t / 0.3); }
+    return out;
+  }, 0.12),
+  // One click of the reel's pawl: a short tick of wood and iron.
+  ratchet: (c) => shot(c, 0.08, 'ratchet', (n, sr, rng) => add(burst(n, sr, rng, 3200, 2, 0.006, 2), ring(n, sr, [[900, 0.3, 0.01]])), 0.07),
+  // The line straining: a slow groan of rope on wood, rising and falling.
+  creak: (c) => shot(c, 0.7, 'creak', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      const f = 110 + 60 * Math.sin(t * 7) + rng.next() * 8;
+      ph += 2 * Math.PI * f / sr;
+      out[i] = Math.sin(ph) * (0.5 + 0.5 * Math.sin(Math.PI * t / 0.7)) * (Math.sin(ph * 3.01) > 0.3 ? 1 : 0.4);
+    }
+    return lowpass(out, sr, 1600);
+  }, 0.08),
 };
 
 const CRAFT_SHOTS = {
@@ -1813,6 +1842,7 @@ const LAZY = {
   bell: (c) => bellSong(c),
   ...Object.fromEntries(Object.entries(CRAFT_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
   ...Object.fromEntries(Object.entries(CANNON_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
+  ...Object.fromEntries(Object.entries(HARPOON_SHOTS).map(([k, make]) => [k, (c) => once(make, c)])),
   saw: (c) => once(sawBuffer, c),
   dawn: (c) => dawnSong(c),
   crickets: (c) => cricketSong(c),
@@ -2056,6 +2086,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       saw: { ...mkLoop({ ref: 5, rolloff: 1.6, volume: 0, part: 'work', cut: 3000 }), want: 0 },
       // The guns: booms, blasts and splashes, wherever they happen (Plans/kanonnen.md).
       cannons: Array.from({ length: CANNON_VOICES }, () => mkVoice(null, { ref: 14, rolloff: 1.0, volume: 1, part: 'cannons' })),
+      // The harpoons' shot, reel and line (Plans/harpoen.md).
+      harpoons: Array.from({ length: HARPOON_VOICES }, () => mkVoice(null, { ref: 6, rolloff: 1.0, volume: 1, part: 'harpoons' })),
       // The hour and the weather: four beds, and one voice for the rare birds and the foghorn.
       hours: {
         dawn: { ...mkBed(null, 'birds'), want: 0, at: 0 },
@@ -2863,6 +2895,26 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     }
   }
 
+  // The harpoons (look.harpoons, web/js/harpoon-play.js events()): the same shape as the guns' cue.
+  let seenHarpoons = null;
+  function steerHarpoons(look) {
+    const c = look.harpoons;
+    if (!c) return;
+    const was = seenHarpoons;
+    seenHarpoons = c.n;
+    if (was == null || c.n <= was || look.indoors || !live('harpoons')) return;
+    for (const e of c.list) {
+      if (e.n <= was) continue;
+      const d = flat([e.x, e.y, e.z]);
+      if (d > HARPOON_RANGE) continue;
+      const buf = need(e.kind);
+      if (!buf) continue;
+      const v = built.harpoons.find((s) => !s.audio.isPlaying) || built.harpoons[0];
+      v.audio.setVolume((HARPOON_LOUD[e.kind] || 1) * edge(d, HARPOON_RANGE));
+      fire(v, e.x, e.y, e.z, 0.94 + Math.random() * 0.12, buf);
+    }
+  }
+
   // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against
   // what it saw last pick. A counter that went up is a blow that landed (the smith's and the
   // butcher's `hits`); a word that changed is a step of the work (the baker's `phase`); `cutting` is
@@ -3027,6 +3079,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     greet(look);
     steerCrafts(look);
     steerCannons(look);
+    steerHarpoons(look);
     steerWorkers(look);
     steerAnimals(look);
     steerWater(look);
@@ -3247,7 +3300,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   // rooms' murmur and the glass in the room you are in; the songs are counted on their own).
   const FAMILIES = {
     hammer: HAMMERS, gull: GULLS, pub: 2, clink: CLINKS, borrel: 1 + CLINKS, bell: BELLS, greet: GREETERS,
-    craft: CRAFTS + 1, cannons: CANNON_VOICES, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2, round: ROUNDERS + 1,
+    craft: CRAFTS + 1, cannons: CANNON_VOICES, harpoons: HARPOON_VOICES, worker: WORKERS, rare: 2, animal: ANIMALS, water: 2, round: ROUNDERS + 1,
   };
   const CAP = Object.values(FAMILIES).reduce((a, b) => a + b, 0);
   function familyVoices() {
@@ -3256,7 +3309,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub: Object.values(built.pubs).map((p) => p.out),
       clink: built.clinks, borrel: [built.borrel, ...built.borrelClinks], bell: built.bells,
       greet: built.greeters,
-      craft: [...built.crafts, built.saw], cannons: built.cannons, worker: built.workers, rare: [built.rare, built.horn],
+      craft: [...built.crafts, built.saw], cannons: built.cannons, harpoons: built.harpoons, worker: built.workers, rare: [built.rare, built.horn],
       animal: built.animals, water: [built.river, built.lava], round: [...built.rounders, built.cart],
     };
   }

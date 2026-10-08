@@ -36,6 +36,7 @@ export const MIX_PARTS = Object.freeze([
   ['rounds', 'The rounds', 'ambience'],
   ['water', 'Rivers and the volcano', 'ambience'],
   ['cannons', 'Cannons and blasts', 'ambience'],
+  ['harpoons', 'Harpoons and lines', 'ambience'],
   ['underwater', 'Under water', 'ambience'],
   ['tavern', 'Tavern chatter', 'speech'],
   ['borrel', 'The borrel', 'speech'],

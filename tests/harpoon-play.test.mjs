@@ -99,3 +99,16 @@ test('a hull another page is stepping is never towed', () => {
   run(5, () => play.tow(ship, { i: I, kind: 'harpoon' }, DT));
   assert.deepEqual({ x: ship.x, z: ship.z, yaw: ship.yaw, v: ship.v }, before);
 });
+
+test('what sound.js hears: the shot, and the reel ticking while it takes line in', () => {
+  const { craft, ship, statue, play, run } = setup();
+  Object.assign(statue, { x: 8, y: 0, z: 9 });
+  aimAt(craft, ship, 8, 9, -0.12);
+  play.fire(ship, I);
+  const shot = play.events();
+  assert.equal(shot.list.at(-1).kind, 'harpoon');
+  run(3);
+  const kinds = new Set(play.events().list.map((e) => e.kind));
+  assert.ok(kinds.has('ratchet'), [...kinds].join());
+  assert.ok(play.events().list.length <= 12);
+});

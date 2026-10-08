@@ -35,6 +35,14 @@ const ABOARD_AT = REEL_MIN + 0.4;
 // ('galleon' | 'rowboat'), followed(b) (main.js hullFollowed), surfaceAt(x, z) the water's height.
 export function createHarpoonPlay(deps) {
   const lines = new Map();       // `${boat.id}:${i}` -> { line, boat, i, bolt }
+  // What sound.js hears (its cue rule): a counter and the last few shots, ratchet clicks and creaks of
+  // the line, each with where it was. Nothing here plays anything.
+  const heard = { n: 0, list: [] };
+  function hear(kind, p) {
+    heard.n++;
+    heard.list.push({ n: heard.n, kind, x: p.x, y: p.y, z: p.z });
+    if (heard.list.length > 12) heard.list.shift();
+  }
   const mouthL = new THREE.Vector3(), dirW = new THREE.Vector3(), q = new THREE.Quaternion();
 
   // Where gun `i` of hull `b` has its mouth this frame, in the scene, and where it points.
@@ -88,7 +96,9 @@ export function createHarpoonPlay(deps) {
     const m = mouthOf(b, i);
     if (!m) return null;
     const carry = { x: Math.sin(b.yaw) * (b.v || 0), z: Math.cos(b.yaw) * (b.v || 0) };
-    return e.line.fire(m.at, m.dir, carry) ? 'fired' : null;
+    if (!e.line.fire(m.at, m.dir, carry)) return null;
+    hear('harpoon', m.at);
+    return 'fired';
   }
   function letGoOf(e) {
     if (e.held === 'statue') { const h = deps.hunt(); if (h && h.dragEnd) h.dragEnd(); }
@@ -115,7 +125,11 @@ export function createHarpoonPlay(deps) {
     const e = lines.get(`${b.id}:${gun.i}`);
     const h = e && e.line.hooked();
     if (!h || h.kind === 'statue') return;
-    towHull(b, h, e.line.L, dt, !e.line.reeledIn());
+    if (towHull(b, h, e.line.L, dt, !e.line.reeledIn())) {
+      // The line straining: a creak every so often while she is on it.
+      e.creak = (e.creak || 0) - dt;
+      if (e.creak <= 0) { e.creak = 1.3 + Math.random() * 0.8; hear('creak', h); }
+    }
   }
 
   const at = new THREE.Vector3(), look = new THREE.Vector3();
@@ -127,7 +141,10 @@ export function createHarpoonPlay(deps) {
       const m = mouthOf(b, e.i, at);
       if (!m) continue;
       const { line } = e;
+      const clicks = line.cues.clicks;
       line.update(m.at, dt);
+      // The reel's pawl: one tick heard a frame however many it made, or a fast reel is a buzz.
+      if (line.cues.clicks > clicks) hear('ratchet', m.at);
       const h = line.hooked();
       if (h && !e.held) {
         e.held = h.kind;
@@ -212,5 +229,5 @@ export function createHarpoonPlay(deps) {
   const ropes = () => [...lines.values()].filter((e) => { const h = e.line.hooked(); return h && h.kind !== 'statue'; }).map(ropeOf);
   const ropeAt = (b, i) => { const e = lines.get(`${b.id}:${i}`); const h = e && e.line.hooked(); return h && h.kind !== 'statue' ? ropeOf(e) : null; };
 
-  return { fire, release, manned, tow, frame, lineAt, cues, ropes, ropeAt };
+  return { fire, release, manned, tow, frame, lineAt, cues, ropes, ropeAt, events: () => heard };
 }
