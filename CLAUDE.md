@@ -963,6 +963,11 @@ and a footprint has to be held up all round, so a bulwark's top is not walked al
 not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
+The same cut also writes **her side at the waterline** (`SHIPWALK.side`, `sideCut`: per 0.1 of her length the
+least and most x of the hull from 0.1 under the water to a rowing boat's gunwale), read by `createSide` and
+`shipsOver` in boat.js: every galleon in `setBoats`, as drawn now and at her heading, is a wall to every other
+hull walk.js steps (`boatGround(b)` leaves `b` out), so a rowing boat stops at her side and still reaches her
+ladders' feet (`tests/boat-ships.test.mjs`). A galleon does not yet shove a rowing boat out of her way.
 **Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
 bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
 DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds

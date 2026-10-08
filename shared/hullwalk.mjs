@@ -264,3 +264,20 @@ export function stepHull(s, input, surface, dt, move) {
   }
   return s;
 }
+
+// Her side at the waterline, out of the same map (`map.side`, scripts/build-shipwalk.mjs sideCut): a
+// test of whether a point of her own frame (+z forward) lies inside her hull where a rowing boat
+// meets it, from a little under the water to its gunwale. Per slice of her length the least and the
+// most x her model has there, so she is as wide as she is at every point of it and pointed at the stem.
+// Without a `side` (a map cut before it) she has none, and nothing meets her - as before.
+export function createSide(map) {
+  const s = map && map.side;
+  if (!s) return () => false;
+  const n = s.lo.length;
+  return (x, z) => {
+    const k = Math.floor((z - s.z0) / s.dz);
+    if (k < 0 || k >= n) return false;
+    const xx = x * 100;
+    return xx >= s.lo[k] && xx <= s.hi[k];
+  };
+}

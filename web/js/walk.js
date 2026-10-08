@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
-import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
+import { stepBoat, hullOver, shipsOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
@@ -1316,7 +1316,9 @@ export function createWalkMode({
   }
   // Without the island's surfaces: a hull has always met a pier as its cells, and the head's wings
   // reach out towards the berths either side of it - a boat lying there must not find itself aground.
-  const boatGround = (x, z) => hullOver(hulls, x, z, groundAt(x, z, Infinity, false));
+  // And every ship that is a boat (a galleon, ours or anybody's, wherever she is drawn now: boat.js
+  // shipsOver), less the hull being stepped - so `boatGround(b)` is the ground for hull `b`.
+  const boatGround = (self) => (x, z) => shipsOver(boatsOf(), x, z, hullOver(hulls, x, z, groundAt(x, z, Infinity, false)), self);
 
   // A blocker with `hop` is a low boundary - a rail, a paling fence (hamlets.js borderSolids) - that a
   // jump takes you over: in the air it is open, on the ground a wall. By height alone it could not be
@@ -1465,7 +1467,7 @@ export function createWalkMode({
   }
   function runOut(dt) {
     const b = runningOut();
-    if (b) stepBoat(b, {}, dt, boatGround);
+    if (b) stepBoat(b, {}, dt, boatGround(b));
     return b;
   }
   // A hull is a reference plane (boat.js hullPointOf): where you stand on it is a point of its own
@@ -1788,7 +1790,7 @@ export function createWalkMode({
     if (climb.aloft) return stepMastClimb(dt, ix, iz);
     const c = climb, b = c.boat;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1882,7 +1884,7 @@ export function createWalkMode({
   function stepMastClimb(dt, ix, iz) {
     const c = climb, b = c.boat, l = c.aloft;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1965,7 +1967,7 @@ export function createWalkMode({
   // One frame seated on a deck: carried by the hull, and up on the first step or a jump.
   function stepDeckSeat(dt, ix, iz) {
     const b = deckBoat, d = state.deck;
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1994,7 +1996,7 @@ export function createWalkMode({
   function stepOnDeck(dt, ix, iz, boost) {
     if (state.deck.seat && state.sitting) return stepDeckSeat(dt, ix, iz);
     const b = deckBoat, spec = specOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
     const push = Math.min(1, Math.hypot(ix, iz));
     const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
     stepPool(state.stamina.boat, false, dt);
@@ -2687,7 +2689,7 @@ export function createWalkMode({
       if (iz <= 0.02 || state.stamina.boat.spent) stick.run = false;
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
-      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround);
+      stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround(state.vehicle));
       // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
       // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
       const v = state.vehicle, h = v.craft && v.craft.helm;

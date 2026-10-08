@@ -23,7 +23,7 @@ import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y, SEAT_Y, FLOORBOARDS } from 'shared/hull.mjs';
 import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
-import { createSurface } from 'shared/hullwalk.mjs';
+import { createSurface, createSide } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
 import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
 import * as models from './models.js';
@@ -148,6 +148,33 @@ export function hullOver(hulls, x, z, ground) {
   let h = ground;
   for (const b of hulls) {
     if (b.hull > h && Math.abs(x - b.x) < b.hx && Math.abs(z - b.z) < b.hz) h = b.hull;
+  }
+  return h;
+}
+
+// And a ship that is a boat herself - every island's galleon, ours or somebody else's, moored, under
+// way or running out - to a boat (Plans/speeltest-quests.md B1: a rowing boat rowed straight through
+// her, out to under her ladder and into her hull). She is in no blocker list: she moves, and the
+// list is the island's. So the ground a hull is handed has every ship in `boats` stood up out of the
+// water too, where her model is at the waterline (`craft.side`, shared/hullwalk.mjs createSide) as
+// she is drawn now, at her own heading - not a box, or the foot of her ladders, 0.2 off her side, is
+// out of reach and nobody hoists anything. Her side reads SHIP_SIDE_H, over BOAT_SCRAPE like the
+// Batavia's, so a bow that meets it stops as at a quay and backs off the same way. `self` is the hull
+// being stepped, which is never in its own way.
+export const SHIP_SIDE_H = 1.0;
+// Past this from her middle nothing of her is near: she is 10.2 long and 4.4 wide at the water.
+const SHIP_NEAR = 7;
+export function shipsOver(boats, x, z, ground, self) {
+  let h = ground;
+  if (h >= SHIP_SIDE_H) return h;
+  for (const b of boats) {
+    const side = b !== self && b.craft && b.craft.side;
+    if (!side) continue;
+    const dx = x - b.x, dz = z - b.z;
+    if (Math.abs(dx) > SHIP_NEAR || Math.abs(dz) > SHIP_NEAR) continue;
+    // Into her frame: shared/deck.mjs toLocal, with forward (sin, cos) of her yaw.
+    const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
+    if (side(dx * fz - dz * fx, dx * fx + dz * fz)) return SHIP_SIDE_H;
   }
   return h;
 }
@@ -370,6 +397,7 @@ const SHIP = 'pirateship hull';
 // The ship's walking surface, cut from her model (scripts/build-shipwalk.mjs): what a body on her deck
 // stands on and walks into. One for every ship, since every ship is the same hull.
 export const SHIP_SURFACE = createSurface(SHIPWALK);
+export const SHIP_SIDE = createSide(SHIPWALK);
 // The wheel stands on a round plinth of three tiers that the model has 0.2 over the quarterdeck, and the
 // pilot stands on top of it, not in it: asked of the model, since it is the model that has the plinth.
 const HELM_AT = [0, -3.2];
@@ -588,6 +616,8 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     // What a body on her deck walks on and into (shared/hullwalk.mjs); the rowing boat has none, since
     // her whole deck is her helm.
     walk: ship ? SHIP_SURFACE : null,
+    // Her side at the waterline, where another boat meets her (shipsOver); a rowing boat is in nobody's way.
+    side: ship ? SHIP_SIDE : null,
     camScale: ship ? 10 : 2.2,
     beam: ship ? 3.5 : 0.3,
     // The oars, for whoever pulls them: the stroke now (0..1, see STROKE) and where a hand holds
