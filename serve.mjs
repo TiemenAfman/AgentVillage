@@ -30,7 +30,7 @@ import { catalog } from './lib/catalog.mjs';
 import { createAccess, isPublicPath, isLoopback, KEY_COOKIE } from './lib/access.mjs';
 import { guestVillage } from './lib/guestview.mjs';
 import { buildBundle, parseBundle, packParcel, packCodex, beaconId } from './lib/islandbundle.mjs';
-import { createSea } from './lib/sea.mjs';
+import { startSeaThread } from './lib/sea-thread.mjs';
 import { createSeaClient, mintToken } from './lib/seaclient.mjs';
 import { createAnimalLife } from './lib/animal-life.mjs';
 import { loadPlacements, savePlacements } from './lib/placements.mjs';
@@ -119,13 +119,23 @@ const LOG = path.join(DATA, 'server.log');
 
 // Everything the server says ends up in a file as well, so a crash at three in the
 // afternoon can still be explained at five.
+// Asked per line rather than once: past 2 MB the log is renamed to server.log.1, the exe's
+// handle goes with it, and from then on the lines have to be appended here again.
+function stderrIsLog() {
+  try {
+    const a = fs.fstatSync(2), b = fs.statSync(LOG);
+    return a.isFile() && a.ino !== 0 && a.ino === b.ino && a.dev === b.dev;
+  } catch { return false; }
+}
 function log(line) {
   const msg = `${new Date().toISOString()} ${line}\n`;
   process.stderr.write(msg);
   try {
     fs.mkdirSync(DATA, { recursive: true });
     if (fs.existsSync(LOG) && fs.statSync(LOG).size > 2 * 1024 * 1024) fs.renameSync(LOG, `${LOG}.1`);
-    fs.appendFileSync(LOG, msg);
+    // Unless stderr *is* that file: the islander exe and the window start node with its
+    // output appended to data/server.log, and every line stood in the log twice.
+    if (!stderrIsLog()) fs.appendFileSync(LOG, msg);
   } catch { /* logging must never be the thing that breaks */ }
 }
 
@@ -1265,13 +1275,13 @@ if (req.url === '/api/command' && req.method === 'POST') {
   // The host setting the world's clock: `{ hour }` (0..24) or `{ real: true }`. Keeper-only by
   // not being on PUBLIC_API, and refused unless the sea is our own: a keeper who joined
   // somebody else's sea is a guest there, and the open sea has no host at all. Straight onto
-  // the sea object - it runs in this process - so the sea grows no door for it; the sea then
+  // the sea object - it runs in this process, on a thread of its own - so the sea grows no door for it; the sea then
   // tells every joined page, ours included (Plans/zeetijd-van-de-host.md).
   if (p === '/api/sea-time' && req.method === 'POST') {
     if (!hostsSea()) return json(res, 403, { error: 'only whoever hosts the sea sets its clock' });
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
-    try { return json(res, 200, { ok: true, clock: ownSea.setTime(body || {}) }); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
+    try { return json(res, 200, { ok: true, clock: await ownSea.setTime(body || {}) }); } catch (e) { return json(res, 400, { error: String(e.message || e) }); }
   }
 
   // Hands a card to a settler and starts the agent that works it.
@@ -2017,8 +2027,10 @@ async function putToSea() {
     //
     // The fixed port is still tried first, because it is the address somebody types to join
     // a host. A fallback only costs the one who was second.
+    // On a thread of its own (lib/sea-thread.mjs): a scan holds this loop for seconds, and
+    // the sea's beat ran on it - every settler froze while the island scanned.
     const open = async (port) => {
-      const sea = createSea({
+      const sea = startSeaThread({
         port,
         host,
         name: seaNameOf(config),
@@ -2029,7 +2041,8 @@ async function putToSea() {
         maxPlayers: config.multiplayer.maxPlayers,
         log: (m) => log(`sea: ${m}`),
       });
-      const addr = await sea.listen();
+      let addr;
+      try { addr = await sea.listen(); } catch (e) { await sea.close().catch(() => {}); throw e; }
       return { sea, addr };
     };
     let opened;
