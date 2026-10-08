@@ -5,7 +5,8 @@
 // which draws every caster again from the sun, was invisible to every measurement anybody
 // took. Here the automatic reset is turned off, the counters are cleared by hand once per
 // frame, and the shadow map's own `render` is wrapped so the part it added can be taken out.
-// Only with `?stats`: without it nothing is wrapped and three.js behaves as it always did.
+// Only with `?stats` or Settings -> Graphics -> Show performance stats: without either nothing is
+// wrapped and three.js behaves as it always did, and `dispose()` puts it back when the switch goes off.
 //
 // Frame time is two numbers. `interval` is from one frame to the next (what the eye sees,
 // capped by vsync); `work` is how long our own `frame()` held the main thread, which is the
@@ -98,8 +99,18 @@ export function createRenderStats(renderer) {
         programs: info.programs ? info.programs.length : 0,
       };
     },
+    // The readout switched off: three.js resets its own counters again (left off, they would
+    // grow for ever with nobody calling begin), and the shadow map draws unwrapped.
+    dispose() {
+      if (recording) renderer.renderBufferDirect = direct;
+      recording = null;
+      if (want) { want([]); want = null; }
+      shadowMap.render = inner;
+      info.autoReset = true;
+      if (globalThis.__renderStats === api) delete globalThis.__renderStats;
+    },
   };
-  // Console only, and only with ?stats (nothing makes this object without it).
+  // Console only, and only while the readout is on (nothing makes this object otherwise).
   globalThis.__renderStats = api;
   return api;
 }

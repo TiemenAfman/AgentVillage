@@ -238,3 +238,14 @@ select option { color: var(--ink); background: var(--panel-solid); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Settings -> Graphics: what this screen draws at now (ui.js qualityRows), refreshed twice a
+   second while the menu is open; tabular figures so the fps does not jiggle the line. */
+.sysmenu .quality-now {
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}

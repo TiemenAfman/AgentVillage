@@ -699,6 +699,11 @@ handlers; it was handed to `createNet` once and every slider moved its label and
 - **Lighter machines draw less of what the distances do not reach**: `DETAILED` (guest
   islands drawn whole) is 1 on the phone, 2 on `modest`, 4 otherwise; a light phone renders at
   pixel ratio 1; a `modest` page stands as few volcano imps as a phone (`IMP_CAP.phone`).
+  Settings → Graphics says what a page draws at (`qualityRows` in ui.js: tier and why, rung, fps,
+  refreshed only while the menu is open), holds a rung (`promptholm.quality.auto`: absent automatic, `n`
+  rung n held - its old '0' is "full held"; `?quality=n` wins at boot) and switches the `?stats` readout
+  (`promptholm.stats`; `createRenderStats` is made and `dispose()`d with it), since promptholm.exe and the
+  phone have no address bar.
   The quality governor (`web/js/quality.js`) may redraw the shadow map only every n-th frame, and then
   main.js moves `renderer.info.render.frame` on before a frame without it: three r170 sends a
   skeleton's bones once per that number and draws the shadow pass after it has moved, so every

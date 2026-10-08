@@ -193,3 +193,69 @@ export function savePost(key, value, storage = browserStorage()) {
 export function forgetPost(storage = browserStorage()) {
   try { if (storage) storage.removeItem(POST_KEY); } catch { /* nothing kept to forget */ }
 }
+
+// The quality governor's choice (quality.js): 'auto', or a rung held by hand - 0 full .. 4
+// lightest, `?quality=n` in Settings. The key is the one "Lighter when slow" kept, and its '0'
+// ("off: always the quality this screen started with") is rung 0 held, so a browser that
+// switched it off keeps exactly what it had. Nothing stored is automatic.
+export const QUALITY_KEY = 'promptholm.quality.auto';
+export const QUALITY_LEVELS = 5;
+export function clampQuality(value) {
+  if (value === 'auto') return 'auto';
+  if (typeof value === 'boolean' || value === null || value === '') return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n < QUALITY_LEVELS ? n : null;
+}
+export function loadQualityChoice(storage = browserStorage()) {
+  let kept = null;
+  try { kept = storage ? storage.getItem(QUALITY_KEY) : null; } catch { /* private window: automatic */ }
+  const v = kept == null ? null : clampQuality(kept);
+  return v == null ? 'auto' : v;
+}
+export function saveQualityChoice(choice, storage = browserStorage()) {
+  const v = clampQuality(choice);
+  if (v == null) return;
+  try {
+    if (!storage) return;
+    if (v === 'auto') storage.removeItem(QUALITY_KEY);
+    else storage.setItem(QUALITY_KEY, String(v));
+  } catch { /* kept for this page only */ }
+}
+
+// The corner readout `?stats` shows (render-stats.js), switched on from Settings -> Graphics
+// instead, where there is no address bar to type it in (promptholm.exe, the phone). Per browser.
+export const STATS_KEY = 'promptholm.stats';
+export function loadStatsShown(storage = browserStorage()) {
+  try { return !!storage && storage.getItem(STATS_KEY) === '1'; } catch { return false; }
+}
+export function saveStatsShown(on, storage = browserStorage()) {
+  try {
+    if (!storage) return;
+    if (on) storage.setItem(STATS_KEY, '1'); else storage.removeItem(STATS_KEY);
+  } catch { /* kept for this page only */ }
+}
+
+// The line at the top of Settings -> Graphics: which kind of machine this page took itself for at
+// boot and why, the rung the governor draws at now and whether it is choosing, and the frame rate.
+// `reason` is free text from main.js (the GPU's name, ?modest, the phone's own setting); `fps`
+// null until a half second has been counted.
+const TIER_NAMES = { full: 'Standard machine', modest: 'Modest machine', phone: 'Phone' };
+// The graphics card as a person would name it. Chrome and WebView2 say
+// "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)": the
+// second field, without its device id and the Direct3D tail.
+export function gpuShortName(renderer = '') {
+  let s = String(renderer || '').trim();
+  const angle = /^ANGLE \((.*)\)$/.exec(s);
+  if (angle) {
+    const parts = angle[1].split(', ');
+    s = parts.length > 1 ? parts[1] : parts[0];
+  }
+  return s.replace(/\s*\(0x[0-9a-f]+\)/ig, '').replace(/\s+(Direct3D|OpenGL|Vulkan|Metal).*$/i, '')
+    .replace(/\((R|TM)\)/g, '').replace(/\s+/g, ' ').trim();
+}
+export function qualityLine({ tier = 'full', reason = '', rung = 'full', auto = true, fps = null } = {}) {
+  const machine = (TIER_NAMES[tier] || TIER_NAMES.full) + (reason ? ` (${reason})` : '');
+  const drawing = `drawing at ${rung}, ${auto ? 'automatic' : 'held'}`;
+  const rate = Number.isFinite(fps) ? `${Math.round(fps)} fps` : '… fps';
+  return `${machine} · ${drawing} · ${rate}`;
+}
