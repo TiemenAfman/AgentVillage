@@ -1131,6 +1131,10 @@ function buildRig(spec, material) {
   // forward, how far they scull about that and how fast, and how far the legs kick.
   const TREAD_OUT = -0.85, TREAD_ARM = -0.25, TREAD_SCULL = 0.3, TREAD_RATE = 2.4, TREAD_KICK = 0.35;
   const CARRIED_AT = [0, 0.29 * PLAYER_SCALE, 0.145];
+  // On a rope ladder the load goes on the back (the keeper's report, 8 Oct 2026: "je kan niet met een
+  // schatkist aan boord klimmen"): the climb wants both hands on the rungs, so the arms climb and the
+  // figure rides between the shoulder blades, over the backpack, until the feet are off the rungs.
+  const CARRIED_BACK = [0, 0.3 * PLAYER_SCALE, -0.09];
   const carried = new THREE.Group();
   carried.name = 'carried';
   carried.position.set(...CARRIED_AT);
@@ -1542,7 +1546,9 @@ function buildRig(spec, material) {
     // children of the core. Not in first person: that pose is a view model nobody else sees.
     // A dig cannot go on from a saddle, a bench, the ground or the water: put down, as a drink is.
     if (digging && (ride || horse || pose.sitting || pose.lying || pose.swimming)) dig(false);
-    const dug = digging, carryOn = carrying && !ride && !horse;
+    // Up a ladder the load is on the back (CARRIED_BACK) and the arms are the climb's.
+    const carryOn = carrying && !ride && !horse && !ladder, dug = digging;
+    carried.position.set(...(carrying && ladder ? CARRIED_BACK : CARRIED_AT));
     const rowing = pose.rowing && pose.sitting && !dead && !dug && !carryOn ? pose.rowing : null;
     const dancing = pose.dancing && !ride && !horse && !pose.sitting && !pose.lying && !pose.swimming && !fp && !dug && !carryOn ? pose.dancing : null;
     const dance = dancing ? dancePose(dancing.move, dancing.beat, dancing.hype || 0) : null;
@@ -1793,7 +1799,7 @@ function buildRig(spec, material) {
       const action = holding[side] || drunk[side] || (swung && swing.side === side)
         || ride || horse || Number.isFinite(pose.pushing) || Number.isFinite(pose.reach)
         // A dig and a carry pose both arms themselves (the shovel stroke, the load held out).
-        || !!digging || carrying || blocks.includes(side);
+        || !!digging || carryOn || blocks.includes(side);
       busy[side] = !!action;
       // A body with its own elbows (the Adventurer) bends them to a runner's right angle and
       // keeps them there while the arm pumps; the Traveller's formula is the old one.

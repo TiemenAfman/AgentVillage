@@ -2419,8 +2419,12 @@ our own skiff (`boat:w-<player>`, which any page may launch - lib/boats.mjs need
 lay it at `rowboatSpot` (shared/treasure.mjs: the nearest water `ROW_DEPTH` deep from the X along eight bearings,
 bow to the X) and let it go, unless it lies within `ROWBOAT_NEAR` already, has us in it or holds the statue.
 Walking into any rowing boat we may take with the statue in the arms lays her in it (`touchRowboat`, no key: the
-`boarded` step); E boards, stepping ashore hands her back as before. **A ship is reached by her ladder, which nobody
-climbs carrying her**, so from the rowing boat at a ladder foot (`HOIST_REACH`) E hoists her (`walk.hoistOnto`: her
+`boarded` step); E boards, stepping ashore hands her back as before. **A ladder is climbed with her on the back**
+(issue of 8 Oct 2026, `tests/ladder-carry.test.mjs`): walk.js no longer refuses a rope ladder - a ship's, the
+Kraken's - to a carrier, the rig moves the load to `CARRIED_BACK` while `pose.climbing` (the arms are the climb's;
+peers.js needs nothing, CARRYING and the height already cross), at a ship's top she becomes her cargo (`putOnBoat`,
+`onBoarded(b, { stowed })` -> main.js tells the book `boarded`), and a climb down from a deck she is on takes her
+along (`cargoToArms`). Besides that, from the rowing boat at a ladder foot (`HOIST_REACH`) E hoists her (`walk.hoistOnto`: her
 the ship's cargo, you on the planks where that ladder lands, crew 300 ms later), and beside her on the deck
 (`LOWER_REACH`) E lowers her (`walk.lowerOff`, the skiff relaunched at the foot of the ladder that looks at the
 nearer land, and you boarded at its oars). Cargo is still this page's alone: nothing of it is on the wire.

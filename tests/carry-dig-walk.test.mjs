@@ -328,8 +328,9 @@ test('leaving walk mode leaves a carried statue in the arms: nothing goes missin
   assert.equal(walk.carrying(), 'statue');
 });
 
-test('a climber cannot take a rope ladder with a statue in the arms', () => {
-  // The ladder itself is tests/ship-*.test.mjs's; here it is enough that the refusal is the walk's.
+test('a carrier still looks for a rope ladder: the statue goes on the back for the climb', () => {
+  // The climb itself is tests/ladder-carry.test.mjs's; here it is enough that carrying does not stop
+  // the walk asking for one.
   const { walk } = make();
   run(walk, 0.2);
   walk.lift('statue');

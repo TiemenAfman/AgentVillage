@@ -1,6 +1,6 @@
 // The treasure statue between a rowing boat and a ship, on the real walk mode
-// (Plans/roeiboot-en-schat.md, "de sloep van het schip"): nobody climbs a rope ladder carrying her,
-// so from a rowing boat at one of the galleon's ladders `hoistOnto` takes her up with you - her onto
+// (Plans/roeiboot-en-schat.md, "de sloep van het schip"): besides climbing a ladder with her on the back
+// (tests/ladder-carry.test.mjs), from a rowing boat at one of the galleon's ladders `hoistOnto` takes her up with you - her onto
 // the ship as cargo, you onto the planks where that ladder lands - and `lowerOff` takes her off the
 // ship into a rowing boat again, which you then board. tests/treasure-hunt.test.mjs holds the
 // offers (E at the ladder, E beside her on the deck); this holds what the walker does with them.

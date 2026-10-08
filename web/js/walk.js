@@ -566,17 +566,22 @@ export function createWalkMode({
   // the same thing for a body that got off some other way (a jump, a ladder, walk mode left and
   // re-entered), standing wherever it now is.
   function takeOffBoat() {
+    if (!state.cargo || state.vehicle || state.deck || climb) return false;
+    cargoToArms();
+    return true;
+  }
+  function cargoToArms() {
     const c = state.cargo;
-    if (!c || state.vehicle || state.deck || climb) return false;
     state.cargo = null;
     if (c.hull.craft && c.hull.craft.setCargo) c.hull.craft.setCargo(null);
     state.carry = c.item;
     if (classicAvatar.setCarry) classicAvatar.setCarry(true);
-    return true;
   }
 
   // The statue up a ship's side and down it again (Plans/roeiboot-en-schat.md, "de sloep van het
-  // schip"). A rope ladder wants both hands, so nobody climbs one carrying her: from a rowing boat
+  // schip"). A rope ladder is climbed with her on the back (classic-avatar.js CARRIED_BACK): walked
+  // into from the water or a quay in the arms, she goes onto the deck as cargo at the top, and a
+  // climb down from a deck she is on takes her along. Besides that, from a rowing boat
   // lying at one of a ship's ladders, `hoistOnto` takes her up with you - her onto the ship's deck as
   // her cargo, you onto the planks where that ladder lands, crew from there (the caller tells the
   // sea). `lowerOff` is the way back: off her deck, her into the rowing boat `row` the caller has laid
@@ -1770,7 +1775,10 @@ export function createWalkMode({
       deckBoat = b;
       state.deck = { boat: b.id, x: land ? land.x : last.x, z: land ? land.z : last.z, y: land ? land.y : last.y, vy: 0, grounded: true, yaw: state.yaw - b.yaw };
       place(camBack * 1.5);
-      if (state.onBoarded) state.onBoarded(b);
+      // Up with the statue on the back: on her deck as cargo, as a hull takes whatever comes aboard
+      // carried (board()); `stowed` tells main.js the book wants to hear of it.
+      const stowed = !!state.carry && putOnBoat(b);
+      if (state.onBoarded) state.onBoarded(b, { stowed });
     } else if (c.letGo) {
       // Let go where you hang: falling from there, with the hull's way on you like any jump off her.
       const away = hullVelocity(frame, b.v || 0);
@@ -1955,9 +1963,14 @@ export function createWalkMode({
     // Out over the side at the head of a ladder: down it, rather than against the rail.
     if (d.grounded && state.moving) {
       const ladder = ladderDown(spec, d.x, d.z, lx);
-      // Not with the statue on the hull: a climber leaves it behind, and it goes ashore only in arms.
-      if (ladder && state.cargo) blockedBy('carry');
-      else if (ladder) { startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y }); return stepClimb(dt, ix, iz); }
+      // With the statue on this hull she comes down too, on the back: a climber never leaves her
+      // behind on a ship there is no other way back onto.
+      if (ladder) {
+        const taking = state.cargo && state.cargo.hull === b;
+        startClimb(b, ladder, -1, { x: d.x, z: d.z, y: d.y });
+        if (taking) cargoToArms();
+        return stepClimb(dt, ix, iz);
+      }
       // Into the foot of a ladder up her mast, or out over the head of one from her top. The statue on
       // her deck stays there: the mast is still her.
       const mast = aloftUp(spec, d.x, d.z, d.y, lx, lz) || aloftDown(spec, d.x, d.z, d.y, lx, lz);
@@ -2627,13 +2640,11 @@ export function createWalkMode({
     // ---- at the foot of a rope ladder --------------------------------------------------
     // From the water or a quay, pushing at the hull of a ship: no key, you just climb.
     if (state.grounded && !state.sitting && !state.lying && !state.parked) {
+      // Carrying is no bar: the load goes on the back for the climb (classic-avatar.js CARRIED_BACK).
       const at = ladderAhead(ix, iz);
-      // A rope ladder wants both hands.
-      if (at && state.carry) blockedBy('carry');
-      else if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
-      const still = !at && !state.swimming && !state.dive && !rides() ? fixedAhead(ix, iz) : null;
-      if (still && state.carry) blockedBy('carry');
-      else if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
+      if (at) { startClimb(at.boat, at.ladder, 1, at.from); return stepClimb(dt, ix, iz); }
+      const still = !state.swimming && !state.dive && !rides() ? fixedAhead(ix, iz) : null;
+      if (still) { startFixedClimb(still.ladder, still.dir); return stepClimb(dt, ix, iz); }
     }
 
     const push = Math.min(1, Math.hypot(ix, iz));
