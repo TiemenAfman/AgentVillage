@@ -425,10 +425,13 @@ function buildTavern() {
   // ---- the regulars ---------------------------------------------------------
   // A full house on the benches (tavern-patrons.js), and on their feet: two at each end of the
   // bar, clear of the stools, two warming themselves by the fire, and one at the karaoke mic.
+  // The first stands back in the corner past the west end, off the counter where the draught is
+  // sold: at [-1.78, -1.22] he stood on it, and a player reached it only through a crack
+  // between him and his mate (Plans/speeltest-quests.md, tests/tavern-counter.test.mjs).
   const patrons = tavernPatrons({
     tables: TABLES, floor: FLOOR,
     stand: [
-      [-1.78, -1.22, Math.PI * 0.85], [-2.05, -1.0, Math.PI * 0.6],
+      [-2.45, -1.55, Math.PI * 0.75], [-2.05, -1.0, Math.PI * 0.6],
       [2.15, -1.35, -Math.PI * 0.8], [2.5, -1.45, -Math.PI * 0.55],
       [-2.4, -0.15, -2.2], [-2.35, -0.85, -1.0],
       [MIC[0] + 0.2, MIC[2] - 0.12, -Math.PI / 2, FLOOR + STAGE_H],
