@@ -141,6 +141,18 @@ export function climbPhase(at, gait) {
   const u = (at - CLIMB_PHASE[climbKind(gait)]) / climbPerCycle();
   return ((u % 1) + 1) % 1;
 }
+// A step onto a ladder from the floor at its foot (`climbOn`) or up over its top (`climbTop`): the way
+// the bake measured the feet going, forward and up from where the step begins (gait-clips.js `way`, a
+// pair a row), in island units on the Adventurer's leg - every body goes that one way, as every
+// ladder's rungs are cut to his climb (web/js/ladder-way.js lays a ladder's way out by it). Null where
+// it is not baked.
+const STEP_WAYS = {};
+export function stepWay(name) {
+  if (name in STEP_WAYS) return STEP_WAYS[name];
+  const C = GAIT_CLIPS[name];
+  const leg = C && C.way ? bodyOf({ character: 'adventurer' }).gait.leg : 0;
+  return (STEP_WAYS[name] = C && C.way ? { seconds: C.seconds, leg, way: C.way.map(([f, u]) => [f * leg, u * leg]) } : null);
+}
 // The Traveller has no clips, so his climb is drawn here, one hand at a time: a hand reaches up the
 // ropes as high as his short arm goes (elbow straight, arm `top`), takes hold and is pulled down
 // past the face to the chest (`low`, elbow bent) as the body rises past it - in a straight line, as
@@ -187,6 +199,44 @@ export function climbReach(u) {
     elbows: { leftArm: between(R.elbow, la), rightArm: between(R.elbow, ra) },
     lean: R.lean,
   };
+}
+// The Traveller coming up over a ladder's top (`top` 0..1, walk.js): the climb's reach let go of
+// towards standing - limbs down, knees and elbows nearly straight, upright - over the second half of
+// the step, the first being still a pull up the last rungs; and in the middle of it the right knee
+// comes up onto what he climbs onto (SETTLE_KNEE), or his legs hung straight past its edge.
+const SETTLE_KNEE = { thigh: -1.1, knee: 1.5 };
+export function settleReach(r, top) {
+  if (top == null) return r;
+  const k = Math.max(0, Math.min(1, (top - 0.35) / 0.55)), w = k * k * (3 - 2 * k);
+  if (w <= 0) return r;
+  const to = (v, rest) => v + (rest - v) * w;
+  for (const name in r.limbs) r.limbs[name] = to(r.limbs[name], 0);
+  r.knees = r.knees.map((v) => to(v, 0.12));
+  for (const name in r.elbows) r.elbows[name] = to(r.elbows[name], 0.1);
+  r.lean = to(r.lean, 0);
+  const lift = 4 * k * (1 - k);
+  r.limbs.rightLeg += SETTLE_KNEE.thigh * lift;
+  r.knees[1] += SETTLE_KNEE.knee * lift;
+  return r;
+}
+// Which clip steps the body onto or off a ladder where it is now, and how far through it (u, 0..1),
+// or null on the rungs between: over the top while walk.js says so (`top`), and up off the floor at a
+// ladder's foot while the feet are within the step's rise of it (`floor`: a ladder over a ship's side
+// is taken from the water, where there is nothing to step up from). Played by height, so the feet
+// stand where the step put them on the way down as on the way up.
+export function ladderStep(ladder) {
+  if (!ladder) return null;
+  if (ladder.top != null && GAIT_CLIPS.climbTop) return { clip: 'climbTop', u: Math.max(0, Math.min(1, ladder.top)) };
+  const on = ladder.floor && Number.isFinite(ladder.at) ? stepWay('climbOn') : null;
+  if (!on) return null;
+  const way = on.way, rise = way[way.length - 1][1];
+  if (!(ladder.at < rise)) return null;
+  // the row at which the feet are this high: the way's rise is not even in time
+  let k = 1;
+  while (k < way.length - 1 && way[k][1] < ladder.at) k++;
+  const a = way[k - 1][1], b = way[k][1];
+  const u = (k - 1 + (b > a ? Math.max(0, Math.min(1, (ladder.at - a) / (b - a))) : 1)) / (way.length - 1);
+  return { clip: 'climbOn', u };
 }
 const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop: 0 });
 // The clip's arms on the Adventurer's shorter ones close a little high over a rung that his feet
@@ -1239,6 +1289,46 @@ function buildRig(spec, material) {
   let ladderT = 0;
   const LADDER_EASE = 0.4;
   const poseClimb = clipPose();
+  // Onto a ladder and off it the body changes hands in one frame: from the walk's pose (or the
+  // idle's, the swim's) to the climb's and back, and the Adventurer's clip from one Mixamo pose to
+  // another - the keeper's recording of 8 Oct 2026 had him stood on the landing one frame and
+  // hanging on the rungs with his knees up the next, and upright on the plank the frame after the
+  // last rung. So when the ladder takes the body or lets it go, every joint is kept as it was
+  // drawn (`fadeFrom`) and the new pose is eased in over it over LADDER_FADE (`fade`, 1 to 0): the
+  // last frame's pose is what is on the joints when update() begins. A fade begun while another is
+  // running starts from where that one had got to, so a body that steps on and straight off again
+  // never jumps either.
+  const LADDER_FADE = 0.35;
+  let fade = 0, wasLadder = false, wasOnWay = false, wasStep = null;
+  const fadeJoints = [];
+  const fadeFrom = { q: [], y: 0, rot: new THREE.Euler() }, fadeTo = new THREE.Quaternion();
+  function keepPose() {
+    if (!fadeJoints.length) {
+      fadeJoints.push(torso.pelvis.quaternion, torso.spine.quaternion, torso.chest.quaternion, torso.neck.quaternion,
+        pieces.head.pivot.quaternion);
+      for (const side of ['leftLeg', 'rightLeg', 'leftArm', 'rightArm']) {
+        const c = chains[side];
+        fadeJoints.push(pieces[side].pivot.quaternion, c.bend.quaternion, c.end.quaternion);
+        if (c.toe) fadeJoints.push(c.toe.quaternion);
+      }
+      fadeJoints.push(clavicleQ.leftArm, clavicleQ.rightArm);
+      for (const q of fadeJoints) fadeFrom.q.push(new THREE.Quaternion());
+    }
+    fadeJoints.forEach((q, i) => fadeFrom.q[i].copy(q));
+    fadeFrom.y = object.position.y;
+    fadeFrom.rot.copy(object.rotation);
+  }
+  // The pose worked out this frame laid over the kept one, by how far the fade has come.
+  function fadeIn(dt) {
+    if (fade <= 0) return;
+    fade = Math.max(0, fade - dt / LADDER_FADE);
+    const k = 1 - fade, t = k * k * (3 - 2 * k);
+    // (slerpQuaternions copies its first argument into the target before it reads the second)
+    fadeJoints.forEach((q, i) => q.slerpQuaternions(fadeFrom.q[i], fadeTo.copy(q), t));
+    object.position.y = fadeFrom.y + (object.position.y - fadeFrom.y) * t;
+    object.rotation.set(fadeFrom.rot.x + (object.rotation.x - fadeFrom.rot.x) * t,
+      fadeFrom.rot.y + (object.rotation.y - fadeFrom.rot.y) * t, fadeFrom.rot.z + (object.rotation.z - fadeFrom.rot.z) * t);
+  }
   let digByClip = false, digT = 0, swimT = 0, treadT = 0, speedOf = 0;
   const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose(), poseTread = clipPose(), poseTreadMix = clipPose();
   const handA = new THREE.Vector3(), handB = new THREE.Vector3(), alongY = new THREE.Vector3(0, 1, 0), handInv = new THREE.Matrix4();
@@ -1266,7 +1356,12 @@ function buildRig(spec, material) {
       clipFree = digByClip = false;
       clipMix = damp(clipMix, 1, 10, dt);
       if (clipMix < 1e-3) return;
-      applyClip(sampleClip(GAIT_CLIPS.climb, climbU, poseClimb), clipMix, { arms: true, drop: true });
+      // At its ends a ladder is stepped onto and off by clips of their own, at where the feet are on
+      // the step (ladderStep): Climbing Up A Ladder To Standing over the top, Start Climbing Ladder
+      // up off the floor at its foot - each backwards on the way down.
+      const step = ladderStep(ladder);
+      const p = step ? sampleOnce(GAIT_CLIPS[step.clip], step.u, poseClimb) : sampleClip(GAIT_CLIPS.climb, climbU, poseClimb);
+      applyClip(p, clipMix, { arms: true, drop: true });
       // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs
       for (const side of ['leftArm', 'rightArm']) {
         if (busy[side]) continue;
@@ -1466,9 +1561,19 @@ function buildRig(spec, material) {
     // By the height on the ladder where the caller knows it (walk.js, peers.js), so hands and feet are
     // on its rungs; else by the height gained (climbStep).
     ladderT = ladder ? ladderT + dt : 0;
+    // Faded at both of a climb's edges: where the ladder's way begins and ends (walk.js `onLadder`:
+    // out of the water or off the deck onto its reach) and where its rungs do.
+    const onWay = !!pose.onLadder;
+    // and where one clip of the climb hands over to another (onto the rungs, off them over the top)
+    const stepNow = ladder && G.clips ? (ladderStep(ladder) || { clip: 'climb' }).clip : null;
+    if (!!ladder !== wasLadder || onWay !== wasOnWay || stepNow !== wasStep) {
+      keepPose(); fade = 1; wasLadder = !!ladder; wasOnWay = onWay; wasStep = stepNow;
+    }
     if (ladder) climbU = Number.isFinite(ladder.at) ? climbPhase(ladder.at, G) : climbStep(climbU, ladder.rise || 0, climbPerCycle(G), dt);
     else climbU = 0;
-    const reach = ladder && climbKind(G) === 'reach' ? climbReach(climbU) : null;
+    // The Traveller has no clip for the step over the top: he lets go of the climb's reach as he comes
+    // up over it, by how far over he is, and stands.
+    const reach = ladder && climbKind(G) === 'reach' ? settleReach(climbReach(climbU), ladder.top) : null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {
@@ -1721,8 +1826,13 @@ function buildRig(spec, material) {
       // A pedalling leg follows the crank exactly: damped, it lags a quarter turn at speed.
       else if (ride && (name === 'leftLeg' || name === 'rightLeg')) pieces[name].pivot.rotation.x = target;
       // So does a climbing limb, once on the ladder a moment: damped, a hand that has hold of a rung
-      // lags the body by a tenth of a cycle and slides up it.
-      else if (reach && reach.limbs[name] !== undefined && ladderT > LADDER_EASE) pieces[name].pivot.rotation.x = target;
+      // lags the body by a tenth of a cycle and slides up it. Taken over gradually - the damping
+      // quickened from the walk's to all but exact over the second half of LADDER_EASE - since
+      // switched at once it threw a hand 0.06 in one frame 0.4 s after taking the ladder.
+      else if (reach && reach.limbs[name] !== undefined && ladderT > LADDER_EASE / 2) {
+        const k = Math.min(1, (ladderT - LADDER_EASE / 2) / (LADDER_EASE / 2));
+        pieces[name].pivot.rotation.x = k >= 1 ? target : damp(pieces[name].pivot.rotation.x, target, 15 + 300 * k * k, dt);
+      }
       // Twice as quick on the dance floor: at 15 a punch on the kick is still on its way up
       // when the next one comes.
       else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance || (dug && name === dug.side) ? 30 : 15, dt);
@@ -1819,6 +1929,7 @@ function buildRig(spec, material) {
       if (dead.head) pieces.head.pivot.rotation.x = dead.head;
     }
     playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn: carryOn || stoop > 0, ride: ride || horse, gaitPose, back, ladder });
+    fadeIn(dt);
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.

@@ -10,5 +10,7 @@
   "tread": "treading-water.fbx",
   "die": "falling-forward-death.fbx",
   "drown": "floating-flailing.fbx",
-  "climb": "climbing-ladder.fbx"
+  "climb": "climbing-ladder.fbx",
+  "climbOn": "start-climbing-ladder.fbx",
+  "climbTop": "climbing-to-top.fbx"
 }
