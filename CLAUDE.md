@@ -729,13 +729,15 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   Hoogezand's 883 drew no innkeeper, mayor or pirate, whom lib/crowd.mjs appends last. So
   crowd-view.js `roster()` enrols the keepers first, and matrices go up only as far as `count`
   (`upload` in settler-figures.js), so a bigger CAPACITY costs memory, not bandwidth a frame.
-- **The residents in the Wanderer's style are skinned per instance, behind `?skinned`** ([Plans/inwoners-in-avonturierstijl.md](Plans/inwoners-in-avonturierstijl.md)).
+- **The residents are drawn in the Wanderer's style, skinned per instance** ([Plans/inwoners-in-avonturierstijl.md](Plans/inwoners-in-avonturierstijl.md)).
   `scripts/build-residents.py` bakes a man and a woman (the Wanderer's CC0 sources) into
   `web/js/residents-mesh.js`: 17 joints, **two influences a corner** (`joints`, `weights` = the first
   one's), skin under every outfit's cloth not baked, each garment, hairstyle and hat a part of its own;
   `RESIDENT_FIGURE` (3000 dressed) and `RESIDENT_BUDGETS` in model-rules.mjs, `checkResidents` in
-  `tests/models.test.mjs`. `createFigures(..., { skinned })` (default `skinnedWanted()`: `?skinned` or
-  `promptholm.debug.skinned`) draws one InstancedMesh per piece somebody wears, per sex, with a clone of
+  `tests/models.test.mjs`. **On by default since 0.11.0** (the keeper's choice): `skinnedWanted()` is true
+  unless the page says `?skinned=0` or the browser has `promptholm.debug.skinned` = `'0'` (the page wins),
+  and `createFigures(..., { skinned })` / `createCrowdView({ skinned })` name one for a test about the
+  other - the tests about the old body ask for it by name. It draws one InstancedMesh per piece somebody wears, per sex, with a clone of
   the crowd's material (`skinnedMaterial`: the source's hook first, `-skin` on the key, a depth twin
   with the same patch, recompiled with the source's fade through `userData.followers` - which is **not
   enumerable**, because three clones userData through JSON and every other clone of that material broke
@@ -747,7 +749,10 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   residentWardrobe`, its own `<id>:wardrobe` stream: **never a draw in `:look`**, which sets the stride.
   The bare skin pieces are one geometry per sex with a mask (`aMask` a corner, `aShow` an instance), so
   the people stay under ~40 calls a pass (the keeper's limit). Held tools hang off the wrist at
-  `HELD_SCALE`. The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
+  `HELD_SCALE`. `eyeHeight` knows the new body (a figure with `sex`, set by `enrolSkinned`), so the
+  conversation camera (facetoface.js) looks a resident in the eye and not on the chin; `figureGeometry`
+  builds the rooms' and the model sheet's figures from the same pieces, except walk.js `playerGeometry`,
+  whose hat and satchel sit on the old head. The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
   `villager-mesh.js` and the old path stay. `/residents.html` is the workbench: every pose, new before old.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
