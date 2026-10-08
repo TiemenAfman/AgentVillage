@@ -876,10 +876,12 @@ keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/canno
 `CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
 harpoon's too), and boat.js welds every gun into the hull's one geometry and moves its corners on the CPU when it
 is laid (`layGun`, web/js/cannon.js `layPoint`/`muzzleOf`), like the oars. Walk mode mans one (`manGun`, E at the
-breech): the camera lays it within its limits at `GUN_TURN`, R (the dance key) rams a ball home, the **right**
-button fires (the left only under a pointer lock, else it drags to aim), C climbs into an empty one and firing
-that is `launchSelf` - the jump's own fall with `drift` kept, landing or plunging as any fall does, tucked and
-tumbling. The flight is `shared/cannon.mjs` (closed-form `ballAt`, `ballHit`, trig-free), flown by every page
+breech): the camera (low behind the breech) lays it within its limits at `GUN_TURN`, R (the dance key) rams a
+ball home, the **right** button lights the fuse (the left only under a pointer lock, else it drags to aim) and the
+gun goes off `FUSE_S` later - pressed again it snuffs, lit again it starts over; C climbs into an empty one (the
+view is then down the bore) and firing that is `launchSelf` - the jump's own fall with `drift` kept, landing or
+plunging as any fall does, tucked and tumbling, and coming down on a building's top rather than through it
+(`roofUnder`). Its state is the big `#gun-hud` (main.js `syncGunHud`), not the E prompt. The flight is `shared/cannon.mjs` (closed-form `ballAt`, `ballHit`, trig-free), flown by every page
 (`web/js/cannon-fx.js`: balls, flash, smoke, blast, spray, three draw calls, no lights; sounds `boom`/`blast`/
 `splash` on the part `cannons`) and by the sea (`lib/cannons.mjs`): `{t:'cannon', a:'fire'}` is passed on by the
 roster only from somebody aboard that ship, and the sea's flight hurts through `hurt()` (cause `cannon`) whoever

@@ -215,6 +215,14 @@ Gebouwd zoals hierboven, met deze afwijkingen:
   anderen zien de schutter wel.
 - Een afgevuurd lijf vliegt opgerold (de hurkpose van de rig) en draait kopje-over. Er is dus geen
   nieuwe pose en geen nieuw bit nodig.
+- **Lont** (de keeper, naar Sea of Thieves): vuren steekt de lont aan, het kanon gaat `FUSE_S` (2 s)
+  later af. Nog eens drukken dooft hem, opnieuw aansteken begint weer bij 2 s. Een geladen kanon
+  toont een lontje in het zundgat, een brandend vonkt en rookt (`cannon-fx.js fuse`).
+- De camera staat verder achter de stuitkop, zodat je die en de achterkant van de affuit ziet.
+  **Climb in** kijkt van binnenuit door de loop naar buiten, met een rode HUD die zegt dat je jezelf
+  afschiet. Een afgevuurd lijf landt op het dak van een gebouw en rolt eraf, in plaats van erdoorheen
+  te vallen (`roofUnder`).
+- De instructies staan in een grote HUD rechtsonder (`#gun-hud`), niet meer in de E-prompt.
 - Schepen hebben nog geen gezondheid. Een kogel op een romp ontploft en raakt wie er in de buurt
   staat.
 
