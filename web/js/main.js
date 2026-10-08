@@ -87,6 +87,8 @@ import { createNewSettler } from './newsettler.js';
 import { createTownHall } from './townhall.js';
 import { createPirate, createQuestGiver } from './pirate.js';
 import { createQuestLog } from './quest-log.js';
+import { createMineRun } from './mine.js';
+import { gemById, POTION_PRICE, FLOORS as MINE_FLOORS } from 'shared/mine.mjs';
 import { createQuestPanel } from './quest-panel.js';
 import { createQuestMark } from './quest-mark.js';
 import { unlock } from './unlocks.js';
@@ -1356,7 +1358,7 @@ function interactables() {
       out.push({ id: rec.id, kind: 'goldpit', x: p.x, z: p.z, r: 2.6, label: 'the gold pit', prompt: goldPrompt() });
     } else if (rec.spec.civicType === 'goldmine') {
       // The week over the keys, the pit's way (Plans/DONE/goudmijn.md).
-      out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: minePrompt() });
+      out.push({ id: rec.id, kind: 'goldmine', x: p.x, z: p.z, r: 2.6, label: 'the gold mine', prompt: mineKeeper() ? 'step into the gold mine' : minePrompt() });
     } else if (rec.spec.civicType === 'goldsmith') {
       out.push({ id: rec.id, kind: 'goldsmith', x: p.x, z: p.z, r: 2.4, label: 'the goldsmith' });
     } else if (rec.spec.civicType === 'market') {
@@ -2206,8 +2208,8 @@ function walkCallbacks() {
       else if (it.kind === 'market') openMarket();
       else if (it.kind === 'mailbox') openMailbox();
       else if (it.kind === 'goldpit') state.ui.toast(goldWords(state.gold));
-      else if (it.kind === 'goldmine') state.ui.toast(mineWords(state.gold));
-      else if (it.kind === 'goldsmith') state.ui.toast(smithWords());
+      else if (it.kind === 'goldmine') openMine(it);
+      else if (it.kind === 'goldsmith') visitGoldsmith();
       else if (it.kind === 'tavern') enterInterior(it.room, it, it.spot || null);
       else if (it.kind === 'castle') { if (raveOn()) enterInterior(it.room, it); else state.ui.toast(RAVE_SHUT); }
       else if (it.kind === 'chronicle') openChronicle();
@@ -2784,7 +2786,10 @@ function roomFor(room) {
         onDrink: (side) => { if (state.net) state.net.drink(side); questEvents.drank(room); },
         dance: danceNow,
         onTalk: (it) => openCrewTalk(it),
-        onOrder: (r) => questEvents.drank(r),
+        // A drink at a seat, or the miner's draught at the tavern's counter (Plans/goudmijn-zoektocht.md).
+        onOrder: (r, what) => (what === 'potion' ? buyDraught() : questEvents.drank(r)),
+        // The gold mine's field and rules are this page's (web/js/mine.js).
+        extra: room === 'goldmine' ? { mine: { run: state.mineRun || (state.mineRun = createMine()), on: mineHooks } } : null,
         hd: hdOn(),
         // I opens the wardrobe, as it does on the island.
         onAvatar: () => openStudio(),
@@ -2835,20 +2840,27 @@ function enterInterior(room, at, spot = null) {
   deckOut = (at && at.deck) || null;
   state.walk.exit();
   state.inside = inside;
+  // In at the top of the mine, every time (the keeper's rule: out is starting again).
+  if (room === 'goldmine') state.mineRun.enter();
   const rave = room === 'rave';
   inside.enter({ avatar: loadAvatar(), guests: rave ? raveGuests() : null, stable: rave && stableComes(), spot });
   rememberRoom({ now: true });
   state.ui.setIndoors(true);
   if (rave) state.ui.toast(RAVE_IN);
   if (room === 'piratetavern') state.ui.toast('The Salty Kraken. Mind the cannon.');
+  if (room === 'goldmine') state.ui.toast(`The gold mine, floor 1 of ${MINE_FLOORS}. <b>E</b> digs the earth in front of you; somewhere under it is the stair down. The ladder by the way in takes you out - and out is starting again.`);
   refreshMusic();
   state.ui.setWalkPrompt(null);
   // The room is a place the others can be drawn in, and your pose now comes from its own
   // walk mode. Switching presence off instead -- which is what this used to do -- made the
   // tavern the one room on the island where nobody could keep you company.
-  if (state.peers) state.peers.place(inside.room, { scene: inside.scene, terrain: inside.terrain });
-  if (state.net) state.net.setRoom(inside.room, inside.walk);
+  // Every island's gold mine is its own, unlike the taverns the whole sea shares: scoped by our island
+  // (lib/players.mjs room), or two keepers each in their own mine would stand in one another's.
+  const where = roomName(inside.room);
+  if (state.peers) state.peers.place(where, { scene: inside.scene, terrain: inside.terrain });
+  if (state.net) state.net.setRoom(where, inside.walk);
 }
+const roomName = (room) => (room === 'goldmine' && state.islandId ? `${state.islandId}:goldmine` : room);
 
 // The step before the door in the Salty Kraken's castle front (scripts/build-piratetavern.py, the
 // `deck.door-step` floor): where on the island, at what height, and a point to face - away from the
@@ -2867,6 +2879,8 @@ function leaveInterior(to = null) {
   // Up the Salty Kraken's hatch: out onto its deck at the castle's door, not down at its front door.
   const deck = to === 'deck' ? deckOut || krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
   if (deck) cameFrom = { at: deck.at, y: deck.y, facing: deck.facing };
+  if (state.inside.room === 'goldmine') state.mineRun.leave();
+  if (state.vitals) state.vitals.setDig(1, false);
   state.inside = null;
   forgetRoom();
   state.ui.setIndoors(false);
@@ -3236,7 +3250,106 @@ const questEvents = {
   // A drink had in a room (the Salty Kraken's first chapter), and a dive that went deep enough.
   drank: (where) => (state.quests ? reportQuest(state.quests.onDrank(where)) : null),
   dived: (depth) => (state.quests ? reportQuest(state.quests.onDived(depth)) : null),
+  // The gold mine's line (Plans/goudmijn-zoektocht.md).
+  entered: (where) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'entered', where })) : null),
+  descended: (floor) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'descended', floor })) : null),
+  found: (kind) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'found', kind })) : null),
+  sold: (what) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'sold', what })) : null),
+  bought: (what) => (state.quests ? reportQuest(state.quests.applyEvent({ type: 'bought', what })) : null),
 };
+
+// ---- the gold mine (Plans/goudmijn-zoektocht.md) -------------------------------------------------
+// The mine, the goldsmith's counter and the tavern's draught all spend and fill the purse of the
+// garden (lib/garden.mjs), so they are the keeper's alone, on our own island, as the seed stall is.
+const mineKeeper = () => !state.guest && state.hasIslander !== false && !STANDALONE;
+async function gardenOp(body) {
+  const answer = await answerOf(await mine('/api/garden', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }));
+  if (answer.garden) state.garden = answer.garden;
+  return answer;
+}
+function createMine() {
+  return createMineRun({
+    storage: (() => { try { return localStorage; } catch { return { getItem: () => null, setItem: () => {} }; } })(),
+    island: () => state.terrain.seed,
+    day: () => treasureDay(timeNow()),
+    garden: {
+      found: (gem) => gardenOp({ op: 'findGem', kind: gem, day: treasureDay(timeNow()) }).catch((e) => console.warn('the stone was not kept', e)),
+      potions: () => (state.garden && state.garden.potions) || 0,
+      drink: () => gardenOp({ op: 'drinkPotion' }),
+    },
+    quests: {
+      entered: () => questEvents.entered('goldmine'),
+      descended: (f) => questEvents.descended(f),
+      dug: (k) => questEvents.dug(k),
+      found: (k) => questEvents.found(k),
+    },
+  });
+}
+// What the mine's room tells us (web/js/mine-room.js `on`).
+const mineHooks = {
+  dug(what) {
+    const g = gemById(what);
+    if (g) state.ui.toast(`${/^[aeiou]/i.test(g.name) ? 'An' : 'A'} <b>${escapeHtml(g.name.toLowerCase())}</b>! The goldsmith pays ${g.price} coins for one.`);
+    else if (what === 'stair') state.ui.toast('A stair, going down into the dark. <b>E</b> on it to go deeper.');
+    else if (what === 'key') state.ui.toast('Something glints at the bottom of the hole. <b>E</b> to take it.');
+  },
+  down(floor) {
+    state.ui.toast(floor >= MINE_FLOORS
+      ? `Floor ${floor} of ${MINE_FLOORS} - the bottom. Whatever the old miners left lies under this earth.`
+      : `Floor ${floor} of ${MINE_FLOORS}.`);
+  },
+  key() { state.ui.toast('An old iron <b>key</b>, heavy and cold. The goldsmith will want to see it.'); },
+  say(html) { state.ui.toast(escapeHtml(html)); },
+  async drink() {
+    try {
+      await state.mineRun.drink();
+      state.ui.toast(`A miner's draught. Strength back in your arms - ${(state.garden && state.garden.potions) || 0} left.`);
+    } catch (e) {
+      state.ui.toast(escapeHtml(e.message || 'there is no draught left'));
+    }
+  },
+  out() {
+    state.ui.toast('Your arms will not lift the shovel again, and there is no draught left. Climb out at the ladder and try again later - the stairs stay where they are today.');
+  },
+};
+function openMine(it) {
+  if (!mineKeeper()) { state.ui.toast(mineWords(state.gold)); return; }
+  enterInterior('goldmine', it);
+}
+// The goldsmith: he buys every stone you carry, and he has the mine's quests to give.
+async function visitGoldsmith() {
+  if (!mineKeeper()) { state.ui.toast(smithWords()); return; }
+  const gems = (state.garden && state.garden.gems) || {};
+  if (Object.values(gems).some((n) => n > 0)) {
+    try {
+      const a = await gardenOp({ op: 'sellGems' });
+      state.ui.toast(`The goldsmith weighs ${a.count === 1 ? 'your stone' : `your ${a.count} stones`} and pays <b>${a.paid} coins</b>. Purse: ${a.purse}.`);
+      questEvents.sold('gems');
+    } catch (e) {
+      state.ui.toast(escapeHtml(e.message || 'the goldsmith did not answer'));
+      return;
+    }
+  }
+  const v = state.quests && state.quests.view();
+  const line = v && (v.lines || []).find((l) => l.giver === 'goldsmith');
+  if (!line) { state.ui.toast(smithWords()); return; }
+  if (!state.crewTalk || state.crewTalk.isOpen()) return;
+  if (state.walk) state.walk.setPaused(true);
+  state.crewTalk.open({ who: 'goldsmith', name: 'The goldsmith', idle: null, talk: () => state.quests.onTalked('goldsmith') });
+}
+// The draught at the tavern's bar.
+async function buyDraught() {
+  if (!mineKeeper()) { state.ui.toast('The barman keeps the miner\'s draught for whoever lives here.'); return; }
+  try {
+    const a = await gardenOp({ op: 'buyPotion' });
+    state.ui.toast(`A miner's draught, corked, for <b>${a.paid} coins</b>: ${a.potions} in the satchel. Drink it in the mine when your arms give out.`);
+    questEvents.bought('potion');
+  } catch (e) {
+    state.ui.toast(escapeHtml(e.message || 'the barman did not answer'));
+  }
+}
 
 // Speaking to one of the Salty Kraken's crew (web/js/pirate-tavern.js `talkers`): the giver's
 // window, with the room's walk paused while it is up. No faceUp - that is for the sea's figures;
@@ -7861,12 +7974,16 @@ function frame(nowMs) {
       clock: state.sound && state.inside.music ? state.sound.clockOf(state.inside.music) : null,
       // Who the story waits on, for the mark over one of the Kraken's crew.
       business: state.quests ? state.quests.businessWith() : null,
+      // The tavern counter's words: the miner's draught, its price and how many are in the satchel.
+      counter: `buy a miner's draught - ${POTION_PRICE} coins (${(state.garden && state.garden.potions) || 0} in the satchel)`,
       // In noclip the camera is not the room's walk mode's (Plans/noclip-camera.md).
       eye: state.mode === 'noclip' ? camera.position : null,
     });
     state.ui.setWalkPrompt(w && w.near ? w.near : null);
     touchHud(w && w.near, state.inside.walk);
     state.vitals.setStamina(shownPool(state.inside.walk.state.stamina, false));
+    // The digging bar, in the mine only (Plans/goudmijn-zoektocht.md).
+    state.vitals.setDig(state.inside.room === 'goldmine' ? state.mineRun.level() : 1, state.inside.room === 'goldmine');
     rememberRoom();
     state.ui.setMouse(state.inside.walk.handAction('leftArm'), state.inside.walk.handAction('rightArm'));
     state.ui.setGive(null);               // the regulars in here are furniture, not the crowd
@@ -8760,6 +8877,7 @@ Everything is copied and checked first; the island then starts again there. The 
     if (!state.quests.jumpTo(id, Number(step) || 0)) console.warn(`?quest: no quest called "${id}"`);
   }
   state.questEvents = questEvents;
+  if (!state.mineRun) state.mineRun = createMine();
   state.questPanel = createQuestPanel({ ui: state.ui, log: state.quests });
   state.pirate = createPirate(document.body, {
     log: state.quests,

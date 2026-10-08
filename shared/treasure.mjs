@@ -248,7 +248,18 @@ export const REWARD_HATS = [
 export const REWARD_ITEMS = [
   { id: 'spyglass', name: 'Spyglass' },
 ];
-export const UNLOCK_IDS = [SHOVEL, ...REWARD_COLORS, ...REWARD_HATS, ...REWARD_ITEMS]
+// The colours only a quest gives, never a chest: the gold mine's (Plans/goudmijn-zoektocht.md). Apart
+// from REWARD_COLORS because rewardOf draws from that list, and a colour added there would change what
+// every chest already on a map holds.
+export const QUEST_COLORS = [
+  { id: 'miners-ochre', name: "Miner's ochre" },
+  { id: 'deep-garnet', name: 'Deep garnet' },
+];
+// The key from the gold mine's bottom floor (Plans/goudmijn-zoektocht.md): a piece the quests hand
+// out and nothing draws yet - which door it opens is still to be decided.
+export const MINE_KEY = 'mine-key';
+export const QUEST_ITEMS = [{ id: MINE_KEY, name: 'Old iron key' }];
+export const UNLOCK_IDS = [SHOVEL, ...REWARD_COLORS, ...QUEST_COLORS, ...REWARD_HATS, ...REWARD_ITEMS, ...QUEST_ITEMS]
   .map((u) => (typeof u === 'string' ? u : u.id));
 
 // In percent: a colour, a hat, a hand item.

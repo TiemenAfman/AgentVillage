@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   QUESTS, QUEST_EVENTS, QUEST_STATE_V, advance, activeQuest, activeStep, parseQuestState,
-  unlocksOf, completedQuests, timesDone, pirateHasBusiness, businessWith, giverOf, CREW, CREW_IDS,
+  unlocksOf, completedQuests, timesDone, pirateHasBusiness, businessWith, giverOf, CREW, CREW_IDS, GIVERS, LINES, lineOf, activeSteps, hasBusiness,
 } from '../shared/quests.mjs';
 import { UNLOCK_IDS } from '../shared/treasure.mjs';
 
@@ -40,8 +40,8 @@ test('the chain is well formed: unique ids, known events, real unlocks, repeatab
   }
   const firstRepeat = QUESTS.findIndex((q) => q.repeat);
   assert.ok(firstRepeat > 0 && QUESTS.slice(firstRepeat).every((q) => q.repeat), 'a repeatable quest must not stand before the end of the story');
-  assert.deepEqual(QUESTS.map((q) => q.id), ['first-dig', 'bring-it-home', 'a-round-for-the-crew', 'the-drowned-chart', 'three-chests', 'treasure-of-the-day']);
-  const givers = new Set(['pirate', ...CREW_IDS]);
+  assert.deepEqual(QUESTS.map((q) => q.id), ['first-dig', 'bring-it-home', 'a-round-for-the-crew', 'the-drowned-chart', 'three-chests', 'into-the-mine', 'deeper-still', 'heart-of-the-mountain', 'treasure-of-the-day']);
+  const givers = new Set(GIVERS);
   for (const q of QUESTS) {
     if (q.repeat) assert.equal(q.steps.length, 1, `${q.id}: a repeatable quest is one step, so it can count alongside the story`);
     for (const s of q.steps) {
@@ -219,9 +219,9 @@ test('a state from a newer page is not read as ours', () => {
 test('a state that is only slightly wrong is repaired, not thrown away', () => {
   // Unknown quests dropped, duplicates gone, the step held inside its quest.
   const a = parseQuestState({ v: 1, done: ['first-dig', 'first-dig', 'a-quest-from-the-future'], step: 99, repeats: { 'first-dig': 3, 'treasure-of-the-day': 2, x: 1 } });
-  assert.deepEqual(a, { v: 1, done: ['first-dig'], step: 0, repeats: { 'treasure-of-the-day': 2 } });
+  assert.deepEqual(a, { v: 1, done: ['first-dig'], step: 0, repeats: { 'treasure-of-the-day': 2 }, lines: {} });
   // A quest cannot be done before the one it follows.
-  assert.deepEqual(parseQuestState({ v: 1, done: ['bring-it-home'], step: 1 }), { v: 1, done: [], step: 1, repeats: {} });
+  assert.deepEqual(parseQuestState({ v: 1, done: ['bring-it-home'], step: 1 }), { v: 1, done: [], step: 1, repeats: {}, lines: {} });
   // Steps must be whole, non-negative numbers.
   for (const step of [-1, 1.5, '1', NaN, null]) assert.equal(parseQuestState({ v: 1, done: [], step }).step, 0, String(step));
   // Counts must be sane.
@@ -233,6 +233,71 @@ test('what is unlocked is only what the progress supports', () => {
   assert.deepEqual(unlocksOf({ v: 1, done: ['first-dig'], step: 3, repeats: {} }), ['shovel']);
   assert.deepEqual(unlocksOf({ v: 1, done: [], step: 0, repeats: {} }), []);
   assert.deepEqual(unlocksOf('junk'), []);
+});
+
+// ---- the gold mine's line, beside the story (Plans/goudmijn-zoektocht.md) -------------------
+
+const SMITH = WITH('goldsmith');
+const MINE = [SMITH, { type: 'entered', where: 'goldmine' }, { type: 'dug', kind: 'gem' }, { type: 'sold', what: 'gems' }, SMITH,
+  SMITH, { type: 'bought', what: 'potion' }, { type: 'descended', floor: 3 }, SMITH,
+  SMITH, { type: 'found', kind: 'key' }, SMITH];
+
+test('there are two lines, the story and the mine, and every mine quest is the goldsmith\'s', () => {
+  assert.deepEqual(LINES, ['story', 'mine']);
+  for (const q of QUESTS.filter((x) => lineOf(x) === 'mine')) assert.equal(giverOf(q), 'goldsmith', q.id);
+});
+
+test('the mine is open from the first moment and runs beside the story without waiting on it', () => {
+  let s = fresh();
+  assert.ok(hasBusiness(s, 'goldsmith'), 'the goldsmith has a word for a new player');
+  assert.ok(hasBusiness(s, 'pirate'));
+  assert.equal(activeQuest(s, 'mine').id, 'into-the-mine');
+  assert.deepEqual(activeSteps(s).map((a) => a.line), ['story', 'mine']);
+  // Talking to the goldsmith moves the mine and leaves the story where it was.
+  let r = advance(s, SMITH); s = r.state;
+  assert.deepEqual(r.gained.unlocks, ['shovel']);
+  assert.equal(activeStep(s).index, 0, 'the story has not moved');
+  assert.equal(activeStep(s, 'mine').index, 1);
+  assert.equal(r.gained.next, 'first-dig', '`next` is still the story\'s');
+  // Now the pirate: his shovel is already owned, so nothing new is unlocked, and the mine stays.
+  r = advance(s, TALK); s = r.state;
+  assert.deepEqual(r.gained.unlocks, []);
+  assert.equal(activeStep(s, 'mine').index, 1);
+  // The whole mine, told while the story is still at its dig.
+  s = run(s, ...MINE.slice(1));
+  assert.equal(activeQuest(s, 'mine'), null, 'the mine is told');
+  assert.equal(activeQuest(s).id, 'first-dig');
+  assert.deepEqual(completedQuests(s).map((q) => q.id), ['into-the-mine', 'deeper-still', 'heart-of-the-mountain']);
+  assert.deepEqual(unlocksOf(s).sort(), ['deep-garnet', 'mine-key', 'miners-ochre', 'shovel']);
+  // And the story still tells to the end after it.
+  s = run(s, ...OUTSIDE.slice(1), ...KRAKEN);
+  assert.equal(activeQuest(s).id, 'treasure-of-the-day');
+  assert.deepEqual(parseQuestState(JSON.parse(JSON.stringify(s))), s, 'and it survives storage');
+});
+
+test('a mine step is not done early, nor by a shallow descent', () => {
+  let s = run(fresh(), SMITH, { type: 'entered', where: 'goldmine' }, { type: 'dug', kind: 'gem' }, { type: 'sold', what: 'gems' }, SMITH, SMITH);
+  assert.equal(activeQuest(s, 'mine').id, 'deeper-still');
+  assert.equal(advance(s, { type: 'descended', floor: 3 }).gained.stepDone, null, 'the potion comes first');
+  s = run(s, { type: 'bought', what: 'potion' });
+  assert.equal(advance(s, { type: 'descended', floor: 2 }).gained.stepDone, null);
+  assert.deepEqual(advance(s, { type: 'descended', floor: 4 }).gained.stepDone, { quest: 'deeper-still', index: 2 });
+  // A dug chest is the pirate's business, not a gem.
+  const t = run(fresh(), SMITH, { type: 'entered', where: 'goldmine' });
+  assert.equal(advance(t, CHEST).gained.steps.some((x) => x.quest === 'into-the-mine'), false);
+});
+
+test('the mine\'s step is kept apart from the story\'s, and repaired like it', () => {
+  const s = run(fresh(), SMITH, { type: 'entered', where: 'goldmine' });
+  assert.deepEqual(s.lines, { mine: 2 });
+  assert.equal(s.step, 0);
+  // A step past its quest, or a mine quest claimed done without the one before it.
+  assert.deepEqual(parseQuestState({ v: 1, done: [], step: 0, lines: { mine: 40 } }).lines, {});
+  assert.deepEqual(parseQuestState({ v: 1, done: ['deeper-still'], step: 0 }).done, []);
+  assert.deepEqual(parseQuestState({ v: 1, done: ['into-the-mine', 'first-dig'], lines: { mine: 1 } }),
+    { v: 1, done: ['first-dig', 'into-the-mine'], step: 0, repeats: {}, lines: { mine: 1 } });
+  // A grant before the step a line is on counts; one after it does not.
+  assert.deepEqual(unlocksOf({ v: 1, done: [], step: 0, lines: { mine: 1 } }), ['shovel']);
 });
 
 // ---- shared/'s rule ----------------------------------------------------------------------

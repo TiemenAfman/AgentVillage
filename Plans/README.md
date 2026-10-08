@@ -3,6 +3,7 @@
 Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een plan hier is het
 "waarom" en de beslissingen; de code en `CLAUDE.md` zijn de waarheid over wat er nu staat.
 
+- 🚧 [goudmijn-zoektocht.md](goudmijn-zoektocht.md) — een quest-lijn naast het piratenverhaal: blind graven naar de trap in 7 x 7 per verdieping, zeven verdiepingen, graaf-stamina, een drankje uit de taverne, edelstenen voor de goudsmid, een sleutel onderin.
 - 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
 
 ## Besluiten die nog niet in een eigen plan zitten

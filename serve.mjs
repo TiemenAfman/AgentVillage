@@ -19,6 +19,7 @@ import { readTranscript, talk } from './lib/chat.mjs';
 import { listProps, addProp, removeProp, clearProps } from './lib/props.mjs';
 import {
   cropsView, gardenView, buySeed, sellCrop, sellEverything, holdSeed, plantBed, harvestBed, digUpBed,
+  findGem, sellGems, buyPotion, drinkPotion,
 } from './lib/garden.mjs';
 import {
   mailView, saveAccount, removeAccount, check as checkAccount, inbox, readMessage, setFlag, send as sendMail,
@@ -1591,11 +1592,21 @@ if (req.url === '/api/command' && req.method === 'POST') {
       } else if (op === 'sell') {
         done = sellCrop(body.kind, body.count == null ? 'all' : body.count);
         log(`sold ${done.count} ${done.kind} for ${done.paid} coins, purse now ${done.purse}`);
+      } else if (op === 'findGem') {
+        done = findGem(body.kind, body.day);
+      } else if (op === 'sellGems') {
+        done = sellGems();
+        log(`sold ${done.count} stone(s) to the goldsmith for ${done.paid} coins, purse now ${done.purse}`);
+      } else if (op === 'buyPotion') {
+        done = buyPotion();
+        log(`bought a draught for ${done.paid} coins, purse now ${done.purse}`);
+      } else if (op === 'drinkPotion') {
+        done = drinkPotion();
       } else if (op === 'sellAll') {
         done = sellEverything();
         log(`sold ${done.count} vegetable(s) for ${done.paid} coins, purse now ${done.purse}`);
       } else {
-        return json(res, 400, { error: 'op is one of buy, hold, plant, harvest, dig, sell, sellAll' });
+        return json(res, 400, { error: 'op is one of buy, hold, plant, harvest, dig, sell, sellAll, findGem, sellGems, buyPotion, drinkPotion' });
       }
       // Only the beds are anybody else's business, and only they change the picture.
       if (['plant', 'harvest', 'dig'].includes(op)) { broadcast({ at: Date.now(), op }, 'garden'); tellTheSea(); }

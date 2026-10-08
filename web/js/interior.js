@@ -24,6 +24,7 @@ import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
 import { createHdPieces, hdMissed } from './hd-pieces.js';
 import { placeInRoom } from './room-spot.js';
+import { buildGoldMine } from './mine-room.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
 // stands at exactly that: the slab is built downwards to bring its top surface up to here.
@@ -437,6 +438,9 @@ function buildTavern() {
   return {
     name: 'the tavern',
     parts, roof, blockers, seats, lights, figures,
+    // The west end of the bar, where the barman sells the miner's draught standing (the gold mine's,
+    // Plans/goudmijn-zoektocht.md): `onOrder(room, 'potion')`.
+    counter: { x: BAR_X - BAR_HX - 0.22, z: BAR_Z + 0.35, prompt: "buy a miner's draught" },
     show: (opts) => createPatronsShow({ ...opts, layout: { patrons } }),
     fireAt: [FX + 0.24, FLOOR + 0.03, FZ],
     // The cells the stage covers, handed to walk mode as a deck to stand on.
@@ -467,6 +471,9 @@ const ROOMS = {
   tavern: buildTavern,
   rave: () => buildRave({ FLOOR, rect }),
   piratetavern: () => buildPirateTavern({ FLOOR, rect }),
+  // The gold mine (Plans/goudmijn-zoektocht.md): its field and its rules are the page's
+  // (web/js/mine.js), handed in by whoever makes the room as `mine: { run, on }`.
+  goldmine: (extra) => buildGoldMine({ FLOOR, rect, ...(extra && extra.mine) }),
 };
 
 export const ROOM_KINDS = Object.keys(ROOMS);
@@ -505,10 +512,11 @@ function snackGeometry() {
 // `onTalk(it)` is somebody in the room being spoken to (the Salty Kraken's crew, `kind: 'crew'`),
 // and `onOrder(room, what)` a drink ordered at a seat - which is the Kraken's first quest step,
 // and which walk mode's own onDrink cannot see, since that needs a glass already in the hand.
-export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null, onAvatar = null }) {
+// `extra` is handed to the room's builder (the gold mine's run, `{ mine: { run, on } }`).
+export function createInterior({ room = 'tavern', camera, material, dom, onLeave, tipsy = null, onDrink = null, dance = null, onTalk = null, onOrder = null, hd = false, onEscape = null, onAvatar = null, extra = null }) {
   const make = ROOMS[room];
   if (!make) throw new Error(`no such room: ${room}`);
-  const def = make();
+  const def = make(extra);
 
   // The dark behind everything and the haze in front of it are the room's: the tavern's is
   // woodsmoke, the castle's is a smoke machine.
@@ -763,11 +771,20 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     camBack: CAM.back, camUp: CAM.up, camAim: CAM.aim, clampCam, tipsy, onDrink, dance: danceHere,
     // Every blocker in a room stands floor to lid to the camera's boom, unless it says otherwise.
     camSolidTop: ROOF_AT,
+    // A room with a dig in it (the gold mine) hears how it ended.
+    onDigDone: (...a) => { if (show && show.onDigDone) show.onDigDone(...a); },
+    onDigCancelled: (...a) => { if (show && show.onDigCancelled) show.onDigCancelled(...a); },
   });
 
   // What moves in a room beyond its fire and its barman - the castle's lights and its dancing
   // crowd (rave.js) - built once, like the rest of it, and handed each visit and each frame.
   const show = def.show ? def.show({ scene, material, camera }) : null;
+  // What the show adds to the room's solids and to what E reaches - the gold mine's rocks and its
+  // spot to dig - asked again whenever the show says they changed (`refresh`, a floor down).
+  const solids = () => (show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers);
+  const counter = def.counter ? [{ id: 'counter', kind: 'counter', x: def.counter.x, z: def.counter.z, r: 0.5 }] : [];
+  const reachables = () => def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || [], def.exits || [], counter, show && show.interactables ? show.interactables() : []);
+  if (show && show.bind) show.bind(walk, () => { walk.setBlockers(solids()); walk.setInteractables(reachables()); });
 
   // The stage, as a surface to stand on. Walk mode keeps a list of what stands above the
   // floor of each cell and picks the one you belong to, which is how a bridge carries you
@@ -793,9 +810,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // ordering a beer standing up in the middle of the room is not a thing. Walking away is
   // how you get off the stool, which walk mode already does on its own.
   function onInteract(it) {
+    if (show && show.onInteract && show.onInteract(it)) return;
     if (it.kind === 'crew') { if (onTalk) onTalk(it); return; }
     // A second way out (the Salty Kraken's hatch to its deck, Plans/kraken-dek.md): `onLeave` is told where to.
     if (it.kind === 'exit') { leave(it.to); return; }
+    if (it.kind === 'counter') { if (onOrder) onOrder(room, 'potion'); return; }
     if (it.kind !== 'seat') return;
     if (!walk.state.sitting) { walk.sitOn({ x: it.x, z: it.z, y: it.y, yaw: it.yaw }); return; }
     const s = served[it.index];
@@ -817,7 +836,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     lidOff = false;
     if (avatar) walk.setAvatar(avatar);
     if (show) show.enter({ dancers: guests, stable });
-    const blockers = show && show.blockers ? def.blockers.concat(show.blockers()) : def.blockers;
+    const blockers = solids();
     for (const s of served) { s.step = 0; s.beer.visible = false; s.plate.visible = false; }
     if (barman) barmanX = barman.home;
     // The room's solids first, so the spot is judged against them.
@@ -828,7 +847,7 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       y: back ? back.y : Infinity,
       facing: back ? [back.at[0] + Math.sin(back.yaw), back.at[1] + Math.cos(back.yaw)] : [def.spawn.x, def.spawn.z - 1],
       blockers,
-      interactables: def.seats.map((s, i) => ({ ...s, index: i })).concat(def.talkers || [], def.exits || []),
+      interactables: reachables(),
       onInteract,
       // Esc (and the pad's Back) is the menu's key indoors as it is on the island, when the room's
       // owner says so (main.js); the way out is the door. /demo has no menu and still steps outside.
@@ -896,12 +915,14 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
     }
     if (show) show.update(dt, extra, p);
 
-    if (w && w.near) w.near.prompt = promptFor(w.near);
+    // A show's own interactable (the gold mine's spot) words itself: its prompt is a getter.
+    if (w && w.near && ['seat', 'crew', 'exit', 'counter'].includes(w.near.kind)) w.near.prompt = promptFor(w.near);
     return w;
   }
 
   function promptFor(near) {
     if (near.kind === 'exit') return near.prompt;
+    if (near.kind === 'counter') return lastExtra.counter || def.counter.prompt;
     if (near.kind === 'crew') {
       return lastExtra.business === near.who ? `${near.name} has something for you` : `speak to ${near.name}`;
     }

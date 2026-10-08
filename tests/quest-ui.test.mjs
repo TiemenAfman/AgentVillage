@@ -41,7 +41,10 @@ test('the log names the quest, its steps with the current one marked, and the pi
   const later = renderLog(log.view());
   assert.match(later, /<li class="done">Talk to the pirate at his sea chest<\/li>/);
   assert.match(later, /<li class="now">Dig up the buried treasure<\/li>/);
-  assert.doesNotMatch(later, /is waiting/);
+  assert.doesNotMatch(later, /pirate at his sea chest is waiting/);
+  // The gold mine's line stands beside it, its goldsmith waiting from the start.
+  assert.match(later, /Into the Mine/);
+  assert.match(later, /The goldsmith is waiting/);
   assert.match(later, new RegExp(`Square ${CARD.grid}`));
 });
 

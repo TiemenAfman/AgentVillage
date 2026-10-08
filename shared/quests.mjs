@@ -14,7 +14,7 @@
 // never disagree with itself, and a state from somewhere else is repaired rather than trusted.
 //
 // Pure, and under shared/'s rule (no sin, cos or pow; tests/quests.test.mjs reads the file).
-import { UNLOCK_IDS, SHOVEL } from './treasure.mjs';
+import { UNLOCK_IDS, SHOVEL, MINE_KEY } from './treasure.mjs';
 
 export const QUEST_STATE_V = 1;
 
@@ -26,9 +26,16 @@ export const QUEST_STATE_V = 1;
 //   delivered  stood it in the town: { kind: 'statue' }
 //   drank      had a drink:          { where: 'piratetavern' } (the room it was ordered in)
 //   dived      went under:           { depth } - units under the surface, once a dive
-// `with` in a talked event is who was spoken to: 'pirate' at his sea chest, or one of the
-// Salty Kraken's CREW ids below.
-export const QUEST_EVENTS = ['talked', 'dug', 'lifted', 'boarded', 'delivered', 'drank', 'dived'];
+// The gold mine's (Plans/goudmijn-zoektocht.md), and `dug { kind: 'gem' }`:
+//   entered    went into a place:    { where: 'goldmine' }
+//   descended  took the stair down:  { floor } - the floor arrived on, 1 the top
+//   found      took something up:    { kind: 'key' } (the gold mine's bottom floor)
+//   sold       sold at a counter:    { what: 'gems' }
+//   bought     bought at a counter:  { what: 'potion' }
+// `with` in a talked event is who was spoken to: 'pirate' at his sea chest, one of the
+// Salty Kraken's CREW ids below, or 'goldsmith' at his shop.
+export const QUEST_EVENTS = ['talked', 'dug', 'lifted', 'boarded', 'delivered', 'drank', 'dived',
+  'entered', 'descended', 'found', 'sold', 'bought'];
 
 // A step waits for one event whose type is `on` and that carries every key of `match`, and, if
 // it says so, at least `least` (`{ depth: 2 }`: ev.depth >= 2) and `times` of it altogether (a
@@ -112,6 +119,63 @@ export const QUESTS = [
     ],
     reward: { unlock: ['captain-red'] },
   },
+  // The gold mine's line (Plans/goudmijn-zoektocht.md): the goldsmith's, open from the start and
+  // told beside the pirate's story rather than after it - the keeper's wish. The shovel comes with
+  // the first word, as the pirate's does, for a player who went to the mine before the beach.
+  {
+    id: 'into-the-mine',
+    line: 'mine',
+    title: 'Into the Mine',
+    text: "That mine eats my ore faster than I can melt it, and the men down there keep the pretty stones for themselves. Dig me some, and I'll pay honest coin.",
+    steps: [
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Speak to the goldsmith at his shop',
+        text: "Here, take a shovel. E at the mine's mouth, and mind the rocks - nothing digs through those.",
+        grant: { unlock: [SHOVEL] } },
+      { on: 'entered', match: { where: 'goldmine' }, goal: 'Go into the gold mine',
+        text: 'The mine is up the hill. Walk in at its mouth.' },
+      { on: 'dug', match: { kind: 'gem' }, goal: 'Dig up a gemstone',
+        text: 'Every spot of loose earth can hide a stone. Keep digging.' },
+      { on: 'sold', match: { what: 'gems' }, goal: 'Sell your gems to the goldsmith',
+        text: 'Bring them to my counter. I weigh fair.' },
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Talk to the goldsmith',
+        text: "A natural! Here - a dye the colour of good ore, for a miner's coat." },
+    ],
+    reward: { unlock: ['miners-ochre'] },
+  },
+  {
+    id: 'deeper-still',
+    line: 'mine',
+    title: 'Deeper Still',
+    text: "The best stones lie deep. Somewhere under that earth is a stair down - find it, and the next, and the next.",
+    steps: [
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Speak to the goldsmith',
+        text: "Three floors down the garnets start. You'll tire before that - the tavern sells a draught that puts the strength back in your arms." },
+      { on: 'bought', match: { what: 'potion' }, goal: 'Buy a stamina potion at the tavern',
+        text: 'Ask at the bar of the tavern. It costs, mind.' },
+      { on: 'descended', least: { floor: 3 }, goal: 'Reach the third floor of the mine',
+        text: "Nothing tells you where the stair is - you dig until you hit it. Come out and you start at the top again, so remember where it was." },
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Tell the goldsmith how deep you went',
+        text: 'Three floors! Then this garnet dye is yours - deep as the stones it comes from.' },
+    ],
+    reward: { unlock: ['deep-garnet'] },
+  },
+  {
+    id: 'heart-of-the-mountain',
+    line: 'mine',
+    title: 'The Heart of the Mountain',
+    text: "The old miners swore there was something at the very bottom, seven floors down. Not gold - older than gold. Bring it up and I'll tell you what it is.",
+    steps: [
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Speak to the goldsmith',
+        text: 'Go all the way down. Whatever lies on the last floor, bring it to me.' },
+      { on: 'found', match: { kind: 'key' }, goal: 'Find what lies on the bottom floor',
+        text: 'The bottom floor. Dig until there is no stair left to find.' },
+      { on: 'talked', match: { with: 'goldsmith' }, goal: 'Bring it to the goldsmith',
+        text: "A key. Old iron, and no lock on this island it fits. Keep it - one day we will find the door." },
+    ],
+    // The key's door is not built yet (the keeper's: "nader te bepalen"): a quest that wants it asks
+    // unlocks.js for MINE_KEY.
+    reward: { unlock: [MINE_KEY] },
+  },
   {
     id: 'treasure-of-the-day',
     title: 'Treasure of the Day',
@@ -156,32 +220,50 @@ export const CREW = [
   ] },
 ];
 export const CREW_IDS = CREW.map((c) => c.id);
+// Everybody a step may name in `with`: the pirate, the crew, and the goldsmith whose line the gold
+// mine is.
+export const GIVERS = ['pirate', ...CREW_IDS, 'goldsmith'];
 
 const questById = new Map(QUESTS.map((q) => [q.id, q]));
+// The quest lines (Plans/goudmijn-zoektocht.md): a quest's `line` says which story it is part of,
+// 'story' when it says nothing - the pirate's, then the Kraken's. Every line runs at once and on its
+// own: the gold mine's does not wait for the Kraken, and the Kraken does not wait for the mine. In
+// order of the table, the story first.
+export const STORY = 'story';
+export const lineOf = (q) => (q && q.line) || STORY;
 const ONCE = QUESTS.filter((q) => !q.repeat);
+export const LINES = [...new Set(ONCE.map(lineOf))];
+const onceOf = new Map(LINES.map((l) => [l, ONCE.filter((q) => lineOf(q) === l)]));
 // The repeatable quests: one step each (tests/quests.test.mjs holds that), counted whatever the
 // story is doing - or an island with no Salty Kraken would stop the chest of the day for good as
 // soon as the story waited on somebody in it.
 const REPEATS = QUESTS.filter((q) => q.repeat);
 const KNOWN_UNLOCK = new Set(UNLOCK_IDS);
 
-const emptyState = () => ({ v: QUEST_STATE_V, done: [], step: 0, repeats: {} });
+// `step` is the story's step, as it always was; `lines` the step of every other line, by name -
+// absent for a line on its first step, so a state with no other line in it reads as it did.
+const emptyState = () => ({ v: QUEST_STATE_V, done: [], step: 0, repeats: {}, lines: {} });
 
-// The quest a state is on: the first that is not finished, or the repeatable one once the
-// story is told. Null when there is nothing left at all.
+// The quest of `line` a state is on: its first that is not finished, or null once it is told.
+function lineQuest(done, line) {
+  return (onceOf.get(line) || []).find((q) => !done.includes(q.id)) || null;
+}
+// The quest a state is on: the story's first that is not finished, or the repeatable one once
+// the story is told. Null when there is nothing left at all. The story's alone: every other line
+// is asked by name (activeStep(state, line)).
 function activeOf(done) {
-  return QUESTS.find((q) => q.repeat || !done.includes(q.id)) || null;
+  return lineQuest(done, STORY) || REPEATS[0] || null;
 }
-// The story's quest a state is on - never a repeatable one - or null once it is all told.
-function storyOf(done) {
-  return ONCE.find((q) => !done.includes(q.id)) || null;
-}
+const stepOf = (s, line) => (line === STORY ? s.step : (s.lines[line] || 0));
 
 // Anything into a valid state, never throwing: a JSON string, an object from storage, or
 // junk. Empty for junk and for a state from a newer version (an older page must not read a
 // newer page's progress as its own and then save it back). Repaired for the rest: unknown
-// quests dropped, `done` cut back to an unbroken run from the start of the story, the step
-// held inside the active quest. Always a fresh object, so the caller may keep it.
+// quests dropped, `done` cut back to an unbroken run from the start of each line, every step
+// held inside its line's active quest. Always a fresh object, so the caller may keep it.
+// A page from before the lines reads a state with a mine in it as the story alone - the mine's
+// ids are no quests it knows, and `lines` no key it keeps - which costs that browser its mine
+// progress on a downgrade, and nothing else.
 export function parseQuestState(raw) {
   try {
     let s = raw;
@@ -190,9 +272,19 @@ export function parseQuestState(raw) {
     if (s.v !== QUEST_STATE_V) return emptyState();
     const said = new Set(Array.isArray(s.done) ? s.done : []);
     const done = [];
-    for (const q of ONCE) { if (!said.has(q.id)) break; done.push(q.id); }
-    const active = activeOf(done);
-    const step = Number.isInteger(s.step) && active && s.step >= 0 && s.step < active.steps.length ? s.step : 0;
+    for (const line of LINES) {
+      for (const q of onceOf.get(line)) { if (!said.has(q.id)) break; done.push(q.id); }
+    }
+    const fit = (n, q) => (Number.isInteger(n) && q && n >= 0 && n < q.steps.length ? n : 0);
+    const story = activeOf(done);
+    const step = fit(s.step, story);
+    const lines = {};
+    const said2 = s.lines && typeof s.lines === 'object' && !Array.isArray(s.lines) ? s.lines : {};
+    for (const line of LINES) {
+      if (line === STORY) continue;
+      const n = fit(said2[line], lineQuest(done, line));
+      if (n) lines[line] = n;
+    }
     const repeats = {};
     if (s.repeats && typeof s.repeats === 'object' && !Array.isArray(s.repeats)) {
       for (const q of QUESTS) {
@@ -200,30 +292,43 @@ export function parseQuestState(raw) {
         if (q.repeat && Number.isInteger(n) && n > 0 && n < 1e9) repeats[q.id] = n;
       }
     }
-    return { v: QUEST_STATE_V, done, step, repeats };
+    return { v: QUEST_STATE_V, done, step, repeats, lines };
   } catch {
     return emptyState();
   }
 }
 
-// The quest definition the player is on now, or null.
-export function activeQuest(state) {
+// The quest definition the player is on now in `line` (the story's, or the repeatable one once
+// it is told), or null.
+export function activeQuest(state, line = STORY) {
   const s = parseQuestState(state);
-  return activeOf(s.done);
+  return line === STORY ? activeOf(s.done) : lineQuest(s.done, line);
 }
 
 // `{ quest, step, index }` - the quest, its current step and that step's number - or null.
-export function activeStep(state) {
+export function activeStep(state, line = STORY) {
   const s = parseQuestState(state);
-  const quest = activeOf(s.done);
-  return quest ? { quest, step: quest.steps[s.step], index: s.step } : null;
+  const quest = line === STORY ? activeOf(s.done) : lineQuest(s.done, line);
+  if (!quest) return null;
+  const index = quest.repeat ? 0 : stepOf(s, line);
+  return { quest, step: quest.steps[index], index };
 }
 
-// The quests finished, in the order of the story (the log's "done" list), and how many times
+// Every line's current step, the story first: `[{ line, quest, step, index }]`, a told line left out.
+export function activeSteps(state) {
+  const out = [];
+  for (const line of LINES) {
+    const a = activeStep(state, line);
+    if (a) out.push({ line, ...a });
+  }
+  return out;
+}
+
+// The quests finished, in the order of the table (the log's "done" list), and how many times
 // each repeatable one has been.
 export function completedQuests(state) {
   const s = parseQuestState(state);
-  return s.done.map((id) => questById.get(id));
+  return QUESTS.filter((q) => s.done.includes(q.id));
 }
 export function timesDone(state, questId) {
   return parseQuestState(state).repeats[questId] || 0;
@@ -232,8 +337,8 @@ export function timesDone(state, questId) {
 const unlocksIn = (g) => (g && Array.isArray(g.unlock) ? g.unlock : []);
 
 // Every id this progress has unlocked, in no particular order: the grants of finished steps
-// (of the active quest, the ones before the current step) and the rewards of finished quests.
-// Derived every time, so it can only say what the state supports.
+// (of each line's active quest, the ones before its current step) and the rewards of finished
+// quests. Derived every time, so it can only say what the state supports.
 export function unlocksOf(state) {
   const s = parseQuestState(state);
   const out = new Set();
@@ -242,16 +347,24 @@ export function unlocksOf(state) {
     for (const st of q.steps) for (const u of unlocksIn(st.grant)) out.add(u);
     for (const u of unlocksIn(q.reward)) out.add(u);
   }
-  const q = activeOf(s.done);
-  if (q) for (let i = 0; i < s.step; i++) for (const u of unlocksIn(q.steps[i].grant)) out.add(u);
+  for (const line of LINES) {
+    const q = line === STORY ? activeOf(s.done) : lineQuest(s.done, line);
+    if (q && !q.repeat) for (let i = 0; i < stepOf(s, line); i++) for (const u of unlocksIn(q.steps[i].grant)) out.add(u);
+  }
   return [...out].filter((u) => KNOWN_UNLOCK.has(u));
 }
 
-// Who has something for the player right now - the `with` of a step waiting on a word - or null:
-// what the exclamation mark over a head asks, outside at the chest and inside the Kraken.
+const talkOf = (step) => (step && step.on === 'talked' && step.match && step.match.with ? step.match.with : null);
+
+// Who has something for the player right now in the story - the `with` of a step waiting on a
+// word - or null: what the exclamation mark over a head asks, outside at the chest and inside the
+// Kraken. `hasBusiness(state, who)` asks every line: the goldsmith's mark is the mine's.
 export function businessWith(state) {
   const cur = activeStep(state);
-  return cur && cur.step.on === 'talked' && cur.step.match && cur.step.match.with ? cur.step.match.with : null;
+  return cur ? talkOf(cur.step) : null;
+}
+export function hasBusiness(state, who) {
+  return activeSteps(state).some((a) => talkOf(a.step) === who);
 }
 export function pirateHasBusiness(state) {
   return businessWith(state) === 'pirate';
@@ -278,48 +391,63 @@ const matches = (step, ev, after = null) => {
 };
 
 // Feed one event to a state. Returns `{ state, gained }`; the state is a new object and the
-// input is never touched. An event that is not what the current step waits for changes
-// nothing - saying it early is not remembered, and saying it late is not needed - except that a
-// repeatable quest counts whenever its step is done, whatever the story is waiting for.
+// input is never touched. An event that is not what a current step waits for changes nothing -
+// saying it early is not remembered, and saying it late is not needed - except that a
+// repeatable quest counts whenever its step is done, whatever the story is waiting for. Every
+// line is offered the event, so one event may move two of them.
 //
 //   gained.unlocks     ids newly unlocked by this event (the toast, and the tile to open)
 //   gained.cards       maps to hand over ('first-hunt'), from a step's `grant.card`
 //   gained.stepDone    { quest, index } of the step this event completed, or null; a repeatable
-//                      that was all this event moved reads as its step 0 done
-//   gained.questDone   id of the quest it finished, or null (a repeatable, likewise)
+//                      that was all this event moved reads as its step 0 done. The first of
+//                      `gained.steps`, which has every one (story first).
+//   gained.questDone   id of the quest it finished, or null (a repeatable, likewise); the first
+//                      of `gained.quests`
 //   gained.repeated    ids of the repeatable quests this event counted once more
-//   gained.next        the quest that is active now, or null
+//   gained.next        the story's quest that is active now, or null
 export function advance(state, event) {
   const before = parseQuestState(state);
-  const gained = { unlocks: [], cards: [], stepDone: null, questDone: null, repeated: [], next: null };
+  const gained = {
+    unlocks: [], cards: [], stepDone: null, questDone: null, steps: [], quests: [], repeated: [], next: null,
+  };
   const ev = typeof event === 'string' ? { type: event } : event;
-  const quest = activeOf(before.done);
-  gained.next = quest ? quest.id : null;
-  if (!quest || !ev || typeof ev !== 'object' || !QUEST_EVENTS.includes(ev.type)) return { state: before, gained };
+  const story = activeOf(before.done);
+  gained.next = story ? story.id : null;
+  if (!ev || typeof ev !== 'object' || !QUEST_EVENTS.includes(ev.type)) return { state: before, gained };
 
-  const after = { ...before, done: [...before.done], repeats: { ...before.repeats } };
+  const after = { ...before, done: [...before.done], repeats: { ...before.repeats }, lines: { ...before.lines } };
   for (const q of REPEATS) {
     if (!matches(q.steps[0], ev)) continue;
     after.repeats[q.id] = (after.repeats[q.id] || 0) + 1;
     gained.repeated.push(q.id);
   }
-  const story = storyOf(before.done);
-  const step = story ? story.steps[before.step] : null;
-  if (step && matches(step, ev, after)) {
-    after.step = before.step + 1;
-    gained.stepDone = { quest: story.id, index: before.step };
+  for (const line of LINES) {
+    const q = lineQuest(before.done, line);
+    if (!q) continue;
+    const at = stepOf(before, line);
+    const step = q.steps[at];
+    if (!matches(step, ev, after)) continue;
+    let next = at + 1;
+    gained.steps.push({ quest: q.id, index: at });
     if (step.grant && step.grant.card) gained.cards.push(step.grant.card);
-    if (after.step >= story.steps.length) {
-      after.step = 0;
-      gained.questDone = story.id;
-      after.done.push(story.id);
+    if (next >= q.steps.length) {
+      next = 0;
+      gained.quests.push(q.id);
+      after.done.push(q.id);
     }
-  } else if (gained.repeated.length) {
-    gained.stepDone = { quest: gained.repeated[0], index: 0 };
-    gained.questDone = gained.repeated[0];
-  } else {
-    return { state: before, gained };
+    if (line === STORY) after.step = next;
+    else if (next) after.lines[line] = next;
+    else delete after.lines[line];
   }
+  if (!gained.steps.length && !gained.repeated.length) return { state: before, gained };
+  if (!gained.steps.length) {
+    gained.steps.push({ quest: gained.repeated[0], index: 0 });
+    gained.quests.push(gained.repeated[0]);
+  }
+  gained.stepDone = gained.steps[0];
+  gained.questDone = gained.quests[0] || null;
+  // Kept in the table's order whatever order the lines finished in, as parseQuestState would.
+  after.done = QUESTS.filter((q) => after.done.includes(q.id)).map((q) => q.id);
   const was = new Set(unlocksOf(before));
   gained.unlocks = unlocksOf(after).filter((u) => !was.has(u));
   const next = activeOf(after.done);
