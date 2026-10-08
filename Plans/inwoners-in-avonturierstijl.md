@@ -143,6 +143,59 @@ op Tiemens machine, niet in een cloudsessie.
 5. **Opruimen**: `villager-mesh.js`/`RESIDENT_PIECES`/`RESIDENT_PIVOTS` weg zodra niets ze meer leest;
    CLAUDE.md bijwerken.
 
+## Stand
+
+### Fase 1 (8 oktober 2026): de bake
+
+`scripts/build-residents.py` → `web/js/residents-mesh.js` + `assets/residents/residents.blend`, renders in
+`assets/residents/renders/` (`scripts/preview-residents.py`, ook de loopende rij, geskind met de
+geëxporteerde gewichten). Zeventien gewrichten, twee invloeden per hoek. Per lichaam: de altijd
+zichtbare huid (hoofd, hals, handen, onderarmen, met de ogen erin) en losse stukken blote huid met een
+`shows`-lijst (`<onderstuk>/<schoeisel>`); hemd, kniebroek, laarzen, bretels uit het kit, en zelf
+gemodelleerd rok, jurk, vest, schort, sjaal en klompen; vier kapsels per lichaam plus kaal (alleen
+wenkbrauwen, die in elk haarstuk zitten); de zes oude hoeden opnieuw gepast. Aangekleed 1.870-2.380
+driehoeken; het budget (3.000 per figuur, per stuk een plafond) staat in `model-rules.mjs`
+(`RESIDENT_FIGURE`, `RESIDENT_BUDGETS`, `checkResidents`), en `tests/models.test.mjs` weigert een te
+zware bake.
+
+### Fase 2 (8 oktober 2026): de shader en één lijf
+
+- `web/js/resident-skin.js`: geometrie per stuk, `skinnedMaterial` (een kloon van het crowd-materiaal
+  die diens hook draait en `-skin` aan de sleutel hangt, met een eigen diepte-tweeling; `buildings.js`
+  laat zijn fade-schakelaar ook die klonen opnieuw compileren via `userData.followers`), de
+  pose-textuur en `poseJoints`.
+- **Matrices in de textuur, niet de hoeken.** Een gewricht draait om tot drie assen (een drinkarm
+  zwaait en draait in, het lijf leunt, rolt en draait), dus de keten in de shader opbouwen is per
+  vertex vijf niveaus van drie rotaties: zo'n zestig sin/cos, voor beide invloeden, in beide passes.
+  Op de CPU zijn het zeventien kleine matrixproducten per figuur (de oude crowd deed er elf) en in de
+  shader zes texel-fetches per vertex. Het plan noemde dit al als alternatief.
+- Eén pose-rij per figuur, in een batch die net als de andere gepakt blijft (getekenden vooraan), dus
+  de textuur groeit in machten van twee en gaat alleen omhoog als er iemand getekend wordt. Elke
+  instance draagt `aFigure`; bij een ruil verhuist die mee met de matrix.
+- `createFigures(..., { skinned })`, standaard uit; aan met `?skinned` of `promptholm.debug.skinned`
+  in localStorage. Pas als fase 3 en 4 klaar zijn wordt het de standaard.
+- Houdingen: de bestaande hoeken op heup- en schoudergewricht (dus zitten, werken, dansen, drinken,
+  slaan doen wat ze deden), en lopend nu met knie en elleboog (`KNEE_*`, `ELBOW_*`). Gereedschap,
+  zwaard, fakkel en bier hangen aan het polsgewricht. De kruiwagen-handvatten zijn nog op de oude hand
+  gemeten.
+- Kleding tot de wardrobe-stream er is: de oude look op de kit-kleding (hemd = tunic, broek of rok =
+  trim, laarzen), vrouwen lang haar, mannen een scheiding.
+
+**Gemeten** op een kopie van BierRum (Hoogezand staat niet op deze machine): 141 bewoners en 120
+leerlingen, de noclip-camera vast boven het dorp, `__renderStats.breakdown()`, oud en nieuw om en om.
+
+| | figuren | kleur: calls / driehoeken | schaduw: calls / driehoeken | per figuur, beide passes |
+|---|---|---|---|---|
+| oud | 204 | 36 / 554k | 17 / 358k | ~4.470 |
+| skinned | 204 | 31 / 441k | 29 / 441k | ~4.330 |
+| skinned (tweede keer) | 186 | 30 / 402k | 28 / 402k | ~4.320 |
+
+Neutraal tot iets beter, zoals voorspeld. De schaduwpass is duurder dan voorheen (elk stuk werpt
+schaduw, waar het oude lijf zijn trim en gezicht uitsloot), de kleurpass goedkoper. Draw calls: 30-31
+in de kleurpass bij de gewone kleding van nu, tegen 36. CPU (`draw()` onder Node, 300 figuren, de helft
+lopend): oud 0,34-0,40 ms, skinned 0,50 ms per frame; `poseJoints` is daarvan ~0,15 ms. De tijd per frame
+in de browser was in het verborgen paneel niet eerlijk te meten.
+
 ## Besluiten
 
 - GPU-skinning per instance, twee invloeden per vertex, hoeken in een gedeelde DataTexture.
