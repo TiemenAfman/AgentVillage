@@ -114,7 +114,7 @@ export const NPC_PAD = 1;
 // quality governor turns). See syncImps below.
 export function createCrowdView({
   scene, material, region, buildings = [], player = null, eye = null, imp: makeImp = null, impLimit = impBudget,
-  range = 0, fading = false,
+  range = 0, fading = false, skinned = null,
 } = {}) {
   // A hostile island's people are armed (lib/hostility.mjs is what makes them chase you;
   // this is only what makes it look like they mean it). Read off the bundle the region
@@ -128,7 +128,8 @@ export function createCrowdView({
     // The volcano's people (every islander's Codex settlers, and its guards) keep the look they
     // have: the keeper's choice, 8 October 2026 (Plans/inwoners-in-avonturierstijl.md). The island
     // that is hostile is the volcano.
-    skinned: armed ? false : skinnedWanted(),
+    // `skinned` names one for a test that is about the other.
+    skinned: skinned ?? (armed ? false : skinnedWanted()),
     bounds: Number.isFinite(region.half)
       ? { x: region.origin[0], z: region.origin[1], r: region.half * Math.SQRT2 + 32 } : null,
   });

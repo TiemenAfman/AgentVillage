@@ -35,15 +35,17 @@ import { residentPose, armTo, barrowGrip } from './resident-poses.js';
 
 export { settlerLook, styleLook, kindOf, styleOf };
 
-// The residents in the Wanderer's style (Plans/inwoners-in-avonturierstijl.md) are drawn only
-// where somebody asked for them - `?skinned`, or Settings' debug flag `promptholm.debug.skinned` -
-// until every pose, garment and tool has moved over (fases 3 and 4). A function so the tests and
-// the rooms can ask for either crowd by `createFigures(..., { skinned })`.
+// The residents are drawn in the Wanderer's style (Plans/inwoners-in-avonturierstijl.md) unless
+// somebody asks for the old body back: `?skinned=0` for one page, or `promptholm.debug.skinned` set
+// to '0' in this browser. The keeper's choice, 8 October 2026, for 0.11.0. A function so the tests
+// and the rooms can still ask for either crowd by `createFigures(..., { skinned })` - the volcano
+// keeps the old one whatever this says (crowd-view.js).
 export function skinnedWanted() {
   try {
-    if (globalThis.location && /[?&]skinned\b/.test(globalThis.location.search || '')) return true;
-    return globalThis.localStorage?.getItem('promptholm.debug.skinned') === '1';
-  } catch { return false; }
+    const q = globalThis.location && /[?&]skinned=([^&]*)/.exec(globalThis.location.search || '');
+    if (q) return q[1] !== '0';
+    return globalThis.localStorage?.getItem('promptholm.debug.skinned') !== '0';
+  } catch { return true; }
 }
 // What the skinned body holds, at its size. The tools, the sword, the torch and the pint were made
 // for the old body's fist - a ball half a head across on a body three heads tall - and in this
@@ -153,9 +155,16 @@ const HEAD_Y = RESIDENT_HEAD_Y;
 // conversation camera in facetoface.js - asks here rather than adding a guess to a plot
 // centre, which is how you end up addressing somebody's hat or their boots. Called with
 // nothing it gives the standard figure, which is the one walk.js and the interiors wear.
-export function eyeHeight({ look = null, baseScale = 1 } = {}) {
+// A skinned figure (one with `sex`, set by enrolSkinned) has its eyes where its own bake has them:
+// the neck stretches with the body's height and the head above it keeps its own size, as
+// resident-skin.js poseJoints draws it.
+export function eyeHeight({ look = null, baseScale = 1, sex = null } = {}) {
   const height = look && look.height ? look.height : 1;
   const head = look && look.head ? look.head : 1;
+  if (sex) {
+    const rig = residentRig(sex), hy = rig.points[JOINT.head][1];
+    return (hy * height + (rig.eyeY - hy) * head) * baseScale;
+  }
   return (HEAD_Y * height + RESIDENT_EYE_OFFSET * head) * baseScale;
 }
 

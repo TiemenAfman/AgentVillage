@@ -44,7 +44,7 @@ const KINDS = [['woman', 'skirt'], ['woman', 'trousers'], ['man', 'trousers']];
 
 function crowd({ armed = false } = {}) {
   const scene = new THREE.Scene();
-  const view = createFigures(scene, new THREE.MeshBasicMaterial(), { armed });
+  const view = createFigures(scene, new THREE.MeshBasicMaterial(), { armed, skinned: false });
   const [torso, , , , , , , , , head] = scene.children;
   const skirts = scene.getObjectByName('resident-skirts');
   const hair = scene.getObjectByName('resident-woman-hair');

@@ -38,7 +38,7 @@ function parked(scene) {
 // the id gives them, standing in a row where nothing about them moves between frames.
 function crowd(n = 30) {
   const scene = new THREE.Scene();
-  const view = createFigures(scene, new THREE.MeshBasicMaterial());
+  const view = createFigures(scene, new THREE.MeshBasicMaterial(), { skinned: false });
   const [torso, , , , , , , , , head] = scene.children;
   const skirts = scene.getObjectByName('resident-skirts');
   const hair = scene.getObjectByName('resident-woman-hair');
@@ -184,7 +184,7 @@ test('past NPC Distance a settler is out of every count, and back in when they c
   const region = { id: 'rangeholm', origin: [0, 0], half: 32, worldHeight: () => 0 };
   const buildings = ['house:a', 'house:b', 'house:c'].map((id) => ({ id, kind: 'house', name: id, style: 'opus' }));
   let eye = { x: 0, y: 40, z: 0 };
-  const view = createCrowdView({ scene, material: new THREE.MeshBasicMaterial(), region, buildings, eye: () => eye, range: 10 });
+  const view = createCrowdView({ scene, material: new THREE.MeshBasicMaterial(), region, buildings, eye: () => eye, range: 10, skinned: false });
   view.roster(buildings.map((b) => b.id));
   view.apply(new Map([[0, { x: 0, z: 0, anim: 'still' }], [1, { x: 5, z: 0, anim: 'still' }], [2, { x: 30, z: 0, anim: 'still' }]]), 1000);
   const torso = scene.children[0];

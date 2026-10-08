@@ -128,7 +128,9 @@ test('in the hall the horse has room, the floor is as full as ever, and it is in
   const parts = (count) => {
     let n = 0;
     scene.traverse((o) => {
-      if (!o.isInstancedMesh || o.material !== mat) return;
+      // The skinned crowd draws with a clone of the material that shares its userData
+      // (resident-skin.js skinnedMaterial).
+      if (!o.isInstancedMesh || (o.material !== mat && o.material.userData !== mat.userData)) return;
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m);
         if (Math.abs(m.determinant()) < 1e-9) continue;          // a slot drawn as nothing

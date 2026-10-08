@@ -150,15 +150,22 @@ test('the crew sit on their seats, the mark hangs over whoever has business, and
   const show = def.show({ scene, material: material(), camera });
   show.enter();
   show.update(1 / 60, { business: 'captain' }, { x: 0, y: FLOOR, z: 1.6 });
-  const torso = scene.children.find((m) => m.isInstancedMesh);
-  assert.equal(torso.count, CREW.length, 'one body per pirate');
+  // The bodies: the skinned crowd's skin per sex (the default since 0.11.0), or the old torso.
+  const skins = scene.children.filter((m) => m.isInstancedMesh && /-skin$/.test(m.name));
+  const bodies = skins.length ? skins : [scene.children.find((m) => m.isInstancedMesh)];
+  assert.equal(bodies.reduce((n, m) => n + m.count, 0), CREW.length, 'one body per pirate');
   const m4 = new THREE.Matrix4(), at = new THREE.Vector3();
   const floors = def.talkers.map((t) => t.floor);
-  for (let i = 0; i < torso.count; i++) {
-    torso.getMatrixAt(i, m4);
-    at.setFromMatrixPosition(m4);
-    assert.ok(floors.some((f) => at.y > f - 0.05 && at.y < f + 0.12), `a body stands at ${at.y.toFixed(3)}, on no pirate's floor`);
-    for (const b of def.blockers) assert.ok(!(inside(b, at.x, at.z, 0) && atHeight(b, at.y)), `a body in a blocker at ${b.x},${b.z}`);
+  // Where a body is placed is its feet, or for a sitter the feet the legs would have standing: the
+  // skinned body's hips are higher than the old one's, so it is placed lower to put them on the seat.
+  const below = skins.length ? 0.15 : 0.05;
+  for (const body of bodies) {
+    for (let i = 0; i < body.count; i++) {
+      body.getMatrixAt(i, m4);
+      at.setFromMatrixPosition(m4);
+      assert.ok(floors.some((f) => at.y > f - below && at.y < f + 0.12), `a body stands at ${at.y.toFixed(3)}, on no pirate's floor`);
+      for (const b of def.blockers) assert.ok(!(inside(b, at.x, at.z, 0) && atHeight(b, at.y)), `a body in a blocker at ${b.x},${b.z}`);
+    }
   }
   const mark = show.mark();
   assert.ok(mark && mark.sprite.visible, 'the mark is up');

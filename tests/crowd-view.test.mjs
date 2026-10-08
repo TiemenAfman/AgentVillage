@@ -323,8 +323,12 @@ test('a hostile island arms its people with a sword and a torch, two meshes for 
     keep.inst = scene.children.filter((c) => c.isInstancedMesh);
     return keep.inst;
   };
+  // The hostile island is the volcano, whose people keep the old body (Plans/inwoners-in-
+  // avonturierstijl.md), so the two crowds are not the same meshes: only the weapons are compared.
   const friendly = meshes(false), hostile = meshes(true);
-  assert.equal(hostile.length, friendly.length + 2);
+  for (const name of ['resident-swords', 'resident-torches']) {
+    assert.ok(!friendly.some((m) => m.name === name), `a friendly island carries ${name}`);
+  }
   // Every resident drawn with free hands gets one of each: the two extra meshes count exactly
   // as far as the torso.
   // Clothing variants may add batches; the weapon identities do not depend on order.
