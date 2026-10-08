@@ -976,7 +976,10 @@ this frame - it used to land on any floor under them, eight units down from the 
 body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
 Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
 `nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
-**A hull is a reference plane** and whoever is on one stands on *that*: a point of her own frame
+**A hull's swell is the craft's** (`swell` in shared/crafts.mjs, `swellOf` in boat.js, on the sea's clock:
+main.js `frameSeconds`): the rowing boat bobs as sailIn always did, the galleon only stirs lying still and rocks
+more with the way she makes, which `bob` works out from where she was placed between two clocks
+(`tests/boat.test.mjs` bounds it). **A hull is a reference plane** and whoever is on one stands on *that*: a point of her own frame
 read off the transform she is drawn with this frame (`hullPointOf` in boat.js; `poseHull` in main.js
 places and swells her at the frame's clock first, and the fleet loop repeats it, which is
 idempotent), not `toWorld` plus a height - a pitching hull moves her deck sideways as well as up,

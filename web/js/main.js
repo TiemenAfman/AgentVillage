@@ -7968,7 +7968,10 @@ function seeThroughFrame(dt) {
 function frame(nowMs) {
   const dt = Math.min(0.05, (nowMs - last) / 1000);
   last = nowMs;
-  frameSeconds = nowMs / 1000;
+  // The sea's clock, not this page's: every screen then has a hull at the top of the same swell at
+  // the same moment (and a ship's rocking follows her way made between two of these, boat.js bob).
+  // Not timeNow(): a chronicle lens would stop the sea.
+  frameSeconds = (Date.now() + (state.seaSkewMs || 0)) / 1000;
   if (renderStats) renderStats.begin(nowMs);
 
   if (state.chronicle.playing) advanceChronicle(dt);
@@ -8180,7 +8183,7 @@ function frame(nowMs) {
     // and took the socket down under the pilot - see `hull` in net.js.
     if ((b === mine || b === running) && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
     b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(nowMs / 1000);
+    b.craft.bob(frameSeconds);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
   }
   // While you are sailing, whether there is anywhere to step out changes with every metre,
