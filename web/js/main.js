@@ -7566,7 +7566,10 @@ function scheduleEvent(e) {
 // island sees them arrive, instead of only this screen.
 async function walkIn(rec) {
   await popIn(rec);
-  state.ui.toast(`<b>${rec.spec.name}</b> arrived and pitched a tent.`);
+  // Only somebody who came to live here pitches a tent. A civic that appears - the treasure statue
+  // set down on the square, a milestone's building - has words of its own, and said "The treasure
+  // statue arrived and pitched a tent" (Plans/speeltest-quests.md).
+  if (rec.spec.kind !== 'civic') state.ui.toast(`<b>${rec.spec.name}</b> arrived and pitched a tent.`);
 }
 
 async function sailIn(rec, district) {
