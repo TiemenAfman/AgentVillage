@@ -74,9 +74,21 @@ zijn van het oude eiland gebleven. Recept:
    `b.craft.object.visible = false` voor elke `__state.boats` en `group.visible = false` op elk record
    `civic:ship*`. Voor `interface` zonder noclip, camera via `__controls`, en `#right-column, #toasts`
    verborgen: daar staan de echte sessietitels van de keeper.
+   **Geen namen in beeld** (zelfde dag, op verzoek van Tiemen: de wijknamen zijn zijn echte repo's, en
+   één is werk). Vóór elk shot: een stylesheet met `.hamlet-label { display: none !important }` (de
+   namen boven de gehuchten vanuit de lucht), in de scene elke `Sprite` met een canvas-map onzichtbaar
+   (YOU) en onder elke groep met `userData.id` = `district:*` elke mesh met een `map` (het beschreven
+   vlak van de boogborden over de ingangen; het bord zelf blijft kaal staan). Dat moet `window.__scene
+   = scene` bij de patch op `main.js`. De schepen op de rede zijn `/^civic:ship(:\d+)?$/` - niet
+   `civic:ship*`, dat neemt de werf mee. De kwaliteitsregelaar zet in headless Chrome de resolutie
+   omlaag (canvas 950 breed, wazig): `localStorage['promptholm.quality.auto'] = '0'` en herladen.
+   Zonder `?hour` zegt de klokchip in `interface` gewoon de echte tijd, zonder "preview".
 3. Poses (lokale coördinaten): overzicht van (0,140,150) naar (0,0,-15); stad en nacht van (-4,21,40) naar
    (-10,0,-6), zodat de Salty Kraken niet achter de titelkaart valt; burcht (-18,12,32) naar (-6,2,-40);
-   gehucht (-28,26,-28) naar (-4,0,-60); haven (18,32,-78) naar (0,0,-112).
+   gehucht (-28,26,-28) naar (-4,0,-60); haven (18,32,-78) naar (0,0,-112); `interface` met
+   `__controls.target` (0,0,-15) en `__camera.position` (0,148,159). Opnieuw zonder namen gemaakt:
+   `interface`, `town`, `night`, `castle`, `hamlet` en `og.jpg`; `aerial` en `harbour` bleven (geen
+   leesbaar bord: van zo hoog is een boogbord een paar pixels, en noclip toont de luchtnamen niet).
 4. WebP met Chrome's eigen encoder (`canvas.toDataURL('image/webp', 0.62)` op 1600, 0.7 op 800,
    JPEG 0.72 voor `og.jpg`).
 
