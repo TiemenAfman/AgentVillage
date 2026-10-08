@@ -109,7 +109,7 @@ export const SWING_MS = 450;
 // the sea being joined may want a different one - or none.
 export function createNet({ peers, walk, url, join = null, onStatus = () => {}, onPanels = () => {}, onSaid = () => {},
   onBoat = () => {}, onWorld = () => {}, onRefused = () => {}, onCrowd = () => {}, onWeather = () => {}, onEvicted = () => {},
-  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, onRespawn = () => {}, onCannon = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
+  onWelcome = () => {}, onAgent = () => {}, onHerd = () => {}, onBreath = () => {}, onRespawn = () => {}, onCannon = () => {}, onHarpoon = () => {}, name = null, look = null, frame = () => [0, 0], clock = () => performance.now(),
   quietMs = QUIET_MS } = {}) {
   const addressOf = typeof url === 'function' ? url : () => url;
   const joinWith = typeof join === 'function' ? join : () => join;
@@ -276,6 +276,14 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
           if (Array.isArray(m.o)) m.o = [m.o[0] - hx, m.o[1], m.o[2] - hz];
           if (Array.isArray(m.at)) m.at = [m.at[0] - hx, m.at[1], m.at[2] - hz];
           onCannon(m);
+          break;
+        }
+        // A harpoon's line on somebody's ship, or our own body hooked or let go (Plans/harpoen.md): the
+        // bolt's position comes into our frame here.
+        case 'harpoon': {
+          const [hx, hz] = homeAt();
+          if (Array.isArray(m.at)) m.at = [m.at[0] - hx, m.at[1], m.at[2] - hz];
+          onHarpoon(m);
           break;
         }
         // Somebody captured or drowned (lib/players.mjs evict): their body goes down where we
@@ -596,6 +604,22 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
       if (!walking || !berthKnown()) return false;
       const [wx, wz] = outgoing(o[0], o[2]);
       return send({ t: 'cannon', a: 'fire', b, i, o: [wx, o[1], wz], v, self: !!self, n });
+    },
+    // A harpoon (Plans/harpoen.md): a line's state for everybody else to draw (`at` the bolt, world
+    // frame on the wire), a player our line struck, a player let go of, and a loose boat drawn on a
+    // line from the ship `by` we are aboard. Nothing is sent before the berth is known.
+    harpoonLine({ b, i, s, at, L, k }) {
+      if (!walking || !berthKnown()) return false;
+      if (s !== 'out') return send({ t: 'harpoon', a: 'line', b, i, s: 'off' });
+      const [wx, wz] = outgoing(at[0], at[2]);
+      return send({ t: 'harpoon', a: 'line', b, i, s, at: [wx, at[1], wz], L, k });
+    },
+    harpoonHook({ b, i, who }) { return walking && send({ t: 'harpoon', a: 'hook', b, i, who }); },
+    harpoonFree({ b, who }) { return walking && send({ t: 'harpoon', a: 'free', b, who }); },
+    towBoat(id, by, x, z, yaw) {
+      if (!walking || !berthKnown()) return false;
+      const [wx, wz] = outgoing(x, z);
+      return send({ t: 'boat', a: 'tow', id, by, x: wx, z: wz, yaw });
     },
     // Our look, when the wardrobe changes it - and kept for the next connect.
     setLook(spec) { look = spec || null; if (look) send({ t: 'look', ...look }); },

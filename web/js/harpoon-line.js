@@ -147,6 +147,16 @@ export function createHarpoonLine({ material = null, world = {} } = {}) {
 
   // The hooked end, for whoever does the pulling: { kind, id, x, y, z } or null.
   line.hooked = () => (line.state === 'hooked' ? { kind: line.hook.kind, id: line.hook.id, x: bolt.x, y: bolt.y, z: bolt.z } : null);
+  // Somebody else's line (harpoon-play.js remote lines, fase B): only drawn, from `a` to `b`, `length`
+  // long - no flight and no reel here, their page does both and the sea says where the bolt is.
+  line.show = (a, b, length) => {
+    Object.assign(from, { x: a.x, y: a.y, z: a.z });
+    Object.assign(bolt, { x: b.x, y: b.y, z: b.z, vx: 0, vy: 0, vz: 0 });
+    line.state = 'shown';
+    line.L = length;
+    draw();
+  };
+  line.hide = () => { line.state = 'stowed'; mesh.visible = false; };
   // All the line is in that the reel will take: what it holds is as close as it comes.
   line.reeledIn = () => line.state === 'hooked' && line.L <= line.minL + 1e-9;
   line.mesh = mesh;

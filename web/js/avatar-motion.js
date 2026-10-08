@@ -15,6 +15,7 @@ import { DECK_Y } from 'shared/hull.mjs';
 import { createBoat } from './boat.js';
 import { climbWay, climbWayDown, climbAlong, onWay } from './ladder-way.js';
 import { pathAt } from 'shared/deck.mjs';
+import { ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -239,7 +240,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':mode==='rope'?'Touwlopen · over een strakke harpoenlijn: voet voor voet, armen opzij':mode==='zip'?'Zipline · aan een steile harpoenlijn naar beneden glijden, hangend aan de handen (Mixamo Hanging Idle)':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 const syncHorseControls=()=>{
   document.querySelector('[data-gait="horse"]').textContent='Paard · '+HORSE_GAITS[horseGait][0];
@@ -286,7 +287,7 @@ function tick(dt){
   // Each body at its own speed (avatar-gait.js GAITS), so they draw apart: the camera follows
   // the one looked at closely, else the two's middle.
   for(const f of figures){
-    const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:0;
+    const speed=mode==='sprint'?f.rig.speeds.sprint:mode==='run'?f.rig.speeds.run:mode==='walk'?f.rig.speeds.walk:mode==='swim'?SWIM_SPEED:mode==='rope'?ROPE_WALK:0;
     // A dig is switched on and off with the button, as walk.js does with E at a mark.
     if((mode==='dig')!==!!f.rig.digging())f.rig.dig(mode==='dig');
     // Only what the climb put on her back comes off when the climb ends; Beeld optillen keeps hers.
@@ -326,6 +327,15 @@ function tick(dt){
     // Fired out of a gun (Plans/kanonnen.md): a stretch of the arc walk.js launchSelf flies, over and
     // over - tucked (the rig's crouch) and head over heels about the middle of the body at walk.js's
     // LAUNCH_SPIN, as its afterMove turns a launched body.
+    // On a harpoon's line (Plans/harpoen.md): walked flat at walk.js's ROPE_WALK, arms out; or hanging
+    // from it sliding down (Mixamo's Hanging Idle), the feet ROPE_HANG under a line drawn over the head.
+    if(mode==='rope'||mode==='zip'){
+      f.stand.rotation.set(0,0,0);
+      const zip=mode==='zip';
+      f.stand.position.set(f.x,zip?.55-ROPE_HANG:0,f.distance);
+      f.rig.update({moving:!zip,grounded:true,distance:zip?0:step,phase:time,roping:mode==='rope'?'walk':'zip',climbing:zip?{rise:0}:null},dt);
+      continue;
+    }
     if(mode==='cannon'){
       const T=1.6, t=time%T, mid=f.rig.hipY||.25;
       f.stand.rotation.set(t*11,0,0);

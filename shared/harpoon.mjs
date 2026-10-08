@@ -27,6 +27,10 @@ export const REEL_MIN = 1.2;
 export const REEL_K = 6;
 // How heavy each thing is to the line. Only the ratio matters: the light end comes, the heavy stays.
 export const MASS = Object.freeze({ statue: 1, chest: 1, player: 2, rowboat: 6, galleon: 60, land: Infinity });
+// On a taut line (walk.js stepRope): how fast it is walked, carefully, a foot before the other, and how
+// far the feet hang under it while it is slid down. Here so the motion workbench draws the same.
+export const ROPE_WALK = 0.9;
+export const ROPE_HANG = 0.42;
 // The points a line is drawn and walked through.
 export const ROPE_SEGS = 16;
 // The rise over the run past which a taut line is slid down, not walked: about 20 degrees.

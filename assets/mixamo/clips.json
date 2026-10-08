@@ -12,5 +12,6 @@
   "drown": "floating-flailing.fbx",
   "climb": "climbing-ladder.fbx",
   "climbOn": "start-climbing-ladder.fbx",
-  "climbTop": "climbing-to-top.fbx"
+  "climbTop": "climbing-to-top.fbx",
+  "hang": "hanging-idle.fbx"
 }

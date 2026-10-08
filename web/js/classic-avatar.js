@@ -247,6 +247,10 @@ const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop
 // hands slid up the ropes.
 export const CLIMB_CLIP_LIFT = { leftArm: -0.13, rightArm: -0.195 };
 const liftQ = new THREE.Quaternion(), liftAxis = new THREE.Vector3(1, 0, 0);
+// Out along a harpoon's line walked flat (walk.js state.rope 'walk', Plans/harpoen.md): both arms held
+// out to the sides over whatever the gait does with them, ROPE_SPREAD radians about the body's forward
+// axis. No balance clip on Mixamo's list yet; this is the pose until there is one.
+const ROPE_SPREAD = 1.25, spreadAxis = new THREE.Vector3(0, 0, 1);
 function blendPose(out, a, b, t) {
   for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
   out.drop = a.drop + (b.drop - a.drop) * t;
@@ -1289,6 +1293,9 @@ function buildRig(spec, material) {
   let ladderT = 0;
   const LADDER_EASE = 0.4;
   const poseClimb = clipPose();
+  // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging Idle, `hang`).
+  const poseHang = clipPose();
+  let hangT = 0, ropeArms = 0;
   // Onto a ladder and off it the body changes hands in one frame: from the walk's pose (or the
   // idle's, the swim's) to the climb's and back, and the Adventurer's clip from one Mixamo pose to
   // another - the keeper's recording of 8 Oct 2026 had him stood on the landing one frame and
@@ -1347,6 +1354,17 @@ function buildRig(spec, material) {
       if (!C || clipMix < 1e-3) return;
       // The fall's hips come down with the clip; a drowning body is sunk by walk.js / peers.js.
       applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
+      return;
+    }
+    // Sliding down a harpoon's line (walk.js state.rope 'zip'): Mixamo's Hanging Idle, by time - two
+    // hands on the line over the head and the legs hanging. Before the ladder: walk.js says `climbing`
+    // too, which is what a body with no clips (the Traveller) reaches up by.
+    hangT = pose.roping === 'zip' ? hangT + dt : 0;
+    if (pose.roping === 'zip' && GAIT_CLIPS.hang) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      if (clipMix < 1e-3) return;
+      applyClip(sampleClip(GAIT_CLIPS.hang, hangT / GAIT_CLIPS.hang.seconds, poseHang), clipMix, { arms: true, drop: false });
       return;
     }
     // On a rope ladder: Mixamo's Climbing Up A Ladder, played by height - a cycle per `rise` of
@@ -1930,6 +1948,14 @@ function buildRig(spec, material) {
     }
     playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn: carryOn || stoop > 0, ride: ride || horse, gaitPose, back, ladder });
     fadeIn(dt);
+    ropeArms = damp(ropeArms, pose.roping === 'walk' ? 1 : 0, 8, dt);
+    if (ropeArms > 1e-3) {
+      for (const side of ['leftArm', 'rightArm']) {
+        if (busy[side]) continue;
+        liftQ.setFromAxisAngle(spreadAxis, (side === 'leftArm' ? -1 : 1) * ROPE_SPREAD * ropeArms);
+        pieces[side].pivot.quaternion.premultiply(liftQ);
+      }
+    }
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.
