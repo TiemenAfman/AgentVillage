@@ -10,7 +10,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeTerrain } from 'shared/terrain.mjs';
 import { quayDeckHeights, quayKade } from 'shared/quay-basin.mjs';
 import { kadeSurfaces } from './quay-basin.js';
-import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
+import { createStandHeight, DOOR_DIR } from 'shared/settlerwalk.mjs';
+import { planRoute, FENCE_STEPS, RIDE_FROM } from './body-route.js';
 import { createYouMarker } from './you-marker.js';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
@@ -1004,15 +1005,14 @@ function parkOnSquare() {
   if (state.net) state.net.setWalking(true);
 }
 
-// Walk the parked body to a point on our own island: an A* over the ground cells
-// (findPath, the settlers' own) round whatever the feet would bump into, then the last
-// stretch to the point itself unless that is inside something (a door's step is not).
-// False, and a word, when there is no way there - the sea, another island, a walled yard.
-const FENCE_STEPS = 12;
-// Where in a cell a route may pass when its middle is taken: the middle first, then a third of a
-// cell off it each way.
-const ROUTE_SPOTS = [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3], [0.3, 0.3], [-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3]];
-const DECK_STEP = 0.44;          // just under walk.js's STEP_UP (0.45)
+// Walk the parked body to a point on our own island (web/js/body-route.js planRoute): an A* over the
+// ground cells (findPath, the settlers' own) round whatever the feet would bump into, every step of it
+// a line a body fits along, then the last stretch to the point itself unless that is inside something
+// (a door's step is not). False, and a word, when there is no way there - the sea, another island, a
+// walled yard. A long way is ridden (RIDE_FROM, walk.js goTo's `ride`), and a body that gets stuck on
+// the way anyway (another player, a building put up meanwhile) plans again from where it stands round
+// the cell it could not get into, up to REPLANS times, before it says so.
+const REPLANS = 3;
 // Every cell of road, as `gx + gz * size`, for a route to prefer: the layout's paths, the town's
 // paving, every hamlet's own and the bridges built by hand. Worked out again only when the
 // village or the set of bridges is another one.
@@ -1032,44 +1032,14 @@ function roadKeys() {
   return keys;
 }
 
-function walkBodyTo(x, z, { exact = true } = {}) {
+function walkBodyTo(x, z, { exact = true, avoid = null, tries = 0 } = {}) {
   const w = state.walk, t = state.terrain;
   if (!w || !w.parked() || !t) return false;
-  const half = t.size / 2;
-  const cell = (px, pz) => [Math.floor(px + half), Math.floor(pz + half)];
-  const from = cell(w.state.pos.x, w.state.pos.z), to = cell(x, z);
-  const say = () => { state.ui.toast('There is no way to walk there.'); return false; };
+  const say = (words = 'There is no way to walk there.') => { state.ui.toast(words); return false; };
   // The decks of the bridges built by hand: over water, and steeper than one step from the
   // banks in the crown, so neither `isLand` nor `blockedAt` (which reads a deck above your
   // feet as the river under it) lets a route over them. Walking one is fine once you are on it.
   const deck = state.props ? state.props.deckCells(t) : null;
-  const onDeck = (px, pz) => !!deck && deck.has(px + pz * t.size);
-  if (!t.inGrid(to[0], to[1]) || !t.inGrid(from[0], from[1]) || (!t.isLand(to[0], to[1]) && !onDeck(to[0], to[1]))) return say();
-  // Asked lazily and remembered: a whole grid of collision tests per click is 150k of them
-  // on a grown island, and A* looks at a few hundred.
-  // A cell whose middle is taken - a trunk, a boulder, a gatepost (world.js solids) - is still a
-  // way through when a body fits somewhere else in it, and the route then goes by that spot (`spot`)
-  // rather than the middle.
-  const memo = new Map();
-  const spot = new Map();
-  const blocked = { has(k) {
-    let v = memo.get(k);
-    if (v === undefined) {
-      if (deck && deck.has(k)) v = false;
-      else {
-        const [cx, cz] = t.cellWorld(k % t.size, (k - (k % t.size)) / t.size);
-        v = true;
-        for (const [ox, oz] of ROUTE_SPOTS) {
-          if (w.blockedAt(cx + ox, cz + oz)) continue;
-          v = false;
-          if (ox || oz) spot.set(k, [cx + ox, cz + oz]);
-          break;
-        }
-      }
-      memo.set(k, v);
-    }
-    return v;
-  } };
   // A fence between two owners is walked round to its gate, not through: crossing one costs as
   // much as a dozen steps, and costs nothing where a road passes (which is where the gate is).
   const roads = roadKeys();
@@ -1079,25 +1049,23 @@ function walkBodyTo(x, z, { exact = true } = {}) {
     if (oa === ob || (oa < 0 && ob < 0)) return 0;      // the same land, or nobody's / the town's
     return roads && roads.has(a) && roads.has(b) ? 0 : FENCE_STEPS;
   } : null;
-  // A deck is a cell like any other to the search, and a step on to it from the bank beside it
-  // halfway across the arch is two metres of wall: the walker could not climb it and swam.
-  // Onto a deck (or from one) only where the two surfaces are within a step, so it is entered
-  // at its ends and walked along, never boarded from the side.
-  const surface = (k) => (deck && deck.has(k) ? deck.get(k)
-    : t.worldHeight(...t.cellWorld(k % t.size, (k - (k % t.size)) / t.size)));
-  const deckStep = deck && deck.size ? (a, b) => (!deck.has(a) && !deck.has(b)) || surface(b) - surface(a) <= DECK_STEP : null;
   // A hedge or a wall between two cells is no way through, only its gate is (hamlets.js
   // buildBorders `closed`). A rail is: the body jumps it (walk.js, a parked body on a route).
-  const closed = state.world && state.world.closedEdges ? state.world.closedEdges() : null;
-  const step = closed && closed.size
-    ? (a, b) => !closed.has(edgeKey(a, b)) && (!deckStep || deckStep(a, b))
-    : deckStep;
-  const path = findPath(t, from, to, blocked, { open: deck, prefer: roads, crossing, step });
-  if (!path) return say();
-  const pts = path.slice(1).map(([px, pz]) => spot.get(Math.floor(px + half) + Math.floor(pz + half) * t.size) || [px, pz]);
-  if (exact && !w.blockedAt(x, z)) pts.push([x, z]);
-  if (!pts.length) pts.push(path[0]);
-  return w.goTo(pts);
+  const edges = state.world && state.world.closedEdges ? state.world.closedEdges() : null;
+  const closed = edges && edges.size ? (a, b) => edges.has(edgeKey(a, b)) : null;
+  const from = [w.state.pos.x, w.state.pos.z];
+  const route = planRoute(t, from, [x, z], w.blockedAt, { exact, deck, roads, crossing, closed, avoid });
+  if (!route) return say(tries ? 'Your settler cannot get through there.' : undefined);
+  // Stuck on the way: plan again from here, round the cell the body could not get into.
+  const onStuck = ({ next }) => {
+    if (tries >= REPLANS || !next) { say('Your settler cannot get through there.'); return; }
+    const half = t.size / 2;
+    const k = Math.floor(next[0] + half) + Math.floor(next[1] + half) * t.size;
+    const again = new Set(avoid || []);
+    again.add(k);
+    walkBodyTo(x, z, { exact, avoid: again, tries: tries + 1 });
+  };
+  return w.goTo(route.points, { ride: route.cells >= RIDE_FROM, onStuck });
 }
 
 // A click on bare ground in the sky: where on our own ground it landed, if anywhere.

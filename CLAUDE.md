@@ -1993,15 +1993,23 @@ up to the soffit) are walls the same way stairs are.
 `walk.park()` keeps the figure drawn and on the sea (`walking` stays on, the pose carries
 `ASLEEP` 4096, `POSE_MASK` 8191, a Zzz from `web/js/zzz.js`), and the frame loop steps a
 parked walk in orbit without touching the camera. It walks only a route from above
-(`goTo`, fed by `walkBodyTo` in main.js: `findPath` over cells, blocked by the feet's own
-`blockedAt`), from a click on bare ground or the dossier's Walk here. The search is told what a settler's
+(`goTo`, fed by `walkBodyTo` in main.js through `web/js/body-route.js planRoute`: `findPath` over cells,
+blocked by the feet's own `blockedAt`), from a click on bare ground or the dossier's Walk here. **A step
+between two cells is a way only if a body fits along the whole line between them** (`clear`, sampled every
+0.2 with a body 0.1 wider, `blockedAt(x, z, pad)`): houses stand at free angles, and their corners reached in
+between two free cell middles - the route ran into one and stopped (102 of 300 trips in
+`tests/body-route.test.mjs`). The route is pulled straight (`straighten`), the body keeps to the planned line
+(`routeAim`: aims along it, passes a point at 0.1), and stuck anyway it calls `onStuck` and main.js plans again
+round that cell (`REPLANS` 3, then a toast). A route of `RIDE_FROM` (20) cells or more is ridden on the body's
+own ride (`goTo(points, { ride })`, `rideInput`: horse or bicycle, gallop on straights for nothing as the
+feet's sky sprint, off where the saddle is at the end; Plans/paard-in-plaats-van-fiets.md "Van boven op pad"). The search is told what a settler's
 is not (`findPath` options in shared/settlerwalk.mjs): the decks of hand-built bridges are open over the
 water but entered only at their ends (`step`: a deck is a cell like its bank and two metres higher at
 the crown - boarded from the side halfway across, the walker swam), roads are cheaper (`prefer`, and the
 bridge's axis is a road), and a hamlet's boundary fence costs twelve steps except where a road passes
 (`crossing`); guards and settlers pass none of it; `enterWalk` starts
 where it stands, and the islander starts it on the square (`parkOnSquare`). Asleep is not
-`afoot`. At a tiller or on a deck exitWalk still flies up the old way.
+`afoot`, and not sent while a route is being walked or ridden. At a tiller or on a deck exitWalk still flies up the old way.
 
 **A page closed inside a room opens outside its door and walks back in** (`web/js/room-spot.js`,
 `recalledRoom` in main.js). While you are inside, `promptholm.walk.room.<seed>` keeps the room, the step

@@ -185,6 +185,56 @@ Wat dit zegt voor `mountPose`:
   hoort in `bodyY`/`bodyX`/`headX`; een ruiter op het zadelpunt deint dan vanzelf mee.
 - **Draf en kanter** heeft deze referentie niet (alleen Walk en Run). Daarvoor Muybridge.
 
+## Van boven op pad (8 oktober 2026)
+
+Martijn: "routing loopt tegen een huis aan en stopt. dit fixen en laat hem ook het paard gebruiken want hij
+is traag". Een route van boven (klik op de grond, of *Walk here* in het dossier) is `web/js/body-route.js`
+`planRoute`, aangeroepen door `walkBodyTo` in `main.js` en gelopen door `walk.goTo`.
+
+**Waarom hij vastliep.** De A* (`findPath`, die van de bewoners, ongewijzigd) toetste alleen of een *cel*
+vrij is, en de route liep recht van celmidden naar celmidden. Een huis staat op de vrije hoek van zijn
+kavel (9 tot 25 graden), dus een gedraaide muurhoek of een verandapaaltje stak tussen twee vrije middens
+de lijn in. Het lichaam gleed ertegen, kwam twee seconden niet dichterbij en gaf het stil op. Nagespeeld met
+de echte walk mode in een straat echte huizen: 102 van 300 ritten liepen vast (`tests/body-route.test.mjs`).
+
+**Wat de route nu doet.**
+- Een stap tussen twee cellen is alleen een weg als een lichaam over de hele lijn tussen de twee plekken
+  past (`clear`), elke `CLEAR_STEP` (0,2) gevraagd met `CLEAR_PAD` (0,1) speling: elk punt waar de voeten
+  stoppen ligt binnen een halve stap van een monster, dus een smalle hoek glipt er niet meer tussendoor.
+  Rond waar het lichaam staat en het aangeklikte punt geldt die speling niet (`LOOSE`), want een lichaam
+  tegen een muur moet er nog van weg kunnen. `walk.blockedAt(x, z, pad)` kreeg die `pad`.
+- Een aangeklikt dak: de route eindigt aan de rand ervan, niet in het huis.
+- De route wordt rechtgetrokken (`straighten`): een punt valt weg als de lijn erlangs vrij is, alleen over
+  land loopt, geen dek of te mijden cel raakt en geen trede hoger dan 0,25 per monster vraagt.
+- Het lichaam volgt de lijn waarop gepland is (`routeAim` in walk.js): het mikt 0,3 vooruit op de lijn en
+  passeert een punt op 0,1 (of zodra het er voorbij is). Op 0,35 passeren en dan schuin naar het volgende
+  punt liep een lijn naast de geplande, de hoek van een huis in.
+- Loopt het toch vast (een andere speler, een gebouw dat intussen verscheen), dan roept walk.js `onStuck`
+  aan en plant `walkBodyTo` opnieuw vanaf waar het staat, om de cel heen die het niet in kwam, tot drie
+  keer (`REPLANS`). Daarna zegt een toast "Your settler cannot get through there." in plaats van stil op te
+  geven.
+
+**Rijden.** Een route van `RIDE_FROM` (20) cellen of meer wordt gereden (`goTo(points, { ride: true })`):
+het lichaam stapt op wat F hem geeft (`rideKind()`: de Avonturier en de Wanderer het paard, de Reiziger zijn
+fiets - de fiets was weinig extra werk, dezelfde besturing), rijdt de route en stapt aan het eind af op de
+plek van het zadel (`dismount({ here: true })`), waarna het de laatste stap loopt. Waar geen paard past
+(`mount()` weigert) wordt gelopen. De ruiter stuurt naar een punt `RIDE_LOOK` (0,8) vooruit op de lijn en
+passeert punten op `RIDE_NEAR` (0,5); het tempo is wat er nog af kan voor wat er aankomt: een bocht op
+`RIDE_CORNER_V` (1,2), het eind op een stap, met `RIDE_BRAKE` (3) afremmen, de rem gebruikt als hij te hard
+gaat. Galop op een recht stuk van meer dan `RIDE_GALLOP_RUN` (2,5) met de neus op de lijn, anders draf. De
+fiets houdt `BIKE_CRUISE` (3,5) aan. Blijft de ruiter hangen, dan stapt hij af en loopt de route verder.
+Een route van boven galoppeert zonder de pool te gebruiken, zoals voeten op een route van boven gratis
+sprinten; de chip "Stamina paard" was nog niet gemerged. Komt die erin, dan is dit de plek om te kiezen.
+
+**Gemeten** in een dicht straatjesdorp (27 routes van 20-40 cellen): de Reiziger 693 s te voet, 499 s op de
+fiets. De Avonturier sprint op een route van boven al gratis op 2,7; te paard (galop 3,4) is hij daar niet
+sneller (411 s te voet, 437 s te paard) en op open veld gelijk (394 vs 406 s): optrekken en afremmen kosten
+wat de galop wint. Of het paard van boven harder mag, ligt bij Martijn (gevraagd via de coördinator).
+
+**Anderen** zien de ruiter zoals altijd: `FLAG_RIDING` gaat mee met `bike || mount`, ook geparkeerd, en
+peers.js leest de gang uit de snelheid. Nieuw: `FLAG_ASLEEP` alleen voor een geparkeerd lichaam *zonder*
+route, anders kreeg een paard dat voor een bocht inhield een Zzz.
+
 ## Wat weggaat
 
 > **Vervallen voor de fiets** (zie "Besluit: paardmaat en ruiter"): de Reiziger houdt de fiets, dus die blijft
