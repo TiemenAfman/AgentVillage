@@ -1294,6 +1294,8 @@ function interactables() {
     if (deck.nest != null) {
       out.push({ id: `${b.id}:nest`, kind: 'nestseat', x: b.x, z: b.z, r: 99, seat: deck.seat, label: "the crow's nest", prompt: deck.seated ? 'stand up' : 'sit down' });
     }
+    // Beside the treasure statue on her deck: lower it into the rowing boat (treasure.js onDeck).
+    if (state.hunt) out.push(...state.hunt.onDeck(deck));
     return out;
   }
   // A ship's helm is left under way: a ship runs out for most of a minute, and leaving the wheel
@@ -1306,6 +1308,10 @@ function interactables() {
   // Only once she has nearly stopped: under way the prompt sat on screen the whole voyage,
   // and nobody steps off a boat doing nine knots anyway.
   if (aboard && Math.abs(aboard.v || 0) > OFFER_BELOW) return out;
+  // In the rowing boat with the treasure statue, at a ship's rope ladder: E hoists her up it
+  // (treasure.js afloat) rather than putting anybody ashore.
+  const hoist = aboard && state.hunt ? state.hunt.afloat() : [];
+  if (hoist.length) return hoist;
   if (aboard) {
     const bx = aboard.x + Math.sin(aboard.yaw) * (BOW + 0.7);
     const bz = aboard.z + Math.cos(aboard.yaw) * (BOW + 0.7);
@@ -3485,6 +3491,7 @@ function startTreasureHunt() {
     toast: (html) => state.ui.toast(html),
     onChange: () => { if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables()); },
     refetchVillage: () => fetchVillage().then((v) => applyVillage(v, { animate: true })),
+    rowboat: treasureBoats(),
   });
   // A page that closes with the statue in its arms or on its boat puts it back on the islet; one
   // that crashes leaves 'lifted' behind, which boot() below undoes on the next load.
@@ -3493,6 +3500,67 @@ function startTreasureHunt() {
     mine('/api/treasure', { ...treasureBody('dropped'), keepalive: true }).catch(() => {});
   });
   state.hunt.boot();
+}
+
+// The boats the treasure hunt works with (treasure.js `rowboat`, Plans/roeiboot-en-schat.md): our
+// own rowing boat, laid ready at the map's islet; every rowing boat we may take, which a statue in
+// the arms is walked into; and the ships' rope ladders, where the rowing boat hands her up to a
+// deck and takes her down again - "the ship's boat".
+function treasureBoats() {
+  const me = () => state.net && state.net.id();
+  // A ladder's foot in the world: where its ropes hang (shared/crafts.mjs ladders), in the hull's
+  // flat frame - forward (sin, cos) of her yaw, her right (cos, -sin).
+  const foot = (b, l) => {
+    const s = Math.sin(b.yaw), c = Math.cos(b.yaw);
+    return { x: b.x + l.x * c + l.z * s, z: b.z - l.x * s + l.z * c, out: [(l.x < 0 ? -1 : 1) * c, -(l.x < 0 ? -1 : 1) * s] };
+  };
+  return {
+    mine: () => state.boats.find((b) => b.own) || null,
+    launch: (x, z, yaw) => launchRowboat(x, z, yaw),
+    hulls: () => state.boats.filter((b) => !isShip(b) && (!b.pilot || b.pilot === me())),
+    reach: BOW + 0.55,
+    ladders: () => state.boats.filter(isShip).flatMap((b) =>
+      ((b.craft.spec && b.craft.spec.ladders) || []).map((ladder) => ({ ship: b, ladder, ...foot(b, ladder) }))),
+    cargoAt: (b) => {
+      const at = b.craft && b.craft.cargo && b.craft.cargo();
+      if (!at) return null;
+      const p = at.getWorldPosition(new THREE.Vector3());
+      return { x: p.x, z: p.z };
+    },
+    hoist: (ship, ladder) => {
+      const row = state.walk && state.walk.aboard();
+      if (!row || !state.walk.hoistOnto(ship, ladder)) return false;
+      if (state.net) {
+        state.net.dropBoat(row.id);
+        // Crew from the top of the ladder, as a climb makes you - once the sea has had a pose of
+        // us up here, since it boards nobody standing further than a deck's reach off her middle.
+        setTimeout(() => { if (state.net && state.walk && state.walk.deckWhere()) state.net.boardBoat(ship.id); }, 300);
+        state.net.setRoom(null, state.walk);
+      }
+      state.walk.setInteractables(interactables());
+      return true;
+    },
+    lower: (ship) => {
+      if (!state.walk) return false;
+      // At the foot of whichever ladder looks at the nearer land, a hand off her side and lying along
+      // her: the row ashore starts there.
+      const ladders = ((ship.craft.spec && ship.craft.spec.ladders) || []).map((l) => {
+        const f = foot(ship, l);
+        let land = Infinity;
+        for (let t = 2; t <= 120 && land === Infinity; t += 2) {
+          if (state.walk.groundAt(f.x + f.out[0] * t, f.z + f.out[1] * t) >= 0.06) land = t;
+        }
+        return { ...f, land };
+      }).sort((a, b) => a.land - b.land);
+      const f = ladders[0];
+      if (!f) return false;
+      const row = launchRowboat(f.x + f.out[0] * 0.45, f.z + f.out[1] * 0.45, ship.yaw);
+      if (!row || !state.walk.lowerOff(ship, row)) return false;
+      if (state.net) state.net.leaveBoat(ship.id);
+      takeBoat(row);
+      return true;
+    },
+  };
 }
 
 // K on foot, where the side panels do not open: a word on where the story stands.
@@ -4764,7 +4832,7 @@ function boatsFor(region) {
     let b = state.boats.find((x) => x.id === m.id);
     if (!b) {
       const ship = kindOf(m.id) === 'galleon';
-      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'benchy' });
+      const craft = createBoat({ scene, material: buildingMat, kind: ship ? 'ship' : 'rowboat' });
       const at = ship ? shipBerth(m, state.sea.height, shipWater(v.works, region.terrain.half, region.origin || [0, 0])) : m;
       craft.place(at.x, at.z, m.yaw);
       b = { id: m.id, x: at.x, z: at.z, yaw: m.yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null };
@@ -9129,6 +9197,13 @@ Everything is copied and checked first; the island then starts again there. The 
         const at = hullPointOf(b, h.x, h.y - DECK_Y, h.z, seatPoint);
         return { x: at.x, y: at.y, z: at.z, yaw: b.yaw, tilt: hullTiltOf(b, seatTilt) };
       }
+      // At the oars of a rowing boat: on her thwart facing aft, pulling with her stroke, on her plane -
+      // as walk.js draws our own oarsman.
+      const r = b.craft && b.craft.rowing;
+      if (r) {
+        poseHull(b);
+        return { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw + Math.PI, tilt: hullTiltOf(b, seatTilt), rowing: { phase: r.phase() } };
+      }
       return { x: b.x, y: b.deckY ?? DECK_Y, z: b.z, yaw: b.yaw };
     },
     // And somebody standing on a deck is drawn on that hull too, at their place on it
@@ -9202,9 +9277,10 @@ Everything is copied and checked first; the island then starts again there. The 
     // meant, so a sea with another idea of a full one would still fill our bar to the top.
     onBreath: (m) => { air = Math.min(AIR_S, Math.max(0, (m.air / m.max) * AIR_S)); },
     onBoat: onBoatFromServer,
-    // Only a phone owns a skiff; anybody else's page has nothing here to put back.
+    // A phone owns a skiff from the start, an islander's page once the treasure hunt has laid one
+    // out for it (launchRowboat); a page with none has nothing here to put back.
     onWelcome: (self, build) => {
-      if (STANDALONE) relaunchSkiff(self);
+      relaunchSkiff(self);
       // The sea says which release it is on every welcome, so a sea updated under us is
       // noticed on the reconnect its restart causes.
       state.seaBuild = build;
@@ -9494,6 +9570,30 @@ async function arriveOnLand(start) {
     ? `You wake on the square of <b>${escapeHtml(start.name)}</b>. Your boat is moored off the shore.`
     : `You wake on a little island${start.near ? ` off <b>${escapeHtml(start.near)}</b>` : ''}. Your boat is moored off the beach.`);
   return true;
+}
+
+// Our own rowing boat - the skiff, `boat:w-<player>` - laid in the water at a place of the page's
+// choosing and let go, for the treasure hunt (Plans/roeiboot-en-schat.md): ready at the islet of the
+// map, and lowered beside the galleon's ladder to take the statue ashore. The sea needs nothing new
+// for it: a launch is "my skiff is here now" (lib/boats.mjs), the same boat moved if it was in the
+// water already, and it sinks with this page's socket. Never from under somebody in it. Null while
+// there is no player id to name it by.
+function launchRowboat(x, z, yaw) {
+  const self = state.net && state.net.id();
+  if (!self) return null;
+  let b = state.boats.find((o) => o.own);
+  if (b && state.walk && state.walk.aboard() === b) return b;
+  if (!b) {
+    const craft = createBoat({ scene, material: buildingMat });
+    b = { id: `boat:w-${self}`, x, z, yaw, v: 0, aground: false, craft, deckY: DECK_Y, pilot: null, own: true };
+    state.boats.push(b);
+  }
+  Object.assign(b, { id: `boat:w-${self}`, x, z, yaw, v: 0, aground: false, pilot: null, track: null });
+  b.craft.place(x, z, yaw);
+  state.net.launchBoat(b.id, x, z, yaw);
+  state.net.dropBoat(b.id);
+  if (state.mode === 'walk' && state.walk) state.walk.setInteractables(interactables());
+  return b;
 }
 
 // A reconnect is a new player id, and the sea sank the skiff named after the old one when

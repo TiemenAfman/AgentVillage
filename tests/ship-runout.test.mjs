@@ -93,7 +93,7 @@ test('a ship that had no way on her is not left running, and a Benchy never is',
   assert.equal(still.walk.runningOut(), null);
 
   const benchy = harness();
-  benchy.ship.craft = { spec: CRAFTS.benchy, object: null };
+  benchy.ship.craft = { spec: CRAFTS.rowboat, object: null };
   benchy.ship.v = 8;
   benchy.walk.board(benchy.ship);
   assert.equal(benchy.walk.runningOut(), null);

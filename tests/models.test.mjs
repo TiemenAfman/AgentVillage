@@ -43,7 +43,7 @@ import { BOARDWALK } from '../web/js/boardwalk-mesh.js';
 import { QUAYSTEPS } from '../web/js/quaysteps-mesh.js';
 import { BUOYS } from '../web/js/buoys-mesh.js';
 import { SEA } from '../web/js/sea-mesh.js';
-import { BENCHY } from '../web/js/benchy-mesh.js';
+import { ROWBOAT } from '../web/js/rowboat-mesh.js';
 import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
 import { PIRATESIGN } from '../web/js/piratesign-mesh.js';
 import { BATAVIA } from '../web/js/batavia-mesh.js';
@@ -72,7 +72,7 @@ import { SHIPYARD } from '../web/js/shipyard-mesh.js';
 
 // Every set there is, so that adding one to web/js/models.js and forgetting it here
 // cannot leave a whole .blend unchecked.
-const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, piratetavern_room: PIRATETAVERN_ROOM, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, benchy: BENCHY, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
+const BAKED = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, krakenkit: KRAKENKIT, piratetavern_room: PIRATETAVERN_ROOM, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, rowboat: ROWBOAT, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, traces: TRACES, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA };
 
 register('./support/shared-loader.mjs', import.meta.url);
 // buildings.js builds a TextureLoader as it loads, and props.js is built on buildings.js.
@@ -292,15 +292,12 @@ test('the loose barrel is the tavern\'s barrel, not a second kind of barrel', ()
 });
 
 test('the register spans every set and answers by part name alone', () => {
-  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'benchy', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'piratesign', 'piratetavern', 'props', 'quaysteps', 'rail', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'treasure', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
+  assert.deepEqual(models.setNames().sort(), ['apothecary', 'bakery', 'batavia', 'bicycle', 'boardwalk', 'buoys', 'butcher', 'castle', 'cauldron', 'chronicle', 'clocktower', 'cottage', 'docks', 'farmyard', 'fauna', 'fence', 'flora', 'goldmine', 'goldpit', 'goldsmith', 'greatcastle', 'grocer', 'harbourhouses', 'hedge', 'house', 'hut', 'library', 'lighthouse', 'manor', 'owlpost', 'pirateship', 'piratesign', 'piratetavern', 'props', 'quaysteps', 'rail', 'rowboat', 'sawmill', 'school', 'sea', 'shipyard', 'smithy', 'stable', 'statue', 'sweetshop', 'tailor', 'tavern', 'tearoom', 'townhall', 'traces', 'treasure', 'village', 'wagon', 'wall', 'wandmaker', 'windmill', 'workshops']);
   assert.deepEqual(models.assetNames().sort(), [
     'addon_chimney_a', 'addon_dormer_a', 'addon_quay_coping', 'addon_quay_tread', 'addon_tent_camp', 'addon_tent_mound', 'addon_turret_a',
     // The Batavia, a hero like the galleon: the ship the village earns, modelled whole in
     // scripts/build-batavia.py, her flags parts that move inside the one asset.
     'batavia',
-    // The boat. A hero, because it is one hull authored as one thing and you ride in it -
-    // scripts/build-benchy.py reduces the coloured Blender source to one painted mesh.
-    'benchy',
     // The bicycle, for the same reason: one thing you ride, in seven parts that turn
     // (scripts/build-bicycle.py, Plans/DONE/fiets.md).
     'bicycle', 'castle',
@@ -391,7 +388,12 @@ test('the register spans every set and answers by part name alone', () => {
       'prop_shell', 'prop_starfish',
       // The treasure set's props (scripts/build-treasure.py).
       'prop_shovel', 'prop_treasure_carry', 'prop_treasure_mound'].sort(),
-    'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a', 'school',
+    'roof_cone_a', 'roof_gable_a', 'roof_gable_b', 'roof_hip_a',
+    // The boat. A hero, because it is one hull authored as one thing and you ride in it, her
+    // oars two parts of it that turn on their rowlocks (scripts/build-rowboat.py,
+    // Plans/roeiboot-en-schat.md; she replaced the 3D Benchy).
+    'rowboat',
+    'school',
     // The shipyard, a hero: one building on a five by sixteen lot whose ship is part of it, each
     // stage a set of parts rather than an asset (scripts/build-shipyard.py, Plans/DONE/scheepswerf.md).
     'shipyard',

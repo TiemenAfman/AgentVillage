@@ -101,7 +101,7 @@ test('the whole chain through the page-facing calls, each step saying its next g
   assert.equal(log.card(), null, 'digging uses the map up');
   assert.ok(dug.lines[0].startsWith('Quest done: The First Dig'), dug.lines.join('|'));
   assert.ok(dug.lines.some((l) => /New quest: Bring It Home/.test(l)));
-  assert.match(log.onLifted().lines[0], /Put the statue on your boat/);
+  assert.match(log.onLifted().lines[0], /Put the statue in the rowing boat/);
   assert.match(log.onBoarded().lines[0], /Stand the statue in your town/);
   assert.match(log.onDelivered().lines[0], /Tell the pirate/);
   assert.equal(log.view().active.talk, 'pirate');

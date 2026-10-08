@@ -95,9 +95,9 @@ test('getting on is worked out once, and getting off takes the boat\'s way with 
   near(off.vx, 4 * Math.sin(1.1), 1e-9, 'with the hull\'s speed');
 });
 
-test('an island\'s first boat is its galleon, every other boat a Benchy, and a Benchy is her pilot alone', () => {
+test('an island\'s first boat is its galleon, every other boat a rowing boat, and that is her pilot alone', () => {
   for (const id of ['boat:a1b2c3d4-n1', 'boat:a1b2c3d4-w2', 'boat:w-0123456789ab']) {
-    assert.equal(kindOf(id), 'benchy');
+    assert.equal(kindOf(id), 'rowboat');
     assert.equal(crewOf(id), 1);
   }
   assert.equal(kindOf('boat:a1b2c3d4'), 'galleon');
@@ -227,8 +227,8 @@ test('a rope ladder is walked into at its foot and out onto at its head, on eith
     assert.equal(ladderDown(galleon, s * 1.5, l.z + 1.5, s), null, 'further along the rail');
   }
   // The Benchy has none, so none of it ever fires there.
-  assert.equal(ladderUp(CRAFTS.benchy, 0.5, 0, -0.1, -1), null);
-  assert.equal(ladderDown(CRAFTS.benchy, 0.05, 0, 1), null);
+  assert.equal(ladderUp(CRAFTS.rowboat, 0.5, 0, -0.1, -1), null);
+  assert.equal(ladderDown(CRAFTS.rowboat, 0.05, 0, 1), null);
 });
 
 test('a ladder runs from the water over the bulwark to somewhere you can stand', () => {

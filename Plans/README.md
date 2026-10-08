@@ -113,6 +113,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   gebouwd: een settler doet wat zijn sessie doet, in plaats van altijd te hameren.
 - 🚧 [schatkaarten.md](schatkaarten.md) — plan van 29 september 2026, nog niet gebouwd: iets te
   vinden op de eilandjes.
+- 🚧 [roeiboot-en-schat.md](roeiboot-en-schat.md) — vervolg op de schatkaarten: je roeibootje (de skiff) ligt
+  klaar op het eilandje van de schat, ertegenaan lopen legt het beeld erin, E boardt, aan land of bij je galjoen
+  zet je het over; en de Benchy wordt overal een roeiboot met zichtbare riemen.
 - 🚧 [piratenkroeg.md](piratenkroeg.md) — de Salty Kraken, gebouwd op `claude/salty-kraken`: een tweede kroeg
   aan het water (trede 52) met een piratenbemanning aan tafel die de quests geeft, de kist van de piraat erachter,
   een jukebox met shanties (en eigen muziek per kamer in `~/.promptholm/audio`) en een eigen bake met uithangbord.

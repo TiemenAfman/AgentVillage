@@ -23,7 +23,7 @@ const sloop = () => SLOOP;
 const beside = [12.5, -30];            // within reach of the mooring
 const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 
-test('a Benchy is still her pilot and nobody else, and says so in the shape it always did', () => {
+test('a rowing boat is still her pilot and nobody else, and says so in the shape it always did', () => {
   const boats = createBoats({ moorings: MOORINGS });
   const took = boats.take(HULL, ANN);
   assert.deepEqual(Object.keys(took).sort(), ['id', 'pilot', 'x', 'yaw', 'z'], 'a boat with no crew grew a field');
@@ -34,7 +34,7 @@ test('a Benchy is still her pilot and nobody else, and says so in the shape it a
   assert.ok(boats.board(HULL, ANN, beside), 'aboard a boat nobody is steering');
   assert.equal(boats.take(HULL, BEN).pilot, null, 'took the helm of a full boat from the jetty');
   assert.equal(boats.take(HULL, ANN).pilot, ANN, 'the one aboard her can take her helm');
-  assert.equal(CRAFTS.benchy.crew, 1);
+  assert.equal(CRAFTS.rowboat.crew, 1);
 });
 
 test('a crew steps aboard from beside the hull, up to what the boat holds', () => {

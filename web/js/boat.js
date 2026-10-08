@@ -20,12 +20,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
-import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
+import { DRAUGHT, DECK_Y, SEAT_Y, FLOORBOARDS } from 'shared/hull.mjs';
 import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { createSurface } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
-import { buildBoatGeometry, mesh, box } from './buildings.js';
+import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
 import * as models from './models.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
@@ -41,8 +41,13 @@ export const BOAT_TURN_BITE = 0.25; // a hard turn spends way: v *= 1 - BITE*|tu
 // than a second, twitchier boat. Let go and the water brings you back to BOAT_TOP by the
 // ordinary drag, about half a second - the eased-off branch in stepBoat, not a snap.
 export const BOAT_TURBO = 1.6;
-// The baked hull's one part. One part, so one draw call.
-const HULL = 'benchy hull';
+// The rowing boat (scripts/build-rowboat.py, Plans/roeiboot-en-schat.md), which replaced the 3D
+// Benchy: one asset, its hull baked as a part per material and its two oars as parts of their own,
+// pivoted on their rowlocks. All of it is welded into one geometry, so a boat is still one draw call;
+// the oars are moved in that geometry by the stroke (`row` below).
+const ROWBOAT = 'rowboat';
+const OAR = /^rowboat oar (port|stbd)(:\d+)?$/;
+const rowParts = () => (models.hasAsset(ROWBOAT) ? models.assetParts(ROWBOAT) : []);
 
 // A hull is a reference plane, and whoever stands on it stands on *that*: the transform the hull
 // is drawn with this frame, swell and all (pitch and roll about the waterline, not only a rise),
@@ -78,7 +83,7 @@ export function hullTiltOf(b, out = new THREE.Quaternion()) {
 // How deep she sits, and where a body stands once she is sitting there. In shared/hull.mjs
 // because the sea seats a rider without ever drawing one; re-exported here so the call
 // sites that think of it as the boat's business can carry on saying so.
-export { DRAUGHT, DECK_Y };
+export { DRAUGHT, DECK_Y, SEAT_Y };
 
 // Half the hull, and the whole reason grounding looks right: buildBoatGeometry's hull is a
 // 0.8-long cylinder centred on the origin, so this is its tip. Testing the middle instead
@@ -92,12 +97,16 @@ export { DRAUGHT, DECK_Y };
 //
 // Measured from the baked positions, which are plain numbers: no THREE, so `stepBoat` stays
 // the pure function tests/boat.test.mjs can sail under bare Node. 0.4 is the drawn hull's
-// half-length, for an island whose benchy set has not been baked.
+// half-length, for an island whose rowboat set has not been baked. The oars are left out: they
+// reach out to the sides, not ahead.
 function hullReach() {
-  const part = models.has(HULL) ? models.part(HULL) : null;
-  if (!part) return 0.4;
+  const names = rowParts().filter((n) => !OAR.test(n));
+  if (!names.length) return 0.4;
   let far = 0;
-  for (let i = 2; i < part.positions.length; i += 3) far = Math.max(far, Math.abs(part.positions[i]));
+  for (const n of names) {
+    const part = models.part(n);
+    for (let i = 2; i < part.positions.length; i += 3) far = Math.max(far, Math.abs(part.positions[i] + part.at[2]));
+  }
   return far;
 }
 export const BOW = hullReach();
@@ -457,25 +466,102 @@ export function cargoMesh(item, material) {
   return make ? make(material) : placeholderCargo(material);
 }
 
-export function createBoat({ scene, material, kind = 'benchy' }) {
+// The stroke of the oars (Plans/roeiboot-en-schat.md, "Zichtbaar roeien"). Worked out from how far
+// the hull has gone, never from a clock or a message: every page sees every boat pull on the same
+// stroke for the same way made, its own and a settler's on an outing alike. One stroke is STROKE
+// units of water: at BOAT_TOP that is about two strokes a second, a hard pull for a boat this size.
+// `phase` runs 0..1: the catch at 0 (blades forward, going in), the drive to 0.5 (blades in the
+// water, swept aft - which is what drives her forward), the recovery back (blades feathered
+// over the water). Going astern runs the phase backwards, which is how a boat is backed.
+export const STROKE = 4.5;
+// How far the blades swing fore and aft of square (radians), and how far the oar is tipped down:
+// REST at the top of the recovery, REST + DIP at the bottom of the drive. The pin is 0.19 over the
+// water and the blade 0.5 out from it, so 0.4 down puts the blade in.
+const SWEEP = 0.5, REST = 0.06, DIP = 0.36;
+// Where the hands hold an oar: this far inboard of its pin, near the end of the loom (the bake's 0.2).
+const GRIP = 0.17;
+export function oarAngles(phase) {
+  const t = phase * Math.PI * 2;
+  return { sweep: SWEEP * Math.cos(t), dip: -(REST + DIP * Math.max(0, Math.sin(t))) };
+}
+// A point of an oar, given in the oar's own frame (out from its pin along the side, `s` the side:
+// 1 starboard, -1 port), turned by the stroke and handed back relative to the pin in the hull's.
+export function oarPoint(s, out, up, fore, { sweep, dip }, into = [0, 0, 0]) {
+  const cd = Math.cos(dip), sd = Math.sin(dip), cs = Math.cos(sweep), ss = Math.sin(sweep);
+  const x1 = out * cd - up * sd, y1 = out * sd + up * cd;
+  into[0] = s * (x1 * cs - fore * ss);
+  into[1] = y1;
+  into[2] = x1 * ss + fore * cs;
+  return into;
+}
+
+// The rowing boat as one geometry: its hull's parts and both oars, each where Blender had it and
+// sunk by DRAUGHT, and where each oar's vertices sit in the merge, with its pin, so `row` can move
+// them. Merged in the order listed, so the ranges are the running counts.
+function rowboatGeometry() {
+  const names = rowParts();
+  const order = [...names.filter((n) => !OAR.test(n)), ...names.filter((n) => OAR.test(n))];
+  const parts = [], oars = [];
+  let at = 0;
+  for (const n of order) {
+    const p = models.part(n);
+    const g = mesh(n, 0xffffff, { x: p.at[0], y: p.at[1] - DRAUGHT, z: p.at[2] });
+    const count = g.attributes.position.count;
+    const m = OAR.exec(n);
+    if (m) {
+      // Kept in the oar's own frame (out from the pin, up, forward), so a stroke is one turn of it.
+      const s = m[1] === 'stbd' ? 1 : -1;
+      const local = new Float32Array(p.positions.length);
+      for (let i = 0; i < p.positions.length; i += 3) {
+        local[i] = s * p.positions[i]; local[i + 1] = p.positions[i + 1]; local[i + 2] = p.positions[i + 2];
+      }
+      oars.push({ s, from: at, count, local, pin: [p.at[0], p.at[1] - DRAUGHT, p.at[2]] });
+    }
+    parts.push(g);
+    at += count;
+  }
+  return { geometry: mergeParts(parts), oars };
+}
+
+export function createBoat({ scene, material, kind = 'rowboat' }) {
   const ship = kind === 'ship' && models.has(SHIP);
-  // The Benchy, if it has been baked; the drawn hull otherwise. The same `models.has` guard
+  // The rowing boat, if it has been baked; the drawn hull otherwise. The same `models.has` guard
   // barrel() in props.js uses, and for the same reason: a set that is not there yet should
   // leave the island drawing something rather than throwing on the boot path.
-  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon) : models.has(HULL)
-    ? mesh(HULL, 0xffffff, { y: -DRAUGHT })
-    : buildBoatGeometry();
+  const rowing = !ship && models.hasAsset(ROWBOAT) ? rowboatGeometry() : null;
+  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon)
+    : rowing ? rowing.geometry : buildBoatGeometry();
+  const oars = rowing ? rowing.oars : [];
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
   scene.add(object);
   let heading = 0;
   let cargo = null;
-  // Where the cargo stands, in the hull's frame (y above the waterline, like the deck itself): on the
-  // Benchy the foredeck, a step ahead of the pilot who stands in the middle; on the ship the main deck
-  // ahead of the wheel, on whatever the model has there.
+  // Where the cargo stands, in the hull's frame (y above the waterline, like the deck itself): in the
+  // rowing boat the stern sheets, behind the oarsman - who faces aft, so it is in front of him - on
+  // the floorboards; on the ship the main deck ahead of the wheel, on whatever the model has there.
   const cargoAt = ship
     ? { x: 0, y: (SHIP_SURFACE.floorIn(0, 1.5, 1.9) ?? 1.738) + DECK_Y, z: 1.5, scale: 3 }
-    : { x: 0, y: DECK_Y, z: BOW * 0.5, scale: 1 };
+    : { x: 0, y: FLOORBOARDS - DRAUGHT, z: -0.3, scale: 0.8 };
+
+  // The stroke: where the oars are, and how far she has gone since the last place().
+  let phase = 0, drawn = null, last = null;
+  const turned = [0, 0, 0];
+  function row(next) {
+    phase = ((next % 1) + 1) % 1;
+    if (!oars.length || drawn === phase) return;
+    drawn = phase;
+    const angles = oarAngles(phase);
+    const pos = geometry.attributes.position;
+    for (const o of oars) {
+      for (let k = 0; k < o.count; k++) {
+        oarPoint(o.s, o.local[k * 3], o.local[k * 3 + 1], o.local[k * 3 + 2], angles, turned);
+        pos.setXYZ(o.from + k, o.pin[0] + turned[0], o.pin[1] + turned[1], o.pin[2] + turned[2]);
+      }
+    }
+    pos.needsUpdate = true;
+  }
+  row(0.12);   // at rest, blades just off the water
 
   return {
     object,
@@ -498,16 +584,39 @@ export function createBoat({ scene, material, kind = 'benchy' }) {
     // Where the pilot stands in the hull's frame (null: the middle), how far back the camera
     // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side.
     helm: ship ? SHIP_HELM : null,
-    spec: ship ? CRAFTS.galleon : CRAFTS.benchy,
-    // What a body on her deck walks on and into (shared/hullwalk.mjs); the Benchy has none, since her
-    // whole deck is her helm.
+    spec: ship ? CRAFTS.galleon : CRAFTS.rowboat,
+    // What a body on her deck walks on and into (shared/hullwalk.mjs); the rowing boat has none, since
+    // her whole deck is her helm.
     walk: ship ? SHIP_SURFACE : null,
     camScale: ship ? 10 : 2.2,
-    beam: ship ? 3.5 : 0.35,
+    beam: ship ? 3.5 : 0.3,
+    // The oars, for whoever pulls them: the stroke now (0..1, see STROKE) and where a hand holds
+    // each, in the hull's frame (`y` above DECK_Y, like a craft's deck). Null on a ship.
+    rowing: oars.length ? {
+      phase: () => phase,
+      grip(s, into = [0, 0, 0]) {
+        const o = oars.find((x) => x.s === s);
+        if (!o) return null;
+        oarPoint(s, -GRIP, 0, 0, oarAngles(phase), into);
+        into[0] += o.pin[0]; into[1] += o.pin[1] - DECK_Y; into[2] += o.pin[2];
+        return into;
+      },
+    } : null,
 
     // Where it floats and which way it is pointed. The y is left to `bob`, so placing a
-    // boat never fights the swell it is sitting on.
+    // boat never fights the swell it is sitting on. The way made since the last place pulls the
+    // oars round: along her heading, so astern backs them, and a turn on the spot is an oar
+    // pulled too (a quarter of a stroke per radian). A jump - a boat appearing at its berth, a
+    // wrap round the world - is no stroke.
     place(x, z, yaw = heading) {
+      if (oars.length && last) {
+        const dx = x - last.x, dz = z - last.z;
+        const way = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+        let turn = yaw - last.yaw;
+        turn -= Math.round(turn / (Math.PI * 2)) * Math.PI * 2;
+        if (dx * dx + dz * dz < 4) row(phase + (way + Math.abs(turn) * 0.25 * STROKE) / STROKE);
+      }
+      last = { x, z, yaw };
       heading = yaw;
       object.position.x = x;
       object.position.z = z;
@@ -524,9 +633,10 @@ export function createBoat({ scene, material, kind = 'benchy' }) {
       object.rotation.set(BOB_PITCH * Math.sin(t * 1.7), heading, BOB_ROLL * Math.sin(t * 1.3));
     },
 
-    // Where a body standing in it has its feet, swell and all.
+    // Where a body in it is, swell and all: a ship's pilot's feet at her wheel, a rower's seat
+    // on the thwart (walk.js sits him there).
     deck() {
-      return object.position.y + (ship ? SHIP_HELM.y : DECK_Y);
+      return object.position.y + (ship ? SHIP_HELM.y : rowing ? SEAT_Y : DECK_Y);
     },
 
     dispose() {

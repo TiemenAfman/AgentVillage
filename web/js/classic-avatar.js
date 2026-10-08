@@ -244,6 +244,16 @@ function bodyOf(character) {
 const RIDE_LEG = -0.42;
 const RIDE_SWING = 0.3;
 const RIDE_ARM = -1.15;
+// At the oars (`pose.rowing = { phase }` with `sitting`, walk.js and peers.js): how far forward
+// the arms point at the catch and at the finish, how far in towards the looms (which lie 0.07
+// either side of his middle), and how far the body swings over the seat - about the seat, which
+// is where a sitting body's origin is. Tuned by eye in /demo against the baked boat.
+const ROW_ARM = { out: -1.45, in: -0.7, z: 0.18 };
+// The rig's origin is at the feet and its hip joint `hipY` over them, sitting or not, so a body put
+// on a thwart is put a hip's height under it, less the flesh between the joint and the plank
+// (walk.js, peers.js: the oarsman). Measured on the Traveller in the boat.
+export const SEAT_FLESH = 0.03;
+const ROW_LEAN = { forward: 0.32, back: -0.18 };
 // On horseback (`pose.horseback`, Plans/paard-in-plaats-van-fiets.md "De ruiterhouding, gemeten"):
 // the angles of a reference riding clip, as angles only - none of the clip's data is used. The
 // torso tips forward, the thighs go forward and out round the barrel, the knees fold so the
@@ -1519,6 +1529,7 @@ function buildRig(spec, material) {
     // A dig cannot go on from a saddle, a bench, the ground or the water: put down, as a drink is.
     if (digging && (ride || horse || pose.sitting || pose.lying || pose.swimming)) dig(false);
     const dug = digging, carryOn = carrying && !ride && !horse;
+    const rowing = pose.rowing && pose.sitting && !dead && !dug && !carryOn ? pose.rowing : null;
     const dancing = pose.dancing && !ride && !horse && !pose.sitting && !pose.lying && !pose.swimming && !fp && !dug && !carryOn ? pose.dancing : null;
     const dance = dancing ? dancePose(dancing.move, dancing.beat, dancing.hype || 0) : null;
     if (dance) {
@@ -1558,6 +1569,17 @@ function buildRig(spec, material) {
       armZ.leftArm = CARRY_Z;
       armZ.rightArm = -CARRY_Z;
       lean = CARRY_LEAN;
+    } else if (rowing) {
+      // At the oars (Plans/roeiboot-en-schat.md): seated on the thwart facing aft, both hands on the
+      // looms. `reachOut` is 1 at the catch - blades forward, so the handles out towards the stern in
+      // front of him, arms long and the body forward over the knees - and 0 at the finish, handles
+      // pulled into the ribs and the body back. Off the boat's own stroke (boat.js oarAngles), so the
+      // hands go with the oars, here and on every screen that draws him.
+      const reachOut = (1 + Math.cos(rowing.phase * Math.PI * 2)) / 2;
+      targets.leftArm = targets.rightArm = ROW_ARM.in + (ROW_ARM.out - ROW_ARM.in) * reachOut;
+      armZ.leftArm = ROW_ARM.z;
+      armZ.rightArm = -ROW_ARM.z;
+      lean = ROW_LEAN.back + (ROW_LEAN.forward - ROW_LEAN.back) * reachOut;
     }
     // Treading water (diving.js swimPose: walk.js and peers.js stand a swimmer going nowhere
     // upright and hand in `treading`, 0..1 of the way there): free arms out to the sides,

@@ -872,7 +872,7 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   row += 2;
 }
 
-// The arch bridge, over a channel wide enough to sail, with the Benchy under its crown: the
+// The arch bridge, over a channel wide enough to sail, with the rowing boat under its crown: the
 // one thing this row is for is seeing that she clears it, so she is put there rather than
 // described. The channel runs along x and the boat heads down it; the bridge crosses on z.
 {
@@ -894,10 +894,10 @@ function riverPatch(originX, originZ, cells, { w, tilt, base }) {
   m.castShadow = true;
   m.receiveShadow = true;
   scene.add(m);
-  const benchy = createBoat({ scene, material, kind: 'benchy' });
-  benchy.place(0, z, Math.PI / 2);
-  benchy.object.position.y = FIELD_Y;
-  tag(0, z + 5.6, 'Arch bridge', 'the Benchy under the crown');
+  const boat = createBoat({ scene, material, kind: 'rowboat' });
+  boat.place(0, z, Math.PI / 2);
+  boat.object.position.y = FIELD_Y;
+  tag(0, z + 5.6, 'Arch bridge', 'the rowing boat under the crown');
   row += 3;
 }
 

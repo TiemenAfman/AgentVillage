@@ -21,7 +21,7 @@ import { hash32 } from 'shared/rng.mjs';
 import { worldToScene } from 'shared/regions.mjs';
 import { isletById, isletHeight } from 'shared/islets.mjs';
 import {
-  cardOf, bottleOf, bottleWashesUp, rewardOf, FIRST_HUNT_SEED, SHOVEL,
+  cardOf, bottleOf, bottleWashesUp, rewardOf, rowboatSpot, FIRST_HUNT_SEED, SHOVEL,
 } from 'shared/treasure.mjs';
 import { readFinds, FINDS_KEY, defaultStorage } from './quest-log.js';
 
@@ -42,6 +42,16 @@ export const CHEST_LINGER_S = 4;
 // Beach cells within this many cells of the landing may hold the day's bottle.
 export const BOTTLE_RADIUS = 4;
 const DUG_KEEP = 200;
+// The rowing boat at the islet (Plans/roeiboot-en-schat.md). Coming within ROWBOAT_CALL of the
+// islet's shore with a map for it (or its statue still on it) lays our own boat out there, unless
+// it lies within ROWBOAT_NEAR of that shore already. A statue in the arms goes into any rowing boat
+// we may take that the body walks into, within the hull's reach (main.js: her bow plus a hand).
+export const ROWBOAT_CALL = 45;
+export const ROWBOAT_NEAR = 12;
+// How near a ship's ladder foot the rowing boat must lie for E to hoist the statue up it, and how
+// near the statue on her deck the body must stand to lower it into the rowing boat again.
+export const HOIST_REACH = 1.6;
+export const LOWER_REACH = 1.8;
 
 // ---- this browser's part of promptholm.finds -----------------------------------------------
 
@@ -187,10 +197,15 @@ const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
 //   toast(html)   a line for the player
 //   onChange()    the interactables changed: rebuild the walker's list
 //   refetchVillage() after the statue is placed, so its record appears
+//   rowboat       optional, the boats (main.js): mine() our own rowing boat or null, launch(x, z,
+//                 yaw) lays it in the water there, hulls() every rowing boat we may take, reach
+//                 how near one has to be to walk the statue into it, ladders() every ship's
+//                 ladder foot { ship, ladder, x, z }, cargoAt(ship) where the statue stands on her
+//                 deck { x, z }, hoist(ship, ladder) and lower(ship) - true when it happened
 export function createTreasureHunt(deps) {
   const {
     quests, events, finds, unlocks, walk, view, home, islandId, islets, village, terrain, clock,
-    dayOf, groundAt, keeper, read, post, toast, onChange, refetchVillage,
+    dayOf, groundAt, keeper, read, post, toast, onChange, refetchVillage, rowboat = null,
   } = deps;
 
   let bottle = null;          // { id, day, seed, cell, x, y, z } lying on the beach, or null
@@ -204,6 +219,9 @@ export function createTreasureHunt(deps) {
 
   const say = (html) => { try { toast(html); } catch { /* the toast is not the hunt's */ } };
   const carried = () => !!(walk.carrying() || walk.cargo());
+  const aboard = () => (walk.aboard ? walk.aboard() : null);
+  // The statue on a hull, and which.
+  const statueOn = () => { const c = walk.cargo(); return c && c.item === 'statue' ? c.hull : null; };
   const placedNow = () => !!(village() && village().treasure && village().treasure.placed);
 
   // ---- what stands where ----
@@ -307,6 +325,8 @@ export function createTreasureHunt(deps) {
     else if (it.kind === 'dig') startDig(it.site);
     else if (it.kind === 'lift') liftStatue();
     else if (it.kind === 'deliver') deliver();
+    else if (it.kind === 'hoist') hoist(it);
+    else if (it.kind === 'lower') lower(it);
     return true;
   }
 
@@ -389,7 +409,16 @@ export function createTreasureHunt(deps) {
     const reward = rewardOf(site.seed, unlocks.unlocked());
     if (reward.id) unlocks.unlock(reward.id);
     if (keeper()) Promise.resolve(post('found')).catch(() => null);
-    events.dug('chest');   // clears the map
+    if (String(site.seed).startsWith('first-hunt') && placedNow()) {
+      // The first map of a second browser, on an island whose statue somebody already brought home:
+      // the X holds a chest (computeSites), and the story this browser is on waits for a statue
+      // that is not there to dig, lift or carry. It is told what happened instead - dug, and the
+      // whole of Bring It Home up to the word with the pirate - so the book goes on (it skips the
+      // carrying, Plans/roeiboot-en-schat.md). Late events are what reportDelivered already says.
+      events.dug('statue');
+      reportDelivered();
+      say('The statue already stands in the square: somebody brought her home before you. Tell the pirate.');
+    } else events.dug('chest');   // clears the map
     if (reward.kind === 'doubloons') say(`The chest holds ${reward.amount} doubloons and nothing else you do not have.`);
     else say(`A chest! Inside: <b>${reward.name}</b>. It is in your bag now.`);
     // The map is gone, so the site would go with it: keep the open chest in the sand a moment.
@@ -413,14 +442,89 @@ export function createTreasureHunt(deps) {
   function reportBoarded() { events.lifted('statue'); events.boarded('statue'); }
   function reportDelivered() { events.lifted('statue'); events.boarded('statue'); events.delivered('statue'); }
 
-  // E at a boat with the statue in the arms.
+  // E at a boat with the statue in the arms, or walking into one with her (touchRowboat).
   function layOnBoat(hull) {
     if (walk.carrying() !== 'statue' || !hull) return false;
     if (!walk.putOnBoat(hull)) return false;
     reportBoarded();
-    say('You lay the statue on the boat. Steady now.');
+    say('You lay the statue in the rowing boat. Steady now. <b>E</b> to climb in.');
     refresh();
     return true;
+  }
+
+  // ---- the rowing boat at the islet, and the ship's ladder ----
+  // The islet the hunt is about: the one the statue lies on, else the one the map points at.
+  function huntIslet() {
+    const id = islandId() || 'open-sea';
+    const rec = finds.statue();
+    if (rec && rec.islandId === id && !placedNow()) return { isletId: rec.isletId, at: rec.spot };
+    const card = quests.card();
+    if (card && card.status === 'awake' && !finds.hasDug(card.seed)) return { isletId: card.isletId, at: card.spot };
+    return null;
+  }
+  let nextCall = 0;
+  function callRowboat(seconds) {
+    if (!rowboat || seconds < nextCall) return;
+    nextCall = seconds + 1;
+    const h = home(), hunt = huntIslet();
+    if (!h || !hunt) return;
+    const islet = isletById(hunt.isletId);
+    if (!islet) return;
+    const [cx, cz] = worldToScene([islet.x, islet.z], h);
+    const p = walk.state.pos;
+    if (dist(p.x, p.z, cx, cz) > islet.r + ROWBOAT_CALL) return;
+    const mine = rowboat.mine();
+    // Never from under somebody in it, nor with the statue in it: she goes where the boat goes.
+    if (mine && (mine === aboard() || mine === statueOn())) return;
+    if (mine && dist(mine.x, mine.z, cx, cz) < islet.r + ROWBOAT_NEAR) return;
+    const spot = rowboatSpot(islet, { x: hunt.at.x - islet.x, z: hunt.at.z - islet.z });
+    if (!spot) return;
+    const [x, z] = worldToScene([spot.x + islet.x, spot.z + islet.z], h);
+    if (rowboat.launch(x, z, Math.atan2(spot.bow[0], spot.bow[1]))) {
+      say('A little <b>rowing boat</b> lies ready off the islet. Walk the statue into it.');
+    }
+  }
+  // With the statue in the arms and the feet at a rowing boat: she goes into it, no key needed.
+  function touchRowboat() {
+    if (!rowboat || walk.carrying() !== 'statue' || aboard()) return;
+    const p = walk.state.pos;
+    for (const hull of rowboat.hulls()) {
+      if (dist(p.x, p.z, hull.x, hull.z) <= rowboat.reach) { layOnBoat(hull); return; }
+    }
+  }
+  // Afloat in a rowing boat with the statue in it, at a ship's ladder: E takes her up.
+  function afloat() {
+    const row = aboard();
+    if (!rowboat || !row || statueOn() !== row) return [];
+    let best = null;
+    for (const l of rowboat.ladders()) {
+      const d = dist(row.x, row.z, l.x, l.z);
+      if (d <= HOIST_REACH && (!best || d < best.d)) best = { ...l, d };
+    }
+    if (!best) return [];
+    return [{ id: 'treasure:hoist', kind: 'hoist', treasure: true, ship: best.ship, ladder: best.ladder,
+      x: row.x, z: row.z, r: 99, label: 'the ship', prompt: 'hoist the statue aboard' }];
+  }
+  // On a ship's deck with the statue on it, beside her: E lowers her into the rowing boat.
+  function onDeck(deck) {
+    const ship = deck && deck.boat;
+    if (!rowboat || !ship || statueOn() !== ship) return [];
+    if (!rowboat.cargoAt(ship)) return [];
+    // Read where she stands each time it is asked: the ship moves under the list.
+    const at = () => rowboat.cargoAt(ship) || { x: Infinity, z: Infinity };
+    return [{ id: 'treasure:lower', kind: 'lower', treasure: true, ship, r: LOWER_REACH,
+      get x() { return at().x; }, get z() { return at().z; },
+      label: 'the statue', prompt: 'lower the statue into the rowing boat' }];
+  }
+  function hoist(it) {
+    if (!rowboat || !rowboat.hoist(it.ship, it.ladder)) return;
+    say('Up she goes. The statue is on the deck; the rowing boat waits at the ladder.');
+    refresh();
+  }
+  function lower(it) {
+    if (!rowboat || !rowboat.lower(it.ship)) return;
+    say('Down she goes, into the rowing boat. Row her ashore.');
+    refresh();
   }
 
   // walk.board() puts the statue on the hull by itself for somebody who steps aboard with it.
@@ -470,6 +574,8 @@ export function createTreasureHunt(deps) {
     const hands = `${walk.carrying()}|${!!walk.cargo()}`;
     if (hands !== lastHands) { lastHands = hands; refresh(); }
     for (let i = linger.length - 1; i >= 0; i--) if (seconds >= linger[i].until) { linger.splice(i, 1); refresh(); }
+    callRowboat(seconds);
+    touchRowboat();
     // The day turning over brings the next bottle (or takes the old one out to sea).
     const day = clock().day;
     if (day !== lastDay) { lastDay = day; refresh(); }
@@ -483,7 +589,7 @@ export function createTreasureHunt(deps) {
   }
 
   return {
-    refresh, interactables, interact, onDigDone, onDigCancelled, frame, boot, layOnBoat, boardedWith,
+    refresh, interactables, interact, onDigDone, onDigCancelled, frame, boot, layOnBoat, boardedWith, afloat, onDeck,
     // Read by tests and by main.js's boat prompt.
     bottle: () => bottle, sites: () => sites, digging: () => !!digging,
   };
