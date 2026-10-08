@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
-import { stepBoat, hullOver, shipsOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
+import { stepBoat, hullOver, shipsOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh, setSail, strikeSail, stepUnderSail, sailStep, heavyHull } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
@@ -1468,6 +1468,11 @@ export function createWalkMode({
   function board(boat) {
     if (!boat) return;
     putBikeAway();
+    // A ship's sails stay as they stand (boat.js sailStep, W and S at her wheel). One that comes to us
+    // under none we know of - running out after a jump, or never sailed - is given the step that
+    // matches the way she has on, never more, so taking her wheel does not stop her dead.
+    if (heavyHull(boat) && !Number.isFinite(boat.underSail)) setSail(boat);
+    sailKey = 0;
     state.vehicle = boat;
     standUp();
     // A statue in the arms goes onto the hull: a pilot has both hands on the tiller.
@@ -1523,8 +1528,17 @@ export function createWalkMode({
   // on her ladder update() is already at it. Escape is not this - exitWalk stops her on purpose.
   const RUNNING = 0.05;
   let loose = null;
+  // A ship's wheel (Plans/galjoen-vaart-houden.md): W or S held is one step of sail (boat.js sailStep),
+  // and another every SAIL_REPEAT_S after the first SAIL_REPEAT_FIRST_S; `sailKey` is the way it was
+  // pushed last frame, so a press counts once.
+  const SAIL_REPEAT_FIRST_S = 0.45, SAIL_REPEAT_S = 0.3;
+  let sailKey = 0, sailRepeat = 0;
+  // Somebody else sails her on now (lib/boats.mjs handOn): she is not ours to run out any more.
+  function stopRunning(b) { if (loose === b) loose = null; }
   const heavy = (b) => { const s = specOf(b); return !!(s && s.sail && s.sail.runOut); };
-  function letRun(b) { loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
+  // Off her for good: the sails are struck (boat.js setSail - they stood only while somebody who let
+  // go of her wheel stayed aboard), and from here she runs out on the water's drag.
+  function letRun(b) { strikeSail(b); loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
   const onHull = (b) => b === deckBoat || b === state.vehicle || !!(climb && climb.boat === b);
   // The hull we are running out, or null: she is not once she has stopped, once somebody else has
   // the wheel, or while we are on her again.
@@ -1560,6 +1574,39 @@ export function createWalkMode({
   function planeOf(b) {
     plane = b && b.craft && b.craft.object ? hullTiltOf(b, planeQ) : null;
   }
+  // Standing at the helm of whatever boat we are steering, after walk mode has stepped her this frame.
+  function atTheWheel(dt) {
+    // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
+    // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
+    const v = state.vehicle, h = v.craft && v.craft.helm;
+    const s = Math.sin(v.yaw), c = Math.cos(v.yaw);
+    const hx = h ? h.x * c + h.z * s : 0, hz = h ? h.z * c - h.x * s : 0;
+    // And on the plane at the wheel, swell and tilt and all (see hullPoint), not at the middle's
+    // height over a flat frame.
+    if (h && v.craft && v.craft.object) {
+      state.pos.copy(hullPoint(v, h.x, h.y - DECK_Y, h.z));
+      planeOf(v);
+    } else state.pos.set(v.x + hx, v.deckY ?? DECK_Y, v.z + hz);
+    state.yaw = state.vehicle.yaw;
+    // The camera trails the bow rather than staying where the mouse left it. You steer
+    // with a rudder here, not by walking towards what you are looking at, so a camera
+    // that did not follow would leave you sailing sideways out of frame. But not while you
+    // are looking round: like the bike, it waits until you have sailed RECENTRE_AFTER
+    // without touching it and then eases back in. It used to pull every frame, which on a
+    // phone - where looking is a drag and not a flick - meant you could not look at all.
+    if (Math.abs(state.vehicle.v) > 0.05) riddenSinceLook += dt;
+    const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
+    if (ease > 0) state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5 * ease));
+    state.moving = Math.abs(state.vehicle.v) > 0.05;
+    state.running = false;
+    state.sprinting = false;
+    state.grounded = true;
+    state.swimming = false;
+    state.floor = state.pos.y;
+    state.vy = 0;
+    state.bob += dt * 1.2;
+    return afterMove(dt);
+  }
   // From the helm onto the deck, a pace forward of the wheel.
   function leaveHelm() {
     const b = state.vehicle, spec = specOf(b);
@@ -1576,6 +1623,8 @@ export function createWalkMode({
       ({ x, z, y } = at);
     }
     state.vehicle = null;
+    // Her sails stay as they were set at the wheel (Plans/galjoen-vaart-houden.md): she keeps the way
+    // they give her and the heading she is on, the rudder amidships, for as long as we are aboard her.
     deckBoat = b;
     state.deck = { boat: b.id, x, z, y, vy: 0, grounded: true, yaw: 0 };
     state.swimming = false;
@@ -1859,7 +1908,7 @@ export function createWalkMode({
     if (climb.aloft) return stepMastClimb(dt, ix, iz);
     const c = climb, b = c.boat;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1953,7 +2002,7 @@ export function createWalkMode({
   function stepMastClimb(dt, ix, iz) {
     const c = climb, b = c.boat, l = c.aloft;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -2036,7 +2085,7 @@ export function createWalkMode({
   // One frame seated on a deck: carried by the hull, and up on the first step or a jump.
   function stepDeckSeat(dt, ix, iz) {
     const b = deckBoat, d = state.deck;
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -2236,10 +2285,11 @@ export function createWalkMode({
   function stepGun(dt, ix, iz) {
     const b = deckBoat, d = state.deck, gun = state.gun, g = mountsOf()[gun.i];
     if (!b || !g) { state.gun = null; return afterMove(dt); }
+    // Her sails stand while a gun is manned: the reason a crew of one may let go of her wheel at all.
+    // And a harpoon's line on her (Plans/harpoen.md) draws her along it, here - after her sails, before
+    // the body is stood on her - so the gunner rides the tow rather than sliding a frame behind it.
     if (!isFollowing(b)) {
-      stepBoat(b, {}, dt, boatGround(b));
-      // A harpoon's line on her (Plans/harpoen.md): main.js draws her along it, here, before the body
-      // is stood on her, so the gunner rides the tow rather than sliding a frame behind it.
+      stepUnderSail(b, dt, boatGround(b));
       if (state.onGunTow) state.onGunTow(b, gun, dt);
     }
     stepPool(state.stamina.body, false, dt);
@@ -2320,7 +2370,7 @@ export function createWalkMode({
     if (state.gun) return stepGun(dt, ix, iz);
     if (state.deck.seat && state.sitting) return stepDeckSeat(dt, ix, iz);
     const b = deckBoat, spec = specOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround(b));
     const push = Math.min(1, Math.hypot(ix, iz));
     const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
     stepPool(state.stamina.boat, false, dt);
@@ -3014,6 +3064,28 @@ export function createWalkMode({
     // would have put a mode flag inside the collision test of every walking frame. The
     // vehicle simply steers instead of walking, and land is its wall. The sea is open to a
     // swimmer too, but at a fifth of the speed - that ratio is what the boat is for now.
+    if (state.vehicle && heavyHull(state.vehicle)) {
+      // A ship's wheel: W and S are not a throttle but a step of sail on or off, and what is set stands
+      // (boat.js SAIL_STEPS). A press is one step; held, another every SAIL_REPEAT_S.
+      const v = state.vehicle;
+      const want = iz > 0.5 ? 1 : iz < -0.5 ? -1 : 0;
+      if (want !== sailKey) {
+        sailKey = want;
+        sailRepeat = SAIL_REPEAT_FIRST_S;
+        if (want) sailStep(v, want);
+      } else if (want) {
+        sailRepeat -= dt;
+        if (sailRepeat <= 0) { sailRepeat = SAIL_REPEAT_S; sailStep(v, want); }
+      }
+      // The turbo is Shift under full sail, and only then.
+      const full = (v.underSail || 0) >= 1;
+      const turbo = stepPool(state.stamina.boat, boost && full, dt);
+      if (!full || state.stamina.boat.spent) stick.run = false;
+      stepPool(state.stamina.body, false, dt);
+      state.turbo = turbo;
+      stepUnderSail(v, dt, boatGround(v), { turn: ix, turbo });
+      return atTheWheel(dt);
+    }
     if (state.vehicle) {
       // Only ahead: the turbo lifts the top speed, and astern has nothing for it to lift.
       const turbo = stepPool(state.stamina.boat, boost && iz > 0.02, dt);
@@ -3026,37 +3098,7 @@ export function createWalkMode({
       stepPool(state.stamina.body, false, dt);
       state.turbo = turbo;
       stepBoat(state.vehicle, { throttle: iz, turn: ix, turbo }, dt, boatGround(state.vehicle));
-      // At the helm, which on a ship is not the middle of the hull (boat.js SHIP_HELM): its
-      // offset turned with the hull, forward being (sin, cos) of the yaw as everywhere here.
-      const v = state.vehicle, h = v.craft && v.craft.helm;
-      const s = Math.sin(v.yaw), c = Math.cos(v.yaw);
-      const hx = h ? h.x * c + h.z * s : 0, hz = h ? h.z * c - h.x * s : 0;
-      // And on the plane at the wheel, swell and tilt and all (see hullPoint), not at the middle's
-      // height over a flat frame.
-      if (h && v.craft && v.craft.object) {
-        state.pos.copy(hullPoint(v, h.x, h.y - DECK_Y, h.z));
-        planeOf(v);
-      } else state.pos.set(v.x + hx, v.deckY ?? DECK_Y, v.z + hz);
-      state.yaw = state.vehicle.yaw;
-      // The camera trails the bow rather than staying where the mouse left it. You steer
-      // with a rudder here, not by walking towards what you are looking at, so a camera
-      // that did not follow would leave you sailing sideways out of frame. But not while you
-      // are looking round: like the bike, it waits until you have sailed RECENTRE_AFTER
-      // without touching it and then eases back in. It used to pull every frame, which on a
-      // phone - where looking is a drag and not a flick - meant you could not look at all.
-      if (Math.abs(state.vehicle.v) > 0.05) riddenSinceLook += dt;
-      const ease = clamp((riddenSinceLook - RECENTRE_AFTER) / RECENTRE_EASE, 0, 1);
-      if (ease > 0) state.camYaw = lerpAngle(state.camYaw, state.vehicle.yaw, Math.min(1, dt * 2.5 * ease));
-      state.moving = Math.abs(state.vehicle.v) > 0.05;
-      state.running = false;
-      state.sprinting = false;
-    state.sprinting = false;
-      state.grounded = true;
-      state.swimming = false;
-      state.floor = state.pos.y;
-      state.vy = 0;
-      state.bob += dt * 1.2;
-      return afterMove(dt);
+      return atTheWheel(dt);
     }
 
     // ---- on the bike ------------------------------------------------------------
@@ -3875,7 +3917,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut, stopRunning,
     // The guns on her deck (Plans/kanonnen.md): which one is within reach, manning and letting go of
     // one, and the three things done at it; `launchSelf` is a body out of a gun's mouth.
     gunNear, manGun, leaveGun, loadGun, fireGun, climbInGun, launchSelf, gun: () => state.gun, discharge,

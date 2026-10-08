@@ -325,6 +325,13 @@ h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; colo
 .vital.tipsy i { background: linear-gradient(#c79cf2, #7b3fc4); }
 .vital.dig i { background: linear-gradient(#f0b070, #b8641e); }
 .vital[hidden] { display: none; }
+/* The log (vitals.js setLog): a sea-green bar with the knots beside it, and a dash of canvas-white
+   while her sails stand with nobody at the wheel. Switched off per browser in Settings -> On foot. */
+.vital.log i { background: linear-gradient(#8fe0c8, #2f9c86); }
+.vital.log.sails i { background: linear-gradient(#f4efe0, #8fe0c8); }
+.vital.log em { flex: none; min-width: 44px; font-style: normal; font-size: 11px; font-variant-numeric: tabular-nums;
+  text-align: right; color: var(--ink); text-shadow: 0 1px 2px rgba(5, 22, 24, .6); }
+body.no-log .vital.log { display: none; }
 /* Run dry and not yet back to a quarter: Shift does nothing until it is, and the bar says so. */
 .vital.stamina.spent i { background: linear-gradient(#a08450, #7a5f2e); }
 /* The horse's own pool while riding (web/js/vitals.js setStamina { horse }): chestnut, not yellow. */

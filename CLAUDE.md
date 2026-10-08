@@ -963,7 +963,16 @@ ship is heavy: `CRAFTS.galleon.sail` carries her own `drag`, `creep`, `bite`, `a
 takes 6 s to top speed and runs out ~45 s / ~130 units, and `runOut` (60 s) is how long the sea takes
 her position from whoever let go (`coastOf` in lib/boats.mjs, else `COAST_MS`): keep it above the
 run-out from full turbo or she freezes for everybody else while her own page still sails her
-(`tests/boat-inertia.test.mjs`). Nothing steps a hull nobody is aboard, so a ship you jump or
+(`tests/boat-inertia.test.mjs`). **A ship is sailed by her sails, not a throttle** ([Plans/galjoen-vaart-houden.md](Plans/galjoen-vaart-houden.md)):
+at her wheel W/S step `b.underSail` through `SAIL_STEPS` (-1 astern .. 1 full, boat.js `sailStep`; Shift is turbo
+only under full sail) and the setting stands with no key held, at the wheel and after `leaveHelm` alike - every
+step of her in walk.js is `stepUnderSail`, so a crew of one can man a gun; struck aground and by `letRun`.
+lib/boats.mjs `moved` takes the position of whoever let go (`coast.by`) for as long as they are crew
+(`holdsSail`); when they leave or close their tab with crew still aboard, `handOn` names the next (`coast` and
+`sail` ride the boat state only while nobody has the wheel, `sail` rides the `letgo`: optional fields, a patch)
+and that page takes her over from her track (main.js `onBoatFromServer`, `hullFollowed` follows `b.coast`). The
+open sea needs a redeploy for it. The HUD's log (`.vital.log`, vitals.js `setLog`, boat.js `logOf`/`hullSpeed` -
+a followed hull off her track) shows the knots and sails of `ownHull()`. Nothing steps a hull nobody is aboard, so a ship you jump or
 climb off (`letRun` in walk.js, the three `onLeftDeck` sites) is kept in `loose` and stepped by
 `walk.runOut(dt)`, which main.js calls every frame in every mode until she stops, somebody else has
 the wheel or you are on her again; she is `runningHull()` there, whose position is sent like

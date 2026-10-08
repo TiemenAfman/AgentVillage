@@ -603,7 +603,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     // Respawn to town (issue #74): only the asking - where to is the sea's (lib/health.mjs
     // respawn). False when the line is down, so the caller can put us back itself.
     respawn() { return walking && send({ t: 'respawn' }); },
-    letGoBoat(id) { sendHull(); send({ t: 'boat', a: 'letgo', id }); },
+    // `sail`: the sails she is left under (boat.js SAIL_STEPS), for whoever sails her on after us; a sea
+    // from before it ignores the field.
+    letGoBoat(id, sail) { sendHull(); send({ t: 'boat', a: 'letgo', id, ...(Number.isFinite(sail) ? { sail } : {}) }); },
     // And where the hull has got to, on the pose beat rather than a beat of its own: the
     // pilot is already sending ten poses a second and the boat is under them, so this is
     // one more message on the same bucket and no new ceiling to reason about. Twenty a

@@ -48,6 +48,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - 🚧 [harpoen.md](harpoen.md) — harpoenkanonnen op het galjoen zoals in Sea of Thieves: richten, schieten,
   automatisch inspoelen; het schatbeeld en spelers naar je toe, je schip naar land of een ander schip
   ("chase"); over het strakke touw balanceren of ziplinen naar gelang de helling. Bemannen gedeeld met de kanonnen.
+- 🚧 [galjoen-vaart-houden.md](galjoen-vaart-houden.md) — het galjoen vaart op zeilstanden (W/S aan het roer, ¼ tot vol
+  en achteruit) die blijven staan, ook als je het roer loslaat en aan boord blijft (alleen de kanonnen of het harpoen
+  bemannen). Pas wie eraf springt laat haar uitrollen, of de crew die achterblijft vaart haar verder. Een log in de HUD
+  (knopen en zeilstand). Een patch, maar de open zee moet worden geredeployd.
 - 🚧 [kanonnen.md](kanonnen.md) — de acht kanonnen uit de galjoen-bake weg, twee kanonnen van de keeper (eigen FBX) erop: bemannen, draaien, richten, laden, vuren, inslag met explosie, plons en geluid, en jezelf afvuren langs een kogelbaan.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en

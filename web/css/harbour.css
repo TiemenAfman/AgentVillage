@@ -233,6 +233,7 @@ select option { color: var(--ink); background: var(--panel-solid); }
   .vitals { align-self: flex-start; margin-left: 16px; width: min(140px, 36vw); gap: 3px; }
   .vital b { height: 6px; }
   .vital span { width: 12px; font-size: 10px; }
+  .vital.log em { min-width: 38px; font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
