@@ -2716,9 +2716,9 @@ function startSfx() {
   state.sfx.refresh();
 }
 
-// The village tavern, for the keeper's own tracks in HOME/audio/kroeg: the room when you are in
-// it, the distance to the tavern when you are near it. It has no computed song, so this is
-// heard only when there are tracks.
+// The village tavern's music - its jazz trio, or the keeper's own tracks in HOME/audio/kroeg: the
+// room when you are in it, the distance to the tavern when you are near it (sound.js songOutside
+// fades it out by JAZZ_RANGE, inside this 30).
 function tavernHeard() {
   if (state.inside) return state.inside.room === 'tavern' ? { inside: true } : null;
   const rec = state.byId.get('civic:tavern');

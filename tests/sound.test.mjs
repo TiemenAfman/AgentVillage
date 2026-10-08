@@ -605,6 +605,40 @@ test('a tavern is heard through its door: open at the threshold, shut along the 
   assert.ok(along.cut >= 600 && atDoor.cut <= 1200);
 });
 
+// Out of doors the taverns were under the wind and the surf (the keeper, 8 October 2026, "kan
+// buiten de tavern en jazz geluiden iets harder?"). What reaches the master, in dB by the gated
+// RMS the recordings are brought to (SFX_LEVEL), before the door's lowpass - pinned so a change of
+// the curve is a change of these numbers. The old ones are in the comments by the constants.
+test('the taverns are heard outside over the wind, and inside as before', async () => {
+  const { pubOutside, songOutside, pannerGain, PUB_REF, PUB_ROLLOFF } = await import('../web/js/sound.js');
+  const { SFX_LEVEL } = await import('../web/js/sound-samples.js');
+  const db = (x) => 20 * Math.log10(x);
+  const JAZZ_RMS = 0.18, SHANTY_RMS = 0.2;           // level(chs, ...) in jazzSong / shantySong
+  const wind = db(0.045 * SFX_LEVEL.wind);           // WIND_LOUD, inland in the open: -42.9
+  const sea = db(0.12 * SFX_LEVEL.surf);             // SEA_LOUD, at the water's edge: -35.1
+  const chatter = (kind, full, d) => db(SFX_LEVEL[kind === 'village' ? 'murmur' : 'kraken']
+    * pubOutside(full, 1, d) * pannerGain(Math.hypot(d, 1), PUB_REF, PUB_ROLLOFF[kind]));
+  const near = (got, want, msg) => assert.ok(Math.abs(got - want) < 0.15, `${msg}: ${got.toFixed(2)} dB, pinned at ${want}`);
+  // The jazz, by the distance main.js measures (camera to the tavern).
+  near(db(JAZZ_RMS * songOutside('tavern', 3)), -31.8, 'jazz at the door (was -37.4)');
+  near(db(JAZZ_RMS * songOutside('tavern', 5)), -33.2, 'jazz 5 off (was -39.4)');
+  near(db(JAZZ_RMS * songOutside('tavern', 10)), -37.5, 'jazz 10 off (was -45.4)');
+  // Three stood about the village door; the Kraken's crew, always in.
+  near(chatter('village', 1 / 3, 3), -35.0, 'village chatter at the door (was -39.8)');
+  near(chatter('village', 1 / 3, 10), -42.2, 'village chatter 10 off (was -49.6)');
+  near(chatter('kraken', 0.35, 3), -34.0, 'Kraken chatter at the stair (was -38.8)');
+  near(chatter('kraken', 0.35, 10), -40.7, 'Kraken chatter 10 off (was -47.7)');
+  near(db(SHANTY_RMS * songOutside('shanty', 10)), -32.1, 'shanty 10 off (was -37.7)');
+  // Over the bed they compete with, where they did not before.
+  assert.ok(db(JAZZ_RMS * songOutside('tavern', 10)) > wind, 'the jazz ten units off is over the wind');
+  assert.ok(chatter('village', 1 / 3, 3) > wind + 6, 'the chatter at the door is well over the wind');
+  assert.ok(db(SHANTY_RMS * songOutside('shanty', 10)) > sea, 'the shanty from the gangway is over the surf');
+  // Still a fade to nothing within main.js's cut-offs (30 for the tavern, 40 for the Kraken).
+  assert.equal(songOutside('tavern', 28), 0);
+  assert.equal(songOutside('shanty', 30), 0);
+  assert.equal(pubOutside(0, 1, 3), 0, 'an empty tavern says nothing');
+});
+
 test('the Salty Kraken hums with nobody from the village there, and has a voice of its own', () => {
   store = {};
   const look = village(2, { anim: 'still', tavern: false });
