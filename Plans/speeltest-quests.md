@@ -1,7 +1,7 @@
 # Speeltest van de quests (8 oktober 2026)
 
-**🚧 Status: speelrapport; vier bugs gerepareerd op `claude/determined-mestorf-c43d75`, de rest staat
-hieronder als bevinding of vraag.** Gespeeld: de schattenjacht met de roeiboot van begin tot eind, en de
+**🚧 Status: speelrapport; vier bugs gerepareerd en de twee besluiten van de keeper over de mijn gebouwd
+op `claude/determined-mestorf-c43d75`, de rest staat hieronder als bevinding of vraag.** Gespeeld: de schattenjacht met de roeiboot van begin tot eind, en de
 goudmijn-lijn tot en met verdieping 5 (gestopt op verzoek van de keeper; de sleutel is nog niet gehaald).
 
 De keeper vroeg letterlijk: *"Laat een agent de quest spelen."* Tijdens het spelen kwam erbij:
@@ -143,20 +143,22 @@ Tijdens de test (8 oktober 2026):
 | De ruimte | **Blijft zoals hij is** (eerst "net zo groot als de graafbare cellen", daarna teruggedraaid). |
 | Camera | **Meer van boven kijken** in de mijn. |
 
-Hoe het te bouwen (nog niet gedaan - de keeper zei "zet dit in het rapport"):
+Gebouwd (de keeper: *"bouw de onzichtbare graafplekken en de camera van boven"*):
 
-- *Onzichtbare plekken*: `fieldParts` in `web/js/mine-room.js` tekent voor een onaangeroerde plek niets
-  meer (de vloer van de grot is het veld), een kuil en de trap blijven. Rotsen blijven zichtbaar (je moet
-  zien waar je niet kunt graven en ze zijn blockers). Wat je dan nog nodig hebt om te weten wáár je graaft:
-  de plek vóór je als lichte omtrek of een schepje-cursor op de vloer, alleen zolang er iets te doen is - of
-  niets, en dan is de prompt de enige hint. Dat is een keuze voor de keeper.
-- *Camera van boven*: de kamer geeft walk mode al een eigen camera (`camera: { back: 1.8, up: 0.62, aim:
-  0.3 }` in `buildGoldMine`); hoger `up` met meer `aim` naar beneden, of een vaste neerwaartse pitch in de
-  mijn. Te testen in de kamer met de lage zoldering (1.2): de camera mag niet door de rotsen boven.
+- *Onzichtbare plekken*: `fieldParts` in `web/js/mine-room.js` tekent een onaangeroerde plek niet meer;
+  rotsen, kuilen, de trap en de sleutel blijven. Alleen de hoopjes weglaten maakte het veld een zwarte vlek
+  (de grotvloer is donker en de hoopjes vingen het licht), dus het hele veld ligt nu onder één effen bed losse
+  aarde dat niets verraadt van waar de plekken liggen, en de lampen en het omgevingslicht zijn wat feller
+  (`LAMP` 3,2, was 2,4). Geen cursor op de vloer: de prompt ("E dig here") is de enige hint.
+- *Camera van boven*: een kamer mag nu zijn eigen kijkhoek bij binnenkomst opgeven (`camera.pitch`,
+  interior.js; zonder blijft het 0,05). De mijn kijkt met `MINE_PITCH` 0,75 en `back` 3,0 neer op het veld,
+  door het rotsplafond heen dat interior.js als deksel weghaalt; met de muis kun je nog vlakker kijken. Je
+  ziet de kuil ontstaan en het grootste deel van het veld tegelijk.
+
+![De mijn van boven, met onzichtbare plekken](speeltest-quests/mijn-van-boven.jpg)
 
 ## Vragen voor de coördinator
 
-1. Mag ik de twee keeper-besluiten (onzichtbare plekken, camera van boven) op deze branch bouwen?
-2. B1 (boten door schepen) en B2 (herladen zet je op het plein): eigen chip, of laten zo?
-3. Balans: de mijn betaalt de drankjes niet (≈ 0,35 munt per graafbeurt tegen 0,4 per beurt aan
+1. B1 (boten door schepen) en B2 (herladen zet je op het plein): eigen chip, of laten zo?
+2. Balans: de mijn betaalt de drankjes niet (≈ 0,35 munt per graafbeurt tegen 0,4 per beurt aan
    drankje). Bewust, of de prijzen/kansen in `shared/mine.mjs` bijstellen?

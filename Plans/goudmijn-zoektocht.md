@@ -184,5 +184,6 @@ De mijnlijn loopt **parallel** aan het verhaal (de keeper): vanaf het begin open
 - De grot is primitieven; een `minekit`-bake zou mooier zijn.
 - Een tweede blik op de getallen na echt spelen (balk, stenen, prijs van het drankje). Gespeeld op 8
   oktober 2026, zie [speeltest-quests.md](speeltest-quests.md): ruim 100 graafbeurten voor vier verdiepingen,
-  ≈ 0,35 munt per beurt tegen 0,4 aan drankje. Daar ook de besluiten van de keeper: de graafplekken worden
-  onzichtbaar en de camera kijkt meer van boven; 7 x 7 en de ruimte blijven.
+  ≈ 0,35 munt per beurt tegen 0,4 aan drankje. Daar ook de besluiten van de keeper, gebouwd: de graafplekken zijn
+  onzichtbaar (één effen bed losse aarde over het veld) en de camera kijkt van boven (`camera.pitch`); 7 x 7 en
+  de ruimte blijven.

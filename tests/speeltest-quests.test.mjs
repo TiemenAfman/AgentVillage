@@ -62,6 +62,41 @@ test('the gold mine\'s rope ladder by the way in is a way out, a step in front o
   assert.match(src('web/js/interior.js'), /if \(it\.kind === 'exit'\) \{ leave\(it\.to\); return; \}/);
 });
 
+test('a spot nobody has dug is not drawn, a dug one is; the mine is looked down into', async () => {
+  const THREE = await import('three');
+  const { MINE_PITCH } = await import('../web/js/mine-room.js');
+  const run = createMineRun({ storage: memory(), island: () => 'isle', day: () => 1 });
+  run.enter();
+  const rect = (x, z, hx, hz) => ({ x, z, hx, hz });
+  const def = buildGoldMine({ FLOOR: 0, rect, run });
+  const scene = new THREE.Scene();
+  const show = def.show({ scene, material: new THREE.MeshBasicMaterial() });
+  const tris = () => {
+    const m = scene.children.find((c) => c.isMesh);
+    if (!m) return 0;
+    const g = m.geometry;
+    return (g.index ? g.index.count : g.attributes.position.count) / 3;
+  };
+  const rocks = () => run.plan().rock.reduce((a, b) => a + b, 0);
+  show.enter();
+  const perRock1 = tris() / rocks();
+  // Down a floor (another count of rocks, another count of earth): the field is still rocks only.
+  run.dig(run.plan().goal);
+  run.descend();
+  show.enter();
+  assert.notEqual(rocks(), 0);
+  assert.equal(tris() / rocks(), perRock1, 'an undug spot adds nothing to the field');
+  const before = tris();
+  const earth = [...run.plan().rock.keys()].find((i) => !run.plan().rock[i] && i !== run.plan().goal);
+  run.dig(earth);
+  show.enter();
+  assert.ok(tris() > before, 'a dug spot is a hole you can see');
+  assert.equal(def.camera.pitch, MINE_PITCH);
+  assert.ok(MINE_PITCH > 0.6 && MINE_PITCH <= 0.95, 'well down, and inside what the mouse may reach');
+  // interior.js hands a room's own pitch to the walk on the way in.
+  assert.match(src('web/js/interior.js'), /walk\.state\.camPitch = back && back\.pitch != null \? back\.pitch : \(CAM\.pitch \?\? 0\.05\);/);
+});
+
 test('only somebody who comes to live here pitches a tent', () => {
   const main = src('web/js/main.js');
   const body = main.slice(main.indexOf('async function walkIn('), main.indexOf('async function sailIn('));

@@ -858,8 +858,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
       // I (the wardrobe) is a key of the walker's, so a room has to hand it on as the island does.
       onAvatar,
     });
-    // Indoors you look across the room, not over the treetops.
-    walk.state.camPitch = back && back.pitch != null ? back.pitch : 0.05;
+    // Indoors you look across the room, not over the treetops - unless the room says otherwise
+    // (`camera.pitch`: the gold mine is looked down into, its lid off).
+    walk.state.camPitch = back && back.pitch != null ? back.pitch : (CAM.pitch ?? 0.05);
     return !!back;
   }
 
