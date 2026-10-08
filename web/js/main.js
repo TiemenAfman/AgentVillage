@@ -38,7 +38,8 @@ import { createRoadDebug } from './road-debug.js';
 import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
 import { createCannonFx } from './cannon-fx.js';
-import { BALL_SPEED, HUMAN_SPEED } from 'shared/cannon.mjs';
+import { createHullBars } from './hull-bars.js';
+import { BALL_SPEED, HUMAN_SPEED, ROWBOAT_BOX } from 'shared/cannon.mjs';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
 import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
@@ -2375,15 +2376,45 @@ function onCannonMessage(m) {
     }
   } else if (m.a === 'boom' && Array.isArray(m.at)) {
     state.cannonFx.landed(`${m.by}:${m.n}`, m.at, m.kind || 'body');
+  } else if (m.a === 'hull' && typeof m.id === 'string') {
+    if (state.hullBars && Number.isFinite(m.hits) && Number.isFinite(m.of)) state.hullBars.hit(m.id, m.hits, m.of);
+    // A ball in a hull: said to whoever is on her, so the next one is not a surprise.
+    const mine = boatAt(m.id);
+    if (mine && state.walk && (state.walk.onDeck() === mine || state.walk.aboard() === mine)) {
+      state.ui.toast(`She is hit! ${m.of - m.hits} more and she goes down.`);
+    }
   }
+}
+// A boat sunk by gunfire (lib/cannons.mjs): she goes down where she was in a column of spray and
+// smoke and is back at her mooring (the rest of the message, onBoatFromServer); whoever was on her -
+// at the helm, on the deck, on her ladder - is in the water where she sank.
+function sunkHere(m) {
+  const [x, z] = m.sunk;
+  const b = boatAt(m.id);
+  if (state.hullBars) state.hullBars.clear(m.id);
+  if (state.cannonFx) state.cannonFx.sink([x, 0, z], isShip(b));
+  if (!b || !state.walk) return;
+  if (state.walk.aboard() === b) {
+    state.walk.unboard([x + 1.5, z], { water: true });
+    if (state.net) state.net.setRoom(null, state.walk);
+  } else if (state.walk.onDeck() === b) {
+    const p = state.walk.state.pos;
+    state.walk.launchSelf([p.x, Math.max(p.y, 1), p.z], [0, 2.5, 0]);
+  } else return;
+  b.pilot = null;
+  b.track = null;
+  b.v = 0;
+  state.ui.toast(isShip(b) ? 'Your ship has gone down! She is back at her mooring.' : 'Your boat has gone down! It is back at its mooring.');
+  state.walk.setInteractables(interactables());
 }
 // What a ball can come down on, in the scene: the archipelago's ground (islets and every island, the
 // sea floor between) and every ship's hull where she floats this frame.
 function cannonWorld() {
   const hulls = [];
   for (const b of state.boats || []) {
-    if (!isShip(b)) continue;
-    hulls.push({ id: b.id, x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw), y: b.craft.object ? b.craft.object.position.y : 0 });
+    if (isSkiff(b.id)) continue;
+    hulls.push({ id: b.id, x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw), y: b.craft.object ? b.craft.object.position.y : 0,
+      ...(isShip(b) ? {} : { box: ROWBOAT_BOX }) });
   }
   return { height: (x, z) => state.sea.height(x, z), hulls };
 }
@@ -4975,6 +5006,7 @@ function skiffFor(m) {
 }
 
 function onBoatFromServer(m) {
+  if (Array.isArray(m.sunk)) sunkHere(m);
   const b0 = state.boats.find((x) => x.id === m.id);
   const b = b0 || (isSkiff(m.id) && !m.gone && Number.isFinite(m.x) && Number.isFinite(m.z) ? skiffFor(m) : null);
   if (m.gone) {
@@ -8141,6 +8173,7 @@ function frame(nowMs) {
   gunFuseFx();
   if (state.cannonFx) state.cannonFx.update(dt, state.sea ? cannonWorld() : null, pointScale());
   syncGunHud();
+  if (state.hullBars) state.hullBars.update(state.boats || [], camera, isShip);
   if (state.peers) {
     state.peers.setVisible(live);
     state.peers.update(dt, { beat: danceBeat() });
@@ -9456,6 +9489,8 @@ Everything is copied and checked first; the island then starts again there. The 
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   // The guns' balls, flashes, smoke and spray (Plans/kanonnen.md): one set for every ship in sight.
   state.cannonFx = createCannonFx({ scene });
+  // And a hull's health over every boat a ball has hit (web/js/hull-bars.js).
+  state.hullBars = createHullBars(scene);
   // What a shape looks like before anybody has agreed to it. Built after the world and
   // the props, because it aims at the ground mesh and measures against what is standing.
   state.ghost = createGhost({

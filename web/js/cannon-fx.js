@@ -262,8 +262,24 @@ export function createCannonFx({ scene }) {
     if (rnd() < 0.3) emit(smoke, at, [(rnd() - 0.5) * 0.1, 0.35, (rnd() - 0.5) * 0.1], 1.2, 0.03, 0.18, 'smoke', [0.7, 0.7, 0.68]);
   }
 
+  // A boat going down where she was (her hull jumps home, so this is what is seen at the spot): a
+  // ring of spray, wreck smoke and a splash, bigger for a ship.
+  function sink(at, ship) {
+    splash(at);
+    const r = ship ? 3 : 0.8;
+    seed = 11 + ((Math.abs(at[0] * 17 + at[2] * 23) | 0) % 9973);
+    for (let k = 0; k < (ship ? 30 : 10); k++) {
+      const a = rnd() * Math.PI * 2, d = rnd() * r;
+      const p = [at[0] + Math.cos(a) * d, 0.1, at[2] + Math.sin(a) * d];
+      emit(smoke, p, [Math.cos(a) * 0.4, 1 + rnd() * 2.5, Math.sin(a) * 0.4], 2.5 + rnd() * 2, 0.4, 1.8 + rnd(), 'soot', [0.2, 0.19, 0.18]);
+      emit(smoke, p, [Math.cos(a) * 1.4, 2 + rnd() * 3, Math.sin(a) * 1.4], 1 + rnd() * 0.5, 0.2, 0.6, 'spray', [0.93, 0.96, 1.0]);
+    }
+    say('splash', at);
+  }
+
   return {
     fire: fire1,
+    sink,
     fuse,
     landed,
     update,

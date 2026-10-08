@@ -887,7 +887,11 @@ plunging as any fall does, tucked and tumbling, and coming down on a building's 
 roster only from somebody aboard that ship, and the sea's flight hurts through `hurt()` (cause `cannon`) whoever
 is in the blast - never the gunner, never anybody on their own island - and the volcano's agents through
 `combat.blast`; a ball that lands on a body is said as `{t:'cannon', a:'boom'}`. No `SEA_V`: a patch, but
-others see a shot (and anybody is hurt) only once the open sea runs this code. Ships take no damage yet.
+others see a shot (and anybody is hurt) only once the open sea runs this code. A hull takes `HULL_HITS` balls (a
+galleon 5, a rowing boat 2; whole again after `HULL_MEND_MS`) and then sinks (`boats.wreck`: `{t:'boat',
+...mooring, sunk: [x, z]}`, crew in the water, the boat whole at her berth) - never in her own island's waters or
+untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` and floats a bar over her
+(`web/js/hull-bars.js`, two instanced meshes).
 
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing

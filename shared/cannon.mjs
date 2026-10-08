@@ -57,6 +57,14 @@ export const HUMAN_G = 12.5;
 // her hull from under the waterline to the top of her bulwarks, the length of her from stern to
 // the root of the bowsprit. Coarse on purpose - the sea flies the same ball and has no model.
 export const HULL_BOX = Object.freeze({ hx: 2.0, hz: 6.2, y0: -1.2, y1: 2.0 });
+// And a rowing boat's, which can be hit now that a hit can sink it (the keeper, 8 October 2026).
+export const ROWBOAT_BOX = Object.freeze({ hx: 0.4, hz: 0.8, y0: -0.4, y1: 0.6 });
+// How many balls a hull takes before she goes down (the keeper: a galleon has hull points, a rowing
+// boat "2 levens, dat is zielig" - two). A hull with no hit for HULL_MEND_MS is whole again: the crew
+// has patched her. A sunk boat comes back whole at her own mooring (lib/boats.mjs wreck); in her own
+// island's waters a boat is not hurt at all.
+export const HULL_HITS = Object.freeze({ galleon: 5, rowboat: 2 });
+export const HULL_MEND_MS = 120000;
 // A ball does not hit the ship it was fired from while it is still within this of its muzzle:
 // the barrel's mouth stands over her own bulwark.
 export const OWN_CLEAR = 1.2;
@@ -90,15 +98,17 @@ export function ballAt(shot, t, out = [0, 0, 0]) {
   return out;
 }
 
-// Is a point inside a hull's outline? `h` is { x, z, fx, fz, y } (lib/boats.mjs frameOf: her middle
-// and the unit vector along her bow; `y` her rise in the swell, 0 if not known).
+// Is a point inside a hull's outline? `h` is { x, z, fx, fz, y, box? } (lib/boats.mjs frameOf: her
+// middle and the unit vector along her bow; `y` her rise in the swell, 0 if not known; `box` her
+// outline, the galleon's HULL_BOX when not given).
 export function inHull(h, x, y, z) {
   const dx = x - h.x, dz = z - h.z;
   const along = dx * h.fx + dz * h.fz;
   const across = dx * h.fz - dz * h.fx;
   const up = y - (h.y || 0);
-  return across > -HULL_BOX.hx && across < HULL_BOX.hx && along > -HULL_BOX.hz && along < HULL_BOX.hz
-    && up > HULL_BOX.y0 && up < HULL_BOX.y1;
+  const box = h.box || HULL_BOX;
+  return across > -box.hx && across < box.hx && along > -box.hz && along < box.hz
+    && up > box.y0 && up < box.y1;
 }
 
 // The first thing a shot meets, searched from `from` seconds to `to` (at most BALL_LIFE). `world`:

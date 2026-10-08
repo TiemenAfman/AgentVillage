@@ -140,7 +140,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
   const boatIn = (b) => {
     if (typeof b.x !== 'number' || typeof b.z !== 'number') return onBoat(b);
     const [x, z] = incoming(b.x, b.z);
-    return onBoat({ ...b, x, z });
+    // Sunk by gunfire (Plans/kanonnen.md): where she went down, also a position.
+    const sunk = Array.isArray(b.sunk) ? incoming(b.sunk[0], b.sunk[1]) : undefined;
+    return onBoat({ ...b, x, z, ...(sunk ? { sunk } : {}) });
   };
   let sock = null;
   let retry = RETRY_MIN;

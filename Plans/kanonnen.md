@@ -226,10 +226,17 @@ Gebouwd zoals hierboven, met deze afwijkingen:
 - Schepen hebben nog geen gezondheid. Een kogel op een romp ontploft en raakt wie er in de buurt
   staat.
 
-**Open: schade aan boten (voorstel).** Een galjoen krijgt een romp-gezondheid op de zee (in het
-geheugen, net als alles daar). Een treffer op de romp kost `HULL_HIT` en vanzelf herstelt een romp
-niet. Bij 0 zakt het schip een paar seconden en ligt het daarna weer heel aan zijn eigen ligplaats,
-zoals een onbemande boot na vijf minuten al terugdrijft (`driftHome`). De bemanning belandt in het
-water. Een roeiboot zinkt bij één treffer en komt ook terug aan zijn ligplaats. Eigen eiland: in de
-eigen haven (binnen de eigen grid) is je schip veilig. Dat kost een nieuw bericht
-(`{t:'boat', a:'sunk'}`) en is nog steeds een patch.
+**Schade aan boten (de keeper: "zinken, terug naar ligplaats"; roeiboot "2 levens, dat is zielig").**
+Een romp neemt `HULL_HITS` kogels: een galjoen 5, een roeiboot 2. Dat staat op de zee in het geheugen
+(`lib/cannons.mjs hitHull`); een romp die `HULL_MEND_MS` (2 min) niet geraakt is, is weer heel. Elke
+treffer gaat naar iedereen als `{t:'cannon', a:'hull', id, hits, of}`. Bij de laatste treffer zinkt
+de boot (`boats.wreck`): `{t:'boat', ...ligplaats, sunk: [x, z]}`. Elke pagina laat op die plek een
+zinkwolk zien, zet de boot terug op zijn ligplaats, en wie aan boord was ligt in het water. In de
+eigen wateren (binnen de grid van zijn eiland, of nooit aangeraakt) is een boot veilig. De skiff van
+een zwerver heeft geen ligplaats en wordt niet geraakt. Een oudere pagina negeert `sunk` en zet de
+boot gewoon op zijn ligplaats. Het blijft een patch.
+**Romp-HP-balk** (de keeper: "roeiboot krijgt ook een HP bar"): boven elke geraakte boot zweeft een
+balk, `web/js/hull-bars.js`, gemaakt zoals agent-bars.js (twee InstancedMeshes, geen draw call per
+boot). Een roeiboot krijgt twee vakjes, een galjoen één balk die leegloopt. De romp-HP van je eigen
+boot in de HUD-rij voor wie aan boord is, komt later. Die rij maakt de chip "Galjoen houdt vaart";
+hier blijft het bij de zwevende balk, om conflicten te vermijden.

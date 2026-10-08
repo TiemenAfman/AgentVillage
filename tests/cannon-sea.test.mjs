@@ -83,3 +83,50 @@ test('the roster passes a shot on only from somebody aboard that ship, and not t
   say({ ...shot, v: [BALL_SPEED * 2, 0, 0] });
   assert.equal(fired.length, 1);
 });
+
+test('a hull takes its hits and sinks, back whole at her mooring with her crew in the water; at home she is safe', async () => {
+  const { createBoats } = await import('../lib/boats.mjs');
+  const { HULL_HITS } = await import('../shared/cannon.mjs');
+  const id = 'aaaaaaaaaaaaaaaa';
+  const ship = `boat:${id}`, rowboat = `boat:${id}-n0`;
+  const boats = createBoats({ moorings: [{ id: ship, x: 10, z: 0, yaw: 0 }, { id: rowboat, x: 12, z: 0, yaw: 0 }] });
+  const island = { id, origin: [0, 0], bundle: { island: { name: 'Home' } }, terrain: { half: 32, worldHeight: () => -2 } };
+  const players = [{ id: 'aabbccdd', walking: true, posed: true, f: 0, x: 100, y: 1, z: 0, deck: { boat: ship } }];
+  const said = [];
+  const cannons = createCannons({
+    fleet: { all: () => [island], get: (k) => (k === id ? island : null) },
+    roster: { all: () => players, boats },
+    health: { hurt: () => 'hurt' }, combat: null, broadcast: (m) => said.push(m), now: () => 1000,
+  });
+  // At her mooring she is in her own island's waters: nothing.
+  assert.deepEqual(cannons.hitHull(ship), { id: ship, safe: true });
+  // Out at sea, with somebody aboard.
+  boats.board(ship, 'aabbccdd', [10, 0]);
+  boats.take(ship, 'aabbccdd');
+  boats.moved(ship, 'aabbccdd', 100, 0, 0);
+  for (let k = 1; k < HULL_HITS.galleon; k++) assert.equal(cannons.hitHull(ship).hits, k);
+  assert.ok(said.some((m) => m.t === 'cannon' && m.a === 'hull' && m.id === ship && m.of === HULL_HITS.galleon));
+  assert.equal(cannons.hitHull(ship).sunk, true);
+  const sunk = said.find((m) => m.t === 'boat' && m.sunk);
+  assert.ok(sunk && sunk.id === ship && sunk.x === 10 && sunk.z === 0 && sunk.pilot === null, 'not back at her mooring');
+  assert.deepEqual(sunk.sunk, [100, 0], 'not said where she went down');
+  assert.equal(players[0].deck, null);
+  assert.ok(!boats.aboard(ship, 'aabbccdd'), 'still aboard a sunk ship');
+  // A rowing boat has two lives.
+  boats.take(rowboat, 'aabbccdd');
+  boats.moved(rowboat, 'aabbccdd', 100, 5, 0);
+  assert.equal(cannons.hitHull(rowboat).hits, 1);
+  assert.equal(cannons.hitHull(rowboat).sunk, true);
+  // A wanderer's skiff is never hit.
+  assert.equal(cannons.hitHull('boat:w-aabbccdd'), null);
+});
+
+test('a hull bar is a square a life for a rowing boat and one bar for a galleon', async () => {
+  globalThis.document = globalThis.document || { createElement: () => ({}) };
+  const { register } = await import('node:module');
+  register('./support/shared-loader.mjs', import.meta.url);
+  const { hullSegments } = await import('../web/js/hull-bars.js');
+  assert.deepEqual(hullSegments(0, 2), [1, 1]);
+  assert.deepEqual(hullSegments(1, 2), [1, 0]);
+  assert.deepEqual(hullSegments(2, 5), [0.6]);
+});
