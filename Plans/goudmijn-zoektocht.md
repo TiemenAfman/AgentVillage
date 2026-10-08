@@ -1,6 +1,6 @@
 # Zoektocht in de goudmijn
 
-**🚧 Status: plan van 8 oktober 2026, keuzes liggen bij de keeper.** Een quest-lijn naast het
+**🚧 Status: plan van 8 oktober 2026; keuzes gemaakt, eerste versie gebouwd.** Een quest-lijn naast het
 piratenverhaal: met E de goudmijn van je eigen eiland in, op elke verdieping een veld van 25 x 25
 graafplekken, ergens daaronder een trap naar de volgende verdieping, en op de onderste een
 artefact. Graven kost graaf-stamina, die je bijvult met een drankje uit de taverne; dat drankje
@@ -156,17 +156,30 @@ geen formaliteit. Getallen staan op één plek (`shared/mine.mjs`) en zijn daar 
    - de volgende quest, nog niet gebouwd.
 4. **Gouden schep**: graven kost de helft van de stamina. Puur een spelvoordeel.
 
-## Open vragen voor de keeper
+## Besluiten van de keeper (8 oktober 2026)
 
-1. Het artefact (6): lamp, hart, sleutel of gouden schep?
-2. Hints bij het zoeken naar de trap: warm/koud-kleur van de aarde, of minesweeper-cijfers?
-3. Graaf-stamina: vol bij een nieuwe dag plus drankjes, of alleen drankjes?
-4. Aantal verdiepingen: 5? (3 kort, 7 lang)
+| Vraag | Besluit |
+|---|---|
+| Artefact | **Een sleutel**, "nader te bepalen waarvoor": `mine-key` (shared/treasure.mjs `MINE_KEY`, een *planned* stuk in shared/equipment.mjs). De derde mijnquest geeft hem; een volgende quest vraagt unlocks.js ernaar. Geen zesde verdieping. |
+| Hints | **Geen.** Blind graven, een kleiner veld: **7 x 7** (CELL 0,6). Stamina op en geen drankje = pech. De mijn uit = opnieuw bovenaan beginnen; een verdieping is de hele wereld-dag hetzelfde, dus je onthoudt waar de trap zat. |
+| Stamina | **Langzaam + drankje**: buiten de mijn vol in `REFILL_S` (600 s), binnen alleen met een drankje. 30 graafbeurten per balk. |
+| Verdiepingen | **7.** |
 
-## Fases
+De mijnlijn loopt **parallel** aan het verhaal (de keeper): vanaf het begin open, naast de piraat.
 
-1. `line` in de quests + tests (quests, quest-log, pirate-venster per gever).
-2. `shared/mine.mjs` + tests; garden.mjs `gems`/`potions`/ops + tests.
-3. De kamer (`mine-room.js`) en de deur; graven, trap, ladder naar buiten.
-4. De graafbalk, de taverne-drank, de goudsmid als gever en koper.
-5. Het artefact; spelen met `?quest=into-the-mine` en `?mine=<floor>`.
+## Wat er gebouwd is
+
+- `shared/quests.mjs`: `line` per quest, `state.lines` per lijn, `activeSteps`, `hasBusiness`, `GIVERS`;
+  drie mijnquests van de goudsmid (`into-the-mine`, `deeper-still`, `heart-of-the-mountain`) en de events
+  `entered`, `descended`, `found`, `sold`, `bought`.
+- `shared/mine.mjs`: het zaaien (`floorOf`), de getallen (stenen, prijzen, balk, drankje).
+- `lib/garden.mjs`: `gems`, `potions` en `findGem` / `sellGems` / `buyPotion` / `drinkPotion` op `/api/garden`.
+- `web/js/mine.js` (de regels), `web/js/mine-room.js` (de kamer, `ROOMS.goldmine`), de toog van de
+  dorpstaverne (`def.counter`), de goudsmid als gever en koper, een vijfde balk (⛏️) in `vitals.js`.
+- Op de zee heet de kamer `<eiland>:goldmine`: elke mijn is van zijn eigen eiland.
+
+## Nog open
+
+- Een deur voor de sleutel.
+- De grot is primitieven; een `minekit`-bake zou mooier zijn.
+- Een tweede blik op de getallen na echt spelen (balk, stenen, prijs van het drankje).
