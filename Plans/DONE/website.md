@@ -57,6 +57,29 @@ Recept, voor als ze opnieuw moeten:
    Een frame duurt in software seconden: schermafdrukken met een timeout van minuten.
 4. Omzetten naar WebP op 1600 en 800 breed; `og.jpg` 1200 x 630.
 
+**8 oktober 2026: het overzicht opnieuw, op een eiland met ruimte.** Het synthetische eiland was op
+128 gesticht en de 175 huizen stonden er schouder aan schouder ("te klein voor de inhoud", Tiemen).
+`aerial`, `town`, `night`, `castle`, `hamlet`, `harbour`, `interface` en `og.jpg` komen nu van een
+kopie van Tiemens eigen eiland BierRum (288, gegroeid, zeventien wijken ver uit elkaar), zonder
+bootjes. De close-ups (`square`, `night-square`, `lighthouse`, `ships`, `signs`, `walking`, `village`)
+zijn van het oude eiland gebleven. Recept:
+
+1. `~/.promptholm` kopiëren zonder `*.lock`, `*.log`, `audio/` en `data/sea-token.json`; in de kopie
+   `multiplayer.sea` = `{ mode: 'single', url: null, key: null, port: <vrij> }` en `network.public`
+   false, dan vanuit een worktree `PROMPTHOLM_HOME=<kopie> node serve.mjs --port <vrij> --no-rescan --no-open`.
+2. Chrome headless (`--headless=new --use-angle=d3d11`, venster 1600 x 900) over CDP, `?noclip&nointro&hour=16`
+   (`hour=21` voor de nacht, `18` voor de burcht in de avond). `Fetch` plakt achter `js/main.js`
+   `window.__state = state; window.__camera = camera; window.__controls = controls;`. Camera met
+   `await __noclip.go({x,y,z})` + `await __noclip.lookAt(...)`, `__noclip.hud(false)`; de boten weg met
+   `b.craft.object.visible = false` voor elke `__state.boats` en `group.visible = false` op elk record
+   `civic:ship*`. Voor `interface` zonder noclip, camera via `__controls`, en `#right-column, #toasts`
+   verborgen: daar staan de echte sessietitels van de keeper.
+3. Poses (lokale coördinaten): overzicht van (0,140,150) naar (0,0,-15); stad en nacht van (-4,21,40) naar
+   (-10,0,-6), zodat de Salty Kraken niet achter de titelkaart valt; burcht (-18,12,32) naar (-6,2,-40);
+   gehucht (-28,26,-28) naar (-4,0,-60); haven (18,32,-78) naar (0,0,-112).
+4. WebP met Chrome's eigen encoder (`canvas.toDataURL('image/webp', 0.62)` op 1600, 0.7 op 800,
+   JPEG 0.72 voor `og.jpg`).
+
 ## Online
 
 - De site staat op **https://agentsofthesea.com** (nginx bij mijndomein.nl). Iets buiten deze
