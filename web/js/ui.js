@@ -591,6 +591,12 @@ export function createUI(handlers) {
   let footCard = false;
   try { footCard = localStorage.getItem(FOOT_CARD_KEY) === '1'; } catch { /* private window: off */ }
   document.body.classList.toggle('foot-card', footCard);
+  // The log over the walking strip (vitals.js setLog): the speed of the boat you are on. On unless
+  // switched off, per browser; `body.no-log` hides it (ui.css).
+  const LOG_KEY = 'promptholm.log';
+  let logOn = true;
+  try { logOn = localStorage.getItem(LOG_KEY) !== '0'; } catch { /* private window: on */ }
+  document.body.classList.toggle('no-log', !logOn);
   const DIRECTOR_KEY = 'promptholm.director';
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
@@ -987,7 +993,11 @@ export function createUI(handlers) {
       + `<div class="chips wrap" style="margin-top:12px"><button class="chip${footCard ? ' on' : ''}" data-footcard="1" aria-pressed="${footCard}">Island card on foot</button></div>`
       + `<p class="muted" style="margin-top:9px">${footCard
         ? 'On: the island\'s card at the top left - settlers, apprentices, districts - stays while you walk.'
-        : 'Off: the card at the top left is for the view from above; on foot the screen is the island.'}</p>`;
+        : 'Off: the card at the top left is for the view from above; on foot the screen is the island.'}</p>`
+      + `<div class="chips wrap" style="margin-top:12px"><button class="chip${logOn ? ' on' : ''}" data-log="1" aria-pressed="${logOn}">Speed on boats</button></div>`
+      + `<p class="muted" style="margin-top:9px">${logOn
+        ? 'On: aboard any boat, at the helm or on deck, a small bar under the others shows her speed in knots.'
+        : 'Off: no speed is shown aboard.'}</p>`;
     const debug = '<h3 class="sec">Debug</h3>'
       + `<div class="chips wrap"><button class="chip${buildOn ? ' on' : ''}" data-buildmode="1" aria-pressed="${buildOn}">Build mode</button></div>`
       + `<p class="muted" style="margin-top:9px">${buildOn
@@ -1088,6 +1098,12 @@ export function createUI(handlers) {
       footCard = !footCard;
       try { if (footCard) localStorage.setItem(FOOT_CARD_KEY, '1'); else localStorage.removeItem(FOOT_CARD_KEY); } catch { /* kept for this page only */ }
       document.body.classList.toggle('foot-card', footCard);
+      renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-log]').forEach((b) => b.addEventListener('click', () => {
+      logOn = !logOn;
+      try { if (logOn) localStorage.removeItem(LOG_KEY); else localStorage.setItem(LOG_KEY, '0'); } catch { /* kept for this page only */ }
+      document.body.classList.toggle('no-log', !logOn);
       renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-camfixed]').forEach((b) => b.addEventListener('click', () => {
