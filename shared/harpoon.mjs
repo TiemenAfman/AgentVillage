@@ -126,7 +126,7 @@ export function stepReel(r, a, b, dt) {
 }
 const invMass = (o) => (o.m === Infinity || !(o.m > 0) ? 0 : 1 / o.m);
 
-// What a taut line between two fast points is to somebody on it: 'balance' (walk it) while it rises
+// What a taut line between two fast points is to somebody on it: 'walk' (along it) while it rises
 // less than ZIP_SLOPE over its run, 'zip' (slide down it) when steeper, 'none' when it hangs nearly
 // plumb. `low` is the end it slides to (0 = a, 1 = b) and `slope` rise over run.
 export function ropeMode(a, b) {
@@ -135,22 +135,7 @@ export function ropeMode(a, b) {
   const drop = rise < 0 ? -rise : rise;
   if (run < 0.25 || drop > run * 4) return { mode: 'none', slope: Infinity, low: rise < 0 ? 1 : 0 };
   const slope = drop / run;
-  return { mode: slope <= ZIP_SLOPE ? 'balance' : 'zip', slope, low: rise < 0 ? 1 : 0 };
-}
-
-// Balancing (Plans/harpoen.md, "Over het touw lopen en glijden"): a lean that falls further the
-// further it leans (an inverted pendulum), pushed by `disturb` (the swell, the ship turning, a
-// step) and held up by `hold` in -1..1 (A/D, pushing back against it). s = { lean, rate }; answers
-// true while standing, false the tick it goes past BALANCE_FALL.
-export const BALANCE_TIP = 2.2;     // how fast a lean grows on its own, 1/s^2
-export const BALANCE_HOLD = 6;      // how hard a full A/D answers it
-export const BALANCE_DAMP = 1.6;
-export const BALANCE_FALL = 0.6;    // radians of lean, give or take: past this you are off
-export function stepBalance(s, hold, disturb, dt) {
-  const acc = BALANCE_TIP * s.lean + disturb - BALANCE_HOLD * hold - BALANCE_DAMP * s.rate;
-  s.rate += acc * dt;
-  s.lean += s.rate * dt;
-  return s.lean < BALANCE_FALL && s.lean > -BALANCE_FALL;
+  return { mode: slope <= ZIP_SLOPE ? 'walk' : 'zip', slope, low: rise < 0 ? 1 : 0 };
 }
 
 // Sliding down a steep line, hanging from it: s = { at, v }, `at` the distance from the high end

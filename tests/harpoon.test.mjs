@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   BOLT_SPEED, ROPE_MAX, REEL_MIN, ROPE_SEGS, ZIP_SLOPE, MASS,
-  stepBolt, boltHit, ropeShape, stepReel, ropeMode, stepBalance, stepZip, alongLine,
+  stepBolt, boltHit, ropeShape, stepReel, ropeMode, stepZip, alongLine,
 } from '../shared/harpoon.mjs';
 
 const body = (x, y, z, m, vx = 0, vy = 0, vz = 0) => ({ x, y, z, vx, vy, vz, m });
@@ -106,23 +106,12 @@ test('a ship making way on a line to a rock goes round it instead of stopping', 
 });
 
 test('a gentle line is walked, a steep one slid down towards its low end', () => {
-  assert.equal(ropeMode({ x: 0, y: 3, z: 0 }, { x: 20, y: 5, z: 0 }).mode, 'balance');
+  assert.equal(ropeMode({ x: 0, y: 3, z: 0 }, { x: 20, y: 5, z: 0 }).mode, 'walk');
   const steep = ropeMode({ x: 0, y: 9, z: 0 }, { x: 10, y: 3, z: 10 });
   assert.equal(steep.mode, 'zip');
   assert.equal(steep.low, 1);
   assert.ok(steep.slope > ZIP_SLOPE);
   assert.equal(ropeMode({ x: 0, y: 9, z: 0 }, { x: 0.1, y: 1, z: 0 }).mode, 'none');
-});
-
-test('a lean left alone falls; held against, it stays up', () => {
-  const alone = { lean: 0.05, rate: 0 };
-  let up = true;
-  for (let i = 0; i < 100 && up; i++) up = stepBalance(alone, 0, 0, DT);
-  assert.equal(up, false);
-  const held = { lean: 0.05, rate: 0 };
-  up = true;
-  for (let i = 0; i < 400 && up; i++) up = stepBalance(held, Math.max(-1, Math.min(1, held.lean * 3 + held.rate)), 0.1 * ((i % 40) < 20 ? 1 : -1), DT);
-  assert.equal(up, true);
 });
 
 test('sliding down a line speeds up to its top and comes off at the low end', () => {

@@ -9,6 +9,19 @@ richt, schiet een harpoen aan een touw en spoelt automatisch in. Raak je een kis
 die naar je toe. Raak je land of een ander schip, dan wordt je eigen schip ernaartoe getrokken, of draait
 het eromheen als het vaart.
 
+## Besluiten van de keeper (8 oktober 2026)
+
+1. **Licentie**: *"eerst GLB in git met credits! eigen bake parallel starten, ben wel benieuwd!"* De
+   download gaat zoals hij is de repo in, met `assets/harpoon/CREDITS.md`, en wordt eerst gebruikt.
+   Daarnaast komt er een eigen harpoen in huisstijl om mee te vergelijken.
+2. **Plaats**: twee op het voorkasteel, één per boord.
+3. **Spelers grijpen**: altijd. Iedereen buiten zijn eigen eiland kan gegrepen worden, zonder pvp-vlag.
+4. **Boten**: een boot zonder schipper mag je naar je toe trekken. Een bestuurde boot achtervolg je
+   (je eigen schip hangt eraan).
+5. **Touw**: geen balans-minigame en niet vanzelf vallen. Met Space spring je eraf (*"or jump off?"*):
+   een gewone sprong met `JUMP_V`, zoals van een reling. Daarna val je verder met de vaart die je op
+   het touw had (`drift`), en in water wordt dat een duik.
+
 ## Het model en de licentie
 
 De GLB is een Sketchfab-download. In `asset.extras` staat:
@@ -27,7 +40,16 @@ FromSoftware), dat volgens CLAUDE.md buiten git blijft. Het is ook technisch gee
   roughness), terwijl de bake hoekkleuren gebruikt,
 - het hero-budget is 4000.
 
-**Voorstel** (vraag 1 aan de keeper):
+*Wat er gebouwd is* (besluit 1): `assets/harpoon/source-harpoon.glb` is de ongewijzigde download.
+`scripts/build-harpoon-glb.py` maakt daar `web/models/harpoon.glb` van: 7.400 driehoeken en 0,9 MB, met
+textures van 512 in JPEG en zonder AO. Het model bestaat uit vier geneste nodes, elk met zijn origin
+op zijn as: `harpoon_mount`, `harpoon_yoke` (draait om y), `harpoon_gun` (heft om de tap, 0.31 boven
+het dek) en `harpoon_bolt`, plus het lege `harpoon_muzzle`. `web/js/harpoon.js` laadt het zoals de
+kapitein: na de boot, via `modelUrl`, één waarschuwing bij een fout, en niets wacht erop.
+`makeHarpoonGun` kloont het (gedeelde geometrie en textures) en geeft `aim(yaw, pitch)`, `muzzleAt`,
+`aimDir`, `boltShown` en `boltClone`. Getest in `tests/harpoon-model.test.mjs`.
+
+Het oorspronkelijke voorstel, nu de *vergelijking* naast de GLB:
 
 - **In git** komt een eigen harpoenkanon: `scripts/build-harpoon.py`, in de huisstijl en uit
   primitieven, als set `harpoon`. Het is een generieke vorm (een draaivoet, een juk, een loop met een
@@ -35,10 +57,8 @@ FromSoftware), dat volgens CLAUDE.md buiten git blijft. Het is ook technisch gee
   (de voet, origin op het dek) en **`harpoon gun`** (juk, loop en spoel, origin op de **draaias** voor
   de yaw). Daarnaast komt de **`harpoon bolt`** (de pijl zelf, origin op het oog waar het touw vastzit)
   en het anker `anchor.muzzle`. Het budget is hero, met als doel ±1500 voor alle drie samen.
-- **Lokaal** kan de GLB als HD-stuk in het HD-pakket (`~/.promptholm/hd/`, via `hdOutside` zoals de
-  Jolly Roger). Daarvoor is een `hd-manifest.json`-regel nodig en de CC-BY-naamsvermelding in de
-  README van het pakket. Dat is dan alleen het uiterlijk, op een keeper-only route en nooit in een
-  bundel of release. Dit is optioneel; zonder HD-pakket zie je de bake.
+- Welke van de twee op het schip staat, kiest Settings → Debug (`promptholm.debug.harpoon`: `glb` of
+  `bake`, standaard `glb`). /demo zet ze naast elkaar.
 
 ## Hoeveel en waar
 
@@ -48,7 +68,7 @@ de rand op 1.2/1.55), met de loop naar buiten-voor (yaw ±60° in het schip). Da
 gemeten met level-rays op de bake, zoals bij de ladders. Het getal staat één keer in `CRAFTS.galleon`.
 De roeiboot krijgt er geen (crew 1, en dan zit je aan de riemen).
 
-Vraag 2: voor of achter, en hoeveel.
+(Besluit 2.)
 
 ## Eén bemand wapen, gedeeld met de kanonnen
 
@@ -112,8 +132,10 @@ harpoeneren. Dat is ook in SoT zo: één aan het roer, één aan het harpoen. Da
   schipper, en daarvoor is een bericht nodig (`{t:'reel', b, at, L}` naar de bemanning van die boot, fase
   B). Tot dan trekt het harpoen alleen kisten en spelers, en voelt de schipper het touw niet.
 - **Andermans boot** wordt nooit verplaatst door jouw pagina: alleen jouw schip beweegt naar het hare.
-  Dat is precies "chase", en het houdt de regel "alleen de schipper stuurt" heel. Of je ook een boot
-  zonder schipper naar je toe mag trekken (een losliggende roeiboot), is vraag 4.
+  Dat is precies "chase", en het houdt de regel "alleen de schipper stuurt" heel. Een boot **zonder
+  schipper** (besluit 4) mag je wel naar je toe trekken. Op de zee is dat een `tow`: de zee neemt de
+  positie van zo'n boot aan van wie hem aan zijn lijn heeft, zoals nu van de schipper (`moved`), maar
+  alleen zolang er niemand aan het roer staat. Wie hem dan neemt, wint, en de lijn schiet los.
 
 ## Spelers grijpen
 
@@ -122,15 +144,14 @@ Een speler is zijn eigen pagina, en zijn positie komt alleen van hem. Grijpen mo
 1. De schutter stuurt `{t:'harpoon', b, i, o, v}`. Dat is hetzelfde bericht dat iedereen het touw laat
    zien (fase B, zoals het kanonschot).
 2. Raakt de pijl volgens de pagina van de schutter een speler, dan stuurt die `{t:'hook', who, b}`.
-3. De zee checkt dat: `afoot` of zwemmend, binnen `ROPE_MAX + slack` van het schip, niet op zijn eigen
-   eiland, en de pvp-regels uit [open-world-pvp.md](open-world-pvp.md) als de keeper grijpen als "harm"
-   ziet. Klopt het, dan stuurt de zee `{t:'hooked', by, b, at}` naar de getroffene.
+3. De zee checkt dat: `afoot` of zwemmend, binnen `ROPE_MAX + slack` van het schip en niet op zijn eigen
+   eiland. Een pvp-vlag is niet nodig (besluit 3). Klopt het, dan stuurt de zee
+   `{t:'hooked', by, b, at}` naar de getroffene.
 4. Zijn walk mode krijgt `state.hooked` en trekt het lichaam met `stepReel` naar het harpoen, op zijn
    eigen klok. Springen of slaan breekt los.
 
 Er is geen `SEA_V` nodig: een oudere pagina laat een onbekende `t` vallen. Het is dus een patch, maar pas
-na een redeploy van de open zee (stack 28, met de hand) werkt het voor anderen. Vraag 3: mag dat, en
-alleen bij wie pvp aan heeft?
+na een redeploy van de open zee (stack 28, met de hand) werkt het voor anderen.
 
 ## Over het touw lopen en glijden
 
@@ -138,14 +159,14 @@ Een touw dat **strak** staat en aan **beide kanten vastzit** (aan het harpoen en
 schip) is een pad. Het is een nieuwe stand in walk.js, `state.rope = { a, b, t, mode }`, naast
 `climbing`:
 
-- **Balanceren**: helling onder `ZIP_SLOPE` (zo'n 20°). W/S lopen langs het touw, armen uit, langzaam
-  (`ROPE_WALK` 0.9). Een **balans** `sway` schommelt mee met de deining en de draaiing van het schip, en
-  A/D houdt hem recht. Loopt `sway` over zijn grens, of stuurt je niet, dan val je: airborne, en in water
-  wordt dat de bestaande plunge (`plungeSpeed`). Vraag 5: moet je kunnen vallen, of is het alleen
-  schoonheid?
+- **Lopen**: helling onder `ZIP_SLOPE` (zo'n 20°). W/S lopen langs het touw, armen uit, langzaam
+  (`ROPE_WALK` 0.9). Er is geen balans en je valt er niet vanzelf af (besluit 5). Er is dus ook geen
+  balansstap in shared/harpoon.mjs.
 - **Ziplinen**: helling boven `ZIP_SLOPE` en naar beneden. Je hangt aan je handen (of aan de harpoenstok)
-  en glijdt met zwaartekracht langs de lijn, minus wrijving. Onderaan, of met Space, laat je los. Omhoog
-  langs een steil touw gaat niet. Daar ben je een klimmer zonder ladder, dus je glijdt terug.
+  en glijdt met zwaartekracht langs de lijn, minus wrijving. Onderaan laat je los. Omhoog langs een
+  steil touw gaat niet. Daar ben je een klimmer zonder ladder, dus je glijdt terug.
+- **Eraf springen**: Space op het touw is een sprong (`JUMP_V`), met de vaart langs het touw als `drift`.
+  Daarna is het de gewone val, en in water de plunge.
 - **Op en af**: het touw nemen gaat met E bij een van zijn twee uiteinden (op het voorkasteel bij het
   harpoen, of waar de pijl zit). Een touw dat losschiet (inspoelen, het schip vaart weg, de harpoenier
   laat los) laat je vallen.
@@ -156,7 +177,7 @@ schip) is een pad. Het is een nieuwe stand in walk.js, `state.rope = { a, b, t, 
   balanceren als de catwalk-gang met de armen procedureel uit en zijwaartse schommel uit `sway`, en
   ziplinen als *Hanging Idle* met de benen iets opgetrokken. Voor de Reiziger wordt het procedureel,
   zoals `climbReach`. Met `/mixamo-fetch` zoek ik nog naar een echte *balance walk*. Alles is te zien en
-  te beoordelen in `/avatar-motion.html` onder twee nieuwe knoppen, *Balanceren* en *Zipline*.
+  te beoordelen in `/avatar-motion.html` onder twee nieuwe knoppen, *Touwlopen* en *Zipline*.
 - **Anderen** zien je via de `y` en de positie die al over de lijn gaan. Hangt een peer aan een touw dat
   zij kennen, dan tekenen ze hem zo, zoals `ladderAt`. Anders lijkt het een val. Er komt geen pose-bit bij.
 
@@ -185,13 +206,3 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
 7. Geluid.
 8. Fase B, de zee: het touw laten zien, spelers grijpen, de trek naar de schipper. Patch plus een
    redeploy van de open zee.
-
-## Open vragen voor de keeper
-
-1. **Licentie**: de GLB is CC-BY maar een SoT-ontwerp. Eigen bake in git en de GLB alleen lokaal als
-   HD-stuk, of alleen de eigen bake?
-2. **Waar**: twee op het voorkasteel, één per boord? Of voor en achter?
-3. **Spelers grijpen**: ja voor iedereen, alleen bij pvp aan (beide spelers), of niet?
-4. **Andermans boten**: alleen achtervolgen (je eigen schip hangt eraan), of ook een boot zonder
-   schipper naar je toe trekken?
-5. **Touw**: kun je van het touw vallen (balans), of loop/glij je er altijd veilig over?
