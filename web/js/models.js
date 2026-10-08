@@ -75,8 +75,11 @@ import { CHRONICLE } from './chronicle-mesh.js';
 import { HARBOURHOUSES } from './harbourhouses-mesh.js';
 import { WORKSHOPS } from './workshops-mesh.js';
 import { SHIPYARD } from './shipyard-mesh.js';
+import { HARPOON } from './harpoon-mesh.js';
 
 const SETS = { goldpit: GOLDPIT, goldmine: GOLDMINE, wagon: WAGON, goldsmith: GOLDSMITH, windmill: WINDMILL, boardwalk: BOARDWALK, quaysteps: QUAYSTEPS, manor: MANOR, house: HOUSE, cottage: COTTAGE, hut: HUT, school: SCHOOL, tavern: TAVERN, piratetavern: PIRATETAVERN, townhall: TOWNHALL, props: PROPS, village: VILLAGE, flora: FLORA, rail: RAIL, fence: FENCE, hedge: HEDGE, wall: WALL, docks: DOCKS, rowboat: ROWBOAT, pirateship: PIRATESHIP, piratesign: PIRATESIGN, bicycle: BICYCLE, buoys: BUOYS, sea: SEA, castle: CASTLE, greatcastle: GREATCASTLE, lighthouse: LIGHTHOUSE, clocktower: CLOCKTOWER, statue: STATUE, treasure: TREASURE, sawmill: SAWMILL, smithy: SMITHY, fauna: FAUNA, stable: STABLE, farmyard: FARMYARD, bakery: BAKERY, butcher: BUTCHER, apothecary: APOTHECARY, grocer: GROCER, library: LIBRARY, owlpost: OWLPOST, sweetshop: SWEETSHOP, tailor: TAILOR, wandmaker: WANDMAKER, tearoom: TEAROOM, cauldron: CAULDRON, traces: TRACES, chronicle: CHRONICLE, harbourhouses: HARBOURHOUSES, workshops: WORKSHOPS, shipyard: SHIPYARD, batavia: BATAVIA, cannon: CANNON };
+// The galleon's harpoon gun in house style, beside the Sketchfab GLB (web/js/harpoon.js, Plans/harpoen.md).
+SETS.harpoon = HARPOON;
 
 // name -> the part, flattened across sets. `npm run models` refuses two sets that use one
 // name, so the flattening cannot quietly lose a shape; the warning below is for the

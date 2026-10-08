@@ -224,6 +224,7 @@ export function createTreasureHunt(deps) {
 
   let bottle = null;          // { id, day, seed, cell, x, y, z } lying on the beach, or null
   let sites = [];             // what is in the sand on the islets: statue / chest, buried / unearthed
+  let dragAt = null;           // where a harpoon's line has the loose statue this frame (drag), or null
   let signature = '';
   let digging = null;         // { site, hole } while the shovel is going
   let busy = false;           // a delivery is with the island
@@ -273,6 +274,8 @@ export function createTreasureHunt(deps) {
       const [x, z] = rec.local ? [rec.spot.x, rec.spot.z] : worldToScene([rec.spot.x, rec.spot.z], h);
       const site = { id: 'statue', kind: 'statue', stage: 'unearthed', x, y: rec.y, z, rot: turnOf('statue'), seed: null };
       if (rec.afloat) site.afloat = true;
+      // On a harpoon's line: where the line has her this frame (drag).
+      if (dragAt) { site.x = dragAt.x; site.y = dragAt.y; site.z = dragAt.z; if (dragAt.afloat) site.afloat = true; else delete site.afloat; }
       out.push(site);
     }
 
@@ -470,12 +473,22 @@ export function createTreasureHunt(deps) {
   };
   function letGo(item, at) {
     if (item !== 'statue' || !at || !finite(at.x) || !finite(at.z) || !finite(at.y)) return false;
+    const rec = recordAt(at);
+    if (rec) finds.setStatue(rec);
+    if (keeper()) Promise.resolve(post('dropped')).catch(() => null);
+    if (rec) say((rec.afloat && FLOAT_WORDS[at.why]) || LET_GO_WORDS[at.why] || LET_GO_WORDS.set);
+    else say('The statue slips from your arms, and goes back to where she lay.');
+    refresh();
+    return true;
+  }
+  // Where she lies, as the finds keep it: on our own island in its own frame, anywhere else (an islet,
+  // a starter, a neighbour's beach) in the world's, with the islet she is on if any. With no berth
+  // known there is no world frame: null, and her old spot stands - she goes back to where she lay,
+  // never nowhere.
+  function recordAt(at) {
     const id = islandId() || 'open-sea';
     const h = home();
     const t = terrain();
-    // On our own island: in its own frame. Anywhere else (an islet, a starter, a neighbour's beach):
-    // the world's, and the islet she is on if any. With no berth known there is no world frame, and
-    // her old spot stands - she goes back to where she lay, never nowhere.
     const own = !!islandId() && t && finite(t.half) && Math.abs(at.x) <= t.half && Math.abs(at.z) <= t.half;
     let rec = null;
     if (own) rec = { islandId: id, isletId: null, spot: { x: at.x, z: at.z }, y: at.y, local: true };
@@ -485,10 +498,38 @@ export function createTreasureHunt(deps) {
       rec = { islandId: id, isletId: islet ? islet.id : null, spot: { x: wx, z: wz }, y: at.y };
     }
     if (rec && at.afloat === true) rec.afloat = true;
+    return rec;
+  }
+
+  // ---- on a harpoon's line (Plans/harpoen.md) ----
+  // The statue as she lies loose - not carried, not on a boat, not in the square - in the scene:
+  // what a harpoon can hook. While a line drags her, `drag` moves her every frame without writing
+  // anything (only the view and computeSites see it); `dragEnd` keeps the spot she ended at, as a
+  // set-down would, and `reelAboard` lays her on the ship the line brought her to, as hoisting does.
+  function loose() {
+    if (carried() || placedNow()) return null;
+    const s = sites.find((o) => o.id === 'statue' && o.stage === 'unearthed');
+    return s ? { x: s.x, y: s.y, z: s.z, afloat: !!s.afloat } : null;
+  }
+  function drag(at) {
+    if (!at || !finite(at.x) || !finite(at.z) || !finite(at.y)) return;
+    dragAt = { x: at.x, y: at.y, z: at.z, afloat: !!at.afloat };
+    sites = computeSites();
+    view.setSites(sites);
+  }
+  function dragEnd() {
+    if (!dragAt) return;
+    const rec = recordAt(dragAt);
+    dragAt = null;
     if (rec) finds.setStatue(rec);
-    if (keeper()) Promise.resolve(post('dropped')).catch(() => null);
-    if (rec) say((rec.afloat && FLOAT_WORDS[at.why]) || LET_GO_WORDS[at.why] || LET_GO_WORDS.set);
-    else say('The statue slips from your arms, and goes back to where she lay.');
+    refresh();
+  }
+  function reelAboard(hull) {
+    if (!hull || carried() || !walk.takeAsCargo || !walk.takeAsCargo('statue', hull)) return false;
+    dragAt = null;
+    if (keeper()) Promise.resolve(post('lifted')).catch(() => null);
+    reportBoarded();
+    say('Hauled aboard on the harpoon\'s line! The statue is on the deck. Now sail her home.');
     refresh();
     return true;
   }
@@ -656,6 +697,7 @@ export function createTreasureHunt(deps) {
 
   return {
     refresh, interactables, interact, onDigDone, onDigCancelled, frame, boot, layOnBoat, boardedWith, afloat, onDeck, letGo,
+    loose, drag, dragEnd, reelAboard,
     // Read by tests and by main.js's boat prompt.
     bottle: () => bottle, sites: () => sites, digging: () => !!digging,
   };

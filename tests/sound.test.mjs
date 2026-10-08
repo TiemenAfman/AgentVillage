@@ -248,7 +248,7 @@ test('switching it on out of the blue still waits for a gesture', () => {
 
 // --- 2. nine sources, whatever the population -----------------------------
 
-test('three hundred settlers hammering at once are still forty-two placed voices', () => {
+test('three hundred settlers hammering at once are still forty-five placed voices', () => {
   store = {};
   const look = village(300);
   // Every buffer source this run starts. The fake never fires `onended`, so a one-shot
@@ -261,7 +261,7 @@ test('three hundred settlers hammering at once are still forty-two placed voices
 
   const s0 = sound.stats();
   assert.equal(s0.voices, s0.cap, 'the pools are their own ceiling');
-  assert.equal(s0.cap, 42, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals + a river and the lava + 3 for the rounds and their wheels + 4 for the guns');
+  assert.equal(s0.cap, 45, '4 hammers + 2 gulls + 2 taverns + 2 glasses + the borrel and its 2 glasses + 2 bells + 2 greetings + 4 workshops and a saw + 4 workers + a rare bird and a foghorn + 4 animals + a river and the lava + 3 for the rounds and their wheels + 4 for the guns + 3 for the harpoons');
   assert.equal(s0.cap, Object.values(s0.families).reduce((a, f) => a + f.cap, 0), 'every family counted');
   assert.equal(s0.bedSources, 13, 'and the sea, the wind, the two rooms, the glass and the bell in a room, the four of the hour and the sky, the rumble, the sea from below and its bubbles');
 

@@ -45,6 +45,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [harpoen.md](harpoen.md) — harpoenkanonnen op het galjoen zoals in Sea of Thieves: richten, schieten,
+  automatisch inspoelen; het schatbeeld en spelers naar je toe, je schip naar land of een ander schip
+  ("chase"); over het strakke touw balanceren of ziplinen naar gelang de helling. Bemannen gedeeld met de kanonnen.
 - 🚧 [galjoen-vaart-houden.md](galjoen-vaart-houden.md) — het galjoen vaart op zeilstanden (W/S aan het roer, ¼ tot vol
   en achteruit) die blijven staan, ook als je het roer loslaat en aan boord blijft (alleen de kanonnen of het harpoen
   bemannen). Pas wie eraf springt laat haar uitrollen, of de crew die achterblijft vaart haar verder. Een log in de HUD

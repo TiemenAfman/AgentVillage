@@ -28,6 +28,7 @@ import { SHIPWALK } from './shipwalk-map.js';
 import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
 import { cannonShape, carriageGeometry, barrelGeometry, restLay, layPoint, muzzleOf } from './cannon.js';
 import * as models from './models.js';
+import { harpoonModel, harpoonLook, makeHarpoonGun, bakedHarpoonGun, HARPOON_PIECES } from './harpoon.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
 export const BOAT_REVERSE = 2.8;    // pushing off a beach, not a way to travel - well below cruising speed
@@ -591,6 +592,41 @@ function gunRuns(spec) {
   return { parts, guns };
 }
 
+// Her harpoon guns (Plans/harpoen.md): not welded into the hull like the cannons, because the one the
+// keeper chose first is a textured GLB (web/js/harpoon.js) the hull's material cannot draw. Each is a
+// child of the hull's object, standing on her deck at its mount (y above her waterline, the frame her
+// geometry has: DECK_Y + the deck's height), so the swell carries it for nothing. It starts as the
+// house-style bake, which is there before the first frame, and the GLB is swapped in when it lands
+// unless this browser asked for the bake. A few draw calls a ship, and there is one ship an island.
+function bakedHarpoon(material) {
+  if (!models.has('harpoon gun:0')) return null;
+  const at = Object.fromEntries(HARPOON_PIECES.map((k) => [k, models.part(`harpoon ${k}:0`).at]));
+  at.muzzle = models.anchorsOf('harpoon').muzzle;
+  const geometryOf = (k) => mergeParts(models.assetParts('harpoon').filter((n) => n.startsWith(`harpoon ${k}:`)).map((n) => mesh(n)));
+  return bakedHarpoonGun(geometryOf, material, at);
+}
+function harpoonMounts(spec, object, material) {
+  return (spec.mounts || []).map((g) => {
+    if (g.kind !== 'harpoon') return null;
+    const rig = bakedHarpoon(material);
+    if (!rig) return null;
+    const holder = new THREE.Group();
+    holder.name = 'harpoon mount';
+    holder.position.set(g.x, DECK_Y + g.y, g.z);
+    holder.rotation.y = g.yaw;
+    holder.add(rig.object);
+    object.add(holder);
+    return { spec: g, lay: [0, 0], rig, holder, boltShown: true };
+  });
+}
+function swapHarpoon(h, rig) {
+  h.holder.remove(h.rig.object);
+  h.rig = rig;
+  h.holder.add(rig.object);
+  rig.aim(h.lay[0], h.lay[1]);
+  rig.boltShown(h.boltShown);
+}
+
 // What a hull carries besides its crew: the treasure statue, put on the deck by walk.js (putOnBoat)
 // and drawn as a child of the hull's object, so it pitches, rolls and bobs with her for nothing -
 // the same reason the ladders are welded into the hull rather than placed on it. `item` is the name
@@ -743,10 +779,29 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     }
   }
   const laid = [0, 0, 0];
+  // Her harpoons, indexed like the mounts (null for a cannon): made below, once the object is.
+  let harpoons = [];
+  const harpoonsOf = (i) => harpoons[i] || null;
+  // A harpoon's mouth and the way it points, in her own frame (as gunMuzzle answers for a cannon):
+  // read off the drawn gun, so the line leaves the barrel that is drawn whichever model it is.
+  const mouthW = new THREE.Vector3(), aimW = new THREE.Vector3(), hullQi = new THREE.Quaternion();
+  function harpoonMuzzle(i) {
+    const h = harpoonsOf(i);
+    if (!h) return null;
+    object.updateMatrixWorld(true);
+    h.rig.muzzleAt(mouthW);
+    h.rig.aimDir(aimW);
+    object.worldToLocal(mouthW);
+    object.getWorldQuaternion(hullQi).invert();
+    aimW.applyQuaternion(hullQi).normalize();
+    return { at: [mouthW.x, mouthW.y, mouthW.z], dir: [aimW.x, aimW.y, aimW.z] };
+  }
   // Lay gun `i` ([traverse, elevation], shared/cannon.mjs) and run it back by `kick`, moving its
   // corners in the one geometry. Nothing is written when nothing changed, so a gun nobody touches
   // costs nothing a frame.
   function layGun(i, lay, kick = 0) {
+    const hp = harpoonsOf(i);
+    if (hp) { hp.lay = [lay[0], lay[1]]; hp.rig.aim(lay[0], lay[1]); return; }
     const g = guns[i];
     if (!g || (g.lay[0] === lay[0] && g.lay[1] === lay[1] && g.kick === kick && g.drawn)) return;
     g.lay = [lay[0], lay[1]]; g.kick = kick; g.drawn = true;
@@ -767,6 +822,13 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   // The water kept out of her (rowboatLid above): a child, so the swell carries it with her.
   const lid = rowing ? lidMesh() : null;
   if (lid) object.add(lid);
+  harpoons = ship ? harpoonMounts(CRAFTS.galleon, object, material) : [];
+  // Not under Node (the tests build ships with no window to fetch into).
+  if (harpoons.some(Boolean) && harpoonLook() === 'glb' && typeof window !== 'undefined') {
+    const swapIn = (template) => { for (const h of harpoons) if (h) swapHarpoon(h, makeHarpoonGun(template)); };
+    const ready = harpoonModel(swapIn);
+    if (ready) swapIn(ready);
+  }
   scene.add(object);
   let heading = 0;
   let cargo = null;
@@ -894,9 +956,18 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     // frame (y above her waterline, as her geometry has it: web/js/cannon.js).
     guns: guns.filter(Boolean).length,
     gunSpec: (i) => (guns[i] ? guns[i].spec : null),
-    gunLay: (i) => (guns[i] ? { lay: guns[i].lay.slice(), kick: guns[i].kick } : null),
+    gunLay: (i) => (guns[i] ? { lay: guns[i].lay.slice(), kick: guns[i].kick }
+      : harpoonsOf(i) ? { lay: harpoonsOf(i).lay.slice(), kick: 0 } : null),
     layGun,
-    gunMuzzle: (i) => (guns[i] ? muzzleOf(guns[i].spec, guns[i].lay, guns[i].kick) : null),
+    gunMuzzle: (i) => (guns[i] ? muzzleOf(guns[i].spec, guns[i].lay, guns[i].kick) : harpoonMuzzle(i)),
+    // A harpoon's bolt in its barrel, or out on its line (web/js/harpoon-line.js flies its own).
+    harpoonBolt(i, shown) {
+      const h = harpoonsOf(i);
+      if (h) { h.boltShown = shown; h.rig.boltShown(shown); }
+    },
+    harpoons: () => harpoons.filter(Boolean).length,
+    // A free harpoon like the one in gun `i`'s barrel, to fly on its line (web/js/harpoon-play.js).
+    harpoonBoltClone: (i) => (harpoonsOf(i) ? harpoonsOf(i).rig.boltClone() : null),
     // The touch hole the fuse burns in, in the same frame.
     gunVent: (i) => {
       const g = guns[i], s = cannonShape();
