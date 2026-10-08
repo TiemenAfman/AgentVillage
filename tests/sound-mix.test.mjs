@@ -33,10 +33,10 @@ test('every part sits on one of the three buses, and no id is used twice', () =>
   assert.deepEqual(MIX_LEVELS.map(([k]) => k), ['master', ...MIX_BUSES], 'a slider per bus and the master');
 });
 
-test('defaults are everything at full and everything on', () => {
+test('defaults are everything at full and every part on but the taverns', () => {
   const d = mixDefaults();
   for (const [k] of MIX_LEVELS) assert.equal(d[k], 1);
-  for (const [k] of MIX_PARTS) assert.equal(d[k], true);
+  for (const [k] of MIX_PARTS) assert.equal(d[k], k !== 'tavern', k);
   assert.deepEqual(loadMix(memory()), d);
   assert.deepEqual(loadMix(null), d, 'no storage at all');
 });

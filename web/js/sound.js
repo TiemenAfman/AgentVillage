@@ -62,9 +62,10 @@ const HAMMERS = 4;
 const GULLS = 2;
 
 // Past these a voice is not placed at all, so a village that stretches across the grid
-// costs nothing for the half of it you are nowhere near. Measured in island units; the
-// grid is 64 across, so 70 is "anywhere on this island" and no further.
-const HAMMER_RANGE = 70;
+// costs nothing for the half of it you are nowhere near. Measured in island units. The hammers
+// were 70 ("anywhere on a 64 island") and carried across the whole town (the keeper, 8 October
+// 2026): a builder is heard from a street or two off now, and softly.
+const HAMMER_RANGE = 30;
 const GULL_RANGE = 75;
 const TAVERN_RANGE = 35;
 const BORREL_RANGE = 70;
@@ -88,6 +89,10 @@ const BELLS = 2;
 const CRAFTS = 4;
 const WORKERS = 4;
 const CRAFT_RANGE = 55;
+// The smith's anvil rang across half the island at CRAFT_RANGE (the keeper, 8 October 2026):
+// heard from his own street and not much further.
+const SMITH_RANGE = 25;
+const SMITH_LOUD = 0.4;
 const WORK_RANGE = 45;
 const SAW_RANGE = 45;
 // What each word in the crowd sounds like, and how often it is heard while somebody keeps at it.
@@ -564,9 +569,16 @@ const burst = (n, sr, rng, f, q, d, a = 1) => {
 };
 const add = (a, b) => { for (let i = 0; i < a.length; i++) a[i] += b[i]; return a; };
 const CRAFT_SHOTS = {
-  // Steel on steel: the anvil's inharmonic ring over the tick of the hammer face.
-  anvil: (c) => shot(c, 0.8, 'anvil', (n, sr, rng) => add(ring(n, sr, [[820, 1, 0.5], [2263, 0.6, 0.3], [4428, 0.35, 0.16], [7323, 0.2, 0.08]]),
-    burst(n, sr, rng, 4200, 1.5, 0.005, 2)), 0.1),
+  // Steel on steel: a dull clank, not a note. It was four clean sines ringing for half a second,
+  // which is a xylophone (the keeper, 8 October 2026); now the ring is narrow bands of noise that
+  // die in a tenth of a second, under the knock of the hammer face, so no pitch is left to hear.
+  anvil: (c) => shot(c, 0.45, 'anvil', (n, sr, rng) => {
+    const out = burst(n, sr, rng, 1350, 14, 0.07, 1);
+    add(out, burst(n, sr, rng, 2870, 18, 0.05, 0.6));
+    add(out, burst(n, sr, rng, 4630, 20, 0.03, 0.35));
+    add(out, ring(n, sr, [[310, 0.5, 0.03]]));
+    return add(out, lowpass(burst(n, sr, rng, 2600, 1.2, 0.004, 1.6), sr, 5000));
+  }, 0.1),
   // A cleaver through meat into the block: a wet thwack and the wood under it.
   cleaver: (c) => shot(c, 0.3, 'cleaver', (n, sr, rng) => add(burst(n, sr, rng, 360, 1.4, 0.04, 2), ring(n, sr, [[180, 0.7, 0.06], [310, 0.3, 0.035]])), 0.1),
   // The oven's iron door: a low knock, the ring of the plate, and the creak of the hinge before it.
@@ -1005,7 +1017,8 @@ function hammerBuffer(ctx) {
     const wood = Math.exp(-t / 0.045) * Math.sin(2 * Math.PI * t * 196) * 0.50
       + Math.exp(-t / 0.028) * Math.sin(2 * Math.PI * t * 337) * 0.30
       + Math.exp(-t / 0.016) * Math.sin(2 * Math.PI * t * 521) * 0.16;
-    out[i] = att * (tick[i] * Math.exp(-t / 0.010) * 2.2 + wood);
+    // The tick is what carries; at 2.2 it rang out over the whole town, so it is under the board now.
+    out[i] = att * (tick[i] * Math.exp(-t / 0.008) * 1.3 + wood);
   }
   const chs = [out];
   level(chs, 0.11);
@@ -1728,7 +1741,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       // Sticky slots: a builder keeps the same voice for as long as they keep hammering,
       // so a blow does not jump between panners and the rhythm survives a re-pick.
       hammers: Array.from({ length: HAMMERS }, () => ({
-        ...mkVoice(buffers.hammer, { ref: 7, rolloff: 1.9, volume: 0.5, part: 'work' }),
+        ...mkVoice(buffers.hammer, { ref: 4, rolloff: 2.1, volume: 0.3, part: 'work' }),
         id: null, f: null, next: 0,
       })),
       gulls: Array.from({ length: GULLS }, () => mkVoice(buffers.gull, { ref: 18, rolloff: 1.1, volume: 0.42, part: 'birds' })),
@@ -2539,13 +2552,15 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (c.kind === 'saw') { if (d < sawD) { saw = c; sawD = d; } continue; }
       const was = seenCraft.get(c.id);
       seenCraft.set(c.id, { hits: c.hits, phase: c.phase });
-      if (d > CRAFT_RANGE) continue;
+      const range = c.kind === 'smith' ? SMITH_RANGE : CRAFT_RANGE;
+      if (d > range) continue;
       if (c.kind === 'smith' || c.kind === 'butcher') need(c.kind === 'smith' ? 'anvil' : 'cleaver');
       if (c.kind === 'baker') { need('oven'); need('thud'); }
       if (!was) continue;
       let buf = null, volume = 0.6, rate = 1;
       if ((c.kind === 'smith' || c.kind === 'butcher') && c.hits > was.hits) {
         buf = need(c.kind === 'smith' ? 'anvil' : 'cleaver');
+        if (c.kind === 'smith') volume = SMITH_LOUD;
         rate = 0.95 + Math.random() * 0.1;
       } else if (c.kind === 'baker' && c.phase !== was.phase) {
         if (c.phase === 'bake') buf = need('oven');
@@ -2554,7 +2569,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       if (!buf) continue;
       const v = built.crafts.find((s) => !s.audio.isPlaying) || built.crafts[0];
       if (v.audio.buffer !== buf) { if (v.audio.isPlaying) v.audio.stop(); v.audio.setBuffer(buf); }
-      v.audio.setVolume(volume * edge(d, CRAFT_RANGE));
+      v.audio.setVolume(volume * edge(d, range));
       fire(v, c.at[0], c.at[1], c.at[2], rate);
     }
     if (seenCraft.size > 64) seenCraft.clear();

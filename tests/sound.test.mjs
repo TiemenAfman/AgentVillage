@@ -104,6 +104,9 @@ function removeListener(type, fn) { const s = listeners.get(type); if (s) s.dele
 function dispatch(type) { for (const fn of [...(listeners.get(type) || [])]) fn({ type }); }
 
 let store = {};
+// The taverns start switched off (sound-mix.js MIX_OFF); a test about them turns them on as a
+// keeper would, in Settings -> Audio.
+const TAVERN_ON = { 'promptholm.sound.mix': JSON.stringify({ tavern: true }) };
 globalThis.localStorage = {
   getItem: (k) => (k in store ? store[k] : null),
   setItem: (k, v) => { store[k] = String(v); },
@@ -309,7 +312,7 @@ test('a gull over the quay, rarely, and never after dark', () => {
 });
 
 test('the tavern hums when there is somebody at its door, and not otherwise', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   // Nobody near the door, and nobody else either, so distance is not the reason.
   const look = village(4, { anim: 'still' });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
@@ -549,7 +552,7 @@ function heardSound(look, opts) {
 }
 
 test('a tavern is heard through its door: open at the threshold, shut along the wall', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   const look = village(4, { anim: 'still', tavern: false });
   look.pubs = [{ kind: 'village', at: [2, 0, 2] }];
   for (const f of look.crowds[0].values()) { f.pos[0] = 3; f.pos[1] = 2; }
@@ -567,7 +570,7 @@ test('a tavern is heard through its door: open at the threshold, shut along the 
 });
 
 test('the Salty Kraken hums with nobody from the village there, and has a voice of its own', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   const look = village(2, { anim: 'still', tavern: false });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   look.pubs = [{ kind: 'kraken', at: [6, 0, 0] }];
@@ -585,7 +588,7 @@ test('the Salty Kraken hums with nobody from the village there, and has a voice 
 });
 
 test('inside the village tavern the murmur is the room, whole, and outside it is not', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   const look = village(3, { anim: 'still' });
   const sound = heardSound(look);
   const murmur = ctx.buffers[ctx.buffers.length - 4];
@@ -631,7 +634,7 @@ test('the borrel is a loop on the square while the village is out there, made on
 });
 
 test('Settings -> Audio: a bus or a part at zero silences what it says, and nothing else', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   const look = village(40);
   look.pubs = [{ kind: 'village', at: [-8, 0, -6] }];
   for (const f of look.crowds[0].values()) if (f.pos[0] < -6) f.anim = 'still';
@@ -652,10 +655,10 @@ test('Settings -> Audio: a bus or a part at zero silences what it says, and noth
   assert.equal(loudest(murmur) || 0, 0, 'Speech at zero: the tavern is silent');
   assert.ok(loudest(surf) > 0, 'and the sea is not');
   assert.ok(hammered() > 0, 'nor the hammers');
-  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { speech: 0 }, 'only what moved is kept');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true, speech: 0 }, 'only what moved is kept');
 
   sound.setMix('speech', 1);
-  assert.equal(store['promptholm.sound.mix'], undefined, 'a slider back at full leaves nothing behind');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true }, 'a slider back at full leaves nothing behind');
   sound.setMix('work', false);
   run(sound, 0.2);
   assert.equal(hammered(), 0, 'Crafts and hammers off: no blow is even struck');
@@ -850,7 +853,7 @@ test('a blow that lands is heard once; a counter that stays put is not; the firs
   look.crafts = [smith];
   const sound = heardSound(look);
   run(sound, 1);
-  const anvil = () => shots(0.8);
+  const anvil = () => shots(0.45);
   const before = anvil();
   assert.equal(before, 0, 'walking up to a smithy that has struck 312 times is not 312 blows');
   smith.hits = 313;
@@ -1297,7 +1300,7 @@ test('a one-shot with recordings plays one of them each time, never the same one
 });
 
 test('a loop with recordings is joined from them, and its computed version is never made', () => {
-  store = {};
+  store = { ...TAVERN_ON };
   const look = village(2, { anim: 'still', tavern: false });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   const sound = heardSound(look);
