@@ -108,6 +108,7 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.glb': 'model/gltf-binary',
+  '.ogg': 'audio/ogg',
   '.txt': 'text/plain; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 };

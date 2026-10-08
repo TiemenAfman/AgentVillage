@@ -15,7 +15,7 @@ globalThis.document = { hidden: false, addEventListener() {}, removeEventListene
 globalThis.addEventListener = () => {};
 globalThis.removeEventListener = () => {};
 
-const { synthFamily } = await import('../web/js/sound.js');
+const { synthFamily, synthSong, JAZZ_SONG } = await import('../web/js/sound.js');
 const { SFX_LEVEL, loudness, prepareShot, seamlessLoop, XFADE_S } = await import('../web/js/sound-samples.js');
 const { SFX_FAMILIES } = await import('../shared/sfx.mjs');
 
@@ -81,4 +81,14 @@ test('a loop of variants has no seam, and is as loud as its family all the way r
     }
   }
   assert.equal(run(seamlessLoop(ctx, [], 'surf')), null);
+});
+
+test('the tavern\'s jazz is the whole form, at a level the songs share, and never clips', () => {
+  const buf = synthSong(ctx, 'tavern');
+  assert.equal(buf.length, Math.round(22050 * (60 / JAZZ_SONG.bpm) * 4 * JAZZ_SONG.bars));
+  const d = buf.getChannelData(0);
+  let peak = 0;
+  for (const v of d) peak = Math.max(peak, Math.abs(v));
+  assert.ok(peak < 0.97, `peak ${peak}`);
+  assert.ok(loudness(buf) > 0.1, `loudness ${loudness(buf)}`);
 });

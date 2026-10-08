@@ -2477,8 +2477,9 @@ Chests counts the day's chest), and **repeatable quests count alongside the stor
 with no pub would stop the day's chest for good. `businessWith(state)` is who the `!` hangs over (the log's
 `talk` is that id now, not a boolean); `QUEST_STATE_V` stayed 1, so an old book goes on at the captain.
 `web/js/pirate.js` is one window for every giver (`createQuestGiver`; `createPirate` opens it on him).
-**Music in rooms**: `web/js/sound.js` has two computed songs on one bed (`makeSong`, `steerSong`,
-`songClock`, `clockOf(room.music)`) - the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
+**Music in rooms**: `web/js/sound.js` has three computed songs on one bed (`makeSong`, `steerSong`,
+`songClock`, `clockOf(room.music)`) - the village tavern's jazz trio (`jazzSong`, its own part `jazz`, apart
+from the chatter; `node scripts/render-song.mjs tavern x.wav` to listen), the rave and the Kraken's jukebox (`SHANTY_SONG`: three tunes, every one
 on the same 0.6 s count, the hall's `beat` a dancing player follows; the crew do not nod to it - on
 every count it read as headbanging; 44.1 kHz, 13.5 MB, made only near the pub) - and
 **the keeper's own tracks**: `HOME/audio/{kroeg,rave,pirates}` (`lib/music.mjs`, `/api/music`, not on
@@ -2527,6 +2528,10 @@ running) and a loop's joined buffer, and the computed family is never made; ever
 one-shot asks `need()` (or passes its answer to `fire(..., buf)`) at the moment it plays, never a buffer
 kept from build(). A playing bed is restarted on its new buffer (`keepBuffer`): three's `setBuffer` only
 changes the next `play()`.
+**The island ships recordings of its own too** (`web/audio`, listed in `web/js/island-sfx.js`, CC0 only, sources in
+`web/audio/CREDITS.md`): sfx-loader.js's `defaults`, played on every page - visitors, the phone and the web included
+(`/audio/` is on `PUBLIC_PREFIX`) - for a family the keeper has no file for - the taverns' chatter and four takes each of `baa`, `moo`, `cluck`, `bleat`. The taverns' chatter (`murmur`, `kraken`)
+is a recording or nothing: sound.js `recorded()` never computes it, since the synthesised murmur sounded like surf.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**
 `entrancesOf` (`shared/entrances.mjs`, the one sum the page and the server both make; the page's wrapper is

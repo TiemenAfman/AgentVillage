@@ -64,6 +64,8 @@ import { createHerds } from './herds.js';
 import { createTraces } from './traces.js';
 import { createSound } from './sound.js';
 import { createSfxLoader } from './sfx-loader.js';
+import { ISLAND_SFX } from './island-sfx.js';
+import { audioUrl } from './assets.js';
 import { createWalkMode } from './walk.js';
 import { createInterior, INDOOR_GLOW, roomReady, prepareRoom, ROOM_KINDS } from './interior.js';
 import { packRoomSpot, readRoomSpot, doorOf, DOOR_SLACK } from './room-spot.js';
@@ -2679,19 +2681,32 @@ async function refreshMusic() {
   } catch { /* no islander, no tracks: the computed music plays */ }
 }
 
-// The keeper's own recordings (lib/sfx.mjs, HOME/audio/sfx, Plans/meer-geluiden.md phase 9):
+// The keeper's own recordings (lib/sfx.mjs, HOME/audio/sfx, Plans/meer-geluiden.md phase 9), and
+// the island's own (web/audio, island-sfx.js) for a family the keeper has none for:
 // web/js/sfx-loader.js fetches and decodes a family once sound.js has wanted it, and hands the
-// buffers in through setSamples. Only after the boot (`startSfx` follows `state.ui.boot(true)`),
-// only from our own islander - a visitor is refused /api/sfx, and the phone and the web have none
-// - and the list is asked again at every door, with the music's. Nothing waits on any of it.
+// buffers in through setSamples. Only after the boot (`startSfx` follows `state.ui.boot(true)`).
+// The keeper's only from our own islander - a visitor is refused /api/sfx, and the phone and the
+// web have none, so they play the island's own - and the list is asked again at every door, with
+// the music's. Nothing waits on any of it.
 let sfxTickIn = 2;
 function startSfx() {
-  if (STANDALONE || !state.sound || state.sfx) return;
+  if (!state.sound || state.sfx) return;
   state.sfx = createSfxLoader({
     sound: state.sound,
-    list: async () => { const r = await mine('/api/sfx'); return r.ok ? r.json() : null; },
+    // With no islander there is no folder to ask: only the island's own recordings play.
+    list: async () => {
+      if (STANDALONE) return {};
+      const r = await mine('/api/sfx');
+      return r.ok ? r.json() : null;
+    },
     bytes: async (name) => {
       const r = await mine(`/api/sfx/${encodeURIComponent(name)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.arrayBuffer();
+    },
+    defaults: ISLAND_SFX,
+    fetchDefault: async (name) => {
+      const r = await fetch(audioUrl(name));
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.arrayBuffer();
     },
