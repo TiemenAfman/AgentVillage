@@ -44,6 +44,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [kanonnen.md](kanonnen.md) — de acht kanonnen uit de galjoen-bake weg, twee kanonnen van de keeper (eigen FBX) erop: bemannen, draaien, richten, laden, vuren, inslag met explosie, plons en geluid, en jezelf afvuren langs een kogelbaan.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
   ellebogen), losse kleding (Peasant + schort, vest, rok/jurk, sjaal), vijf kapsels, huid- en
