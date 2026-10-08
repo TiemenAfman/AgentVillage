@@ -56,7 +56,7 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName } from './graphics-settings.js';
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
@@ -190,11 +190,9 @@ const canvas = document.getElementById('stage');
 // a shared thing kept by the sea and turning over a quarter of an hour at a time, so
 // without this the only way to look at three of the four is to sit and wait for them.
 if (params.has('sky')) forceSky(params.get('sky'));
-const statsReadout = params.has('stats') ? document.createElement('output') : null;
-if (statsReadout) {
-  statsReadout.style.cssText = 'position:fixed;left:12px;bottom:8px;z-index:10000;padding:5px 9px;background:#14221ee8;color:#f4e8cd;font:12px monospace;pointer-events:none';
-  document.body.appendChild(statsReadout);
-}
+// The corner readout: ?stats, or Settings -> Graphics -> Show performance stats (setStatsShown,
+// below the renderer), where there is no address bar - promptholm.exe, the phone.
+let statsReadout = null;
 
 // The boot watchdog in index.html waits on this: it is the one thing that tells it the
 // module graph came up at all. Set before anything below can throw, so that a later crash
@@ -420,8 +418,38 @@ renderer.shadowMap.type = modest ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 if (modest) console.info('island: integrated graphics detected, running lighter');
-// ?stats counts the shadow pass too, and the frame time (render-stats.js).
-const renderStats = statsReadout ? createRenderStats(renderer) : null;
+// ?stats counts the shadow pass too, and the frame time (render-stats.js). Made and taken down
+// with the switch, so a page without the readout draws through three.js untouched.
+let renderStats = null;
+function setStatsShown(on) {
+  if (on && !statsReadout) {
+    statsReadout = document.createElement('output');
+    statsReadout.style.cssText = 'position:fixed;left:12px;bottom:8px;z-index:10000;padding:5px 9px;background:#14221ee8;color:#f4e8cd;font:12px monospace;pointer-events:none';
+    document.body.appendChild(statsReadout);
+    renderStats = createRenderStats(renderer);
+  } else if (!on && statsReadout) {
+    statsReadout.remove();
+    statsReadout = null;
+    renderStats.dispose();
+    renderStats = null;
+  }
+}
+setStatsShown(params.has('stats') || loadStatsShown());
+// Why this page took itself for the tier it is, for Settings -> Graphics' quality line.
+const tierReason = HANDHELD ? (modest ? 'light' : 'full quality')
+  : params.has('modest') ? '?modest'
+  : MODEST_GPU.test(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
+  : gpuShortName(graphicsGpu);
+// Frames counted for that line's fps: one increment a frame, read only while Settings is open.
+let framesDrawn = 0;
+let fpsMark = null;
+function framesPerSecond() {
+  const now = performance.now();
+  const was = fpsMark;
+  fpsMark = { at: now, frames: framesDrawn };
+  if (!was || now - was.at < 200 || now - was.at > 5000) return null;
+  return ((framesDrawn - was.frames) * 1000) / (now - was.at);
+}
 
 // Drawing less while this machine cannot keep up (web/js/quality.js, Plans/DONE/sneller-tekenen.md):
 // fed every frame from tick(), and what it answers is applied here and nowhere else. `modest`
@@ -8107,6 +8135,7 @@ function tick(nowMs) {
   if (!contextLost) {
     try {
       frame(nowMs);
+      framesDrawn++;
       recovery.frame(nowMs, document.visibilityState === 'visible');
       const rung = quality.frame(nowMs, document.visibilityState === 'visible');
       if (rung) applyQuality(rung);
@@ -9073,20 +9102,30 @@ Everything is copied and checked first; the island then starts again there. The 
       const said = b ? [b.version, b.commit].filter(Boolean).join(' · ') : '';
       return said ? `Promptholm ${said}` : '';
     },
-    // Settings -> Drawing -> Lighter when slow. A ?quality pin outranks it: that is somebody
-    // looking at one rung on purpose.
-    onQualityAuto: (on) => {
-      if (params.has('quality')) return;
-      const rung = quality.setAuto(on);
-      if (rung) applyQuality(rung);
+    // Settings -> Graphics -> Quality: 'auto' or a rung held (?quality=n without the address
+    // bar). The chips show what the governor does, not what is stored: at boot ?quality outranks
+    // the stored choice, and a click here outranks both.
+    qualityState: () => ({ auto: quality.auto(), level: quality.level() }),
+    onQualityChoice: (choice) => {
+      saveQualityChoice(choice);
+      if (choice === 'auto') {
+        const rung = quality.setAuto(true);
+        if (rung) applyQuality(rung);
+      } else applyQuality(quality.pin(choice));
     },
+    qualityNow: () => qualityLine({
+      tier: graphicsTier({ modest, phone: HANDHELD }), reason: tierReason,
+      rung: quality.rung().name, auto: quality.auto(), fps: framesPerSecond(),
+    }),
+    statsShown: () => !!statsReadout,
+    onStatsShown: (on) => { saveStatsShown(on); setStatsShown(on); },
   });
   // The menu behind Esc is the settings, and ui.js owns the settings (sysmenu.js).
   state.sysmenu = state.ui.sysmenu;
   // Here rather than where the governor is made: applyQuality reaches `state`, which does not
   // exist yet up there.
-  if (params.has('quality')) applyQuality(quality.pin(Number(params.get('quality'))));
-  else if (!state.ui.qualityAutoEnabled()) quality.setAuto(false);
+  const heldRung = params.has('quality') ? Number(params.get('quality')) : loadQualityChoice();
+  if (heldRung !== 'auto') applyQuality(quality.pin(heldRung));
 
   // The story animals' dossier, the island's animal diary and the "while you were away" card
   // (web/js/animal-dossier.js, Plans/DONE/dierenverhalen.md). Everything it shows about our own

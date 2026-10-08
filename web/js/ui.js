@@ -7,6 +7,7 @@ import { ACTIONS, PAD_ONLY, STICK_LABEL, PAD_RESERVED, keysOf, keyOf, padOf, key
 import { padName, padLabel } from './gamepad.js';
 import { GRAPHICS_DEFAULTS, GRAPHICS_LIMITS, GRAPHICS_CHOICES, BLOOM_STRENGTH } from './graphics-settings.js';
 import { createSysMenu } from './sysmenu.js';
+import { RUNGS as QUALITY_RUNGS } from './quality.js';
 import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 import { NOCLIP_KEY } from './noclip.js';
 import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
@@ -217,10 +218,11 @@ export function createUI(handlers) {
   // island may grow - the Island tab's two lists - before it is.
   const menu = createSysMenu({
     closers: ['legend-btn', 'phone-btn'],
-    onClose: () => { if (handlers.onMenuClose) handlers.onMenuClose(); },
+    onClose: () => { qualityTick(false); if (handlers.onMenuClose) handlers.onMenuClose(); },
     onOpen: () => {
       if (keeper && handlers.onSettingsOpen) handlers.onSettingsOpen();
       renderSettings();
+      qualityTick(true);
       el('sysmenu-build').textContent = handlers.buildLabel ? handlers.buildLabel() : '';
       // Respawn to town (issue #74) is for somebody on foot in the world - the sky has nothing
       // to bring home, and a room has a door - so it is not a button anybody else ever sees.
@@ -601,13 +603,6 @@ export function createUI(handlers) {
   let directorOn = true;
   try { directorOn = localStorage.getItem(DIRECTOR_KEY) !== '0'; } catch { /* private window: on */ }
 
-  // The quality governor (web/js/quality.js, Plans/DONE/sneller-tekenen.md): drawing less while
-  // this machine cannot keep up. On unless switched off, per browser - it is about this
-  // screen's graphics, not the island.
-  const QUALITY_KEY = 'promptholm.quality.auto';
-  let qualityAuto = true;
-  try { qualityAuto = localStorage.getItem(QUALITY_KEY) !== '0'; } catch { /* private window: on */ }
-
   // The words on the chips at the top right: off unless switched on, per browser. The icons
   // carry the bar - every chip keeps its name and key in its tooltip and aria-label - and the
   // words took half the width of a laptop screen (Plans/DONE/esc-menu-en-knoppenbalk.md). A class
@@ -902,12 +897,46 @@ export function createUI(handlers) {
         + `<input type="range" min="${lim.min}" max="${lim.max}" step="${lim.step}" value="${v}" data-setting="${key}"></div>`;
     };
     return '<div><h3 class="sec">Graphics</h3>'
-      + `<p class="muted" style="margin:0 0 12px">Adjust how far different parts of the island are drawn.</p>`
+      + qualityRows()
+      + `<p class="muted" style="margin:12px 0 12px">Adjust how far different parts of the island are drawn.</p>`
       + GRAPHICS_ROWS.map(row).join('')
       + detailRow()
       + postRows()
       + `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-graphics-reset="1">This machine's defaults</button></div>`
       + `</div>`;
+  }
+  // What this page draws at, said in the game itself (no address bar for ?stats or ?quality in
+  // promptholm.exe or on the phone): the machine's tier and why, the quality governor's rung
+  // (quality.js) and the frame rate in one line, kept fresh by qualityTick while the menu is open;
+  // the rung chosen by hand or left to the governor; and the ?stats readout as a switch.
+  function qualityRows() {
+    if (!handlers.qualityState) return '';
+    const q = handlers.qualityState();
+    const stats = !!(handlers.statsShown && handlers.statsShown());
+    const chip = (v, label, on) => `<button class="chip${on ? ' on' : ''}" data-quality="${v}" aria-pressed="${on}">${label}</button>`;
+    return `<p class="quality-now" id="quality-now">${esc(handlers.qualityNow ? handlers.qualityNow() : '')}</p>`
+      + `<div class="setting-row"><label>Quality</label><div class="chips wrap">`
+      + chip('auto', 'Automatic', q.auto)
+      + QUALITY_RUNGS.map((r, i) => chip(i, r.name[0].toUpperCase() + r.name.slice(1), !q.auto && q.level === i)).join('')
+      + '</div></div>'
+      + `<p class="muted" style="margin:-6px 0 0">${q.auto
+        ? 'Automatic: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
+        : 'Held: the island is drawn at this step however slow or fast this screen is.'}</p>`
+      + `<div class="chips wrap" style="margin-top:6px"><button class="chip${stats ? ' on' : ''}" data-stats="1" aria-pressed="${stats}">Show performance stats</button></div>`
+      + `<p class="muted" style="margin:4px 0 0">${stats
+        ? 'On: draw calls, triangles and frame times in the bottom left corner, the shadow pass apart.'
+        : 'Off. The same readout as <code>?stats</code> in the address.'}</p>`;
+  }
+  let qualityTimer = null;
+  function qualityTick(on) {
+    clearInterval(qualityTimer);
+    qualityTimer = null;
+    if (!on || !handlers.qualityNow) return;
+    qualityTimer = setInterval(() => {
+      const out = document.getElementById('quality-now');
+      if (el('sysmenu').hidden) { qualityTick(false); return; }
+      if (out) out.textContent = handlers.qualityNow();
+    }, 500);
   }
   // Forced SD - Auto - Forced HD (graphics-settings.js GRAPHICS_CHOICES, Plans/piratenkroeg.md, "The HD pack"), with
   // what the HD pack in HOME/hd holds. Not on the phone, which has neither rooms nor a pack.
@@ -967,12 +996,7 @@ export function createUI(handlers) {
       + `<div class="chips wrap" style="margin-top:9px"><button class="chip${directorOn ? ' on' : ''}" data-director="1" aria-pressed="${directorOn}">Wander by itself</button></div>`
       + `<p class="muted" style="margin-top:9px">${directorOn
         ? 'On: leave the island alone for a while and the camera goes to watch whatever is happening - a newcomer, the gold, the timber wagon, somebody at work. Touch anything and it stops where it is.'
-        : 'Off: the camera stays where you leave it.'}</p>`
-      + '<h3 class="sec">Drawing</h3>'
-      + `<div class="chips wrap"><button class="chip${qualityAuto ? ' on' : ''}" data-qualityauto="1" aria-pressed="${qualityAuto}">Lighter when slow</button></div>`
-      + `<p class="muted" style="margin-top:9px">${qualityAuto
-        ? 'On: when this screen drops below about 28 frames a second, the island is drawn a little softer - fewer pixels, shadows redrawn less often - and sharpens again once there is room.'
-        : 'Off: the island is always drawn at the quality this screen started with, however slow it gets.'}</p>`;
+        : 'Off: the camera stays where you leave it.'}</p>`;
     // Windowed or fullscreen (display.js). In promptholm.exe fullscreen is the window itself,
     // borderless over the whole screen; in a tab it is the browser's own fullscreen.
     const full = display.isFull();
@@ -1084,11 +1108,14 @@ export function createUI(handlers) {
       if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());
       renderSettings();
     }));
-    el('settings-body').querySelectorAll('[data-qualityauto]').forEach((b) => b.addEventListener('click', () => {
-      qualityAuto = !qualityAuto;
-      try { if (qualityAuto) localStorage.removeItem(QUALITY_KEY); else localStorage.setItem(QUALITY_KEY, '0'); } catch { /* kept for this page only */ }
+    el('settings-body').querySelectorAll('[data-quality]').forEach((b) => b.addEventListener('click', () => {
+      const v = b.dataset.quality;
+      if (handlers.onQualityChoice) handlers.onQualityChoice(v === 'auto' ? 'auto' : Number(v));
       renderSettings();
-      if (handlers.onQualityAuto) handlers.onQualityAuto(qualityAuto);
+    }));
+    el('settings-body').querySelectorAll('[data-stats]').forEach((b) => b.addEventListener('click', () => {
+      if (handlers.onStatsShown) handlers.onStatsShown(!(handlers.statsShown && handlers.statsShown()));
+      renderSettings();
     }));
     el('settings-body').querySelectorAll('[data-display]').forEach((b) => b.addEventListener('click', () => {
       display.set(b.dataset.display === 'full');
@@ -1655,7 +1682,7 @@ export function createUI(handlers) {
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,
-    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, noclipEnabled: () => noclipOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn, qualityAutoEnabled: () => qualityAuto,
+    setSigns, setKeeper, setStandalone, setSound, setUpdate, setGate, buildEnabled: () => buildOn, noclipEnabled: () => noclipOn, youMarkerMode: () => youMode, directorEnabled: () => directorOn,
     setHover, toast, arrival, setSkew, setSeaQuiet, setChronicle, boot, setWalking, setPlanning, setWalkPrompt, setPouch, setBuildHud, setPad, setConfirm, setIndoors, setMouse, setGive, setSpeech,
     closeDossier: () => close('dossier'),
     // For web/js/animal-dossier.js: open one of the side panels (closing the others), close
