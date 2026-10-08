@@ -27,14 +27,22 @@ globalThis.document = {
 };
 // walk.js listens on the window for the keys and the focus.
 globalThis.window = globalThis;
-globalThis.addEventListener = noop;
+// The keys go through the handlers walk.js registers on the window (tests/diving-walk.test.mjs).
+const handlers = { keydown: [], keyup: [] };
+globalThis.addEventListener = (type, fn) => { if (handlers[type]) handlers[type].push(fn); };
 globalThis.removeEventListener = noop;
+const key = (k, down) => {
+  const e = { key: k, repeat: false, ctrlKey: false, metaKey: false, altKey: false, target: {}, preventDefault: noop };
+  for (const fn of handlers[down ? 'keydown' : 'keyup']) fn(e);
+};
 const { createWalkMode } = await import('../web/js/walk.js');
 
 const SEA = () => -2.5;
 const FRAME = 1 / 60;
 
 function harness() {
+  handlers.keydown.length = 0;
+  handlers.keyup.length = 0;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
   camera.up.set(0, 1, 0);
@@ -83,26 +91,58 @@ test('a ship you jump from runs out on her own, and stops being run when she is 
   assert.equal(ship.v, 0, 'she is not at rest');
 });
 
-test('let go of her wheel and stay aboard: she keeps her way and her heading, sails set', () => {
+test('at her wheel W and S set her sails a step at a time, and the setting stands with no key held', () => {
+  const { walk, ship } = harness();
+  walk.board(ship);
+  assert.equal(ship.underSail, 0, 'a ship lying still came to the wheel under sail');
+  // Two taps of W: half sail. A tap is one step, however long it is held under the repeat.
+  for (let i = 0; i < 2; i++) { key('w', true); walk.update(FRAME); key('w', false); walk.update(FRAME); }
+  assert.equal(ship.underSail, 0.5);
+  for (let i = 0; i < 30 * 60; i++) walk.update(FRAME);
+  const half = CRAFTS.galleon.sail.top / 2;
+  assert.ok(Math.abs(ship.v - half) < 1e-6, `half sail with no key held made ${ship.v}, not ${half}`);
+  // Held: a step, then another every repeat - up to full and no further.
+  key('w', true);
+  for (let i = 0; i < 3 * 60; i++) walk.update(FRAME);
+  key('w', false);
+  assert.equal(ship.underSail, 1);
+  // S all the way down is her sails backed: astern.
+  key('s', true);
+  for (let i = 0; i < 4 * 60; i++) walk.update(FRAME);
+  key('s', false);
+  assert.equal(ship.underSail, -1);
+});
+
+test('let go of her wheel and stay aboard: the sails stand, she keeps her way and her heading', () => {
   const { walk, ship, left } = harness();
-  ship.v = 8;
+  const half = CRAFTS.galleon.sail.top / 2;
+  ship.v = half;
+  ship.underSail = 0.5;
   walk.board(ship);
   assert.ok(walk.leaveHelm());
   const yaw0 = ship.yaw;
   // A minute and a half on her deck, standing at the wheel's foot: well past any run-out.
   for (let i = 0; i < 90 * 60; i++) walk.update(FRAME);
   assert.deepEqual(left, [], 'standing still went over the side');
-  assert.ok(Math.abs(ship.v - 8) < 1e-6, `under her sails she went from 8 to ${ship.v}`);
+  assert.ok(Math.abs(ship.v - half) < 1e-6, `under half sail she went from ${half} to ${ship.v}`);
   assert.ok(Math.abs(ship.yaw - yaw0) < 1e-9, 'the rudder was not left amidships');
-  assert.ok(ship.z > 8 * 85, `she made only ${ship.z.toFixed(0)} units in ninety seconds`);
-  // Back at the wheel the sails are the throttle's again: struck.
+  assert.ok(ship.z > half * 85, `she made only ${ship.z.toFixed(0)} units in ninety seconds`);
+  // Back at the wheel they are as they were.
   assert.ok(walk.takeHelm());
-  assert.equal(ship.underSail, 0);
+  assert.equal(ship.underSail, 0.5);
+});
+
+test('a ship running out with no sails we know of is given the step that matches her way at the wheel', () => {
+  const { walk, ship } = harness();
+  ship.v = 8;   // 8 of 13: over a half, under three quarters
+  walk.board(ship);
+  assert.equal(ship.underSail, 0.5);
 });
 
 test('over the side her sails are struck and she runs out as before', () => {
   const { walk, ship, left } = harness();
   ship.v = 8;
+  ship.underSail = 0.75;
   walk.board(ship);
   walk.leaveHelm();
   for (let i = 0; i < 30 * 60; i++) walk.update(FRAME);
@@ -114,6 +154,23 @@ test('over the side her sails are struck and she runs out as before', () => {
   for (; t < 100 * 60 && walk.runningOut(); t++) walk.runOut(FRAME);
   assert.ok(t / 60 < CRAFTS.galleon.sail.runOut, `she ran ${(t / 60).toFixed(0)} s, past her run-out`);
   assert.equal(ship.v, 0);
+  // And somebody else sailing her on (lib/boats.mjs handOn) ends our running her out at once.
+  const again = harness();
+  again.ship.v = 8;
+  again.walk.board(again.ship);
+  again.walk.leaveHelm();
+  again.walk.state.deck.x = 1.95;
+  for (let i = 0; i < 240 && !again.left.length; i++) { again.walk.state.deck.x += 0.05; again.walk.update(FRAME); }
+  assert.equal(again.walk.runningOut(), again.ship);
+  again.walk.stopRunning(again.ship);
+  assert.equal(again.walk.runningOut(), null);
+});
+
+test('main.js hands her on: our sails go with the letgo, and the sea word on who sails her is read', () => {
+  const src = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  assert.match(src, /letGoBoat\(it\.id, sailOf\(state\.walk\.onDeck\(\)\)\)/);
+  assert.match(src, /if \(b\.coast\) return b\.coast !== me;/, 'hullFollowed does not follow the one the sea names');
+  assert.match(src, /state\.walk\.stopRunning\(craft\)/);
 });
 
 test('a ship that had no way on her is not left running, and a Benchy never is', () => {

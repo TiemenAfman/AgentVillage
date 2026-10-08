@@ -36,7 +36,7 @@ import { setSeeThrough, BODY_MID, SILHOUETTE, SEE_EASE } from './see-through.js'
 import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
-import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf, strikeSail, logOf } from './boat.js';
+import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf, strikeSail, logOf, hullSpeed, nearestSail, sailOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
 import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
@@ -1181,6 +1181,9 @@ const hullFollowed = (b) => {
   if (!b) return false;
   const me = state.net ? state.net.id() : null;
   if (b.pilot) return b.pilot !== me;
+  // A ship under sail with nobody at her wheel is stepped by one page, the one the sea names
+  // (lib/boats.mjs `coast`, Plans/galjoen-vaart-houden.md) - ours, or somebody else's we follow.
+  if (b.coast) return b.coast !== me;
   return !!b.track;
 };
 
@@ -2205,7 +2208,7 @@ function walkCallbacks() {
       else if (it.kind === 'ashore') stepAshore();
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
-      else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
+      else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id, sailOf(state.walk.onDeck())); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
       else if (it.kind === 'nestseat') {
         if (state.walk.state.sitting) state.walk.standUp();
         else state.walk.sitOnDeck(it.seat);
@@ -4860,7 +4863,25 @@ function onBoatFromServer(m) {
   // Only when the message names one. A `moved` says where the hull is and nothing about
   // whose hand is on it, so taking `m.pilot` as authoritative there wiped the tiller ten
   // times a second - the boat moved for everybody and belonged to nobody.
-  if ('pilot' in m) craft.pilot = m.pilot || null;
+  if ('pilot' in m) {
+    craft.pilot = m.pilot || null;
+    // Who sails a ship on with nobody at her wheel, and under which sails (lib/boats.mjs `coast`; absent
+    // from a sea before it, and whenever somebody has the wheel).
+    const me = state.net ? state.net.id() : null;
+    const coast = (!craft.pilot && m.coast) || null;
+    const handed = !!coast && coast === me && craft.coast !== me;
+    craft.coast = coast;
+    // Handed to us (the one who sailed her went over the side or away): we are aboard, so from here
+    // this page steps her, from the way her track says she has on and under the sails she was left
+    // under - or, with no word of them, the step that matches that way.
+    if (handed && state.walk && ownHull() === craft) {
+      craft.v = hullSpeed(craft) * (Number.isFinite(m.sail) && m.sail < 0 ? -1 : 1);   // backed sails: astern
+      craft.underSail = Number.isFinite(m.sail) ? m.sail : nearestSail(craft.v / ((craft.craft.spec.sail || {}).top || 1));
+      craft.track = null;
+    }
+    // Somebody else sails her on now: we who jumped are not running her out any more.
+    if (coast && coast !== me && state.walk && runningHull() === craft) state.walk.stopRunning(craft);
+  }
   // The sea knows no galleon: to it `boat:<region>` is a Benchy, and "at her mooring" - a
   // take and let go, or lib/boats.mjs walking her home after five quiet minutes - is the
   // Benchy's berth, up the beach for a ship. A page that heard that put her there, and one
@@ -4874,7 +4895,9 @@ function onBoatFromServer(m) {
   // has taken it, and she still has way on her on our own screen) - our echo must not drag her back.
   // Off her deck too: a ship we jumped from is still running out on our screen (walk.js runOut).
   const mine = (state.net && craft.pilot && craft.pilot === state.net.id())
-    || (!craft.pilot && (craft === ownHull() || craft === runningHull()) && Math.abs(craft.v || 0) > 0.05);
+    || (!craft.pilot && (craft === ownHull() || craft === runningHull()) && Math.abs(craft.v || 0) > 0.05)
+    // Ours to sail on, whatever her speed: the sea says so (`coast`).
+    || (!!state.net && !craft.pilot && craft.coast === state.net.id() && craft === ownHull());
   // Somebody else has the tiller: their word is where it is. Our own boat we are steering
   // ourselves, and taking the server's echo of our own message would jitter it back a
   // fifth of a second on every reply.
@@ -4885,7 +4908,7 @@ function onBoatFromServer(m) {
   // of, it glides the last stretch to where it was left and stops there - a jump there
   // would be the whole lag's worth of way at once.
   if (!mine) {
-    if (craft.pilot || craft.track || craft === ownHull()) hullSample(craft, m, !craft.pilot);
+    if (craft.pilot || craft.coast || craft.track || craft === ownHull()) hullSample(craft, m, !craft.pilot && !craft.coast);
     else { craft.x = m.x; craft.z = m.z; craft.yaw = m.yaw; }
     craft.v = 0;
   } else craft.track = null;

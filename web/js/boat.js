@@ -345,29 +345,55 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
 }
 
 // ---------------------------------------------------------------------------------
-// Sails left standing (Plans/galjoen-vaart-houden.md). A heavy hull (one whose craft has a
-// `sail.runOut`: the galleon) whose helm is let go by somebody who stays aboard keeps the way she
-// had: `b.underSail` is the share of her top speed the sails were set to when the wheel was let go,
-// and the hull is stepped with that as a steady throttle and the rudder amidships - so she holds
-// her speed and her heading, and a crew of one can walk to the guns. Struck (0) the moment she
-// grounds, or the held throttle would grind her into the sand for ever; and by walk.js when the
-// last of us goes over the side, after which she runs out on the water's drag as before. Kept on
-// the hull record, which is this page's own: nothing of it is on the wire.
+// Sails (Plans/galjoen-vaart-houden.md). A heavy hull (one whose craft has a `sail.runOut`: the
+// galleon) is not sailed on the throttle the way a rowing boat is rowed: at her wheel W and S take a
+// step of sail on or off (`sailStep`, walk.js), and the setting stands until it is changed -
+// `b.underSail`, one of SAIL_STEPS, a share of her top speed, -1 being her sails backed (astern). Let
+// go of the wheel and stay aboard and it still stands: she holds her way and her heading, the rudder
+// amidships, and a crew of one can walk to the guns. Struck (0) the moment she grounds, or a set sail
+// would grind her into the sand for ever; and by walk.js when the last of us goes over the side,
+// after which she runs out on the water's drag as before. Kept on the hull record; it crosses the wire
+// only on `letgo` (net.js), for whoever sails her on after us (lib/boats.mjs handOn).
+export const SAIL_STEPS = Object.freeze([-1, 0, 0.25, 0.5, 0.75, 1]);
 export function heavyHull(b) {
   const sail = b && b.craft && b.craft.spec && b.craft.spec.sail;
   return !!(sail && sail.runOut > 0);
 }
+// The setting she is under, 0 for none.
+export const sailOf = (b) => (b && Number.isFinite(b.underSail) ? b.underSail : 0);
+// The step nearest a share of her top speed, for a hull handed to us at a speed and no word of her sails.
+export function nearestSail(share) {
+  let best = 0;
+  for (const s of SAIL_STEPS) if (Math.abs(s - share) < Math.abs(best - share)) best = s;
+  return best;
+}
+// The step that matches the way she is making now: never more than she has (so taking her over does
+// not put on sail she was not under), and never astern.
 export function setSail(b) {
   if (!heavyHull(b)) { if (b) b.underSail = 0; return 0; }
-  const top = b.craft.spec.sail.top;
-  b.underSail = clamp((b.v || 0) / top, 0, 1);
+  const share = clamp((b.v || 0) / b.craft.spec.sail.top, 0, 1);
+  let best = 0;
+  for (const s of SAIL_STEPS) if (s >= 0 && s <= share + 1e-9) best = s;
+  b.underSail = best;
+  return best;
+}
+// One step of sail on (`dir` 1) or off (-1), from whichever step she is nearest.
+export function sailStep(b, dir) {
+  if (!heavyHull(b)) return sailOf(b);
+  const now = SAIL_STEPS.indexOf(nearestSail(sailOf(b)));
+  const i = clamp(now + Math.sign(dir), 0, SAIL_STEPS.length - 1);
+  b.underSail = SAIL_STEPS[i];
   return b.underSail;
 }
 export function strikeSail(b) { if (b) b.underSail = 0; }
-// One step of a hull nobody has the helm of: under her sails if they are set, else on the water's drag.
-export function stepUnderSail(b, dt, heightAt) {
-  const t = b.underSail > 0 ? b.underSail : 0;
-  stepBoat(b, t ? { throttle: t } : {}, dt, heightAt);
+// What the HUD says of a setting.
+export function sailLabel(v) {
+  return v < 0 ? 'astern' : v === 0 ? 'no sail' : v >= 1 ? 'full sail' : v === 0.25 ? '¼ sail' : v === 0.5 ? '½ sail' : v === 0.75 ? '¾ sail' : `${Math.round(v * 100)}% sail`;
+}
+// One step of a hull under her sails: at the wheel (`turn`, `turbo` from the helm) or with nobody at it.
+export function stepUnderSail(b, dt, heightAt, { turn = 0, turbo = false } = {}) {
+  const t = sailOf(b);
+  stepBoat(b, t || turn || turbo ? { throttle: t, turn, turbo: turbo && t >= 1 } : {}, dt, heightAt);
   if (t && b.aground) b.underSail = 0;
   return b;
 }
@@ -394,12 +420,14 @@ export function hullSpeed(b) {
 // pipeline), and a knot is 1852 m an hour.
 export const KNOTS_PER_UNIT = (4 * 3600) / 1852;
 // What the HUD's log (web/js/vitals.js setLog) shows for a hull: knots, the share of her top speed
-// (the bar; turbo fills it), and whether her sails are standing with nobody at the wheel.
+// (the bar; turbo fills it), and for a ship the sails she is under (SAIL_STEPS), else null.
 export function logOf(b) {
   const sail = b && b.craft && b.craft.spec && b.craft.spec.sail;
   const top = sail ? sail.top : BOAT_TOP;
   const speed = hullSpeed(b);
-  return { knots: speed * KNOTS_PER_UNIT, fraction: Math.min(1, speed / top), sails: b.underSail > 0, ship: heavyHull(b) };
+  const ship = heavyHull(b);
+  const sails = ship ? sailOf(b) : null;
+  return { knots: speed * KNOTS_PER_UNIT, fraction: Math.min(1, speed / top), sails, sailText: ship ? sailLabel(sails) : '', ship };
 }
 
 // ---------------------------------------------------------------------------------

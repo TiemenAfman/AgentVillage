@@ -26,6 +26,9 @@ const HURT_STEP = 0.02;
 // `haze` is what the blur is written onto: the canvas and the panels layer under it, both,
 // or a board's hole would show a sharp page in a smeared world (the two are separate
 // elements - see "one panels layer" in CLAUDE.md).
+// The sails in a few characters (boat.js SAIL_STEPS): astern, none, a quarter to full.
+const SAIL_SHORT = (v) => (v < 0 ? '↶' : v === 0 ? '–' : v >= 1 ? 'full' : v === 0.25 ? '¼' : v === 0.5 ? '½' : v === 0.75 ? '¾' : `${Math.round(v * 100)}%`);
+
 export function createVitals(root, { haze = [] } = {}) {
   const health = root.querySelector('.vital.health');
   const stamina = root.querySelector('.vital.stamina');
@@ -103,21 +106,23 @@ export function createVitals(root, { haze = [] } = {}) {
       dig.style.setProperty('--f', String(v));
     },
     // `at`: logOf (web/js/boat.js) of the hull we are on, or null off every boat. Written only when the
-    // tenth of a knot, the bar or the sails change - it is called every frame.
+    // tenth of a knot, the bar or the sails change - it is called every frame. A ship's sails stand
+    // beside the knots (`sails`, boat.js SAIL_STEPS), and a set sail tints the bar canvas-white.
     setLog(at) {
       if (!log) return;
       log.hidden = !at;
       if (!at) return;
       const kn = Math.round(Math.max(0, at.knots) * 10) / 10;
       const f = Math.round(Math.min(1, Math.max(0, at.fraction)) * 500) / 500;
-      const said = `${kn}|${f}|${at.sails ? 1 : 0}|${at.ship ? 1 : 0}`;
+      const sails = at.ship && Number.isFinite(at.sails) ? at.sails : null;
+      const said = `${kn}|${f}|${sails}|${at.ship ? 1 : 0}`;
       if (log.dataset.said === said) return;
       log.dataset.said = said;
       log.style.setProperty('--f', String(f));
-      log.classList.toggle('sails', !!at.sails);
+      log.classList.toggle('sails', sails !== null && sails !== 0);
       if (logIcon) logIcon.textContent = at.ship ? '⛵' : '🚣';
-      if (logText) logText.textContent = `${kn.toFixed(1)} kn`;
-      log.title = at.sails ? 'Sails set: she holds this speed with nobody at the wheel' : '';
+      if (logText) logText.textContent = sails === null ? `${kn.toFixed(1)} kn` : `${kn.toFixed(1)} kn · ${SAIL_SHORT(sails)}`;
+      log.title = sails === null ? '' : `${at.sailText || ''} - W and S at the wheel set more or less; it stands when you let go`;
     },
     setHaze,
   };

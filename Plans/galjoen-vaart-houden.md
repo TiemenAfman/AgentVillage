@@ -10,53 +10,57 @@ wapen te bemannen, en tot nu toe rolde ze dan in ~45 s uit.
 
 ## Wat er gebouwd is
 
-### 1. De zeilen blijven staan
+### 1. Zeilstanden en de zeilen blijven staan
 
-- **E aan het roer** (`leaveHelm` in walk.js) zet de zeilen op de vaart die ze had: `b.underSail` =
-  `v / sail.top`, tussen 0 en 1 (`setSail` in boat.js). Alleen voor een zware romp (`heavyHull`: een craft
-  met `sail.runOut`, dus het galjoen); een roeiboot heeft geen dek om op te lopen en krijgt nooit zeilen.
-- **Aan boord** stapt de pagina haar met die fractie als vaste gashendel en het roer midscheeps
-  (`stepUnderSail`). Overal waar walk.js de romp stapte met `{}` (op het dek, zittend, op de touwladder,
-  in de mast) doet het nu dat. Ze houdt dus haar snelheid en haar koers, ook minutenlang.
-- **Het roer bij loslaten: recht.** Het roer midscheeps; `yawLag` laat een draai die nog gaande was
-  uitlopen, zoals altijd.
-- **Turbo** wordt niet vastgehouden: wie loslaat op turbosnelheid houdt `top` (fractie 1), de drag brengt
-  haar daar.
-- **Aan de grond** (`b.aground`) worden de zeilen gestreken. Anders zou de vaste gashendel haar voor altijd
-  het zand in duwen.
-- **Eraf** (over de reling, via de touwladder naar beneden, losgelaten op de ladder: `letRun`) worden de
-  zeilen gestreken en rolt ze uit zoals voorheen (`runOut`, drag).
-- **Terug aan het roer** (`board`) worden ze gestreken: de gashendel is weer van jou.
-- **Escape van het dek** (`exitWalk`) stopt haar zoals voorheen (`v = 0`, zeilen gestreken). Dat blijft
-  logisch: je vliegt omhoog en het schip blijft liggen waar je bent, zodat je haar terugvindt.
+Besluit van de keeper (8 oktober): **zeilstand-knoppen**, en springt wie losliet eraf terwijl er nog crew
+is, dan **blijven de zeilen staan** en vaart die crew haar verder.
 
-Geen zeilstand-knoppen: de vaart bij loslaten ís de zeilstand. Wil je langzamer, dan neem je eerst gas
-terug en laat je dan los. Een eigen zeilstand (W/S bij het roer als zeilen bij- of wegnemen) is een
-ontwerpkeuze die bij de keeper ligt.
+- **Aan het roer** van een zware romp (`heavyHull`: een craft met `sail.runOut`, dus het galjoen) zijn W en
+  S geen gashendel meer maar een stap zeil bij of af (`sailStep` in boat.js). Er zijn zes stappen
+  (`SAIL_STEPS`): −1 (zeilen tegen, achteruit), 0, ¼, ½, ¾ en vol. Eén druk is één stap. Houd je de
+  toets vast, dan volgt na 0,45 s nog een stap en daarna elke 0,3 s (`SAIL_REPEAT_*` in walk.js). De stand
+  blijft staan zonder dat je een toets vasthoudt. Shift is turbo, maar alleen onder vol zeil. A en D
+  sturen zoals altijd. De roeiboot en de skiff roei je nog met W/S als gashendel.
+- De stand is `b.underSail`, een aandeel van `sail.top`. Ze wordt gestapt als vaste gashendel
+  (`stepUnderSail`).
+- **Het roer pakken** houdt de stand die er is. Een schip zonder bekende stand (uitrollend na een sprong,
+  of nooit bezeild) krijgt de stap die bij haar vaart past, nooit meer (`setSail`). Zo ligt ze niet ineens
+  stil.
+- **E aan het roer** (`leaveHelm`): de stand blijft staan. Ze houdt haar vaart en koers, met het roer
+  midscheeps. Dat geldt op het dek, zittend, in de mast en op haar ladder.
+- **Aan de grond** worden de zeilen gestreken (`b.aground`), anders duwt de stand haar het zand in.
+- **Eraf** (`letRun`) worden ze op je eigen pagina gestreken en rolt ze uit. Staat er nog crew aan boord,
+  dan neemt die het over (zie 3).
+- **Escape van het dek** (`exitWalk`) stopt haar zoals voorheen.
 
 ### 2. Wie stapt de romp, en de zee
 
 De pagina van wie het roer losliet (de **kustvaarder**, `b.coast.by` in lib/boats.mjs) stapt haar en
-stuurt haar positie, zoals al bij het uitrollen (`ownHull()` in main.js, `movedBoat`). Wie verder aan boord
-staat, volgt haar track (`hullFollowed`).
+stuurt haar positie (`ownHull()`, `movedBoat`). Wie verder aan boord staat, volgt haar track.
 
-De zee nam die positie tot nu toe maar `runOut` (60 s) na het loslaten aan. Daarna bevroor ze voor
-iedereen terwijl haar eigen pagina doorvoer. Daarom is **`moved` in lib/boats.mjs** aangepast: bij een
-zware romp (`holdsSail`) mag de kustvaarder haar bewegen **zolang hij crew is**, en `leave` zet de
-`runOut` pas in op het moment dat hij van boord gaat. Een boot zonder `runOut` houdt de korte `COAST_MS`.
-
-Gevolg: **de open zee moet worden geredeployd** (stack 28, met de hand). Geen `SEA_V`, geen nieuw bericht,
-dus het is een patch. Een zee van vóór dit neemt na 60 s geen positie meer aan. Anderen zien haar dan stil
-liggen terwijl ze op je eigen scherm doorvaart.
+- `moved` in lib/boats.mjs neemt bij een zware romp (`holdsSail`) de positie van de kustvaarder aan
+  **zolang hij crew is**. Gaat hij van boord, dan telt de `runOut` vanaf dat moment. Een boot zonder
+  `runOut` houdt de korte `COAST_MS`.
+- **Een patch, geen minor.** `letgo` krijgt een optioneel `sail` (de stand, gecontroleerd op −1..1). De
+  bootstatus (`state()`) krijgt `coast` (wie haar vaart) en `sail`, maar alleen zolang niemand aan het
+  roer staat. Een oude zee negeert `sail`, een oude pagina negeert `coast`. Geen `SEA_V`, geen nieuw
+  bericht. **Wel een redeploy van de open zee** (stack 28): zonder die neemt de zee na 60 s geen positie
+  meer aan.
 
 ### 3. Meer mensen aan boord
 
-- **Een tweede aan het roer**: die neemt het over (`take`); vanaf dan is het zijn woord, dat van de
-  kustvaarder wordt niet meer gelezen (getest). Zijn eigen pagina stapt haar, de oude kustvaarder volgt.
-- **Een tweede op het dek, de kustvaarder springt eraf**: de zeilen worden gestreken en ze rolt uit, ook
-  al staat er nog iemand. Overnemen van de zeilen door een ander crewlid zou een nieuw zeebericht vragen.
-  Hij kan het roer pakken. Open, zie hieronder.
-- **Twee kustvaarders** bestaan niet: `coast.by` is één speler.
+- **Gaat de kustvaarder over de reling of weg** (`leave`, of `release` als de tab dicht gaat) en staat er
+  nog crew: `handOn` noemt de eerste daarvan als nieuwe kustvaarder, met de oude stand. Die pagina
+  (main.js `onBoatFromServer`) neemt haar over: `v` uit de track (`hullSpeed`), `underSail` uit `sail`
+  (of de stap die bij die vaart past), track weg. Vanaf dan stapt die pagina haar. De pagina die
+  sprong, ziet dat iemand anders haar vaart en stopt met uitrollen (`walk.stopRunning`).
+- `hullFollowed` volgt de door de zee genoemde kustvaarder (`b.coast`). Wie haar niet vaart, stapt haar
+  dus ook nooit even zelf tussen twee pakketten. Monsters van een schip met kustvaarder zijn niet `final`.
+- **Een tweede aan het roer** neemt het over (`take`): `coast` verdwijnt, zijn pagina vaart, met de stand
+  die er stond.
+- **Bekend gat bij gemengde versies.** Staat er alleen crew met een pagina van vóór dit, dan wijst de
+  nieuwe zee hem toch aan. Die pagina stapt haar niet, de springer stopt met uitrollen, en ze ligt stil
+  tot iemand het roer pakt.
 
 ### 4. De log in de HUD
 
@@ -70,7 +74,8 @@ zeegroene balk (snelheid ÷ `top`, turbo maakt hem vol) en de knopen. Zichtbaar 
 - **Knopen**, met 1 eenheid = 4 m: `KNOTS_PER_UNIT` = 4 × 3600 / 1852 ≈ 7,78. Het galjoen op topsnelheid
   (13) is ~101 kn, en de roeiboot (9,5) ~74 kn. Speelsnelheid, geen echte. Als dat te gek leest, kan
   de eenheid "m/s" of alleen een balk worden: keuze voor de keeper.
-- Staan de zeilen, dan krijgt de balk een canvaswit verloop (`.sails`) en een tooltip.
+- Op een schip staat de zeilstand naast de knopen ("62.7 kn · ½", ↶ voor achteruit, – voor geen). Een
+  gezet zeil maakt de balk canvaswit (`.sails`), en een tooltip zegt de stand voluit.
 - Op de telefoon staat de vitals-strip al links van de duimknoppen (harbour.css); de log volgt die maat.
 - **Uit te zetten**: Settings → On foot → *Speed on boats* (`promptholm.log`, per browser, standaard aan,
   `body.no-log`).
@@ -79,15 +84,16 @@ zeegroene balk (snelheid ÷ `top`, turbo maakt hem vol) en de knopen. Zichtbaar 
 
 - Het harpoen-plan trekt een schip met `stepBoat(… pull)` op een **losgelaten romp**, en hield rekening met
   de 60 s `runOut`. Die grens geldt nu niet meer zolang de harpoenier aan boord is. De trek hoort in
-  **`stepUnderSail`** (boat.js), die alle vier de dek-stappen in walk.js nu gebruiken. Daar komt een
+  **`stepUnderSail`** (boat.js), die het roer en alle vier de dek-stappen in walk.js nu gebruiken. Daar komt een
   `pull` bij, die aan `stepBoat` wordt doorgegeven.
-- Trekt het touw haar langzamer of sneller, dan moeten de zeilen dat niet terugdraaien: `underSail` is
-  een gashendel en geen snelheidsslot. Een trek erbovenop werkt dus vanzelf. Een trek tegen de vaart in
+- Trekt het touw haar langzamer of sneller, dan draaien de zeilen dat niet terug: `underSail` is een
+  gashendel en geen snelheidsslot. Een trek erbovenop werkt dus vanzelf. Een trek tegen de vaart in
   wint alleen als hij sterker is dan `sail.accel`. Te meten zodra het harpoen trekt.
 - De kanonnen bemannen gebeurt vanaf het dek, dus ook daar staan de zeilen.
 
 ## Open
 
-- De zeilen overdragen aan een ander crewlid als de kustvaarder van boord gaat.
-- Een zeilstand bij het roer (W/S), als de keeper dat wil.
+- In-game nalopen met twee spelers op één schip (de overdracht is alleen headless en op de zee getest).
+- De `sail.accel` van het galjoen bepaalt hoe snel een nieuwe stap doorwerkt (6 s tot vol). Of dat bij
+  zeilen goed voelt, is nog niet bekeken.
 - De eenheid van de log (knopen, m/s of alleen een balk).

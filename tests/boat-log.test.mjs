@@ -33,7 +33,8 @@ test('the log shows knots and a bar, and hides off every boat', () => {
   const ship = { x: 0, z: 0, yaw: 0, v: CRAFTS.galleon.sail.top / 2, underSail: 0.5, craft: { spec: CRAFTS.galleon } };
   vitals.setLog(logOf(ship));
   assert.equal(log.hidden, false);
-  assert.equal(em.textContent, `${(ship.v * KNOTS_PER_UNIT).toFixed(1)} kn`);
+  assert.equal(em.textContent, `${(ship.v * KNOTS_PER_UNIT).toFixed(1)} kn · ½`);
+  assert.match(log.title, /½ sail/);
   assert.equal(log._style['--f'], '0.5');
   assert.ok(log._classes.has('sails'), 'sails set, and the log does not say so');
   assert.equal(span.textContent, '⛵');
@@ -41,6 +42,7 @@ test('the log shows knots and a bar, and hides off every boat', () => {
   const rowboat = { x: 0, z: 0, yaw: 0, v: 3, craft: { spec: CRAFTS.rowboat } };
   vitals.setLog(logOf(rowboat));
   assert.equal(span.textContent, '🚣');
+  assert.equal(em.textContent, `${(3 * KNOTS_PER_UNIT).toFixed(1)} kn`, 'a rowing boat has no sails to show');
   assert.ok(!log._classes.has('sails'));
 
   vitals.setLog(null);

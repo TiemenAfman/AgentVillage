@@ -10,7 +10,7 @@ import { CRAFTS } from '../shared/crafts.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { stepBoat, BOAT_TURBO, setSail, stepUnderSail, hullSpeed, KNOTS_PER_UNIT } = await import('../web/js/boat.js');
+const { stepBoat, BOAT_TURBO, setSail, stepUnderSail, sailStep, hullSpeed, KNOTS_PER_UNIT } = await import('../web/js/boat.js');
 delete globalThis.document;
 
 const FRAME = 1 / 60;
@@ -105,6 +105,56 @@ test('somebody else aboard does not hold her: only the one who let go of the whe
   // Bob takes the wheel: from then on it is his word, and Ann's is not read.
   assert.equal(boats.take(ID, BOB).pilot, BOB);
   assert.equal(boats.moved(ID, ANN, 0, 6, 0, t0 + 3 * 60_000 + 10), null);
+});
+
+test('the one who sailed her goes over the side: whoever is still aboard sails her on, under her sails', () => {
+  const ID = 'boat:abcd1234';
+  const ANN = 'a0'.padEnd(12, '0'), BOB = 'b0'.padEnd(12, '0');
+  const boats = createBoats({ moorings: [{ id: ID, x: 0, z: 0, yaw: 0 }] });
+  boats.board(ID, ANN, [0, 0]);
+  boats.board(ID, BOB, [0, 0]);
+  boats.take(ID, ANN);
+  const t0 = 1_000_000;
+  const let1 = boats.letGo(ID, ANN, t0, 0.5);
+  assert.equal(let1.coast, ANN, 'the letgo does not say who sails her');
+  assert.equal(let1.sail, 0.5);
+  // Ann jumps: Bob is named, with her sails, and from here it is his word for as long as he is aboard.
+  const left = boats.leave(ID, ANN, t0 + 10_000);
+  assert.equal(left.coast, BOB);
+  assert.equal(left.sail, 0.5);
+  assert.equal(boats.moved(ID, ANN, 0, 9, 0, t0 + 11_000), null, 'the one who jumped still steers her');
+  assert.ok(boats.moved(ID, BOB, 0, 9, 0, t0 + 10 * 60_000));
+  // Bob's tab closes: with nobody left aboard nobody sails her.
+  const [gone] = boats.release(BOB, t0 + 10 * 60_000 + 1);
+  assert.equal(gone.coast, undefined);
+  assert.equal(boats.moved(ID, BOB, 0, 10, 0, t0 + 10 * 60_000 + 2), null);
+});
+
+test('a tab closing on the one who sails her hands her on too, and a sail that is no number is no word', () => {
+  const ID = 'boat:abcd1234';
+  const ANN = 'a0'.padEnd(12, '0'), BOB = 'b0'.padEnd(12, '0');
+  const boats = createBoats({ moorings: [{ id: ID, x: 0, z: 0, yaw: 0 }] });
+  boats.board(ID, ANN, [0, 0]);
+  boats.board(ID, BOB, [0, 0]);
+  boats.take(ID, ANN);
+  const t0 = 1_000_000;
+  assert.equal(boats.letGo(ID, ANN, t0, 'full').sail, undefined);
+  const [after] = boats.release(ANN, t0 + 1000);
+  assert.equal(after.coast, BOB);
+  assert.ok(boats.moved(ID, BOB, 0, 3, 0, t0 + 5 * 60_000));
+  // A wheel taken again is nobody's sails: the field is gone from what the sea says.
+  assert.equal(boats.take(ID, BOB).coast, undefined);
+});
+
+test('the wheel steps her sails, one step at a time, from astern to full', () => {
+  const b = ship();
+  assert.deepEqual([1, 1, 1, 1, 1].map(() => sailStep(b, 1)), [0.25, 0.5, 0.75, 1, 1]);
+  assert.deepEqual([1, 1, 1, 1, 1, 1].map(() => sailStep(b, -1)), [0.75, 0.5, 0.25, 0, -1, -1]);
+  // Backed sails take her astern, and grounding strikes them.
+  for (let i = 0; i < 10 / FRAME; i++) stepUnderSail(b, FRAME, OPEN_SEA);
+  assert.ok(b.v < 0 && b.z < 0, 'backed sails did not take her astern');
+  const benchy = { x: 0, z: 0, yaw: 0, v: 0, craft: { spec: CRAFTS.rowboat } };
+  assert.equal(sailStep(benchy, 1), 0, 'a rowing boat has no sails');
 });
 
 test('stepped under her sails she holds her speed and her heading, and strikes them aground', () => {
