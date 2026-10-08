@@ -271,7 +271,9 @@ test('her side is a wall to a swimmer and a bank to a boat', () => {
   // and running her out after you have jumped, climbing her mast and sitting in her crow's nest
   // (Plans/DONE/kraaiennest.md) - this ground, not the bare terrain: a source check, since walk.js
   // cannot load under Node.
-  assert.equal((WALK_SOURCE.match(/stepBoat\([^;]*boatGround\)/g) || []).length, 6);
+  // Each with its own ground, boatGround(<that hull>), which leaves her out of the ships in her way
+  // (tests/boat-ships.test.mjs).
+  assert.equal((WALK_SOURCE.match(/stepBoat\((\w+(?:\.\w+)?), [^;]*boatGround\(\1\)\)/g) || []).length, 6);
   // (without the island's planks - a pier head's wings are not a bank to a boat - but with the levels.)
-  assert.match(WALK_SOURCE, /hullOver\(hulls, x, z, groundAt\(x, z, Infinity, false\)\)/);
+  assert.match(WALK_SOURCE, /shipsOver\(boatsOf\(\), x, z, hullOver\(hulls, x, z, groundAt\(x, z, Infinity, false\)\), self\)/);
 });

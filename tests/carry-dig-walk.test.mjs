@@ -359,7 +359,8 @@ test('a hull carries a cargo mesh as its child, swaps it, and gives back what it
   assert.equal(a.parent, null, 'the first stayed on the hull');
   assert.equal(b.parent, craft.object);
   craft.setCargo(null);
-  assert.equal(craft.object.children.length, 0);
+  // Nothing but her lid (boat.js rowboatLid, depth only: tests/rowboat-lid.test.mjs).
+  assert.deepEqual(craft.object.children.filter((c) => !(c.material && c.material.colorWrite === false)), []);
   // A baked model, once there is one, is registered by name and replaces the placeholder.
   const baked = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
   registerCargo('statue', () => baked);

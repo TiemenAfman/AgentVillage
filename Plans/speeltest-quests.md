@@ -109,6 +109,10 @@ gelopen). Alles patch: geen layout, bundle of `SEA_V`.
   door tot ín de romp ([screenshot](speeltest-quests/roeiboot-in-galjoen.jpg)), en de hijs-prompt kwam daar
   ook. Een mens zal meestal netjes afremmen, maar het ziet er kapot uit. Oplossen = rompen van schepen als
   obstakel voor boten (`hullOver`/`stepBoat`), groter dan een fix.
+  ✅ *Opgelost (8 okt 2026)*: elk galjoen is aan de waterlijn een muur voor elke andere romp die walk.js
+  stuurt - haar eigen vorm uit de bake (`SHIPWALK.side`, boat.js `shipsOver`), op haar plek en koers van nu,
+  dus de voet van de ladder blijft binnen `HOIST_REACH` (`tests/boat-ships.test.mjs`). Nog open: een
+  varend galjoen duwt een stilliggende roeiboot niet opzij (zij vaart er nog doorheen).
 - **B2. Herladen zet je altijd op het plein.** `parkOnSquare` bij het opstarten gaat vóór de bewaarde plek
   (`recalledSpot` komt pas als het lijf niet geparkeerd is), dus wie herlaadt op het eilandje van de schat
   moet 500 eenheden terugroeien om het beeld (dat netjes terug op het zand ligt) weer op te halen.
