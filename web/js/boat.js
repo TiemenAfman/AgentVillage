@@ -356,6 +356,24 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
 const BOB_RISE = 0.03;    // sailIn's own numbers, for the same feel: a hull at anchor is
 const BOB_PITCH = 0.04;   // never quite still, and a boat that is reads as a prop
 const BOB_ROLL = 0.03;
+// The rowing boat's swell in the shape a craft's `swell` has (shared/crafts.mjs): the same at rest
+// and under way, on the rates sailIn has always bobbed at.
+const ROWBOAT_SWELL = Object.freeze({
+  still: [BOB_RISE, BOB_PITCH, BOB_ROLL], way: [BOB_RISE, BOB_PITCH, BOB_ROLL], rates: [2, 1.7, 1.3],
+});
+// How quickly a hull's swell follows her speed (seconds): a ship gathering way rocks more over a few
+// seconds rather than the moment W goes down, and settles as slowly once she lies still.
+const WAY_EASE = 3;
+// A hull's swell at time `t` (seconds), `way` 0 (lying still) to 1 (her top speed): rise, pitch and
+// roll, each a sine of the craft's own rate with an amplitude between its `still` and its `way`.
+// Pure, so tests/boat.test.mjs can bound the galleon's swell without a mesh.
+export function swellOf(swell, t, way = 0, out = [0, 0, 0]) {
+  const w = way > 0 ? Math.min(1, way) : 0;
+  for (let i = 0; i < 3; i++) {
+    out[i] = (swell.still[i] + (swell.way[i] - swell.still[i]) * w) * Math.sin(t * swell.rates[i]);
+  }
+  return out;
+}
 // The pirate ship (scripts/build-pirateship.py, Greggory_Fisher's model, CC-BY-4.0): baked keel
 // on y = 0 like the Benchy, its waterline and main deck read off the source's own proportions
 // (7 and 12.55 of 58.56 up, the bake's SHIP_TALL). Every island's first boat is one
@@ -537,6 +555,10 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   scene.add(object);
   let heading = 0;
   let cargo = null;
+  // The swell's memory of her speed (see bob): where she was at which clock, and the way it came to.
+  let way = 0;
+  const wayAt = { t: NaN, x: 0, z: 0 };
+  const swelled = [0, 0, 0];
   // Where the cargo stands, in the hull's frame (y above the waterline, like the deck itself): in the
   // rowing boat the stern sheets, behind the oarsman - who faces aft, so it is in front of him - on
   // the floorboards; on the ship the main deck ahead of the wheel, on whatever the model has there.
@@ -623,15 +645,33 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
       object.rotation.y = yaw;
     },
 
-    // The swell, from the island's own clock. Nothing here is per-boat: two boats at one
-    // jetty rising together is what a jetty looks like.
+    // The swell, from the clock handed in (main.js: the sea's, so every screen rocks a hull alike).
+    // Nothing here is per-boat: two boats at one jetty rising together is what a jetty looks like.
+    // How much a ship rocks follows the way she is making (`way`), worked out from where she was
+    // placed between two clocks - so a ship lying still, which is every screen's case, is the same
+    // small stir on every screen. Asked twice at one clock (poseHull, then the fleet loop) it
+    // changes nothing the second time.
     bob(time) {
       const t = Number.isFinite(time) ? time : 0;
+      if (ship) {
+        const dt = t - wayAt.t;
+        const { x, z } = object.position;
+        if (dt > 0 && dt <= 1) {
+          const v = Math.hypot(x - wayAt.x, z - wayAt.z) / dt;
+          // A jump (a berth, a wrap round the world) is no speed.
+          const target = v > CRAFTS.galleon.sail.top * 3 ? 0 : Math.min(1, v / CRAFTS.galleon.sail.top);
+          way += (target - way) * Math.min(1, dt / WAY_EASE);
+        }
+        if (dt !== 0) { wayAt.t = t; wayAt.x = x; wayAt.z = z; }
+      }
+      swellOf(ship ? CRAFTS.galleon.swell : ROWBOAT_SWELL, t, way, swelled);
       // The hull is baked with its keel on y = 0 and dropped by DRAUGHT in the geometry, so
       // the swell rides on top of that rather than replacing it.
-      object.position.y = BOB_RISE * Math.sin(t * 2);
-      object.rotation.set(BOB_PITCH * Math.sin(t * 1.7), heading, BOB_ROLL * Math.sin(t * 1.3));
+      object.position.y = swelled[0];
+      object.rotation.set(swelled[1], heading, swelled[2]);
     },
+    // How much way the swell thinks she is making, 0..1 (for tests).
+    way: () => way,
 
     // Where a body in it is, swell and all: a ship's pilot's feet at her wheel, a rower's seat
     // on the thwart (walk.js sits him there).

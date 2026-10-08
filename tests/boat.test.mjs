@@ -305,6 +305,56 @@ test('BOW is the hull it was measured from, and the boat is one draw call', () =
   delete globalThis.document;
 });
 
+// The keeper: "de galjoen deint iets te veel op het water, zeker bij stilstand". She had the rowing
+// boat's swell - a pitch of 0.04 is her bow a metre up and down at anchor. Lying still she now only
+// stirs, slowly; making way she moves more, still well under the rowing boat. Measured on the real
+// hull's object over a minute of the sea's clock, not on the numbers.
+test('the galleon lying still hardly rocks, and rocks a little more under way', () => {
+  globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
+  const ship = createBoat({ scene: { add() {}, remove() {} }, material: {}, kind: 'ship' });
+  const row = createBoat({ scene: { add() {}, remove() {} }, material: {} });
+  assert.ok(ship.walk, 'the pirate ship must be baked for this');
+  const T0 = 1.79e9;   // the sea's clock is epoch seconds: sines of numbers this size must still swell
+  const most = (boat, step) => {
+    const m = { rise: 0, pitch: 0, roll: 0, bow: 0, period: 0 };
+    let x = 20, prev = null, flips = 0;
+    for (let i = 0; i <= 3600; i++) {
+      const t = T0 + i / 60;
+      x += step / 60;
+      boat.place(x, -5, 0.7);
+      boat.bob(t);
+      boat.bob(t);   // poseHull, then the fleet loop: twice at one clock is once
+      const o = boat.object;
+      if (i < 600) continue;   // the way settles over WAY_EASE
+      m.rise = Math.max(m.rise, Math.abs(o.position.y));
+      m.pitch = Math.max(m.pitch, Math.abs(o.rotation.x));
+      m.roll = Math.max(m.roll, Math.abs(o.rotation.z));
+      assert.equal(o.rotation.y, 0.7, 'the swell threw away the heading');
+      const up = Math.sign(o.position.y);
+      if (prev != null && up !== prev && up !== 0) flips++;
+      prev = up;
+    }
+    m.bow = m.pitch * 6.3;   // her bow (CRAFTS.galleon probes) over the pivot
+    m.period = 2 * 50 / Math.max(1, flips);
+    return m;
+  };
+  const still = most(ship, 0);
+  assert.ok(ship.way() < 1e-9, `lying still she is making no way (${ship.way()})`);
+  assert.ok(still.rise <= 0.01, `lying still she rises ${still.rise.toFixed(4)}`);
+  assert.ok(still.pitch <= 0.005, `lying still she pitches ${still.pitch.toFixed(4)} rad`);
+  assert.ok(still.roll <= 0.01, `lying still she rolls ${still.roll.toFixed(4)} rad`);
+  assert.ok(still.bow <= 0.03, `lying still her bow goes ${still.bow.toFixed(3)} units (4 m each) up and down`);
+  assert.ok(still.period >= 6, `a ship's swell is slow: ${still.period.toFixed(1)} s a rise and fall`);
+  const sailing = most(ship, 13);   // CRAFTS.galleon.sail.top
+  assert.ok(ship.way() > 0.95, `under full sail she is making way (${ship.way()})`);
+  assert.ok(sailing.pitch > still.pitch * 2, 'under way she cuts into the swell');
+  const rowing = most(row, 0);
+  assert.ok(sailing.pitch < rowing.pitch * 0.5, 'and still pitches far less than a rowing boat');
+  assert.ok(rowing.pitch > 0.035 && rowing.rise > 0.025, 'the rowing boat bobs as it always did');
+  ship.dispose(); row.dispose();
+  delete globalThis.document;
+});
+
 // ---- who has the tiller -------------------------------------------------------------
 
 const MOORINGS = [
