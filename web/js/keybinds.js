@@ -27,6 +27,9 @@ export const ACTIONS = [
   ['give', 'g', 'give a beer', null, null], ['build', 'b', 'build (debug)', null, null],
   ['inventory', 'i', 'inventory', null, null], ['map', 'm', 'map', null, null],
   ['quests', 'k', 'quest log', null, null],
+  // What the arms carry (the treasure statue), set down a step ahead: H for hands, and down on the
+  // d-pad, which nothing on foot had (up is the dance).
+  ['putDown', 'h', 'set down what you carry', null, BTN.DOWN],
   // From the sky, not on foot (main.js ORBIT_KEYS), but a letter all the same, and one that may
   // not also be somebody's on foot: it was P, which is sow, so it is U - free in the sky, on foot
   // and in the planner itself.

@@ -78,7 +78,7 @@ export const MAPS = {
 const FOOT_PAD = [
   ['jump', 'jump'], ['crouch', 'crouch'], ['interact', 'interact'], ['prevSeed', 'prevTool'],
   ['nextSeed', 'nextTool'], ['sendAway', 'secondary'], ['plant', 'primary'], ['run', 'sprint'],
-  ['bike', 'bike'], ['dance', 'dance'],
+  ['bike', 'bike'], ['dance', 'dance'], ['putDown', 'putDown'],
 ];
 const HELD = new Set(['crouch', 'sprint']);
 // Indoors only these: nothing to sow at a bar and nobody to send off it.

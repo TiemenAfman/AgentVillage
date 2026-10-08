@@ -86,6 +86,11 @@ const CROUCH_SCALE = 0.62;
 // The treasure statue in both arms (Plans/schatkaarten.md): a walk at this share of the ordinary one,
 // no run (so no stamina spent either), no jump. Named because the gait's step rate follows it too.
 const CARRY_SPEED = 0.55;
+// Setting her down (H, `setDown`) puts her this far ahead of the feet - in front of the arms, where the
+// rig holds her - and only where a body could stand: dry, within a step of the feet, nothing in the way.
+// A fall of more than CARRY_FALL (a cell, four metres) with her in the arms throws her out of them.
+export const SET_AHEAD = 0.6;
+export const CARRY_FALL = 1.0;
 // A dig (`dig`) takes this long unless the caller says otherwise, and the shovel goes in this far ahead
 // of the feet - where `onDigDone` says the hole is, so a spot is found at the hole and not under the boots.
 const DIG_SECONDS = 2.5;
@@ -234,6 +239,12 @@ export function createWalkMode({
   // struck), 'paused', 'reset' (a seat, a boat, leaving walk mode) or 'blocked'. `onBlocked('carry')`
   // is a thing refused because both hands are full - main.js turns it into a toast.
   onDigDone = null, onDigCancelled = null, onBlocked = null,
+  // The hands letting go of what they carried, anywhere but onto a hull: `onLetGo(item, { x, y, z, why })`
+  // with where it lies now - always dry ground, never the water. `why` is 'set' (H: set down on purpose,
+  // ahead of the feet), 'water' (deep water: nobody swims with her), 'fall' (a drop of CARRY_FALL or
+  // more), 'die' or 'home' (main.js sentHome: the body is taken somewhere else, and she stays). The
+  // hunt keeps the spot (treasure.js letGo); `onBlocked('set')` is H refused here.
+  onLetGo = null,
 }) {
   const ownTipsy = !tipsy;
   // What is underfoot, and which cell of which island a surface belongs to.
@@ -479,6 +490,7 @@ export function createWalkMode({
   function lift(item = 'statue') {
     if (!item || state.carry || state.cargo || !canHandle()) return false;
     state.carry = item;
+    lastDry = dryHere();
     // Both hands: no shield up, no dance, no crouch, and the sprint toggle is dropped with the rest.
     lowerShields();
     state.dancing = false;
@@ -495,6 +507,48 @@ export function createWalkMode({
     state.carry = null;
     if (classicAvatar.setCarry) classicAvatar.setCarry(false);
     return item;
+  }
+  // Letting go of her on the ground (Plans/schatkaarten.md, "Neerzetten en laten vallen"). Nothing a
+  // body carries is ever lost: she lies on dry ground, and `onLetGo` says where, for the hunt to keep.
+  // `lastDry` is where the feet last stood on dry ground with her in the arms - set by lift() and every
+  // frame after - which is where she ends up when the hands give out somewhere she cannot lie: in
+  // deep water she is back on the shore you waded in from, never on the bed.
+  let lastDry = null;
+  // Where a fall began (walked off an edge, or over a ship's side), for CARRY_FALL.
+  let airTop = -Infinity;
+  const DRY_ABOVE = WATER_Y + 0.02;
+  // The feet's own spot, when it is one she may lie on.
+  function dryHere() {
+    if (!state.grounded || state.swimming || state.dive || state.vehicle || state.deck || climb) return null;
+    const { x, y, z } = state.pos;
+    return y >= DRY_ABOVE ? { x, y, z } : null;
+  }
+  function letGoAt(why, at) {
+    const item = putDown();
+    if (!item) return false;
+    lastDry = null;
+    if (onLetGo) onLetGo(item, { x: at.x, y: at.y, z: at.z, why });
+    return true;
+  }
+  // The hands give out (deep water, a fall, a death, a jump home): where the feet are if that is dry
+  // ground, else the last dry ground she was carried over.
+  function letGo(why = 'drop') {
+    if (!state.carry) return false;
+    const at = dryHere() || lastDry || { x: state.pos.x, y: Math.max(state.pos.y, WATER_Y), z: state.pos.z };
+    return letGoAt(why, at);
+  }
+  // H: set her down on purpose, a step ahead - on dry ground within a step of the feet, never in the
+  // water, on a roof or a wall, and only from a body standing on its own two feet.
+  const canSet = () => state.active && !state.paused && !state.working && !state.parked && state.grounded
+    && !state.swimming && !state.dive && !state.vehicle && !state.deck && !climb && !rides()
+    && !state.sitting && !state.lying && !state.dying;
+  function setDown() {
+    if (!state.carry) return false;
+    if (!canSet()) { blockedBy('set'); return false; }
+    const x = state.pos.x + Math.sin(state.yaw) * SET_AHEAD, z = state.pos.z + Math.cos(state.yaw) * SET_AHEAD;
+    const y = groundAt(x, z, state.pos.y);
+    if (!(y >= DRY_ABOVE) || Math.abs(y - state.pos.y) > STEP_UP || blocked(x, z, y, true)) { blockedBy('set'); return false; }
+    return letGoAt('set', { x, y, z });
   }
   // Aboard nothing is held: the statue goes onto the hull instead (boat.js setCargo hangs it on the
   // deck, where it swells with her), and the arms are free for the tiller. board() does this itself for
@@ -685,6 +739,8 @@ export function createWalkMode({
     // Hand the settler in front of you a beer, when there is a glass in your hand and
     // somebody within reach - main.js decides both and puts the offer on screen.
     if (k === 'g' && !e.repeat) { e.preventDefault(); state.onGive && state.onGive(); }
+    // Set down what the arms carry (the statue), a step ahead of the feet.
+    if (k === 'h' && !e.repeat) { e.preventDefault(); setDown(); }
     // The first Escape only frees the mouse (the browser ends the lock itself); the next one
     // leaves walk mode.
     if (k === 'escape') {
@@ -1946,6 +2002,7 @@ export function createWalkMode({
       const away = hullVelocity(frame, b.v || 0);
       offDeck();
       state.grounded = false;
+      airTop = state.pos.y;
       state.swimming = false;
       state.vy = d.vy;
       state.floor = groundAt(x, z, WATER_Y);
@@ -2214,7 +2271,7 @@ export function createWalkMode({
     if (state.bike && rideKind() !== 'bike') dismount();
     if (state.mount && rideKind() !== 'horse') dismount();
     // A new look must not drop what the hands are doing: the rig starts from empty hands.
-    if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true);
+    if (state.carry && classicAvatar.setCarry) classicAvatar.setCarry(true, { quiet: true });
     if (state.digging && classicAvatar.dig) classicAvatar.dig(true);
   }
 
@@ -2260,6 +2317,7 @@ export function createWalkMode({
     padJump = p.down('jump');
     if (p.hit('crouch') && !rides()) crouchToggle();
     if (p.hit('dance')) danceToggle();
+    if (p.hit('putDown')) setDown();
     // Only the pad's own release stands you up again - a pad lying untouched on the desk
     // must not undo a crouch somebody started with C.
     const held = p.down('crouch');
@@ -2331,6 +2389,9 @@ export function createWalkMode({
   // body cannot (a hull, a saddle, a ladder, a seat) and the jump should be at once. In the
   // water whatever did it, the body sinks: drowning or not, nobody falls over afloat.
   function die(kind) {
+    // What the arms carry stays behind where the body goes down - before any answer, since a body
+    // that cannot play a death is still taken home.
+    if (state.carry) letGo('die');
     if (!state.active || state.parked || state.vehicle || rides() || state.deck || climb || state.sitting) return 0;
     cancelDig('hit');
     state.dancing = false;
@@ -2730,7 +2791,7 @@ export function createWalkMode({
       // the island, a hand or a storey alike (the keeper: "instant omlaag teleporteren ipv
       // vallen"). A step down within STEP_DOWN is still followed, so stairs, slopes and kerbs
       // are walked as they always were.
-      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; }
+      if (state.pos.y - underfoot > STEP_DOWN) { state.grounded = false; state.vy = 0; airTop = state.pos.y; }
       else state.pos.y = underfoot;
     } else {
       state.vy -= GRAVITY * dt;
@@ -2749,10 +2810,21 @@ export function createWalkMode({
         if (plunge) { state.dive = true; state.vy = plunge; }
         else { state.pos.y = underfoot; state.vy = 0; }
         state.grounded = true;
+        // Down from too high with her in the arms: she is thrown out of them where you land (or, in
+        // the water, onto the shore you came from - letGo).
+        if (state.carry && airTop - state.pos.y > CARRY_FALL) letGo('fall');
+        airTop = -Infinity;
       }
     }
     state.swimming = state.dive || (state.grounded && inWater && !state.sitting);
     state.diving = state.dive && headUnder(state.pos.y, WATER_Y);
+    // The statue is too heavy to swim with: in water deep enough to dive in she slips out of the arms
+    // and lies on the last dry ground she was carried over. Wading the shallows - the rowing boat lies
+    // at ROW_DEPTH, well above that - keeps her.
+    if (state.carry) {
+      if (state.dive || (state.swimming && canDive(bedUnder(state.pos.x, state.pos.z), WATER_Y))) letGo('water');
+      else { const d = dryHere(); if (d) lastDry = d; }
+    }
 
     // Standing still with C held long enough is a decision to stop for the day, and it
     // outlasts the key: once down, the settler stays down until they move or press C
@@ -3245,6 +3317,9 @@ export function createWalkMode({
     // Going down before the jump home (main.js sentHome): die('fall' | 'drown') -> seconds, 0 when
     // this body cannot; revive() ends it (exit() does too); dying() is { kind, t } or null.
     die, revive, dying: () => state.dying,
+    // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
+    // giving out - both end in the constructor's onLetGo with where she lies.
+    setDown, letGo,
     lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is

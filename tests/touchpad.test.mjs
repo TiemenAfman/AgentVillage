@@ -73,7 +73,17 @@ test('the phone keeps Y on screen while riding, the one way off the bike', async
   const { readFileSync } = await import('node:fs');
   const PAD = readFileSync(new URL('../web/js/touchpad.js', import.meta.url), 'utf8');
   const MAIN = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
-  assert.match(PAD, /function setHands\(what, swimming = false, riding = false, ride = 'bike'\)/);
+  assert.match(PAD, /function setHands\(what, swimming = false, riding = false, ride = 'bike', carrying = false\)/);
   assert.match(PAD, /riding && b\.dataset\.b === 'Y'/, 'setHands hides Y on the bike');
   assert.match(MAIN, /setHands\([^\n]*walk\.riding\(\), walk\.rideKind/, 'touchHud does not tell the pad it is riding, or on what');
+});
+
+test('the phone shows a set-down button only while the arms carry the statue (Plans/schatkaarten.md)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const PAD = readFileSync(new URL('../web/js/touchpad.js', import.meta.url), 'utf8');
+  const MAIN = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
+  // The d-pad's down, which keybinds.js gives `putDown` - so walk.pad() sets her down from the glass too.
+  assert.match(PAD, /data-b="DOWN" aria-label="Set down" hidden/);
+  assert.match(PAD, /carryBtn\.hidden = !carrying/);
+  assert.match(MAIN, /setHands\([^\n]*walk\.carrying\(\)\)\)/, 'touchHud tells the pad what the arms hold');
 });

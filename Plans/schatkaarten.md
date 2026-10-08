@@ -134,6 +134,38 @@ Bewust nog open:
 - Geluid bij het graven ontbreekt (`sound.js` heeft er geen).
 - Hoeden en de verrekijker zijn nog `planned`: een kist kan ze wel geven, maar er is geen tegel en geen model.
 
+## Neerzetten en laten vallen (8 oktober 2026)
+
+Martijn: "je kan een schatkist niet neerzetten/laten vallen". Wie het beeld droeg, zat eraan vast: alleen
+afleveren op het plein of in een roeiboot leggen maakte de armen leeg. Wat er nu kan, en waarom zo:
+
+- **Neerzetten** is een eigen toets, `putDown` in `keybinds.js`: **H** (hands), op de pad **↓** (niemand op
+  voet had hem; ↑ is dansen), op touch een eigen knop die alleen verschijnt zolang je draagt
+  (`touchpad.js setHands(…, carrying)`). `walk.setDown()` zet haar `SET_AHEAD` (0,6) voor de voeten, en alleen
+  op droge grond binnen een trede van de voeten, waar niets in de weg staat: niet in het water, niet op een
+  dak of een rotswand. Anders `onBlocked('set')`, een toast.
+- **Laten vallen** gebeurt vanzelf (`walk.letGo(why)`), op vier momenten: in water diep genoeg om te duiken
+  (`canDive`, dus niet in de ondiepte waar de roeiboot ligt: `ROW_DEPTH` -0,3), na een val van meer dan
+  `CARRY_FALL` (1 cel, vier meter), bij doodgaan (`die`) en bij elke sprong naar huis (`sentHome`, ook
+  *Respawn to town*: anders was dat de snelste bezorging die er is). Ze komt waar de voeten staan als dat
+  droge grond is, anders op **de laatste droge plek waar je haar droeg** (`lastDry`, elke frame bijgehouden).
+  Gekozen boven "de dichtstbijzijnde droge plek": dat is meestal dezelfde oever, maar zonder zoektocht, en je
+  weet altijd waar ze is - waar je het water in liep, of de wal waar je haar in de boot legde.
+- Waar ze ligt bewaart de pagina in `finds.statue`, zoals de plek van het opgraven: op ons eigen eiland in de
+  eigen coördinaten van het eiland (`local: true`, die blijven bij een andere ligplaats), elders in die van de
+  wereld met het eilandje als ze op een eilandje ligt (`isletId`, anders null). Zonder bekende ligplaats is er
+  geen wereldframe: dan blijft het oude record staan en ligt ze weer waar ze lag. Ze raakt nooit kwijt.
+- Het eiland hoort `dropped` (lifted -> buried, al bestaand in `lib/treasure.mjs`), en weer optillen is
+  dezelfde E en hetzelfde `lifted`. Geen wijziging aan serverkant.
+- De queste beweegt niet: `bring-it-home` blijft bij de stap waar hij was, en het `lifted` van het opnieuw
+  optillen is een late gebeurtenis die het boek negeert. De boot en het plein werken daarna gewoon.
+- Op het lichaam is optillen en neerzetten een bukbeweging (`classic-avatar.js setCarry`, `HANDLE_S` 0,55 s:
+  buigen in de heupen, handen naar de grond); te zien in `/avatar-motion.html` met *Beeld optillen*.
+
+Open: wie van een schip springt met het beeld als lading, krijgt haar in de armen en laat haar in het diepe
+water meteen weer los, op de wal waar ze aan boord ging - eerlijk, maar ver. Het chip "Schatkist aan boord
+klimmen" gaat over dat stuk.
+
 ## Wacht op de nieuwe tavern: de kist van de piraat "subtiel achter de tavern" (30 september 2026)
 
 > **Bijgewerkt 30 september 2026:** de nieuwe tavern is de piratenkroeg, *The Salty Kraken*

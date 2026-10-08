@@ -168,6 +168,14 @@ document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.che
 let close=-1;
 document.querySelector('#motion-close').onclick=e=>{close=close+1<figures.length?close+1:-1;e.target.textContent=close<0?'Dichtbij':CHARACTERS[close].name;};
 document.querySelector('#motion-jump').onclick=()=>{if(jumpAt===null)jumpAt=time;};
+// The treasure statue in both arms (Plans/schatkaarten.md): lifting it and setting it down are a stoop
+// (classic-avatar.js setCarry), and carried it is a slow walk - judge both here, as walk.js's H and E do.
+document.querySelector('#motion-carry').onclick=e=>{
+  const on=!figures[0].rig.carrying();
+  for(const f of figures)f.rig.setCarry(on);
+  e.target.textContent=on?'Beeld neerzetten':'Beeld optillen';
+  document.querySelector('#motion-note').textContent=on?'Optillen · bukken, het beeld laag in de handen, en ermee omhoog':'Neerzetten · bukken met lege handen tot de grond, en weer rechtop';
+};
 document.querySelector('#motion-view').onclick=e=>{side=!side;e.target.textContent=side?'Driekwartaanzicht':'Zijaanzicht';};
 const horseNote=()=>{const[name,speed]=HORSE_GAITS[horseGait];return`Paard · ${name}${speed?` op ${speed.toFixed(1)} per seconde`:''} · alleen de Avonturier rijdt (F); Sprint of Shift is galop; Paard wisselt stilstaan, draf, grazen en dansen (zoals in de rave)`;};
 for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>{
