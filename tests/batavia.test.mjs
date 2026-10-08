@@ -268,9 +268,10 @@ test('her side is a wall to a swimmer and a bank to a boat', () => {
   assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
 
   // And walk.js hands every one of its hulls - at the helm, walking a deck, climbing her ladder
-  // and running her out after you have jumped - this ground, not the bare terrain: a source
-  // check, since walk.js cannot load under Node.
-  assert.equal((WALK_SOURCE.match(/stepBoat\([^;]*boatGround\)/g) || []).length, 4);
+  // and running her out after you have jumped, climbing her mast and sitting in her crow's nest
+  // (Plans/DONE/kraaiennest.md) - this ground, not the bare terrain: a source check, since walk.js
+  // cannot load under Node.
+  assert.equal((WALK_SOURCE.match(/stepBoat\([^;]*boatGround\)/g) || []).length, 6);
   // (without the island's planks - a pier head's wings are not a bank to a boat - but with the levels.)
   assert.match(WALK_SOURCE, /hullOver\(hulls, x, z, groundAt\(x, z, Infinity, false\)\)/);
 });

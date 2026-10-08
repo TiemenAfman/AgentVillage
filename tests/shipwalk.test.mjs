@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { createSurface, stepHull, nearestStand, STEP_DOWN, BODY_R } from '../shared/hullwalk.mjs';
 import { SHIPWALK } from '../web/js/shipwalk-map.js';
 import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
-import { cut, sourceOf } from '../scripts/build-shipwalk.mjs';
+import { cut, sourceOf, layer, ALOFT } from '../scripts/build-shipwalk.mjs';
 
 const surface = createSurface(SHIPWALK);
 const positions = PIRATESHIP.parts['pirateship hull'].positions;
@@ -47,6 +47,8 @@ test('the map is cut from the model as it is now: re-bake the ship, and cut it a
   const again = cut(positions);
   assert.equal(Buffer.from(again.hits).toString('base64'), SHIPWALK.hits, 'the script cuts a different map than the one committed');
   assert.equal(Buffer.from(new Uint8Array(again.ends.buffer)).toString('base64'), SHIPWALK.off);
+  // And the crow's nest's layer (Plans/DONE/kraaiennest.md), cut by the same script.
+  assert.deepEqual(SHIPWALK.aloft, layer(positions, ALOFT), "the nest's layer is not what the script cuts");
 });
 
 test('the whole deck is one place: from the waist you reach the stairs, the quarterdeck, the poop, the wheel, the forecastle and the bow', () => {

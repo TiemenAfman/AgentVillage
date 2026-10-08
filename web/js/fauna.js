@@ -35,6 +35,19 @@ import { makeRng } from 'shared/rng.mjs';
 import { ACTS } from 'shared/animals.mjs';
 import { mesh } from './buildings.js';
 import * as models from './models.js';
+import { bindHorse, poseHorse } from './horse-rig.js';
+import { horseCadence } from './horse-gait.js';
+
+// How a grazing horse puts its head down (stepPose, horse-rig.js poseHorse): the neck nodded
+// further than `graze` alone and the head turned back against it, so the face hangs plumb with the
+// lips towards the grass. The head hangs off the neck, so a neck bowed far down takes the head past
+// plumb unless the head bone turns back; a first version that pitched the body forward and nodded
+// both bent the face round to point at the forelegs and folded the fore knees as if kneeling
+// (7 Oct 2026). With the forelegs straight and no lean the lips stopped ~0.07 over the grass, on a
+// neck 0.21 long; since scripts/horse-model.py NECK_REACH it is 0.30, about the foreleg's length, and
+// the lips come down to ~0.01 with the face at ~90 degrees, the muzzle a head's width in front of the
+// fore hooves - no lean, no drop, forelegs straight (tests/horse-graze.test.mjs).
+export const HORSE_GRAZE = { lean: 0, drop: 0, neck: 1.03, head: -1.0 };
 
 // How each kind behaves. `walk` is its pace in units a second, `stride` how far a leg swings,
 // `graze` how far the head comes down; the times are how long it holds a mood, as a range.
@@ -124,9 +137,12 @@ export function animalParts(asset) {
 // One part as one geometry, its slots merged: what a pivot or an InstancedMesh draws.
 // Where a rider sits on a saddled horse (Plans/paard-in-plaats-van-fiets.md): the top of the seat
 // in the middle of the saddle, and the irons hanging either side of it - the only parts of the
-// body low and wide enough, |x| over IRON_OUT and below IRON_TOP. Read off the bake rather than
-// written down, so a saddle baked again carries its rider with it. Null for an asset with no seat.
-const IRON_OUT = 0.1, IRON_TOP = 0.36;
+// body low and wide enough, |x| over IRON_OUT and below IRON_TOP, and beside the girth (|z| under
+// IRON_BESIDE). Read off the bake rather than written down, so a saddle baked again carries its
+// rider with it. Null for an asset with no seat. IRON_TOP went from 0.36 to 0.38 with the shorter
+// leathers (the irons' tops at 0.375, the flaps' lower edge at 0.3825), and IRON_BESIDE came with
+// the shoulder and quarters, which stand out past IRON_OUT in front of and behind the saddle.
+const IRON_OUT = 0.1, IRON_TOP = 0.38, IRON_BESIDE = 0.08;
 export function saddleOf(asset = 'fauna_horse') {
   let seat = -Infinity, low = Infinity, high = -Infinity, wide = 0, z0 = Infinity, z1 = -Infinity;
   for (const n of slotsOf(asset, asset + ' body')) {
@@ -134,7 +150,7 @@ export function saddleOf(asset = 'fauna_horse') {
     for (let i = 0; i < p.length; i += 3) {
       const x = p[i] + at[0], y = p[i + 1] + at[1], z = p[i + 2] + at[2];
       if (Math.abs(x) < 0.02 && Math.abs(z) < 0.03) seat = Math.max(seat, y);
-      if (Math.abs(x) > IRON_OUT && y < IRON_TOP) {
+      if (Math.abs(x) > IRON_OUT && y < IRON_TOP && Math.abs(z) < IRON_BESIDE) {
         low = Math.min(low, y); high = Math.max(high, y); wide = Math.max(wide, Math.abs(x));
         z0 = Math.min(z0, z); z1 = Math.max(z1, z);
       }
@@ -147,7 +163,19 @@ export function partGeometry(base) {
   const asset = base.split(' ')[0];
   const names = slotsOf(asset, base);
   if (!names.length) return null;
-  return names.length === 1 ? mesh(names[0]) : mergeGeometries(names.map((x) => mesh(x)), false);
+  const pieces=names.map((name)=>{
+    const geometry=mesh(name),part=models.part(name);
+    if (part.skinIndices) {
+      geometry.setAttribute('normal',new THREE.Float32BufferAttribute(part.normals,3));
+      geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(part.skinIndices,4));
+      geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(part.skinWeights,4));
+    }
+    return geometry;
+  });
+  if(pieces.length===1)return pieces[0];
+  const geometry=mergeGeometries(pieces,false);
+  pieces.forEach(g=>g.dispose());
+  return geometry;
 }
 
 // How far a body sinks when it lies down, how long it is and where its hind hips are,
@@ -446,11 +474,22 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
   // else from how fast the heading is changing.
   if (bank != null) bodyZ = bank;
   else if (inFlight || pose.flying) bodyZ = clamp(-turn * 0.3, -0.5, 0.5);
+  // A horse grazing (HORSE_GRAZE): `graze` eases the head down and up again, horse-rig.js bows the
+  // neck and turns the head back against it; any lean onto the forehand or sinking is added here.
+  if (kind === 'horse') {
+    pose.graze = damp(pose.graze || 0, a === 'feed' ? 1 : 0, 2.5, step);
+    bodyX += HORSE_GRAZE.lean * pose.graze;
+    bodyY -= HORSE_GRAZE.drop * pose.graze;
+  }
   pose.bodyY = bodyY;
   pose.bodyX = damp(pose.bodyX, bodyX, 10, step);
   pose.bodyZ = bank != null ? bodyZ : damp(pose.bodyZ, bodyZ, 8, step);
   // A butt is a jab, and a jab damped is a shove; everything else eases in and out.
   pose.surge = a === 'butt' ? surge : damp(pose.surge, surge, 10, step);
+  if (kind==='horse') {
+    pose.horseSpeed=striding?speed:0;
+    pose.horseCycle=(pose.horseCycle||0)+horseCadence(pose.horseSpeed,'walk')*step;
+  }
   return pose;
 }
 
@@ -464,6 +503,80 @@ export function stepPose(kind, pose, { act = 'still', moving = false, speed = 0,
 // no clock of its own, because the music is the clock, and `dt` is only for easing into and out
 // of going up. Any four-legged kind dances as the horse does and any two-legged one as the hen.
 const REAR = 0.42;             // how far back a horse goes on its hind legs, in radians
+// The stable's horse on the castle's floor (Plans/DONE/rave-in-het-kasteel.md): a move a phrase of
+// sixteen beats, in this order, eased into over the phrase's first beat - pawing (one fore hoof
+// lifted between the kicks and stamped down on them, the headbang), a piaffe (dressage's trot on
+// the spot: the diagonals up in turn, a beat each, the body rising between the kicks), a sway
+// (side to side over two beats, the neck swinging with it, a fore toe tapping) and dancing up on
+// its hind legs (reared the whole phrase: the fores paw the air in turn, a hind hoof steps up
+// between the kicks, the body bounces and the head bobs). Every hoof it stands on is down on every
+// kick and every number is the count's alone, so two screens dance alike. Each move
+// gives the hooves as horse-rig.js takes them ({ z, y, flex }: forward, up, fetlock fold) and how
+// much nod, neck swing, sway and bounce goes with it. Up on its hind legs (the drop) the rear
+// takes over, as before.
+export const HORSE_DANCE = ['paw', 'piaffe', 'sway', 'rear'];
+const PHRASE = 16;
+const PIAFFE_PAIRS = [[0, 3], [1, 2]];   // fl with br, fr with bl
+function horseMove(name, beat, out) {
+  const n = Math.floor(beat), u = beat - n, lift = Math.sin(Math.PI * u), turn = ((n % 2) + 2) % 2;
+  const slow = Math.sin(Math.PI * beat / 2);
+  out.step0 = 0; out.step1 = 0; out.rear = name === 'rear' ? 1 : 0;
+  for (let i = 0; i < 4; i++) { const h = out.hooves[i]; h.z = 0; h.y = 0; h.flex = 0; }
+  if (name === 'piaffe') {
+    for (const i of PIAFFE_PAIRS[turn]) {
+      const fore = i < 2, h = out.hooves[i];
+      h.y = (fore ? 0.07 : 0.045) * lift; h.z = (fore ? 0.025 : 0.015) * lift; h.flex = (fore ? 1.4 : 0.9) * lift;
+    }
+    out.nod = 0.35; out.swing = 0.1 * slow; out.sway = 0.02 * slow; out.bounce = 0.014 * lift;
+  } else if (name === 'rear') {
+    // Reared, horse-rig.js poses the legs itself (stepDance's swings and `hindStep`): no hooves here.
+    out.nod = 0.6; out.swing = 0.15 * slow; out.sway = 0.03 * slow; out.bounce = 0.012 * lift;
+    out.step0 = turn === 0 ? lift : 0; out.step1 = turn === 1 ? lift : 0;
+    return out;
+  } else if (name === 'sway') {
+    const h = out.hooves[turn];
+    h.y = 0.045 * lift; h.flex = 0.4 * lift;
+    out.nod = 0.2; out.swing = 0.4 * slow; out.sway = 0.09 * slow; out.bounce = 0.006 * lift;
+  } else {
+    const h = out.hooves[turn];
+    h.y = 0.075 * lift; h.z = 0.06 * lift; h.flex = 1.3 * lift;
+    out.nod = 1; out.swing = 0.2 * slow; out.sway = 0.05 * slow; out.bounce = 0.01 * lift;
+  }
+  return out;
+}
+const moveA = { hooves: [0, 1, 2, 3].map(() => ({})) }, moveB = { hooves: [0, 1, 2, 3].map(() => ({})) };
+const danceAt = (k) => HORSE_DANCE[((k % HORSE_DANCE.length) + HORSE_DANCE.length) % HORSE_DANCE.length];
+// The phrase's move and the one before it, and how far into the new one (the first beat eases it in).
+function phraseOf(beat) {
+  const phrase = Math.floor(beat / PHRASE), t = Math.min(1, Math.max(0, beat - phrase * PHRASE));
+  // Before the first phrase there was no dance: the first move is not eased in from the last.
+  return { now: danceAt(phrase), was: danceAt(phrase > 0 ? phrase - 1 : phrase), w: t * t * (3 - 2 * t) };
+}
+// How far up its hind legs the dance wants the horse: stepDance eases `pose.rear` towards it.
+function horseRearing(beat) {
+  const { now, was, w } = phraseOf(beat);
+  return (now === 'rear' ? w : 0) + (was === 'rear' ? 1 - w : 0);
+}
+function horseDance(pose, beat, r, rise) {
+  const { now, was, w } = phraseOf(beat);
+  const A = horseMove(now, beat, moveA), B = horseMove(was, beat, moveB);
+  const mix = (k) => A[k] * w + B[k] * (1 - w), kick = Math.exp(-(beat - Math.floor(beat)) * 6);
+  pose.danceHooves ||= [0, 1, 2, 3].map(() => ({ z: 0, y: 0, flex: 0, contact: true }));
+  for (let i = 0; i < 4; i++) {
+    const a = A.hooves[i], b = B.hooves[i], h = pose.danceHooves[i];
+    h.z = (a.z * w + b.z * (1 - w)) * (1 - r);
+    h.y = (a.y * w + b.y * (1 - w)) * (1 - r);
+    h.flex = (a.flex * w + b.flex * (1 - w)) * (1 - r);
+    h.contact = h.y < 1e-4;
+  }
+  // Up on its hind legs the head is flung back - and in the dance it still bobs to the kick.
+  pose.headX = (0.12 + 0.42 * kick * mix('nod')) * (1 - r) - 0.5 * r + 0.18 * kick * mix('rear') * r;
+  pose.hindStep ||= [0, 0, 0, 0];
+  pose.hindStep[2] = mix('step0') * r; pose.hindStep[3] = mix('step1') * r;
+  pose.headY = mix('swing') * (1 - r);
+  pose.bodyZ = mix('sway') * (1 - r);
+  pose.bodyY = mix('bounce') * (1 - r * (1 - mix('rear'))) + Math.max(0, rise);
+}
 export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
   if (!pose) return pose;
   const K = KINDS[kind] || KINDS.chicken;
@@ -479,7 +592,8 @@ export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
   pose.flying = false;
   pose.low = 0;
   pose.surge = 0;
-  pose.rear = damp(pose.rear, up ? 1 : 0, 5, step);
+  // The horse also goes up for a whole phrase of its own (HORSE_DANCE 'rear'), not only on the drop.
+  pose.rear = damp(pose.rear, up ? 1 : kind === 'horse' ? horseRearing(beat) : 0, 5, step);
   const r = pose.rear;
 
   if (K.legs === 4) {
@@ -509,6 +623,9 @@ export function stepDance(kind, pose, { beat = 0, up = 0 } = {}, dt = 0) {
     pose.bodyX = lean;
     pose.bodyZ = 0.05 * slow * (1 - r);
     pose.bodyY = 0.01 * lift * (1 - r) + Math.max(0, rise);
+    // The horse has joints (horse-rig.js), so it dances with its hooves rather than swinging
+    // stiff legs: HORSE_DANCE's moves, one a phrase, written over the pose above.
+    if (kind === 'horse') horseDance(pose, beat, r, rise);
   } else {
     // A hen: the head bob, on the beat and quick; stepping from foot to foot; and, going up,
     // her wings out and beating and a hop on every beat.
@@ -564,7 +681,8 @@ export function applyPose(a, x, y, z) {
   const p = a.pose;
   a.object.position.set(x + Math.sin(a.yaw) * p.surge, y + p.bodyY, z + Math.cos(a.yaw) * p.surge);
   a.object.rotation.set(p.bodyX, a.yaw, p.bodyZ);
-  for (const j of a.joints) jointEuler(p, j.role, j.index, j.pivot.rotation);
+  if(a.horseRig)poseHorse(a);
+  else for (const j of a.joints) jointEuler(p, j.role, j.index, j.pivot.rotation);
 }
 
 // The brain on its own: the state machine, the seeded rng and the pose, and no Object3D at
@@ -607,8 +725,9 @@ export function createAnimal(kind, material, { area = { x: 0, z: 0, r: 1 }, seed
   const wings = [find('wing', 0), find('wing', 1)].filter(Boolean);
 
   const a = Object.assign(createBrain(kind, { area, seed, ground, yaw }), { object, body, head, tail, legs, wings, joints, geometries });
+  if(kind==='horse')a.horseRig=bindHorse(a,material);
   a.update = (dt) => updateAnimal(a, dt);
-  a.dispose = () => { object.parent?.remove(object); for (const g of geometries) g.dispose(); };
+  a.dispose = () => { object.parent?.remove(object); a.horseRig?.dispose(); for (const g of geometries) g.dispose(); };
   updateAnimal(a, 0);
   return a;
 }

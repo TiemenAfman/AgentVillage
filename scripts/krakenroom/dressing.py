@@ -12,8 +12,8 @@ hangs from the ceiling or the walls - is placed here directly and is in neither 
 The fixed places the game sits people at are the layout's, not this file's: the six tables in the pit
 and their benches (TABLES), the keg table by the cannon and its two keg seats, the chart table, the
 captain's chair, the two sloops (SLOOPS). The crew's places and the two figures (CREW_PLACES, FIGURES)
-are left free; KEEP_CLEAR holds nothing taller than a coin. Whatever hangs from the rock goes in the
-lid (geom.lid); whatever is fixed to the south or east walls in geom.group('near'), which the cutaway
+are left free; KEEP_CLEAR holds nothing taller than a coin. Whatever hangs from the rock or the roof
+goes in geom.hang, which stays when the lid comes off; whatever is fixed to the south or east walls in geom.group('near'), which the cutaway
 preview leaves out.
 
 The keeper's brief for the big hall (18 x 14 under a vault of 5, a cascade of terraces round an open
@@ -29,7 +29,7 @@ import hatch
 import math
 from mathutils import Matrix, Vector
 import geom
-from geom import (TAU, PI, M, frame, lid, group, span, box, rod, disc, ball, lathe, prism, hull, tube,
+from geom import (TAU, PI, M, frame, lid, hang, group, span, box, rod, disc, ball, lathe, prism, hull, tube,
                   torus, cloth, chain, coil, candle, candles, candlestick, candelabra, goblet, tankard,
                   bottle, coin, gem, scatter, heap, gold_floor, pearls, crown, ingots, skull,
                   skull_lamp_top, lantern, rng, material,
@@ -957,7 +957,7 @@ def sloop_chain(L, S, to=None):
     KIT.sloop); the room draws only the long chain from the top of its own short one up to the roof.
     S (one of SLOOPS) is where its flames are."""
     top = S['y'] - L['KIT']['sloop']['flame'] + L['KIT']['sloop']['ringTop']
-    with lid():
+    with hang():
         chain((S['x'], top, S['z']), (S['x'], L['TOP'] if to is None else to, S['z']))
 
 
@@ -1193,7 +1193,7 @@ def build(L):
     lantern((7.4, G + 1.45, -3.6), hang_to=C - UNDER, s=1.3)
     lantern((-7.4, G + 1.55, -3.2), hang_to=C - UNDER, s=1.3)
     lantern((7.9, C + .78, -4.75), hang_to=U - UNDER, s=1.3)
-    with lid():
+    with hang():
         # From the roof on long chains: over the bar terrace, the south strip, the keg table and both
         # upper galleries. And the one in the cellar's vault.
         for (x, y, z) in ((-3.6, B + 1.3, -4.6), (3.4, B + 1.3, -4.6), (-3.4, G + 1.9, 6.2), (2.8, G + 1.9, 6.2),
@@ -1233,7 +1233,7 @@ def build(L):
     # where the roof is too low for it. The sails are bent to spars lashed under the trusses' tie
     # beams (kraken-layout.js TRUSSES, at EAVES): the truss over the south rows of tables and the one
     # over the bar terrace in front of the broken bow, whichever of them are nearest 3.6 and -4.4.
-    with lid():
+    with hang():
         ts, tn = (min(L['TRUSSES'], key=lambda t: abs(t - want)) for want in (3.6, -4.4))
         tie = EAVES - .08
         slung_sail(-4.3, -2.3, ts, ts + .8, tie, .6, 61, tie + .08)      # over the tables, south

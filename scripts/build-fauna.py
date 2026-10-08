@@ -258,59 +258,180 @@ GULL, GULL_WING = material('gull white', 0xf4f4f2), material('gull wing', 0x9aa3
 DRAKE, DRAKE_HEAD, DUCK_BILL = material('duck body', 0x8b6f55), material('duck head', 0x2f6b3a), material('duck bill', 0xe0a030)
 
 # ---- the horse ---------------------------------------------------------------------------
+def shell(part, rings, mat):
+    """Rings of points (each the same count) lofted and capped: for sections that are no ellipse -
+    a skull, a crescent ear. Answers the index of its first face, for repainting some of them."""
+    first = len(part.faces)
+    part.add([p for r in rings for p in r], loft_faces(len(rings), len(rings[0])), mat)
+    return first
+
+
+def ellipsoid(part, c, ax, ay, az, mat, sides=10, bands=6):
+    """oval() with its three half-axes any way round (ay the pole): an eye in its socket, a
+    nostril slanted on the muzzle."""
+    c, ax, ay, az = Vector(c), Vector(ax), Vector(ay), Vector(az)
+    rings = []
+    for k in range(1, bands):
+        t = -math.pi / 2 + math.pi * k / bands
+        rings.append([c + ay * math.sin(t) + (ax * math.cos(2 * math.pi * j / sides)
+                                               + az * math.sin(2 * math.pi * j / sides)) * math.cos(t)
+                      for j in range(sides)])
+    pts = [p for r in rings for p in r]
+    faces = loft_faces(len(rings), sides, caps=False)
+    bottom, top, n = len(pts), len(pts) + 1, len(rings)
+    pts += [c - ay, c + ay]
+    for i in range(sides):
+        faces += [[bottom, (i + 1) % sides, i], [top, (n - 1) * sides + i, (n - 1) * sides + (i + 1) % sides]]
+    part.add(pts, faces, mat)
+
+
+def strap(part, pts, normals, widths, t, mat, closed=False):
+    """A flat strap, `widths` wide (one number or one per point) and `t` thick, lying on the
+    surface whose normal each point is given. Any direction: loft's rings keep their width along
+    x, so a browband across the face or a noseband round it came out as a sliver."""
+    n = len(pts)
+    widths = widths if isinstance(widths, (list, tuple)) else [widths] * n
+    rings = []
+    for i, (p, nm, w) in enumerate(zip(pts, normals, widths)):
+        a = pts[(i - 1) % n] if closed else pts[max(0, i - 1)]
+        b = pts[(i + 1) % n] if closed else pts[min(n - 1, i + 1)]
+        d = (Vector(b) - Vector(a)).normalized()
+        nm = (Vector(nm) - d * Vector(nm).dot(d)).normalized()
+        s = d.cross(nm).normalized()
+        p = Vector(p)
+        rings.append([p + s * w / 2 + nm * t / 2, p - s * w / 2 + nm * t / 2,
+                      p - s * w / 2 - nm * t / 2, p + s * w / 2 - nm * t / 2])
+    faces = loft_faces(n, 4, caps=not closed)
+    if closed:
+        faces += [[(n - 1) * 4 + k, (n - 1) * 4 + (k + 1) % 4, (k + 1) % 4, k] for k in range(4)]
+    part.add([q for r in rings for q in r], faces, mat)
+
+
+def slab(part, rows, mat, periodic=False):
+    """A thin closed sheet from rows of (inner, outer) point pairs: a saddle cloth, a flap, a
+    girth (`periodic`, round the barrel). Every rim is closed, so it stays a solid."""
+    nr, nc = len(rows), len(rows[0])
+    pts = [q[0] for r in rows for q in r] + [q[1] for r in rows for q in r]
+    N = nr * nc
+    I = lambda i, j: i * nc + (j % nc)
+    cols = nc if periodic else nc - 1
+    faces = []
+    for i in range(nr - 1):
+        for j in range(cols):
+            faces.append([I(i, j), I(i + 1, j), I(i + 1, j + 1), I(i, j + 1)])
+            faces.append([N + I(i, j), N + I(i, j + 1), N + I(i + 1, j + 1), N + I(i + 1, j)])
+    for j in range(cols):
+        faces.append([I(0, j), I(0, j + 1), N + I(0, j + 1), N + I(0, j)])
+        faces.append([I(nr - 1, j), N + I(nr - 1, j), N + I(nr - 1, j + 1), I(nr - 1, j + 1)])
+    if not periodic:
+        for i in range(nr - 1):
+            faces.append([I(i, 0), N + I(i, 0), N + I(i + 1, 0), I(i + 1, 0)])
+            faces.append([I(i, nc - 1), I(i + 1, nc - 1), N + I(i + 1, nc - 1), N + I(i, nc - 1)])
+    part.add(pts, faces, mat)
+
+
+# Where the stirrup irons hang (x out from the middle, the tread's foot, z) - where the
+# Adventurer's feet come down with his thighs close along the saddle (HORSEBACK_OF in
+# web/js/classic-avatar.js). web/js/fauna.js saddleOf reads them back off the bake.
+IRON = (0.116, 0.3435, 0.015)
+
+
 def saddle(p):
+    """An English saddle laid on the barrel it sits on: every piece is draped - a ray from the
+    barrel's middle out to the coat at that height and angle, and on outwards by the piece's own
+    offset - so cloth, panels, flaps and girth hug the curve instead of standing off it as boxes.
+    The rider's thighs lie along it, which is the point: with the old box flaps (0.11 out either
+    side) the Adventurer's legs went round them at 45 degrees and reached the irons straight.
+
+    The seat is dished - low behind the middle, up to a rolled cantle behind and a narrow
+    twist and pommel in front - and its lowest middle is what saddleOf reads as the seat."""
+    from mathutils.bvhtree import BVHTree
     pad = material('horse saddle pad', 0x416d72)
     brass = material('horse tack brass', 0xc6a263)
-    box(p, (0, 0.477, 0.0), (0.18, 0.012, 0.16), pad)
-    loft(p, [((0, y, z), (0, 0, 1), w, h) for z, y, w, h in
-             [(-0.068, 0.5, 0.13, 0.04), (-0.03, 0.487, 0.12, 0.018),
-              (0.035, 0.49, 0.11, 0.022), (0.065, 0.51, 0.09, 0.035)]], LEATHER, sides=6)
+    girth = material('horse girth', 0x8d6f4c)
+    steel = material('horse stirrup iron', 0xa7abae)
+    tree = BVHTree.FromPolygons([tuple(v) for v in p.verts], p.faces)
+
+    def on(z, deg, off, cy=0.37):
+        a = math.radians(deg)
+        d = Vector((math.sin(a), math.cos(a), 0))
+        return tree.ray_cast(Vector((0, cy, z)), d, 1.0)[0] + d * off
+
+    def lerp_table(table, z):
+        for (z0, v0), (z1, v1) in zip(table, table[1:]):
+            if z <= z1:
+                t = (z - z0) / (z1 - z0)
+                return v0 + (v1 - v0) * t * t * (3 - 2 * t)
+        return table[-1][1]
+
+    # The cloth: a rounded oblong from the withers to behind the cantle, down to the girth.
+    rows = []
+    for k in range(8):
+        z = -0.09 + 0.184 * k / 7
+        e = abs((z - 0.002) / 0.092)
+        span = 68 - 16 * e ** 4
+        rows.append([(on(z, d, 0.0012), on(z, d, 0.0048)) for d in [span * (j / 4 - 1) for j in range(9)]])
+    slab(p, rows, pad)
+    # The seat and the panels under it, as one dished shell: how high its middle stands at each z,
+    # and how far round the barrel it reaches (narrowest at the twist, just behind the pommel).
+    HEIGHT = [(-0.082, 0.497), (-0.074, 0.506), (-0.062, 0.5), (-0.045, 0.491), (-0.02, 0.4865),
+              (0.005, 0.4875), (0.03, 0.491), (0.05, 0.497), (0.064, 0.503), (0.076, 0.5), (0.084, 0.494)]
+    REACH = [(-0.082, 28), (-0.06, 35), (-0.03, 34), (0.0, 31), (0.03, 25), (0.055, 21), (0.084, 18)]
+    rows = []
+    for k in range(10):
+        z = -0.082 + 0.166 * k / 9
+        top = on(z, 0, 0).y
+        rise, reach = max(0.006, lerp_table(HEIGHT, z) - top), lerp_table(REACH, z)
+        row = []
+        for j in range(7):
+            d = reach * (j / 3 - 1)
+            f = 1 - (d / reach) ** 2
+            row.append((on(z, d, 0.004), on(z, d, 0.006 + (rise - 0.006) * f ** 0.6)))
+        rows.append(row)
+    slab(p, rows, LEATHER)
     for side in (-1, 1):
-        box(p, (side * 0.087, 0.433, 0.0), (0.012, 0.09, 0.155), pad)
-        box(p, (side * 0.096, 0.42, 0.01), (0.014, 0.075, 0.085), LEATHER)
-        box(p, (side * 0.107, 0.368, 0.02), (0.007, 0.095, 0.012), LEATHER)
-        for z in (0.004, 0.036):
-            box(p, (side * 0.11, 0.316, z), (0.009, 0.027, 0.006), brass)
-        box(p, (side * 0.11, 0.302, 0.02), (0.009, 0.007, 0.038), brass)
+        # A skirt over the stirrup bar, under the front of the seat.
+        slab(p, [[(on(z, side * d, 0.0062), on(z, side * d, 0.0082)) for z in (-0.004, 0.018, 0.04, 0.056)]
+                 for d in (30, 36, 42, 47)], LEATHER)
+        # The flap: thin, lying flat on the cloth, cut forward as it goes down, rounded at the foot,
+        # ending above the irons (y 0.39) so it stays out of what saddleOf reads as an iron.
+        rows = []
+        for k in range(7):
+            t = k / 6
+            d = 34 + 40 * t
+            front, back = 0.058 + 0.026 * t, -0.044 + 0.022 * t - 0.012 * t ** 6
+            front -= 0.016 * t ** 6
+            rows.append([(on(z, side * d, 0.0052), on(z, side * d, 0.0078))
+                         for z in [back + (front - back) * j / 5 for j in range(6)]])
+        slab(p, rows, LEATHER)
+        # A knee roll along the flap's front edge.
+        edge = [on(0.052 + 0.026 * t - 0.016 * t ** 6, side * (38 + 33 * t), 0.0108) for t in (0, .25, .5, .75, 1)]
+        loft(p, along(edge, [0.006, 0.008, 0.008, 0.007, 0.004], [0.012, 0.015, 0.015, 0.013, 0.006]), LEATHER, sides=6)
+        # The leather from the bar down over the flap to the iron, behind the knee.
+        ix, iy, iz = IRON
+        top = iy + 0.031
+        down = [on(iz, side * d, 0.0094) for d in (38, 50, 62, 73)]
+        down.append(Vector((side * ix, top + 0.006, iz)))
+        strap(p, down, [Vector((side, 0.25, 0))] * len(down), 0.010, 0.0024, LEATHER)
+        # The iron: an arch in the plane across the horse, the foot going through it along z, on a
+        # flat tread.
+        arch = [(-0.0165, 0.006), (-0.017, 0.016), (-0.014, 0.025), (-0.007, 0.0302), (0, 0.031),
+                (0.007, 0.0302), (0.014, 0.025), (0.017, 0.016), (0.0165, 0.006)]
+        strap(p, [Vector((side * ix + dx, iy + dy, iz)) for dx, dy in arch], [Vector((0, 0, 1))] * len(arch),
+              0.0042, 0.0075, steel)
+        box(p, (side * ix, iy + 0.0035, iz), (0.04, 0.007, 0.017), steel)
+        box(p, (side * ix, top + 0.002, iz), (0.007, 0.006, 0.006), steel)
+        # Buckles where the girth meets its straps under the flap's foot.
+        for z in (0.034, 0.05):
+            g = on(z, side * 78, 0.0062)
+            box(p, (g.x, g.y, z), (0.004, 0.007, 0.006), brass)
+    # The girth, round the belly behind the elbow from under one flap to under the other (over the
+    # top it showed through the cloth).
+    slab(p, [[(on(z, d, 0.0011), on(z, d, 0.0042)) for d in range(40, 321, 14)] for z in (0.03, 0.054)],
+         girth)
 
 
-def horse_face(p):
-    # The blaze follows the face, rather than floating as a block across the muzzle.
-    loft(p, along([(0, 0.627, 0.342), (0, 0.603, 0.39), (0, 0.558, 0.44)],
-                  [0.018, 0.024, 0.016], [0.006, 0.007, 0.006]), BLAZE, sides=4)
-    for side in (-1, 1):
-        box(p, (side * 0.03, 0.537, 0.456), (0.006, 0.012, 0.016), DARK)
-        # A cheek strap stays on the head's pivot when it looks round.
-        loft(p, along([(side * 0.037, 0.61, 0.332), (side * 0.037, 0.576, 0.397),
-                      (side * 0.03, 0.535, 0.438)], [0.007] * 3), LEATHER, sides=4)
-        box(p, (side * 0.04, 0.578, 0.393), (0.005, 0.012, 0.012), material('horse tack brass', 0xc6a263))
-    fin(p, [(0, 0.637, 0.314), (0, 0.626, 0.35)], [0.025, 0.008], DARK, thick=0.018)
-
-
-quadruped('horse', {
-    'coat': BAY, 'hair': DARK, 'tail_mat': DARK, 'sock_mat': SOCK, 'hoof_mat': HOOF, 'ear_mat': BAY,
-    'body': [(-0.27, 0.39, 0.08, 0.1), (-0.22, 0.393, 0.18, 0.195), (-0.13, 0.385, 0.19, 0.205),
-             (-0.02, 0.377, 0.18, 0.205), (0.1, 0.386, 0.175, 0.21),
-             (0.19, 0.405, 0.15, 0.195), (0.25, 0.42, 0.08, 0.11)],
-    'extras': [saddle],
-    'head': [(0, 0.43, 0.21), (0, 0.52, 0.28), (0, 0.6, 0.32), (0, 0.585, 0.38), (0, 0.53, 0.44)],
-    'head_w': [0.1, 0.08, 0.066, 0.06, 0.05], 'head_h': [0.15, 0.12, 0.09, 0.075, 0.06],
-    'snout': ([(0, 0.54, 0.421), (0, 0.524, 0.458), (0, 0.526, 0.472)],
-              [0.057, 0.065, 0.05], [0.058, 0.052, 0.037]),
-    'muzzle_mat': material('horse muzzle', 0x665044),
-    'eyes': [(-0.033, 0.604, 0.354), (0.033, 0.604, 0.354)],
-    'head_extras': [horse_face],
-    'mane': ([(0, 0.46, 0.19), (0, 0.55, 0.25), (0, 0.63, 0.3)], [0.05, 0.045, 0.03]),
-    'ears': ((0, 0.66, 0.325), 0.018, 0.035),
-    'tail': ([(0, 0.41, -0.26), (0, 0.35, -0.3), (0.008, 0.23, -0.32), (0.012, 0.13, -0.31)],
-             [0.03, 0.05, 0.058, 0.014]), 'tail_round': True,
-    'legs': {'x': 0.057, 'z': 0.17, 'zb': 0.19, 'top': 0.34,
-             'ys': [0.34, 0.255, 0.19, 0.145, 0.055, 0.028],
-             'ws': [0.078, 0.057, 0.043, 0.028, 0.033, 0.037],
-             'front_offsets': [0, -0.012, -0.008, 0, 0, 0.006],
-             'back_offsets': [0, 0.024, -0.018, -0.025, 0, 0.008],
-             'sock': 3, 'hoof': 0.028},
-})
+runpy.run_path(str(ROOT / 'scripts/horse-model.py'), init_globals=globals())
 
 # ---- the cow ------------------------------------------------------------------------------
 # Proportions off a side-on outline of a cow: the body twice as long as it is deep and dead level

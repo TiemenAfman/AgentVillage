@@ -7,6 +7,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 
 ## Besluiten die nog niet in een eigen plan zitten
 
+- ✅ [paard-gewrichten-en-gangen.md](DONE/paard-gewrichten-en-gangen.md) — het paard met gewrichten, gesloten vlakken en gangen naar Preston Blair: draf en galop, gevouwen hoeven.
 - ✅ [avonturier-beweging.md](DONE/avonturier-beweging.md) — vervormende gewrichten, passen op afgelegde afstand en aangepast lopen en rennen.
 - ✅ [avonturier-handen-en-aansluitingen.md](DONE/avonturier-handen-en-aansluitingen.md) — schouders, nek, twee ogen en beweeglijke ontspannen vingers.
 - ✅ [verfijnde-hoedjes.md](DONE/verfijnde-hoedjes.md) — zeven opnieuw gemodelleerde hoofddeksels.
@@ -32,6 +33,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
   piloot drift; wie zelf vaart, bepaalt zelf waar hij komt.
 
 - 🚧 [tweede-avonturier.md](tweede-avonturier.md) — tweede karakter op basis van het gekozen Sketchfab-model, met eigen uiterlijk en selectie in de inventory. Sinds 0.10.0 op main; open: nog niet in een echte sessie op het eiland nagelopen (fiets, zwemmen, zitten, eerste persoon).
+- 🚧 [basislichamen-en-outfits.md](basislichamen-en-outfits.md) — lichamen in ondergoed (man/vrouw) op het gedeelde skelet, kleding als losse outfit-laag, HEAD = haarkleur, huidkleur te verven; Reiziger en Link blijven. Besloten, fase 1 in aanbouw.
 - 🚧 [vallen-en-verdrinken.md](vallen-en-verdrinken.md) — wie gevangen wordt of verdrinkt, valt of zinkt eerst en springt pas daarna naar huis; anderen zien het via de zee (`fell`). Gebouwd: de Reiziger procedureel, de Avonturier met Mixamo's *Falling Forward Death* en *Floating (Flailing Arms)*; open: de open zee uitrollen, op het eiland zelf nalopen.
 
 ## Plannen
@@ -155,6 +157,11 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   één scherm (toetsenbord en pad), in één pagina met één camera die het midden volgt; splitscreen is
   fase 2 (te veel single-eye-state in `main.js`). Ernaast: de chips rechtsboven tonen hun toets of
   padknop naar het laatst gebruikte apparaat.
+
+- 🚧 [open-world-pvp.md](open-world-pvp.md) — plan van 6 oktober 2026, nog niet gebouwd: spelers raken
+  elkaar alleen als ze allebei hun persoonlijke PvP-vlag aan hebben (WoW-stijl, uitzetten duurt 30 s, opnieuw
+  bij elke treffer), op elke zee. Alleen jij bent veilig op je eigen eiland; wie thuis slaat, is 10 s te raken.
+  `PVP_HIT` via `hurt()` en `blowOn`, windup, hoogstens twee aanvallers, afstijgen bij een treffer. Geen `SEA_V`-bump.
 
 ### Klaar
 

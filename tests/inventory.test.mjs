@@ -26,7 +26,8 @@ test('every equip key is owned by exactly one slot', () => {
 });
 
 test('every swatch part is owned by exactly one dye control', () => {
-  const dyes = [...INVENTORY_SLOTS.map((s) => s.dye), ...INVENTORY_FLASKS.map((f) => f.dye)].filter(Boolean);
+  // A slot's dye button, a flask, or the palette inside a slot's picker (the hat's, under the hats).
+  const dyes = [...INVENTORY_SLOTS.flatMap((s) => [s.dye, s.pickerDye]), ...INVENTORY_FLASKS.map((f) => f.dye)].filter(Boolean);
   assert.deepEqual([...dyes].sort(), Object.keys(SWATCHES).sort());
 });
 

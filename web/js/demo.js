@@ -36,9 +36,12 @@ import { attachStable, updateStable } from './stable.js';
 import { attachProp, updateProp, attachBakery, updateBakery } from './countryside.js';
 import { attachBaker, updateBaker } from './bakery-keeper.js';
 import { createAnimal, applyPose, saddleOf } from './fauna.js';
-import { createMount, MOUNT_TOP } from './mount.js';
+import { createMount, MOUNT_TOP, MOUNT_GALLOP } from './mount.js';
 import { createClassicAvatar, horsebackOf } from './classic-avatar.js';
 import { normalizeAvatar } from './avatar.js';
+import { allowWanderers } from './player-bodies.js';
+// A workbench: a Wanderer may be loaded the moment one is asked for (player-bodies.js), no boot to wait on.
+allowWanderers();
 import { attachButcher, updateButcher } from './butcher.js';
 import { attachQuarry, updateQuarry } from './quarry.js';
 import { YARD_FLOOR, YARD_STAGES, YARD_STAGE_NAMES, YARD_W, YARD_D } from './shipyard.js';
@@ -543,7 +546,8 @@ line(FURNITURE, ([type, name, note], x, z) => {
 {
   const z = row * ROW;
   heading('Ridden', z);
-  const speeds = [['stand', 0], ['walk', 1.2], ['trot', 3], ['canter', MOUNT_TOP], ['gallop', MOUNT_TOP * 1.3]];
+  // The gaits there are (mount.js GAITS): standing, a slow and a full trot, the gallop's entry and its top.
+  const speeds = [['stand', 0], ['slow trot', MOUNT_TOP * 0.5], ['trot', MOUNT_TOP], ['canter', MOUNT_TOP * MOUNT_GALLOP * 0.8], ['gallop', MOUNT_TOP * MOUNT_GALLOP]];
   speeds.forEach(([gait, speed], i) => {
     const x = (i - 2) * PITCH * 0.5;
     const horse = createMount({ scene, material, seed: `demo:ridden:${gait}` });
@@ -552,14 +556,12 @@ line(FURNITURE, ([type, name, note], x, z) => {
     rider.object.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     scene.add(rider.object);
     const fit = horsebackOf('adventurer');
-    const at = new THREE.Vector3();
     const pose = { moving: false, grounded: true, horseback: true };
+    // Seated as walk.js seats him (mount.js carry): the seat on the saddle, the rest riding it.
     const step = (dt) => {
       horse.place(x, FIELD_Y, z, Math.PI / 2);
       horse.pose({ speed }, dt);
-      horse.seat(at, rider.hipY, fit.perch);
-      rider.object.position.copy(at);
-      rider.object.quaternion.copy(horse.object.quaternion);
+      pose.horseback = horse.carry(rider.object, rider.hipY, fit.perch, dt);
       rider.update(pose, dt);
     };
     for (let k = 0; k < 60; k++) step(1 / 30);

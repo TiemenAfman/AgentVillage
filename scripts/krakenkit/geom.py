@@ -117,7 +117,7 @@ class frame:
 
 class group:
     """What is emitted inside goes into parts named after `name` rather than the current group:
-    `roof` is the lid interior.js takes off, `near` the walls the hall's cutaway preview leaves
+    `roof` is the lid interior.js takes off, `hang` what hangs from it and stays, `near` the walls the hall's cutaway preview leaves
     out (scripts/preview-krakenroom.py). Merged parts lose their labels, so a group is the way to
     keep a set of pieces apart."""
     def __init__(self, name):
@@ -134,6 +134,14 @@ class lid(group):
     """What is emitted inside belongs to the roof (see the top)."""
     def __init__(self):
         super().__init__('roof')
+
+
+class hang(group):
+    """What is emitted inside hangs from the roof but is the hall's: lanterns, sails, nets, the chains
+    of the chandeliers. Not the lid, which interior.js takes off when the camera rises through it - in
+    it, a camera over the eaves put out every lantern and chandelier in the hall (6 Oct 2026)."""
+    def __init__(self):
+        super().__init__('hang')
 
 
 def M(at=(0, 0, 0), turn=0.0, tilt=0.0, roll=0.0, scale=None):

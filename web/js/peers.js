@@ -16,7 +16,8 @@ import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf } from './clas
 import { createMount } from './mount.js';
 import { normalizeAvatar } from './avatar.js';
 import { LAG_MS, progress } from './timeline.js';
-import { toWorld } from 'shared/deck.mjs';
+import { toWorld, aloftHolding } from 'shared/deck.mjs';
+import { craftOf } from 'shared/crafts.mjs';
 import { danceStep, wallBeat } from './dance.js';
 import { createZzz, bobZzz } from './zzz.js';
 import { divePitch, swimPose, stepLie } from './diving.js';
@@ -129,7 +130,7 @@ function labelTexture(text) {
 // `hullOf(boatId)` is the same hull for somebody standing on its deck (Plans/DONE/lopen-op-de-boot.md):
 // { x, y, z, yaw }, with y its deck. They are drawn as that hull plus where they are on it,
 // and never from their own world position, for the same reason a pilot is.
-export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null }) {
+export function createPeers({ scene, material, terrain, ground = null, onCursor = () => {}, seatOf = () => null, hullOf = () => null, ladderAt = () => null }) {
   const places = new Map([[null, { scene, terrain: ground || terrain }]]);
 
   const peers = new Map();   // id -> peer
@@ -188,6 +189,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       moving: false,
       carrying: false,    // what the rig has last been told (avatar.setCarry / avatar.dig)
       digging: false,
+      climbY: null,       // on a rope ladder: the height drawn last frame, which the climb is played by
       room: null,
       want: null,
       aboard: false,      // at a tiller: drawn on their hull (seatOf), not on the ground
@@ -460,7 +462,21 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       } else p.vy = 0;
       p.dive = diving;
       p.moving = moving;
+      // Hanging on a rope ladder (main.js -> walk.js ladderAt): at the height they sent, facing the
+      // rungs, the rig climbing by how far that height moved since the last frame and its phase off
+      // how high on the ladder they hang (`at`) - their own page plays the same clip off the same height. No bit says so; there is just no floor up there.
+      const hold = !swimming && !airborne && !seat && !p.aboard && !p.deckTo && !p.room && !(f & FLAG_RIDING)
+        ? ladderAt(x, sentY, z) : null;
+      // Or up a ship's mast (craft.aloft): a deck position on the climber's line of one of her mast
+      // ladders, which the sea carries like any other place on her (`d`) - drawn on her, climbing.
+      const mast = seat && seat.local && !swimming && !airborne
+        ? aloftHolding(craftOf(p.deckTo.boat), seat.local.x, seat.local.z, seat.local.y) : null;
+      const climbY = hold ? sentY : mast ? seat.local.y : null;
+      const climbing = hold || mast ? { rise: p.climbY == null ? 0 : climbY - p.climbY, at: (hold || mast).at } : null;
+      p.climbY = climbY;
+      if (hold) yaw = hold.yaw;
       const base = seat ? seat.y
+        : hold ? sentY
         : diving ? dived
         : p.aboard || airborne || sitting || dancing ? (a.y + (b.y - a.y) * k)
           : (ground < 0 ? -0.07 : ground);
@@ -469,7 +485,7 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
       const riding = !!(f & FLAG_RIDING) && !swimming && !p.room;
       // What they ride is read off the body they wear, as their own page decides it: a horse
       // under an Adventurer, the bicycle under anybody else - no second bit on the wire.
-      const onHorse = riding && p.avatar.character === 'adventurer';
+      const onHorse = riding && p.avatar.character !== 'traveller';
       if (!onHorse) p.gallop.seen = false;
       if (onHorse) {
         mounted(p, x, base, z, yaw, dt, airborne);
@@ -515,13 +531,14 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
         blocking: blocking ? { leftArm: eq.leftHandItem === 'shield', rightArm: eq.rightHandItem === 'shield' } : false,
         phase: p.bob, firstPerson: false, pitch: 0,
         riding: riding && !onHorse ? { crank: p.ride.crank, standing: false } : null,
-        horseback: onHorse,
+        horseback: onHorse ? p.riderMotion || true : false,
         dancing: dancing ? { ...danceStep(p.id, beat), beat } : null,
+        climbing,
       }, dt);
 
       // Somebody to bump into. Swimmers, jumpers and pilots are left out: a wall you cannot
       // see standing in open water is worse than walking through a swimmer.
-      if (!swimming && !airborne && !p.aboard && !p.deckTo) blockersIn(p.room).push({ x, z, r: BODY_R });
+      if (!swimming && !airborne && !p.aboard && !p.deckTo && !hold) blockersIn(p.room).push({ x, z, r: BODY_R });
     }
   }
 
@@ -542,10 +559,10 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     // same point of her frame our own walk mode stands us on (main.js hullOf).
     if (hull.point) {
       const at = hull.point(lx, ly, lz);
-      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt(), walkPoint: { x: lx, z: lz } };
+      return { x: at.x, y: at.y, z: at.z, yaw, tilt: hull.tilt(), walkPoint: { x: lx, z: lz }, local: { x: lx, y: ly, z: lz } };
     }
     toWorld({ x: hull.x, z: hull.z, fx: Math.sin(hull.yaw), fz: Math.cos(hull.yaw) }, lx, lz, deckAt);
-    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw, walkPoint: { x: lx, z: lz } };
+    return { x: deckAt[0], y: hull.y + ly, z: deckAt[1], yaw, walkPoint: { x: lx, z: lz }, local: { x: lx, y: ly, z: lz } };
   }
 
   // One frame of a peer on a bicycle. Everything the bike does is read off where the rider
@@ -607,9 +624,8 @@ export function createPeers({ scene, material, terrain, ground = null, onCursor 
     p.horse.visible = true;
     p.horse.place(x, y, z, yaw);
     p.horse.pose({ speed: g.v, rate: g.rate, air }, dt);
-    p.horse.seat(seat, p.avatar.hipY, horsebackOf(p.avatar.character).perch);
-    p.mesh.position.copy(seat);
-    p.mesh.quaternion.copy(p.horse.object.quaternion);
+    // Seated as walk.js seats our own rider (mount.js carry), so both screens ride alike.
+    p.riderMotion = p.horse.carry(p.mesh, p.avatar.hipY, horsebackOf(p.avatar.character).perch, dt);
   }
 
   // Somebody else's arm (net.js `swung`, `drank`): a swing coming down on the hand it was, a

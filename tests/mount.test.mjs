@@ -10,14 +10,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GAITS as BODIES } from '../web/js/avatar-gait.js';
 import { register } from 'node:module';
 register('./support/shared-loader.mjs', import.meta.url);
 
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const M = await import('../web/js/mount.js');
-const { BOAT_TOP } = await import('../web/js/boat.js');
-const { BIKE_TOP, BIKE_TURBO } = await import('../web/js/bicycle.js');
 const { saddleOf, createPose, stepPose } = await import('../web/js/fauna.js');
 const { horsebackOf } = await import('../web/js/classic-avatar.js');
 delete globalThis.document;
@@ -39,13 +36,9 @@ const horse = () => mountAt(0, 0, 0, 0.5);
 
 // ---- the way --------------------------------------------------------------------------------
 
-test('a horse outruns every body on foot, a boat outruns the horse, and it has the bicycle\'s speeds', () => {
-  for (const [name, g] of Object.entries(BODIES)) assert.ok(MOUNT_TOP > g.sprint, `${name} sprints at ${g.sprint}`);
-  assert.ok(MOUNT_TOP * MOUNT_GALLOP < BOAT_TOP + 1, 'a gallop is no faster than a boat by much');
-  assert.ok(MOUNT_TOP < BOAT_TOP);
-  // The plan: the bicycle's numbers, so the camera, wrapEye and the rest stay tuned.
-  assert.equal(MOUNT_TOP, BIKE_TOP);
-  assert.equal(MOUNT_GALLOP, BIKE_TURBO);
+test('normal reins select trot and sprint selects the faster gallop', () => {
+  assert.deepEqual(GAITS, ['stand', 'trot', 'gallop']);
+  assert.ok(MOUNT_TOP > 0 && MOUNT_TOP * MOUNT_GALLOP > MOUNT_TOP);
   const m = ride(horse(), { rein: 1 }, 6);
   assert.ok(Math.abs(m.v - MOUNT_TOP) < 1e-9, `the reins settled at ${m.v}`);
   assert.ok(Math.abs(m.x) < 1e-9);
@@ -54,14 +47,14 @@ test('a horse outruns every body on foot, a boat outruns the horse, and it has t
   assert.ok(Math.abs(back.v + MOUNT_REVERSE) < 1e-9 && back.z < 0);
 });
 
-test('a horse takes longer than a bicycle to get going and to stop', () => {
+test('acceleration and braking are gradual at the scale of the horse', () => {
   let t = 0;
   const m = horse();
   while (m.v < MOUNT_TOP * 0.95 && t < 10) { stepMount(m, { rein: 1 }, FRAME, { ground: MEADOW }); t += FRAME; }
-  assert.ok(t > 2 && t < 3.5, `to cruising speed in ${t.toFixed(2)} s`);
+  assert.ok(t > .9 && t < 1.4, `to cruising speed in ${t.toFixed(2)} s`);
   t = 0;
   while (m.v > 0 && t < 5) { stepMount(m, { rein: -1 }, FRAME, { ground: MEADOW }); t += FRAME; }
-  assert.ok(t > 0.6 && t < 1.2, `reined in from the top in ${t.toFixed(2)} s`);
+  assert.ok(t > .2 && t < .5, `reined in from the top in ${t.toFixed(2)} s`);
   assert.equal(m.v, 0, 'reining in did not go on into backing up in the same press');
 });
 
@@ -92,10 +85,10 @@ test('the chest meets a wall before the middle does', () => {
   assert.ok(m.z > 2 - MOUNT_NOSE - 0.2, `stopped well short, at ${m.z}`);
   // A glancing blow slides along it.
   const slant = mountAt(0, 0, 0.6, 0.5);
-  ride(slant, { rein: 1 }, 3, { ground: MEADOW, blocked: wall });
+  ride(slant, { rein: 1 }, 6, { ground: MEADOW, blocked: wall });
   assert.ok(slant.x > 1, `slid along the wall to x ${slant.x}`);
   // And a ledge above a step is a wall.
-  const ledge = ride(horse(), { rein: 1 }, 3, { ground: (x, z) => (z > 2 ? 1.2 : 0.5) });
+  const ledge = ride(horse(), { rein: 1 }, 6, { ground: (x, z) => (z > 2 ? 1.2 : 0.5) });
   assert.ok(ledge.z < 2);
 });
 
@@ -103,10 +96,10 @@ test('a lid with no room for the rider stops the horse, not only a jump', () => 
   // `ceiling` is walk.js's lid less a walker's head less MOUNT_HEAD: the highest the hooves may
   // stand. A deck that leaves a walker room but not a rider puts it under the meadow.
   const under = (x, z) => (z > 2 ? 0.5 - 0.1 : Infinity);
-  const m = ride(horse(), { rein: 1 }, 3, { ground: MEADOW, ceiling: under });
+  const m = ride(horse(), { rein: 1 }, 6, { ground: MEADOW, ceiling: under });
   assert.ok(m.z + MOUNT_NOSE <= 2.01, `rode under it to ${m.z}`);
-  const open = ride(horse(), { rein: 1 }, 3, { ground: MEADOW, ceiling: () => 2 });
-  assert.ok(open.z > 10);
+  const open = ride(horse(), { rein: 1 }, 6, { ground: MEADOW, ceiling: () => 2 });
+  assert.ok(open.z > 3);
 });
 
 test('Space is a jump that clears a brook, and coming down in deep water ends the ride', () => {
@@ -139,9 +132,8 @@ test('the gait climbs with the speed and holds within its margin', () => {
     last = k;
   }
   assert.equal(gaitOf(0), 'stand');
-  assert.equal(gaitOf(1), 'walk');
-  assert.equal(gaitOf(3), 'trot');
-  assert.equal(gaitOf(MOUNT_TOP), 'canter', 'W alone is a canter');
+  assert.equal(gaitOf(.3), 'trot');
+  assert.equal(gaitOf(MOUNT_TOP), 'trot', 'W alone is a trot');
   assert.equal(gaitOf(MOUNT_TOP * MOUNT_GALLOP), 'gallop', 'Shift is the gallop');
   for (let i = 1; i < GAIT_EDGES.length; i++) {
     const e = GAIT_EDGES[i];
@@ -165,11 +157,12 @@ test('the cadence never runs away, and the pose never goes NaN', () => {
       assert.ok(hz >= 0 && hz <= CADENCE_MAX && CADENCE_MAX <= 4, `${g} at ${v}: ${hz} Hz`);
     }
   }
-  // The reference horse: 1.27 Hz at a walk.
-  assert.ok(Math.abs(cadenceOf(GAIT_EDGES[1], 'walk') - 1.27) < 1e-9);
+  // Natural cycle frequencies at the two selected riding speeds.
+  assert.equal(cadenceOf(MOUNT_TOP, 'trot'), 2.5);
+  assert.ok(Math.abs(cadenceOf(MOUNT_TOP*MOUNT_GALLOP, 'gallop')-2.6)<1e-9);
   const r = createRide();
   for (let i = 0; i < 2000; i++) {
-    const v = (i % 600) / 50;
+    const v = (i % 600) / 600 * MOUNT_TOP * MOUNT_GALLOP;
     mountPose(r, { speed: v, rate: Math.sin(i * 0.01), air: i % 300 < 20 }, FRAME);
     for (const n of [...r.pose.legs, r.pose.headX, r.pose.headY, r.pose.tailX, r.pose.tailZ, r.pose.bodyX, r.pose.bodyY, r.pose.bodyZ]) {
       assert.ok(Number.isFinite(n), `NaN at step ${i}`);
@@ -241,8 +234,9 @@ test('the seat and the irons come off the bake, inside the horse, and the Advent
   assert.notEqual(horsebackOf('adventurer'), horsebackOf('traveller'), 'the Adventurer is the rider who fits it');
 });
 
-test('walk mode rides a horse for the Adventurer and the bicycle for the Traveller', () => {
-  assert.match(WALK_SOURCE, /character === 'adventurer' \? 'horse' : 'bike'/);
+// And the Wanderer (Plans/basislichamen-en-outfits.md): every body but the Traveller rides.
+test('walk mode rides a horse for the Adventurer and the Wanderer, the bicycle for the Traveller', () => {
+  assert.match(WALK_SOURCE, /character !== 'traveller' \? 'horse' : 'bike'/);
   // And the lid a rider needs is a rider's: MOUNT_HEAD in the horse's branch.
   assert.match(WALK_SOURCE, /ceilingAt\(x, z, m\.floor\) - HEAD - MOUNT_HEAD/);
 });

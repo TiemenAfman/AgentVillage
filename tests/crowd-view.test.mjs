@@ -513,3 +513,31 @@ test('an island let go of keeps its boats: the sea goes on sending those', () =>
   assert.equal(f.visible, true, 'the rider of a boat on an island let go of was not drawn');
   assert.deepEqual([f.pos[0], f.pos[1]], [10 + region.origin[0], 10 + region.origin[1]]);
 });
+
+// lib/crowd.mjs appends the keepers after every house and shed, and a crowd holds CAPACITY
+// bodies. Hoogezand passed 640 at 883 figures and its page drew no innkeeper, no mayor and no
+// pirate at his chest, while the sea walked all three (7 October 2026). A crowd too full for
+// everybody leaves out a settler, never a keeper.
+test('a crowd too full for everybody still draws the town\'s keepers', async () => {
+  const { CAPACITY } = await import('../web/js/settler-figures.js');
+  const houses = Array.from({ length: CAPACITY + 40 }, (_, i) => ({ id: `house:h${i}`, kind: 'house', name: `House ${i}`, style: 'opus' }));
+  const keepers = [
+    { id: 'civic:tavern', kind: 'civic', civicType: 'tavern', name: 'The tavern' },
+    { id: 'civic:pirate', kind: 'civic', civicType: 'pirate', name: 'The pirate’s chest' },
+    { id: 'civic:townhall', kind: 'civic', civicType: 'townhall', name: 'Town Hall' },
+  ];
+  const buildings = [...houses, ...keepers];
+  const crowd = createCrowdView({ scene: new THREE.Scene(), material: new THREE.MeshBasicMaterial(), region, buildings });
+  crowd.roster(buildings.map((b) => b.id));
+  assert.equal(crowd.count(), CAPACITY, 'the crowd did not fill up');
+  for (const k of keepers) assert.ok(crowd.figure(k.id), `${k.id} was left out of a full crowd`);
+  // And by the index the sea sends them under, so a position for them lands on them.
+  const idx = buildings.findIndex((b) => b.id === 'civic:pirate');
+  assert.equal(crowd.figures().get(idx).id, 'civic:pirate');
+  crowd.dispose();
+});
+
+test('Hoogezand\'s 883 fit in a crowd', async () => {
+  const { CAPACITY } = await import('../web/js/settler-figures.js');
+  assert.ok(CAPACITY >= 883, `CAPACITY ${CAPACITY} is below the live island's crowd`);
+});

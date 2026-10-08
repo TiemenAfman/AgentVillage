@@ -22,6 +22,7 @@ import { clamp } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y } from 'shared/hull.mjs';
 import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
+import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { createSurface } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
 import { buildBoatGeometry, mesh, box } from './buildings.js';
@@ -370,23 +371,45 @@ const SHIP_HELM = { x: HELM_AT[0], y: (SHIP_SURFACE.floorIn(HELM_AT[0], HELM_AT[
 // ropes taken in over the rail to where they are made fast. Made of boxes rather than baked:
 // there is nothing to model in a rope, and drawn from the craft's own numbers a ladder cannot
 // drift from the one you climb. Merged into the hull's geometry, so a ship with two of them is
-// still one draw call. `y` is above DECK_Y, like everything in the craft.
+// still one draw call. `y` is above DECK_Y, like everything in the craft. Exported for
+// tests/ladder-rungs.test.mjs, which holds the rungs to the climb.
+// The rungs are the climb's (shared/deck.mjs): RUNG_STEP apart from the foot, rung 0, as thick as
+// 2 * RUNG_R, and hung RUNG_OUT outside the ladder's `x`, where the climber's hands and feet close
+// on them. They were 0.2 apart and 0.045 thick, half a body's height between two, and the clip's
+// hands and feet held on to nothing.
 const ROPE = 0x9c7f52, RUNG = 0x6e4d2b;
-const ROPE_W = 0.05, RUNG_H = 0.045, RUNG_STEP = 0.2;
-function ladderBoxes(spec) {
+const ROPE_W = 0.022;
+export function ladderBoxes(spec) {
   const out = [];
   for (const l of spec.ladders || []) {
     const s = l.x < 0 ? -1 : 1;
+    const x = s * (Math.abs(l.x) + RUNG_OUT);
     const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
     const inward = Math.abs(l.x) - 0.6;
     for (const side of [-1, 1]) {
       const z = l.z + side * l.hw;
-      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { x: l.x, y: foot, z }));
+      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { x, y: foot, z }));
       // Over the bulwark and down its inside face a little, where the ropes are belayed.
-      out.push(box(Math.abs(l.x) - inward, ROPE_W, ROPE_W, ROPE, { x: s * (inward + Math.abs(l.x)) / 2, y: top, z }));
+      out.push(box(Math.abs(x) - inward, ROPE_W, ROPE_W, ROPE, { x: s * (inward + Math.abs(x)) / 2, y: top, z }));
     }
-    for (let y = foot + 0.15; y < top - 0.1; y += RUNG_STEP) {
-      out.push(box(ROPE_W + 0.02, RUNG_H, 2 * l.hw + ROPE_W, RUNG, { x: l.x, y, z: l.z }));
+    for (let k = 1; foot + k * RUNG_STEP < top - 0.06; k++) {
+      out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { x, y: foot + k * RUNG_STEP - RUNG_R, z: l.z }));
+    }
+  }
+  // Up the mast (craft.aloft): the same ropes and rungs, from the deck to the rim of the top, turned to
+  // whichever face of it the ladder hangs from - `out` is the way from the mast to the climber, and a
+  // box's own x is turned onto it - and over the rim to inside, where they are made fast.
+  for (const l of spec.aloft || []) {
+    const [ox, oz] = l.out;
+    const ry = Math.atan2(-oz, ox);
+    const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
+    const at = (d, t) => ({ x: l.x + ox * d - oz * t, z: l.z + oz * d + ox * t, ry });
+    for (const side of [-1, 1]) {
+      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { ...at(RUNG_OUT, side * l.hw), y: foot }));
+      out.push(box(0.2, ROPE_W, ROPE_W, ROPE, { ...at(RUNG_OUT - 0.1, side * l.hw), y: top }));
+    }
+    for (let k = 1; foot + k * RUNG_STEP < top - 0.06; k++) {
+      out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { ...at(RUNG_OUT, 0), y: foot + k * RUNG_STEP - RUNG_R }));
     }
   }
   return out;

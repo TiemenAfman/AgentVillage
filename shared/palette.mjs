@@ -78,6 +78,16 @@ export const SWATCHES = {
     { name: 'Green', hex: 0x5c8a4a }, { name: 'White', hex: 0xf5efe0 },
     { name: 'Black', hex: 0x3a3a3f },
   ],
+  // The player's hair (the head slot's dye, Plans/basislichamen-en-outfits.md). The first is the
+  // Traveller's own brown, the colour every body's hair is baked against, so it is the default.
+  // No settler picks from this row: the villagers' hair is their style's.
+  hair: [
+    { name: 'Brown', hex: 0x503a2d }, { name: 'Chestnut', hex: 0x6e3b1f },
+    { name: 'Auburn', hex: 0x8c3f22 }, { name: 'Copper', hex: 0xb5612e },
+    { name: 'Honey', hex: 0xc79a55 }, { name: 'Blond', hex: 0xe0c27a },
+    { name: 'Ash', hex: 0xb9b2a0 }, { name: 'Black', hex: 0x241d1a },
+    { name: 'Grey', hex: 0x8e8b88 }, { name: 'White', hex: 0xece8df },
+  ],
 };
 
 // The colours a player finds in chests (Plans/schatkaarten.md; shared/treasure.mjs REWARD_COLORS

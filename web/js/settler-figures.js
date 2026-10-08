@@ -54,7 +54,13 @@ function swapFloats(a, i, j, n) {
 }
 // White multiplies out: a part painted white takes whatever colour its instance is given.
 const WHITE = 0xffffff;
-export const CAPACITY = 640;
+// How many bodies one crowd can hold. 640 held Hoogezand until it passed it: at 883 figures
+// (houses, sheds, then the keepers appended at the end) everybody past 640 was never enrolled,
+// the innkeeper, the mayor and the pirate among them (7 October 2026). crowd-view.js now enrols
+// the keepers first, so a crowd that does overflow drops a settler and never the town's
+// keepers; and the matrices go up to the GPU only as far as `count` (`upload` below), so a
+// bigger buffer costs memory and no bandwidth a frame.
+export const CAPACITY = 1024;
 // A blow landing on a figure (crowd-view.js hit): how long the flinch lasts, how far it rocks
 // back (radians), and how far its clothes and skin go towards FLINCH_RED at the moment of the
 // hit. Through the instance colours the crowd already has, so it costs no material and no
@@ -449,6 +455,16 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
     scene.add(m);
     return m;
   }
+  // The drawn instances' matrices, and no further: draw() writes every one of them each frame,
+  // and what lies past `count` is nobody drawn - a trade() that put a matrix there is undone
+  // by the next show() before it is ever drawn. Without the range three uploads the whole
+  // CAPACITY buffer of every live mesh every frame, however few are standing in it.
+  const upload = (m) => {
+    const a = m.instanceMatrix;
+    a.clearUpdateRanges();
+    a.addUpdateRange(0, m.count * 16);
+    a.needsUpdate = true;
+  };
   const tint =(mesh, i, hex) => {
     mesh.setColorAt(i, tmpColor.setHex(hex));
     mesh.instanceColor.needsUpdate = true;
@@ -963,7 +979,7 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       if (f.hairSlot >= 0) womanHair.setMatrixAt(f.hairSlot, headMat);
       if (f.hatSlot >= 0) dress.hat.setMatrixAt(f.hatSlot, headMat);
     }
-    for (const b of batches) if (b.live) for (const m of b.meshes) m.instanceMatrix.needsUpdate = true;
+    for (const b of batches) if (b.live) for (const m of b.meshes) upload(m);
     // With no island's sphere to hang on (the tests, the rave), three works the one a ray is
     // tested against out once, from wherever the instances stood then, and keeps it. It used
     // to be saved by the parked bodies at y = -999, which stretched it over everything.
@@ -972,26 +988,26 @@ export function createFigures(scene, material, { armed = false, bounds = null } 
       for (const [m, n] of [[swords, swordCount], [torches, torchCount]]) {
         m.count = n;
         m.visible = n > 0;
-        if (n) m.instanceMatrix.needsUpdate = true;
+        if (n) upload(m);
       }
     }
     hammers.count = hammerCount;
-    hammers.instanceMatrix.needsUpdate = true;
+    if (hammerCount) upload(hammers);
     pints.count = pintCount;
-    if (pintCount) pints.instanceMatrix.needsUpdate = true;
+    if (pintCount) upload(pints);
     for (const m of [hoes, axes, rods]) {
       m.count = toolCount.get(m) || 0;
       m.visible = m.count > 0;
-      if (m.count) m.instanceMatrix.needsUpdate = true;
+      if (m.count) upload(m);
     }
     toolCount.clear();
     bundles.count = bundleCount;
     bundles.visible = bundleCount > 0;
-    if (bundleCount) bundles.instanceMatrix.needsUpdate = true;
+    if (bundleCount) upload(bundles);
     for (const [m, n] of [[barrows, barrowCount], [wheels, barrowCount], [trayBars, trayCount]]) {
       m.count = n;
       m.visible = n > 0;
-      if (n) m.instanceMatrix.needsUpdate = true;
+      if (n) upload(m);
     }
   }
 

@@ -12,6 +12,8 @@ camera following them. Indoors triangles are not what limits a piece, so the mas
 its bands are riveted; at 5.0 tall it is 0.13 thick at the foot, or it read as a pole.
 """
 import math
+import re
+from pathlib import Path
 import bmesh
 from geom import (TAU, PI, DARK, WOOD, OAK, IRON, ROPE, HULLW, BEAMX, DECKP, material, emit,
                   box, span, rod, disc, ball, lathe, prism, hull, tube, torus, cloth, chain,
@@ -23,7 +25,8 @@ TOP = 5.0                   # the roof's ridge: the mast runs into it
 SPAR = material('plank:mast', 0x3a2618)
 SAIL = 'plain:sail'
 YARD_Y = 2.1
-NEST_Y = 2.74               # the top of the crow's nest's planks: a walkable floor
+NEST_Y = 2.8                # the top of the crow's nest's planks, the floor walked there: kraken-layout.js's
+                            # KIT.mast.nest (the galleries' level U over the pit, where the bridges come in)
 NEST_R = .65                # its outside, the rail included: 1.3 across, room for a walker (0.32) round the pole
 PLANK_R = .63               # where the planks stop and the rim begins
 DECK_T = .035               # the planks' thickness
@@ -295,40 +298,54 @@ def nest():
         torus('nest rope rail', (0, y + .13, 0), rb, .0055, ROPE, seg=32, sides=4, arc=arc, start=start)
 
 
-def ladder(label, bottom, top, half, step, r_side, r_rung, rung_mat, across, rung_sides=6):
-    """A rope ladder: two sides and rungs between them. `across` is the unit vector between
-    the two sides."""
-    ax, az = across
+# The two ladders are cut to the climb (shared/deck.mjs, the keeper's choice of 7 Oct 2026): Mixamo's
+# Climbing Up A Ladder rises two rungs a cycle, straight up, each hand and foot holding one rung while
+# the body rises, so they hang plumb with their rungs RUNG_STEP apart from the pit (rung 0, y = 0 here
+# and the climb's `at` 0 in the hall) - read out of deck.mjs, the one copy, rather than repeated.
+# LADDER_X is where their rungs are, either side, out along the yard: under the hatch's bar (inside
+# its frame, the rungs' ends clear of it), clear of the staved plinth (0.25) at the foot, and the
+# climber RUNG_FROM further out (kraken-layout.js MAST_LADDER is this number, MAST_CLIMBS its feet).
+_DECK = (Path(__file__).resolve().parents[2] / 'shared/deck.mjs').read_text(encoding='utf8')
+
+
+def _deck(name):
+    return float(re.search(rf'^export const {name} = ([\d.]+);', _DECK, re.M).group(1))
+
+
+RUNG_STEP = _deck('RUNG_STEP')
+LADDER_X = .38
+
+
+def ladder(label, x, top, half, r_side, r_rung, rung_mat, rung_sides=6):
+    """A ladder hanging plumb at x from `top` to the pit: two rope sides `half` either side of it
+    along z and rungs between them, every RUNG_STEP from the pit up to just under `top`."""
     for s in (-1, 1):
-        tube(label, [(bottom[0] + s * half * ax, bottom[1], bottom[2] + s * half * az),
-                     (top[0] + s * half * ax, top[1], top[2] + s * half * az)], r_side, ROPE, sides=5)
-    h = top[1] - bottom[1]
-    y = bottom[1] + step
-    while y < top[1] - step * .6:
-        t = (y - bottom[1]) / h
-        cx, cz = bottom[0] + (top[0] - bottom[0]) * t, bottom[2] + (top[2] - bottom[2]) * t
-        rod(label + ' rung', (cx - half * ax - r_side, y, cz - half * az - r_side * az / max(abs(az), 1)),
-            (cx + half * ax, y, cz + half * az), r_rung, rung_mat, sides=rung_sides)
+        tube(label, [(x, .012, s * half), (x, top, s * half)], r_side, ROPE, sides=5)
+    k = 1
+    while k * RUNG_STEP < top - .02:
+        y = k * RUNG_STEP
+        rod(label + ' rung', (x, y, -half - r_side), (x, y, half), r_rung, rung_mat, sides=rung_sides)
         for s in (-1, 1):   # the seizing where the rung goes through the side
-            ball(label + ' seizing', (cx + s * half * ax, y, cz + s * half * az), r_side * 1.6, ROPE, seg=5, rings=3)
-        y += step
+            ball(label + ' seizing', (x, y, s * half), r_side * 1.6, ROPE, seg=5, rings=3)
+        k += 1
 
 
 def ladders():
     # Up the east side (+x), wooden rungs, from a cleat on the pit to the hatch, hung from a bar
     # across it. It passes just behind the yard, which is in front of the mast.
     hx0, hx1, hz0, hz1 = HATCHES[0]
-    ladder('ladder', (.46, .012, 0), (hx1 - .02, NEST_Y - .045, 0), .06, .075, .0065, .008, WOOD, (0, 1))
-    rod('ladder bar', (hx1 - .02, NEST_Y - .05, hz0 + .01), (hx1 - .02, NEST_Y - .05, hz1 - .01), .008, IRON, sides=6)
-    span('ladder cleat', .445, .475, 0, .02, -.09, .09, DARK, bevel=.003)
+    x = LADDER_X
+    ladder('ladder', x, NEST_Y - .045, .06, .0065, .008, WOOD)
+    rod('ladder bar', (x, NEST_Y - .05, hz0 + .01), (x, NEST_Y - .05, hz1 - .01), .008, IRON, sides=6)
+    span('ladder cleat', x - .015, x + .015, 0, .02, -.09, .09, DARK, bevel=.003)
     for s in (-1, 1):
-        torus('ladder ring', (.46, .022, s * .06), .011, .003, IRON, seg=8, sides=4, tilt=PI / 2, turn=PI / 2)
+        torus('ladder ring', (x, .022, s * .06), .011, .003, IRON, seg=8, sides=4, tilt=PI / 2, turn=PI / 2)
     # A thinner one with rope rungs up the west side (the side the side view is drawn from).
     hx0, hx1, hz0, hz1 = HATCHES[1]
-    ladder('side ladder', (-.46, .02, 0), (hx0 + .02, NEST_Y - .045, 0), .05, .085, .0048, .005, ROPE, (0, 1),
-           rung_sides=5)
-    rod('ladder bar', (hx0 + .02, NEST_Y - .05, hz0 + .01), (hx0 + .02, NEST_Y - .05, hz1 - .01), .007, IRON, sides=6)
-    span('ladder cleat', -.48, -.44, 0, .018, -.075, .075, DARK, bevel=.003)
+    x = -LADDER_X
+    ladder('side ladder', x, NEST_Y - .045, .05, .0048, .005, ROPE, rung_sides=5)
+    rod('ladder bar', (x, NEST_Y - .05, hz0 + .01), (x, NEST_Y - .05, hz1 - .01), .007, IRON, sides=6)
+    span('ladder cleat', x - .02, x + .02, 0, .018, -.075, .075, DARK, bevel=.003)
 
 
 def build():

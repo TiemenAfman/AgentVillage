@@ -34,7 +34,11 @@ function lowest(a) {
     const mesh = j.pivot.children[0];
     const p = mesh.geometry.attributes.position;
     let y = Infinity;
-    for (let i = 0; i < p.count; i++) y = Math.min(y, v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld).y);
+    // The horse is skinned since horse-rig.js: its vertices move with the bones, not the pivot.
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);      if (mesh.isSkinnedMesh) mesh.applyBoneTransform(i, v);
+      y = Math.min(y, v.applyMatrix4(mesh.matrixWorld).y);
+    }
     out[j.name.split(' ').slice(1).join(' ')] = y;
   }
   return out;
@@ -146,5 +150,48 @@ test('in the hall the horse has room, the floor is as full as ever, and it is in
   assert.equal(parts(true), withHorse, 'the horse cost the floor dancers');
   Math.random = random;
   show.dispose();
+  delete globalThis.document;
+});
+
+// The horse dances with its hooves (fauna.js HORSE_DANCE, horse-rig.js): a move a phrase of
+// sixteen beats - pawing, a piaffe, a sway. In each: every hoof down on every kick, and between
+// the kicks the move's own hooves up (one fore pawing, a diagonal pair in the piaffe, a fore toe
+// tapping in the sway), nothing through the floor.
+test('the horse paws, piaffes, sways and dances up on its hind legs, a move a phrase', async () => {
+  stub();
+  const { HORSE_DANCE } = await import('../web/js/fauna.js');
+  const horse = createAnimal('horse', material(), { area: { x: 0, z: 0, r: 0 }, seed: 'rave:moves' });
+  const legs = ['leg fl', 'leg fr', 'leg bl', 'leg br'];
+  assert.deepEqual(HORSE_DANCE, ['paw', 'piaffe', 'sway', 'rear']);
+  const up = { paw: [1, 0], piaffe: [2, 1], sway: [1, 0] };   // [hooves up between kicks, of them hinds]
+  // Up on its hind legs: both fores in the air all the phrase, both hinds down on the kick and one
+  // of them stepped up between the kicks.
+  const reared = createAnimal('horse', material(), { area: { x: 0, z: 0, r: 0 }, seed: 'rave:reared' });
+  for (let k = 4; k < 8; k++) {
+    const beat = 3 * 16 + k;
+    for (let i = 0; i < 60; i++) stepDance('horse', reared.pose, { beat: beat - 1 + i / 60, up: false }, FRAME);
+    stepDance('horse', reared.pose, { beat, up: false }, FRAME); applyPose(reared, 0, 0, 0);
+    const on = lowest(reared);
+    for (const leg of ['leg bl', 'leg br']) assert.ok(Math.abs(on[leg]) < 0.012, `reared: ${leg} not down on beat ${beat}: ${on[leg].toFixed(3)}`);
+    for (const leg of ['leg fl', 'leg fr']) assert.ok(on[leg] > 0.05, `reared: ${leg} on the floor at ${beat}`);
+    for (let i = 0; i < 30; i++) stepDance('horse', reared.pose, { beat: beat + i / 60, up: false }, FRAME);
+    applyPose(reared, 0, 0, 0);
+    const off = lowest(reared), stepped = ['leg bl', 'leg br'].filter((leg) => off[leg] > 0.012);
+    assert.equal(stepped.length, 1, `reared at ${beat + 0.5}: ${stepped.join(', ') || 'no hind'} stepped up`);
+    for (const [part, y] of Object.entries(off)) assert.ok(y > -0.012, `reared: ${part} ${y.toFixed(3)} through the floor`);
+  }
+  HORSE_DANCE.filter((m) => m !== 'rear').forEach((move, m) => {
+    for (let k = 4; k < 8; k++) {
+      const beat = m * 16 + k;
+      stepDance('horse', horse.pose, { beat, up: false }, FRAME); applyPose(horse, 0, 0, 0);
+      const on = lowest(horse);
+      for (const leg of legs) assert.ok(Math.abs(on[leg]) < 0.012, `${move}: ${leg} not down on beat ${beat}: ${on[leg].toFixed(3)}`);
+      stepDance('horse', horse.pose, { beat: beat + 0.5, up: false }, FRAME); applyPose(horse, 0, 0, 0);
+      const off = lowest(horse), lifted = legs.filter((leg) => off[leg] > 0.015);
+      assert.equal(lifted.length, up[move][0], `${move} at ${beat + 0.5}: ${lifted.join(', ') || 'nothing'} up`);
+      assert.equal(lifted.filter((l) => l.startsWith('leg b')).length, up[move][1], `${move}: hinds up`);
+      for (const [part, y] of Object.entries(off)) assert.ok(y > -0.012, `${move}: ${part} ${y.toFixed(3)} through the floor`);
+    }
+  });
   delete globalThis.document;
 });

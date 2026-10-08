@@ -29,10 +29,12 @@ own joints towards the baked rotations. The plan is [Plans/tweede-avonturier.md]
 
 **Many at once:** `node scripts/mixamo-fetch.mjs anims Walking "Standing Idle"` (or `--query`,
 `--all`; `characters` for bodies with skin in T-pose) exports with exactly these settings on Y Bot
-through mixamo.com's web API, under the user's own token, into `D:\Mixamo\anims\y-bot\` - outside
-git, skipping what it already has, a `<name>.json` manifest beside each file. README.md, "Mixamo in
-bulk", says how the user gets the token; never type, paste or log one yourself. A fetched clip is
-not in the game until it is copied into `assets/mixamo/` as below.
+through mixamo.com's web API, under the user's own token, into `<out>/anims/y-bot/` (`MIXAMO_OUT`,
+default `D:\Mixamo`) - outside git, skipping what it already has, a `<name>.json` manifest beside
+each file. How to run it, the token and the variants are the project skill
+[mixamo-fetch](../mixamo-fetch/SKILL.md); README.md, "Mixamo in bulk", says how the user gets the
+token; never type, paste or log one yourself. A fetched clip is not in the game until it is copied
+into `assets/mixamo/` as below.
 
 ## 2. Add it
 
@@ -45,11 +47,15 @@ not in the game until it is copied into `assets/mixamo/` as below.
    Mixamo animations inside a game, not handed out as files, and the repository is public. Only
    `clips.json` and the baked `gait-clips.js` are committed; a machine without the FBX downloads
    them again (each listed file is named after its Mixamo clip: Walking, Running, Sprint,
-   Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging, Falling Forward Death and
+   Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging, Climbing Ladder, Falling Forward Death and
    Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip) before it can re-bake.
 2. Decide how it is played and say so in `bake-mixamo-gait.py`:
    - **by distance** (a gait: walk, run, sprint): nothing to add; it needs a travelling clip and
      gets `stride`, `speed` and `contact` (where in the cycle the left foot comes down).
+   - **by height** (a climb: `climb`, Mixamo's Climbing Up A Ladder): add the name to `CLIMBS`.
+     Download it **without** In Place: the bake reads `rise` (leg lengths a cycle) off how far the
+     hips go up, takes that steady rise out of the hips' `drop`, and measures the drop from where
+     the lower foot is on average (its rung). The rig plays it per height gained (`climbStep`).
    - **by time** (idle, a jump, swim, dig, `die`, `drown`, any action): add the name to `TIMED`. A jump also
      gets `air` (the stretch with both feet off the ground) when it is listed where `air` is
      worked out.
@@ -81,6 +87,10 @@ All of it is in `web/js/classic-avatar.js`, inside `buildRig`:
   dig, which holds the shovel with both hands). A new action is a new branch in `playClips`:
   its condition from `pose` (or the rig's own state, like `dug`), its own clock (`digT`,
   `swimT`), and whatever gameplay counter it drives (the dig's `dirt` at `DIG_THROW`).
+- Climbing (`climb`, a rope ladder: walk.js `state.climbing = { rise }` on the rungs, peers.js the
+  same off a peer's height through walk.js `ladderAt`) is the branch after dying: `climbU` moved by
+  `climbStep` (per `rise * G.leg`, at most `CLIMB_RATE_MAX` cycles a second), backwards on the way
+  down, standing still while hanging. A body without the clip (the Traveller) gets `climbReach`.
 - Dying (`die`, `drown`; Plans/vallen-en-verdrinken.md) is the first branch of `playClips`, on
   `pose.dying.t` (the caller's clock), and with no clip baked `dyingPose` does it procedurally -
   so baking one is the whole change. `dyingSeconds` caps a clip at 4 s, inside the sea's wait for arrival (lib/health.mjs `ARRIVE_MAX_MS`).
@@ -103,6 +113,10 @@ the head from `mounts.neck` - a mount is a group whose matrix is its bone's chan
   down (`align`), so elbows, wrists, knees and ankles keep exactly their turn.
 - Blender world (X the body's left, -Y forward, Z up) to the rig's mirrored frame: a quaternion
   `(w, x, y, z)` becomes `(w, x, -z, y)` (`to_rig`). The rig's "left" is the body's left.
+- The heading turns the *pose* only (`heading @ W @ rest^-1`), never the rest too: turning both only
+  conjugated every joint and left a clip that faces away from Mixamo's rest (the ladder clip faces +Y)
+  facing away. For a clip whose heading is all but none (every one before the climb) the two agree;
+  the walk rebakes byte for byte, a timed clip moves by its few degrees of heading.
 - The heading: a travelling clip faces the way its hips travel; a **timed** clip faces the way
   its hips face at its first frame (`LeftUpLeg - RightUpLeg` is the left) - an In Place clip
   still drifts a few centimetres, and taking that drift as the heading turned a dig sideways.
@@ -122,7 +136,7 @@ by name) after stepping it to the same moment. They should agree to about 0.1.
 
 ## 5. Check and ship
 
-- `/avatar-motion.html` (the motion workbench): Lopen, Rennen, Sprinten, Zwemmen, Graven,
+- `/avatar-motion.html` (the motion workbench): Lopen, Rennen, Sprinten, Zwemmen, Graven, Klimmen,
   Springen, Dichtbij, Zijaanzicht. In a hidden browser pane no frames run between screenshots:
   set `travellerPreview.held = true` and step with `travellerPreview.advance(frames)`.
 - Tests: `node --test tests/characters.test.mjs tests/sprint-walk.test.mjs tests/avatar.test.mjs`

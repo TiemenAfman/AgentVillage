@@ -128,7 +128,15 @@ def measure(clip, path):
     travel.z = 0
     # A gait (walk, run, sprint) is played by distance and needs its stride; a clip that stands
     # (idle) or is timed (jump) is played by time and may be In Place.
-    timed = clip in TIMED
+    timed = clip in TIMED or clip in CLIMBS
+    # A climb is played by height (classic-avatar.js: per metre climbed), so it needs its rise, as
+    # a gait needs its stride: one In Place has none.
+    scene.frame_set(f0)
+    hips0 = head('Hips').z
+    scene.frame_set(f1)
+    rise = head('Hips').z - hips0
+    if clip in CLIMBS and rise < 0.05:
+        raise SystemExit(f'{path}: a climb downloaded In Place has no rise; download it without In Place')
     if travel.length < 0.05 and not timed:
         raise SystemExit(f'{path}: an In Place clip has no stride; download it without In Place')
     # The walk's own heading, so a clip that walks along any axis bakes the same: everything
@@ -136,13 +144,15 @@ def measure(clip, path):
     # not travel faces the way its hips face at the start.
     # A timed clip (a dig, a swim) drifts a few centimetres however In Place it is, and that
     # drift is no heading: it faces the way its hips do.
+    # Always a turn about Z: rotation_difference between two opposite vectors picks any axis at
+    # all, and the ladder clip, facing +Y, came out turned about another and climbed sideways.
+    # Between two level vectors that are not opposite it is this same turn about Z.
     if travel.length >= 0.05 and not timed:
-        heading = travel.normalized().rotation_difference(Vector((0, -1, 0)))
+        heading = Quaternion(Vector((0, 0, 1)), math.atan2(-1, 0) - math.atan2(travel.y, travel.x))
     else:
         scene.frame_set(f0)
         across = head('LeftUpLeg') - head('RightUpLeg')
-        across.z = 0
-        heading = across.normalized().rotation_difference(Vector((1, 0, 0)))
+        heading = Quaternion(Vector((0, 0, 1)), -math.atan2(across.y, across.x))
 
     samples = max(SAMPLES_MIN, round((f1 - f0) / scene.render.fps * SAMPLES_PER_S))
     rows = []
@@ -158,15 +168,28 @@ def measure(clip, path):
                 pb = arm.pose.bones.get('mixamorig:' + n)
                 if pb is None:
                     continue
-                w = heading @ world @ pb.matrix.to_quaternion()
-                delta[n] = w @ (heading @ rest[n]).inverted()
+                # The clip turned to its heading against the rest as it stands: only the pose
+                # turns, so a body that faces the other way from Mixamo's rest (the ladder clip
+                # faces +Y) is turned round at the hips. Turning the rest as well, as this first
+                # did, only conjugated every joint by the heading - the same thing for the clips
+                # whose heading is all but none, and for the ladder a climber facing out.
+                delta[n] = heading @ world @ pb.matrix.to_quaternion() @ rest[n].inverted()
         local = {}
         for name in NAMES:
             b, parent = JOINTS[name]
             local[name] = delta[b] if parent is None else delta[parent].inverted() @ delta[b]
-        rows.append((local, (rest_hips - head('Hips').z) / leg))
+        rows.append((local, head('Hips').z))
         ankles.append(head('LeftFoot').z)
         both.append(min(head('LeftFoot').z, head('RightFoot').z))
+    # The hips' drop below their rest height. A climb rises through its cycle and is lifted by the
+    # caller along the ladder, so its hips and feet lose that steady rise first, and the hips are
+    # measured from where the lower foot is on average - its rung - rather than from the floor.
+    if clip in CLIMBS:
+        steady = [rise * i / samples for i in range(samples)]
+        feet = sum(b - k for b, k in zip(both, steady)) / samples
+        rows = [(local, (rest_hips - (z - k - feet)) / leg) for (local, z), k in zip(rows, steady)]
+    else:
+        rows = [(local, (rest_hips - z) / leg) for local, z in rows]
     # Mixamo's shoulders drop some twenty degrees from its T-pose as soon as the arms come down,
     # and stay there; ours stand where a hanging arm has them already. So a clavicle keeps only
     # its swing about its own mean, and the arm takes the rest, exactly: with the clavicle's K,
@@ -227,6 +250,8 @@ def measure(clip, path):
         ground = min(both)
         up = [i for i in range(samples) if both[i] > ground + 0.03]
         out['air'] = [round(up[0] / samples, 4), round((up[-1] + 1) / samples, 4)] if up else [0, 1]
+    if clip in CLIMBS:
+        out['rise'] = round(rise / leg, 4)
     if not timed:
         out.update(stride=round(travel.length / leg, 4), speed=round(travel.length / seconds / leg, 4))
     return out
@@ -235,6 +260,9 @@ def measure(clip, path):
 # Played by time, not by distance. `die` and `drown` play once, from the moment the sea sends the
 # body home (classic-avatar.js dyingPose, Plans/vallen-en-verdrinken.md).
 TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig', 'die', 'drown')
+# Played by height: a ladder's rungs (`rise`, leg lengths a cycle, in place of a gait's stride).
+# They face the way their hips face, like a timed clip, since what they travel is up.
+CLIMBS = ('climb',)
 out = {name: measure(name, path) for name, path in clips.items()}
 out.update(kept)
 out = dict(sorted(out.items()))
@@ -245,4 +273,4 @@ target.write_text(
     + 'export const GAIT_CLIPS = ' + json.dumps(out, separators=(',', ':')) + ';\n',
     encoding='utf8', newline='\n')
 for name, c in out.items():
-    print('KEPT' if name in kept else 'BAKED', name, c['source'], 'stride', c.get('stride'), 'speed', c.get('speed'), 'seconds', c['seconds'], 'contact', c['contact'])
+    print('KEPT' if name in kept else 'BAKED', name, c['source'], 'stride', c.get('stride'), 'speed', c.get('speed'), 'seconds', c['seconds'], 'contact', c['contact'], 'rise', c.get('rise'))

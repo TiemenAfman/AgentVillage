@@ -4,11 +4,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { avatarPlayerComponentGeometry, PLAYER_SCALE, characterOf } from './avatar.js';
+import { drawnLook, wantsWanderer, wanderersReady, loadWanderers, onWanderers } from './player-bodies.js';
 import { box, cylinder, cone, sphere, meshAsset, mergeParts } from './buildings.js';
 import * as models from './models.js';
 import { dancePose } from './dance.js';
 import { createGait, gaitOf, mixOf, sprintAt } from './avatar-gait.js';
 import { GAIT_CLIPS, GAIT_JOINTS } from './gait-clips.js';
+import { RUNG_STEP } from 'shared/deck.mjs';
 // Every gear-variant part. Its own piece so equip.backpack can hide it without touching
 // the torso it used to be merged into. The same names on every body: the Adventurer's gear is
 // the Traveller's refitted (scripts/build-adventurer.py).
@@ -100,7 +102,101 @@ function sampleOnce(clip, u, out) {
   const n = clip.rows.length;
   return sampleClip(clip, Math.max(0, Math.min(u, (n - 1) / n)), out);
 }
+// Up a rope ladder (walk.js `climbing`, peers.js the same off a peer's height): `rise` is how far the
+// feet went up this frame (down is negative), and a cycle of the climb is `perCycle` of it - the clip's
+// pace (climbPerCycle), or the Traveller's three rungs. Never more
+// than CLIMB_RATE_MAX cycles a second: a body jumped along a ladder (a peer's late sample, a hull's
+// swell) would otherwise spin through its limbs.
+export const CLIMB_RATE_MAX = 4;
+export function climbStep(u, rise, perCycle, dt) {
+  if (!(perCycle > 0) || !Number.isFinite(rise) || rise === 0) return u;
+  const most = CLIMB_RATE_MAX * Math.max(0, dt);
+  const d = Math.max(-most, Math.min(most, rise / perCycle));
+  return ((u + d) % 1 + 1) % 1;
+}
+// Which way of climbing a body has: Mixamo's clip where it is baked and the body plays clips, the
+// procedural reach-and-step (climbReach) otherwise.
+export function climbKind(gait) {
+  return gait && gait.clips && GAIT_CLIPS.climb ? 'clip' : 'reach';
+}
+// How fast a ladder is climbed: walk.js's CLIMB_SPEED (tests/ladder-climb.test.mjs holds the two
+// equal). A cycle of either climb is two rungs (shared/deck.mjs RUNG_STEP, cut to Mixamo's Climbing
+// Up A Ladder on the Adventurer's leg), each hand and each foot taking the next-but-one rung once a
+// cycle - so the cycle is never stretched: a hand or foot that has hold stands still on its rung
+// while the body rises past it, and how fast the limbs go is how fast the body climbs. (It was
+// stretched to the clip's own pace at 0.45 a second, and every hold slid 2.8 times its rung's
+// worth up the ropes - the keeper's question of 7 Oct 2026, whether a hand's rung was the rung
+// the foot later stood on.)
+export const CLIMB_SPEED = 0.29;
+export function climbPerCycle() {
+  return 2 * RUNG_STEP;
+}
+// Where in its cycle a climb is at `at` above its ladder's foot (rung 0): the same height is the same
+// pose, so a hand that took a rung on the way up lets go of it at the same height on the way down,
+// and a peer drawn at a height has hold of the rungs drawn there. CLIMB_PHASE is the height at which
+// a cycle starts, measured so that the feet's balls come down on the rungs' tops and the hands close
+// round their middles (tests/ladder-rungs.test.mjs).
+export const CLIMB_PHASE = { clip: 0.0046, reach: 0.03 };
+export function climbPhase(at, gait) {
+  const u = (at - CLIMB_PHASE[climbKind(gait)]) / climbPerCycle();
+  return ((u % 1) + 1) % 1;
+}
+// The Traveller has no clips, so his climb is drawn here, one hand at a time: a hand reaches up the
+// ropes as high as his short arm goes (elbow straight, arm `top`), takes hold and is pulled down
+// past the face to the chest (`low`, elbow bent) as the body rises past it - in a straight line, as
+// a hand on a rung would - then lets go and reaches up again over the last `reach` of the cycle.
+// The other hand is half a cycle behind, and each foot steps up with the hand on the other side.
+// A cycle per `rungs` climbed: three of a ship's rungs (boat.js RUNG_STEP), 0.75 cycles a second
+// at CLIMB_SPEED. It was two rungs and a swing of a fifth of a radian round the shoulder - a quick
+// paddle at chin height the keeper asked to be slower and to reach further (7 Oct 2026).
+// A limb's positive is back, as everywhere here; `lean` (the run's sign) tips the chest in towards
+// the ropes.
+export const CLIMB_REACH = {
+  rungs: 2 * RUNG_STEP, reach: 0.32,
+  arm: { top: -2.95, low: -1.15 }, elbow: { top: 0.1, low: 1.4 },
+  leg: { top: -1.2, low: -0.15 }, knee: { top: 1.55, low: 0.2 },
+  ease: { arm: 0.65, leg: 1.3 },
+  lean: 0.14,
+};
+// Where one limb is in its stroke: 1 reached up, 0 pushed down. Held and pulled (or pushed) down
+// at the body's own rate, then brought up again eased.
+function climbStroke(u) {
+  const R = CLIMB_REACH, hold = 1 - R.reach;
+  u = ((u % 1) + 1) % 1;
+  if (u < hold) return 1 - u / hold;
+  const t = (u - hold) / R.reach;
+  return t * t * (3 - 2 * t);
+}
+// A joint turned at an even rate does not move its hand or foot at an even height: the arm swings
+// past the shoulder slowly overhead and quickly at the chest. So each limb's stroke is bent by
+// `ease` (1 - (1 - s)^ease), which the measured hold needed to come out as a straight line - a
+// hand or foot on a rung stands still on it while the body rises (tests/ladder-rungs.test.mjs).
+const between = (r, t) => r.low + (r.top - r.low) * t;
+const bent = (s, ease) => 1 - Math.pow(1 - s, ease);
+export function climbReach(u) {
+  const R = CLIMB_REACH;
+  // left hand with the right foot, then the right hand with the left foot
+  const l = climbStroke(u), r = climbStroke(u + 0.5);
+  const la = bent(l, R.ease.arm), ra = bent(r, R.ease.arm), ll = bent(r, R.ease.leg), rl = bent(l, R.ease.leg);
+  return {
+    limbs: {
+      leftArm: between(R.arm, la), rightArm: between(R.arm, ra),
+      leftLeg: between(R.leg, ll), rightLeg: between(R.leg, rl),
+    },
+    knees: [between(R.knee, ll), between(R.knee, rl)],
+    elbows: { leftArm: between(R.elbow, la), rightArm: between(R.elbow, ra) },
+    lean: R.lean,
+  };
+}
 const clipPose = () => ({ q: GAIT_JOINTS.map(() => new THREE.Quaternion()), drop: 0 });
+// The clip's arms on the Adventurer's shorter ones close a little high over a rung that his feet
+// come down on later: both arms are turned CLIMB_CLIP_LIFT about the shoulder (down, for a negative
+// one) so the hands close round the rung the feet then stand on (tests/ladder-rungs.test.mjs). It
+// was +0.3 together with arms swung half as wide again (`widenClimb`), against a quick paddle at the
+// shoulders when the clip was played three times too fast; at its own rise per cycle the widened
+// hands slid up the ropes.
+export const CLIMB_CLIP_LIFT = { leftArm: -0.13, rightArm: -0.195 };
+const liftQ = new THREE.Quaternion(), liftAxis = new THREE.Vector3(1, 0, 0);
 function blendPose(out, a, b, t) {
   for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
   out.drop = a.drop + (b.drop - a.drop) * t;
@@ -178,15 +274,32 @@ export const HORSEBACK = {
 };
 // The Adventurer (player-bodies.js) on the same horse: a hand taller, hips 0.25 up and narrower
 // (0.064 across), and his own body hanging 0.05 under them where the Traveller's hangs 0.02 - so
-// he sits higher over the seat (`perch`), his thighs go out further to clear the flap, and at
-// the clip's knee his soles stood 3 cm over the irons: the knee opens to 40, the shins straight
-// down from it. He fits the horse at its own size - the one rider it has. Measured in
-// tests/horseback-pose.test.mjs.
+// he sits higher over the seat (`perch`). Round the old box saddle (flaps 0.11 out) his thighs
+// went out 45 degrees and reached the irons nearly straight. The saddle is draped on the barrel
+// now, thin flaps and a narrow twist, the barrel drawn in under them (scripts/build-fauna.py
+// `saddle`): the thighs lie 25 out along it, the knee folds to 68 and the shins turn out 14 to
+// the irons, which hang where his feet come down. `perch` 0.06: on the dished seat his seat
+// bones are its lowest middle, and lower his inner thighs sank into its sides. With his feet
+// kept in the irons the knees can now lift the hips about 2.5 cm (the half seat in mount.js).
+// He fits the horse at its own size - the one rider it has. Measured in tests/horseback-pose.test.mjs.
 export const HORSEBACK_OF = {
   traveller: HORSEBACK,
-  adventurer: { ...HORSEBACK, spread: 45 * DEG, knee: 40 * DEG, shin: 0, armIn: 20 * DEG, perch: 0.045 },
+  adventurer: { ...HORSEBACK, spread: 25 * DEG, knee: 68 * DEG, shin: 14 * DEG, armIn: 20 * DEG, perch: 0.06 },
 };
-export const horsebackOf = (character) => HORSEBACK_OF[character] || HORSEBACK;
+// The Wanderers (player-bodies.js) sit the Adventurer's way until they are measured on the horse
+// themselves: their skeleton is his, a little broader in the hip.
+export const horsebackOf = (character) => HORSEBACK_OF[character]
+  || (String(character).startsWith('wanderer-') ? HORSEBACK_OF.adventurer : HORSEBACK);
+const seated = { ...HORSEBACK };
+function seatFit(fit, motion) {
+  if (typeof motion !== 'object') return fit;
+  Object.assign(seated, fit);
+  seated.lean = fit.lean + (motion.lean || 0);
+  seated.arm = fit.arm + (motion.arm || 0);
+  seated.elbow = fit.elbow + (motion.elbow || 0);
+  seated.lift = motion.lift || 0;
+  return seated;
+}
 
 // How far the arm swings to hold something out, measured against the same rotation.x the
 // stride already uses (a small fraction of a radian mid-stride, ~-0.28 crouching the legs
@@ -382,7 +495,7 @@ export function carriedGeometry() {
 // (HAND_ATTACH). The Adventurer's bake carries refitted copies of these parts too, stretched
 // with the torso they were packed beside, which is no shape for a blade.
 function heldPartGeometry(spec, names) {
-  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null }, names);
+  const geometry = avatarPlayerComponentGeometry({ ...spec, character: null, body: null, shape: null }, names);
   const { GRIP } = bodyOf();
   geometry.translate(-GRIP[0], -GRIP[1], -GRIP[2]);
   return geometry;
@@ -404,7 +517,7 @@ export function heldItemGeometry(item, spec) {
 // One body's rig. createClassicAvatar below is what everybody holds; it builds one of these
 // and builds a new one when the look changes body.
 function buildRig(spec, material) {
-  const { id: character, parts: PARTS, joints: JOINTS, fingers: FINGERS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec?.character);
+  const { id: character, parts: PARTS, joints: JOINTS, fingers: FINGERS, LIMBS, HEAD, CORE, BACKPACK: BACK, PIVOTS, HAND_ATTACH, hipY, eye, gait: G } = bodyOf(spec);
   // The island shares a flat building material. Give this rig smooth shading while
   // retaining its shader hooks and live night/fade uniforms; never mutate the world.
   const sourceMaterial = material;
@@ -428,10 +541,51 @@ function buildRig(spec, material) {
   object.scale.x = -1;
   const pieces = {};
   const chains = {};
+  // The hips lifted off the seat (the half seat, a bounce) with the feet kept in the irons: the
+  // knees open as he rises and fold as he sits again. The leg is turned out round the barrel and
+  // its bones do not hang plumb, so no plane holds it: hip and knee are solved on the bones
+  // themselves - damped Newton steps on (hip, knee) for the ankle's height and how far forward it
+  // is - and the foot kept level. Where the irons are out of reach (a leg already nearly straight)
+  // the best step found is kept and the soles come off the irons by the rest, rather than the leg
+  // being driven round into a knee bent the wrong way. Measured: tests/horseback-pose.test.mjs.
+  const ankleAt = new THREE.Vector3();
+  function ankleOf(chain, piece, th, kn) {
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    piece.pivot.updateWorldMatrix(false, true);
+    chain.end.getWorldPosition(ankleAt);
+    return object.worldToLocal(ankleAt);
+  }
+  function stirrupLeg(chain, piece, base, lift) {
+    object.updateWorldMatrix(true, false);
+    const want = ankleOf(chain, piece, base.thigh, base.knee).clone();
+    want.y -= lift;
+    let th = base.thigh, kn = base.knee, best = Infinity, bt = th, bk = kn;
+    const e = 1e-3;
+    for (let n = 0; n < 8; n++) {
+      const a = ankleOf(chain, piece, th, kn), y0 = a.y - want.y, z0 = a.z - want.z;
+      const miss = Math.abs(y0) + Math.abs(z0);
+      if (miss < best) { best = miss; bt = th; bk = kn; } else break;
+      if (miss < 1e-5) break;
+      const b = ankleOf(chain, piece, th + e, kn), yt = (b.y - want.y - y0) / e, zt = (b.z - want.z - z0) / e;
+      const c = ankleOf(chain, piece, th, kn + e), yk = (c.y - want.y - y0) / e, zk = (c.z - want.z - z0) / e;
+      const det = yt * zk - yk * zt;
+      if (Math.abs(det) < 1e-9) break;
+      // Damped: near a straight leg a full step overshoots into a knee bent backwards.
+      const dt0 = (y0 * zk - yk * z0) / det, dk = (yt * z0 - y0 * zt) / det, big = Math.max(Math.abs(dt0), Math.abs(dk));
+      const k = big > .25 ? .25 / big : 1;
+      th -= dt0 * k;
+      kn = Math.max(.05, Math.min(2.4, kn - dk * k));
+    }
+    const a = ankleOf(chain, piece, th, kn);
+    if (Math.abs(a.y - want.y) + Math.abs(a.z - want.z) >= best || kn < base.knee * .25) { th = bt; kn = bk; }
+    piece.pivot.rotation.x = -th; chain.bend.rotation.x = kn;
+    chain.end.rotation.x = th - kn;
+  }
   const gait = createGait(PIVOTS.leftLeg[1], JOINTS.leftLeg.bend[1]*PLAYER_SCALE,
     JOINTS.leftLeg.end[1]*PLAYER_SCALE, G);
   let previousParent = null;
   const parentAt = new THREE.Vector3(), lastParentAt = new THREE.Vector3();
+  const LEG_TORSO = PARTS.some((p) => p.skinGroup?.endsWith('Leg') && p.skinIndices);
   function bindLimb(mesh, group) {
     if (!chains[group]) {
       const root = new THREE.Bone(), bend = new THREE.Bone(), end = new THREE.Bone();
@@ -466,6 +620,10 @@ function buildRig(spec, material) {
         toe = new THREE.Bone(); toe.name = group + ':toe';
         toe.position.copy(ball).sub(local);
         end.add(toe); bones.push(toe);
+        // And the torso's bones after it (4..), which a leg baked with them weights its hips and
+        // waistband to (scripts/build-bodies.py LEG_TORSO): they follow the pelvis, not the thigh.
+        // Only on a body whose legs carry such weights (the Wanderer's).
+        if (LEG_TORSO) bones.push(...torso.skeleton.bones);
       }
       chains[group] = { root, bend, end, cap, toe, ball, fingers, grasp: 0, knee: knee.sub(origin), ankle: ankle.sub(origin),
         skeleton: new THREE.Skeleton(bones) };
@@ -1046,6 +1204,13 @@ function buildRig(spec, material) {
   // the load flung at DIG_THROW of the clip. The swim is played at SWIM_RATE (none, all out) of
   // its own pace by how fast the swimmer goes, SWIM_PACE (walk.js SWIM_SPEED) being all out.
   const DIG_THROW = .52, SWIM_RATE = [.45, 1.25], SWIM_PACE = 1.9;
+  // How far into the climb's cycle the body is (0..1, wrapping), moved by height (climbStep).
+  let climbU = 0;
+  // How long the body has been on the ladder: the Traveller's limbs ease onto it over LADDER_EASE and
+  // then follow the climb exactly.
+  let ladderT = 0;
+  const LADDER_EASE = 0.4;
+  const poseClimb = clipPose();
   let digByClip = false, digT = 0, swimT = 0, treadT = 0, speedOf = 0;
   const poseSwim = clipPose(), poseDig = clipPose(), poseMirror = clipPose(), poseTread = clipPose(), poseTreadMix = clipPose();
   const handA = new THREE.Vector3(), handB = new THREE.Vector3(), alongY = new THREE.Vector3(0, 1, 0), handInv = new THREE.Matrix4();
@@ -1053,7 +1218,7 @@ function buildRig(spec, material) {
   const poseWalk = clipPose(), poseRun = clipPose(), poseSprint = clipPose(), poseIdle = clipPose();
   const poseJump = clipPose(), poseLeap = clipPose(), poseGait = clipPose(), poseOut = clipPose();
   const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
-  function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back }) {
+  function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back, ladder }) {
     if (!G.clips) return;
     // Dying owns the whole body: its own clip, played once from the moment it began, or - with
     // none baked - every clip eased out, and the procedural fall (dyingPose) does it.
@@ -1064,6 +1229,22 @@ function buildRig(spec, material) {
       if (!C || clipMix < 1e-3) return;
       // The fall's hips come down with the clip; a drowning body is sunk by walk.js / peers.js.
       applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
+      return;
+    }
+    // On a rope ladder: Mixamo's Climbing Up A Ladder, played by height - a cycle per `rise` of
+    // it on this leg, so hands and feet go up the rungs as fast as the body does - and backwards on
+    // the way down. Hanging still, the clip stands still where it is. It owns the arms too.
+    if (ladder && GAIT_CLIPS.climb) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      if (clipMix < 1e-3) return;
+      applyClip(sampleClip(GAIT_CLIPS.climb, climbU, poseClimb), clipMix, { arms: true, drop: true });
+      // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs
+      for (const side of ['leftArm', 'rightArm']) {
+        if (busy[side]) continue;
+        liftQ.setFromAxisAngle(liftAxis, -CLIMB_CLIP_LIFT[side] * clipMix);
+        pieces[side].pivot.quaternion.premultiply(liftQ);
+      }
       return;
     }
     // Which clip, if any: the swim in the water, the dig with a shovel, else the walk family.
@@ -1248,8 +1429,19 @@ function buildRig(spec, material) {
     if (pose.carrying !== undefined && !!pose.carrying !== carrying) setCarry(!!pose.carrying);
     const ride = pose.riding || null;
     // In the saddle (HORSEBACK): a held pose, nobody's feet on the ground. The bicycle wins if both are said.
-    const horse = !ride && pose.horseback ? horsebackOf(character) : null;
-    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse;
+    // `horseback` may be the rider's own motion from mount.js (carry/stepRider): his lean into
+    // the half seat and his hands following the horse's head, added to the seat's fixed angles.
+    const horse = !ride && pose.horseback ? seatFit(horsebackOf(character), pose.horseback) : null;
+    // On a rope ladder (pose.climbing = { rise }): no gait, no swim, no seat - the climb's own pose,
+    // moved along by the height gained, not by the distance walked.
+    const ladder = pose.climbing && !ride && !horse && !pose.dying && !pose.swimming && !pose.sitting && !pose.lying ? pose.climbing : null;
+    // By the height on the ladder where the caller knows it (walk.js, peers.js), so hands and feet are
+    // on its rungs; else by the height gained (climbStep).
+    ladderT = ladder ? ladderT + dt : 0;
+    if (ladder) climbU = Number.isFinite(ladder.at) ? climbPhase(ladder.at, G) : climbStep(climbU, ladder.rise || 0, climbPerCycle(G), dt);
+    else climbU = 0;
+    const reach = ladder && climbKind(G) === 'reach' ? climbReach(climbU) : null;
+    const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {
       if (object.parent) {
@@ -1394,6 +1586,7 @@ function buildRig(spec, material) {
     if (Number.isFinite(pose.pushing)) targets.leftArm = targets.rightArm = pose.pushing;
     // One arm held out, the fisherman's with his rod over the water (web/js/fisher.js).
     if (Number.isFinite(pose.reach)) targets.rightArm = pose.reach;
+    if (reach) Object.assign(targets, reach.limbs);
     if (dead) {
       Object.assign(targets, dead.arms, dead.legs);
       Object.assign(armZ, dead.armZ);
@@ -1452,7 +1645,7 @@ function buildRig(spec, material) {
         drunk[side].x -= back * ARM_FOLLOW;
       }
     }
-    const locomotion = !pose.dying && pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !horse && !dance;
+    const locomotion = !pose.dying && pose.grounded && !pose.swimming && !pose.sitting && !pose.lying && !ride && !horse && !dance && !ladder;
     // The run's forward lean (Plans/tweede-avonturier.md), turned about the hips rather than the
     // feet: the legs hang from the hips and stay under them, and everything above - the torso,
     // the pack, the chestplate and the shoulders the arms hang from - tips forward round them.
@@ -1469,6 +1662,9 @@ function buildRig(spec, material) {
       else if (drunk[name]) pieces[name].pivot.rotation.x = drunk[name].x;
       // A pedalling leg follows the crank exactly: damped, it lags a quarter turn at speed.
       else if (ride && (name === 'leftLeg' || name === 'rightLeg')) pieces[name].pivot.rotation.x = target;
+      // So does a climbing limb, once on the ladder a moment: damped, a hand that has hold of a rung
+      // lags the body by a tenth of a cycle and slides up it.
+      else if (reach && reach.limbs[name] !== undefined && ladderT > LADDER_EASE) pieces[name].pivot.rotation.x = target;
       // Twice as quick on the dance floor: at 15 a punch on the kick is still on its way up
       // when the next one comes.
       else pieces[name].pivot.rotation.x = damp(pieces[name].pivot.rotation.x, target, dance || (dug && name === dug.side) ? 30 : 15, dt);
@@ -1478,8 +1674,9 @@ function buildRig(spec, material) {
       : damp(pieces.leftArm.pivot.rotation.z, armZ.leftArm ?? (holding.leftArm ? 0 : (pose.running ? -0.12 : 0)), armZ.leftArm === null ? 12 : 20, dt);
     pieces.rightArm.pivot.rotation.z = drunk.rightArm ? drunk.rightArm.z
       : damp(pieces.rightArm.pivot.rotation.z, armZ.rightArm ?? (holding.rightArm ? 0 : (pose.running ? 0.12 : 0)), armZ.rightArm === null ? 12 : 20, dt);
-    // The idle breath, in the small of the back: the chest, the arms and the head rise with it.
-    torso.spine.position.y = torso.rest.spine + Math.sin(time * 2.2) * (moving ? 0 : 0.0025);
+    // The idle breath, in the small of the back: the chest, the arms and the head rise with it. Not on a ladder:
+    // hanging there the hands hold the rungs, and a chest that rose would lift them off.
+    torso.spine.position.y = torso.rest.spine + Math.sin(time * 2.2) * (moving || ladder ? 0 : 0.0025);
     // The body's share of the dance, eased in over a beat or so and back out when it stops.
     // Scaled by PLAYER_SCALE like every pivot here: dancePose's lifts are a settler's.
     danceMix = damp(danceMix, dance ? 1 : 0, 6, dt);
@@ -1507,7 +1704,7 @@ function buildRig(spec, material) {
       } else {
         // The pushing leg folds up behind in a leap, the reaching one straightens towards the landing.
         const pushing = i === trail;
-        chain.bend.rotation.x = ride ? .65 : horse ? horse.knee : pose.sitting ? 1.2
+        chain.bend.rotation.x = ride ? .65 : horse ? horse.knee : reach ? reach.knees[i] : pose.sitting ? 1.2
           : !pose.grounded ? .55 + (pushing ? .75 : -.2) * leap : .12;
         chain.bend.rotation.y = chain.bend.rotation.z = 0;
         // In the saddle the foot is held level in the stirrup: back by what hip and knee tipped it.
@@ -1521,13 +1718,14 @@ function buildRig(spec, material) {
         // the stirrup is - then the foot turned back flat on its tread.
         chain.bend.rotation.z = out * horse.shin;
         chain.end.rotation.z = -out * (horse.spread + horse.shin);
+        if (horse.lift > 1e-4) stirrupLeg(chain, pieces[side], horsebackOf(character), horse.lift);
       }
     }
     // The torso's own pose when no clip is playing: the lean shared between the small of the
     // back and the chest, the shoulders' turn against the hips in the chest, the pelvis and the
     // neck still. A clip (playClips) is blended over this.
     const twistNow = locomotion ? Math.sin(phase) * (G.twist ? mixOf(G.twist, run, dash) : .025) * gaitPose.blend : 0;
-    leanNow = horse ? horse.lean : G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
+    leanNow = horse ? horse.lean : reach ? reach.lean : G.leanAtHip ? bow : locomotion ? mixOf(G.lean, run, dash) * gaitPose.blend : 0;
     if (locomotion) object.position.y = gaitPose.drop ? -gaitPose.drop : 0;
     torso.pelvis.quaternion.identity();
     torso.spine.rotation.set(leanNow / 2, 0, 0);
@@ -1547,7 +1745,7 @@ function buildRig(spec, material) {
       busy[side] = !!action;
       // A body with its own elbows (the Adventurer) bends them to a runner's right angle and
       // keeps them there while the arm pumps; the Traveller's formula is the old one.
-      const elbow = action ? 0 : G.elbow ? .10 * (1 - gaitPose.blend) + mixOf(G.elbow, run, dash) * Math.max(gaitPose.blend, leap)
+      const elbow = action ? 0 : reach ? reach.elbows[side] : G.elbow ? .10 * (1 - gaitPose.blend) + mixOf(G.elbow, run, dash) * Math.max(gaitPose.blend, leap)
         : (.10 + (.20+.65*gaitPose.run)*gaitPose.blend);
       // A runner's elbow closes as the arm comes forward - the fist up to the chin - and opens
       // as it drives back: at one angle all the way, the forearm stood out level in front of him.
@@ -1562,7 +1760,7 @@ function buildRig(spec, material) {
       object.rotation.set(dead.tip, 0, 0);
       if (dead.head) pieces.head.pivot.rotation.x = dead.head;
     }
-    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back });
+    playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride: ride || horse, gaitPose, back, ladder });
     for (const side of ['leftArm', 'rightArm']) {
       const chain = chains[side];
       // The hand where the elbow and wrist put it, so a held item follows them.
@@ -1671,8 +1869,29 @@ function buildRig(spec, material) {
     }
   }
 
+  // The character editor's bone sliders (avatar.js SHAPES): height scales the whole figure (its
+  // mirror kept), the hips widen the pelvis with the spine scaled back so only the hips and the legs
+  // hung from them grow, and head, hands and feet scale their own piece or bone - everything skinned
+  // or hung below follows, the hat on the head and the glove on the hand included. Bust and build are
+  // in the geometry (avatar.js shapeGeometry). Animations turn bones and never scale them, so this
+  // holds through every clip.
+  let tall = 1;
+  function applyShape(look) {
+    const k = look?.shape || {};
+    tall = 1 + .1 * (k.height || 0);
+    object.scale.set(-tall, tall, tall);
+    const hips = 1 + .14 * (k.hips || 0), deep = 1 + .06 * (k.hips || 0);
+    torso.pelvis.scale.set(hips, 1, deep);
+    torso.spine.scale.set(1 / hips, 1, 1 / deep);
+    pieces.head.pivot.scale.setScalar(1 + .15 * (k.head || 0));
+    for (const side of ['leftArm', 'rightArm']) chains[side]?.end.scale.setScalar(1 + .25 * (k.hands || 0));
+    for (const side of ['leftLeg', 'rightLeg']) chains[side]?.end.scale.setScalar(1 + .2 * (k.feet || 0));
+  }
+  applyShape(spec);
+
   function set(next) {
     lookSpec = next;
+    applyShape(next);
     for (const piece of Object.values(pieces)) {
       const geometry = avatarPlayerComponentGeometry(next, piece.names);
       geometry.translate(-piece.at[0], -piece.at[1], -piece.at[2]);
@@ -1714,7 +1933,7 @@ function buildRig(spec, material) {
   return {
     object, update, set, dispose, handAttach, joints: chains, attack, held: (side) => holding[side], drink, swallowed, handOver,
     dig, digged, digging: () => !!digging, setCarry, carrying: () => carrying, carried,
-    character, hipY, eye, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
+    character, get hipY() { return hipY * tall; }, get eye() { return eye * tall; }, speeds: { walk: G.walk, run: G.run, sprint: G.sprint },
     strokes: !!(G.clips && GAIT_CLIPS.swim),
     dyingSeconds,
   };
@@ -1732,12 +1951,25 @@ function buildRig(spec, material) {
 export const DROWN_SINK = 0.55;
 export const DEATH_REST = 0.7;
 
+// A Wanderer's body is loaded only when somebody wears one (player-bodies.js loadWanderers): until it
+// is in, the rig is the Adventurer's (`drawnLook`, the same skeleton and size, and what the wire says
+// a Wanderer is), and when it lands every rig still wearing one is set again and so swapped onto it.
 export function createClassicAvatar(spec, material) {
-  let rig = buildRig(spec, material);
+  let wanted = spec, forget = null;
+  const watch = () => {
+    if (!wantsWanderer(wanted) || wanderersReady() || forget) return;
+    loadWanderers();
+    forget = onWanderers(() => { forget = null; set(wanted); });
+  };
+  let rig = buildRig(drawnLook(spec), material);
+  watch();
   function set(next) {
-    if (characterOf(next?.character).id === rig.character) { rig.set(next); return; }
+    wanted = next;
+    watch();
+    const look = drawnLook(next);
+    if (characterOf(look || undefined).id === rig.character) { rig.set(look); return; }
     const old = rig;
-    rig = buildRig(next, material);
+    rig = buildRig(look, material);
     const parent = old.object.parent;
     if (parent) { parent.add(rig.object); parent.remove(old.object); }
     rig.object.visible = old.object.visible;
@@ -1760,7 +1992,7 @@ export function createClassicAvatar(spec, material) {
     dyingSeconds: (kind) => rig.dyingSeconds(kind),
     update: (pose, dt) => rig.update(pose, dt),
     set,
-    dispose: () => rig.dispose(),
+    dispose: () => { if (forget) { forget(); forget = null; } rig.dispose(); },
     attack: (side) => rig.attack(side),
     held: (side) => rig.held(side),
     drink: (side) => rig.drink(side),

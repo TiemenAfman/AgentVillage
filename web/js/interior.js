@@ -21,7 +21,7 @@ import { buildPirateTavern } from './pirate-tavern.js';
 import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
-import { createHdPieces } from './hd-pieces.js';
+import { createHdPieces, hdMissed } from './hd-pieces.js';
 import { placeInRoom } from './room-spot.js';
 
 // Walk mode reads anything below 0.06 as water you cannot stand on, so an indoor floor
@@ -760,6 +760,9 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // cells so the step up lands exactly on its edge.
   // Its floors and stairs, when it has storeys (Plans/verdiepingen-binnen.md).
   if (def.surfaces) walk.setSurfaces(def.surfaces);
+  // Ladders climbed rung by rung (the Salty Kraken's up its mast), as the island's rope ladders are.
+  // One whose head is a way out (`exit`, the Kraken's hatch to her deck) leaves the room there.
+  if (def.climbs) walk.setClimbs(def.climbs.map((c) => (c.exit ? { ...c, onTop: () => leave(c.exit) } : c)));
   if (def.stage) {
     const levels = new Map();
     const cell = (v) => Math.round(v + HALF_CELLS - 0.5);
@@ -913,6 +916,8 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   return {
     name: def.name, room, scene, terrain, walk, enter, update, leave, dispose, peek, unpeek,
     peeking: () => peeking,
+    // Built before the HD pack's list arrived, with a piece of it in its merge (main.js roomFor builds it again).
+    hdMissed: () => hdMissed(def.kitAssets, def.pieces),
     // Where the noclip camera starts in here: a little inside the door, at a standing eye's
     // height, looking in (the spawn faces -z, enter() above).
     view: { x: def.spawn.x, y: FLOOR + 0.9, z: def.spawn.z + 0.6, yaw: Math.PI, pitch: -0.12 },

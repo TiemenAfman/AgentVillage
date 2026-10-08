@@ -229,6 +229,9 @@ already there is skipped, so a stopped run carries on where it was; requests are
 (`--delay`, 1.5 s) and back off on 429 and 5xx. `--dry-run` lists what it would fetch.
 Motion packs are listed but not fetched: fetch their motions by name.
 
+In Claude Code, [the mixamo-fetch skill](.claude/skills/mixamo-fetch/SKILL.md) runs all of this
+for you (searching, picking a variant, fetching); you only put the token in place.
+
 ## Layout
 
 ```

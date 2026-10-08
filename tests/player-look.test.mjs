@@ -25,6 +25,8 @@ const LOOK = {
   character: 'adventurer', skin: 0xf1c9a5, tunic: 0x335577, trim: 0x6b4a2f, hat: 0xc9a75c, hatShape: 'helmet',
   equip: { backpack: false, chestplate: true, leggings: false, boots: true, leftHandItem: 'shield', rightHandItem: 'sword' },
 };
+// What the sea hands on for it: the Wanderer's fields (Plans/basislichamen-en-outfits.md) as nothing.
+const HANDED = { body: null, wear: {}, hairStyle: null, hair: null, shape: {}, ...LOOK };
 
 test('a look is kept on the player, handed on in their identity, and only when it changed', () => {
   const { join } = room();
@@ -32,7 +34,7 @@ test('a look is kept on the player, handed on in their identity, and only when i
   ann.say({ t: 'look', ...LOOK });
   const said = ben.got().filter((m) => m.t === 'join' && m.p.id === 'aaaaaaaaaaaa');
   assert.equal(said.length, 1, 'the others were not told of the new look');
-  assert.deepEqual(said[0].p.look, LOOK);
+  assert.deepEqual(said[0].p.look, HANDED);
   ann.say({ t: 'look', ...LOOK });
   assert.equal(ben.got().filter((m) => m.t === 'join' && m.p.id === 'aaaaaaaaaaaa').length, 1, 'the same look said twice was news twice');
 });
@@ -45,7 +47,7 @@ test('a look is held to its shape: whatever else a socket hangs on it does not r
     equip: { backpack: 'yes', leftHandItem: 'x'.repeat(40), rightHandItem: 'sword', extra: 1 }, script: 'alert(1)',
   });
   assert.deepEqual(ann.p.look, {
-    character: null, skin: null, tunic: null, trim: null, hat: null, hatShape: null,
+    character: null, body: null, wear: {}, hairStyle: null, hair: null, shape: {}, skin: null, tunic: null, trim: null, hat: null, hatShape: null,
     equip: { leftHandItem: null, rightHandItem: 'sword' },
   });
 });
