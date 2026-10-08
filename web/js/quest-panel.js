@@ -14,6 +14,7 @@ export const WAITS = {
   captain: 'Captain Spack Jarrow is waiting for you in the Salty Kraken.',
   navigator: 'Quill the navigator is waiting for you in the Salty Kraken.',
   bosun: 'Bosun Tarr is waiting for you in the Salty Kraken.',
+  goldsmith: 'The goldsmith is waiting for you at his shop.',
 };
 const waitLine = (who) => WAITS[who] || 'Somebody is waiting for you.';
 
@@ -29,22 +30,25 @@ export function renderCard(card) {
     <p class="muted">A red cross on the chart (M). Sail to the square, and on the islet the radar rings the spot.</p></div>`;
 }
 
-export function renderLog(view) {
-  if (!view) return '';
-  const a = view.active;
-  const parts = [];
-  parts.push('<h3 class="ql-h">Now</h3>');
-  if (a) {
-    parts.push(`<section class="ql-quest">
+function questSection(a) {
+  return `<section class="ql-quest">
       <h4>${esc(a.title)}${a.repeat ? ` <span class="ql-tag">${a.times ? `done ${esc(a.times)}×` : 'repeats'}</span>` : ''}</h4>
       <p class="ql-text">${esc(a.text)}</p>
       <ol class="ql-steps">${a.steps.map((s) => `<li class="${s.done ? 'done' : s.current ? 'now' : ''}">${esc(s.goal)}</li>`).join('')}</ol>
       ${a.talk ? `<p class="ql-note">${esc(waitLine(a.talk))}</p>` : ''}
       ${a.rewards.length ? `<p class="muted ql-reward">Reward: ${a.rewards.map(esc).join(', ')}</p>` : ''}
-    </section>`);
-  } else {
-    parts.push('<p class="muted">Nothing left to ask. The pirate has told you all he had.</p>');
-  }
+    </section>`;
+}
+
+export function renderLog(view) {
+  if (!view) return '';
+  const a = view.active;
+  const parts = [];
+  parts.push('<h3 class="ql-h">Now</h3>');
+  if (a) parts.push(questSection(a));
+  else parts.push('<p class="muted">Nothing left to ask. The pirate has told you all he had.</p>');
+  // Every other line, told beside the story (the gold mine's, Plans/goudmijn-zoektocht.md).
+  for (const l of view.lines || []) parts.push(questSection(l));
   // The repeatable quests counting alongside the story (shared/quests.mjs advance).
   if (view.repeating && view.repeating.length) {
     parts.push('<h3 class="ql-h">Also</h3>');
@@ -75,7 +79,7 @@ export function createQuestPanel({ ui, log, onClose = null }) {
       chip.classList.toggle('on', !!(panel && !panel.hidden));
       // A dot on the chip while anybody the story waits on has something to say, the way the exclamation mark
       // over his head does: the one place a player looking at the sky sees it too.
-      chip.classList.toggle('ping', !!log.businessWith());
+      chip.classList.toggle('ping', !!log.businessWith() || !!(log.hasBusiness && log.hasBusiness('goldsmith')));
     }
   }
 
