@@ -166,10 +166,22 @@ export const CRAFTS = Object.freeze({
     // traverses either side of `yaw` and `pitchLim` the elevation it is laid between (radians,
     // shared/cannon.mjs's GUN_TRAVERSE and GUN_PITCH_MIN/MAX for a gun). The order is the mount's
     // number on the wire ({t:'cannon', i}). web/js/boat.js welds every gun into the hull's one geometry.
-    mounts: Object.freeze([1, -1].map((s) => Object.freeze({
-      kind: 'cannon', x: s * 1.5, z: -1.0, y: 1.108, yaw: s * Math.PI / 2, stand: Object.freeze([s * 0.85, -1.0]),
-      yawLim: 0.61, pitchLim: Object.freeze([-0.12, 0.42]),
-    }))),
+    // After them her two harpoon guns (Plans/harpoen.md; the keeper: "Voorkasteel, 1 per boord"), on
+    // the forecastle's planking (1.318) inside its rim (x 1.55 there), pointing out and forward -
+    // `yaw` 1.0 is 57 degrees off the bow - so the forestay and the foremast (z 3.15) are behind the
+    // line of fire and a ship ahead or abeam is in it. They swing wider than a gun (a harpoon is aimed,
+    // not laid) and point down at the water, since what they catch floats. Appended, never inserted:
+    // the index is the mount's number on the wire.
+    mounts: Object.freeze([
+      ...[1, -1].map((s) => Object.freeze({
+        kind: 'cannon', x: s * 1.5, z: -1.0, y: 1.108, yaw: s * Math.PI / 2, stand: Object.freeze([s * 0.85, -1.0]),
+        yawLim: 0.61, pitchLim: Object.freeze([-0.12, 0.42]),
+      })),
+      ...[1, -1].map((s) => Object.freeze({
+        kind: 'harpoon', x: s * 1.1, z: 3.25, y: 1.318, yaw: s * 1.0, stand: Object.freeze([s * 0.78, 2.98]),
+        yawLim: 0.95, pitchLim: Object.freeze([-0.45, 0.6]),
+      })),
+    ]),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
     // falls back to the rowing boat's when it is missing): she takes 6 s to reach her top speed, and
     // let go of the helm - or of W - she runs out for most of a minute instead of four seconds

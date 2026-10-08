@@ -41,15 +41,17 @@ export function prepareHarpoon(root) {
 }
 
 // The template, or null - and the first call starts the load. `onReady(model)` is called once it has
-// landed (never if it fails).
+// landed (never if it fails), for every caller that asked before it did: each ship built meanwhile.
+const waiting = [];
 export function harpoonModel(onReady = null) {
   if (model || failed) return model;
+  if (onReady) waiting.push(onReady);
   if (!loading) {
     loading = import('three/addons/loaders/GLTFLoader.js')
       .then(({ GLTFLoader }) => new GLTFLoader().loadAsync(modelUrl(HARPOON_FILE)))
       .then((gltf) => {
         model = prepareHarpoon(gltf.scene);
-        if (onReady) onReady(model);
+        for (const f of waiting.splice(0)) f(model);
       })
       .catch((e) => {
         failed = true;
@@ -57,6 +59,15 @@ export function harpoonModel(onReady = null) {
       });
   }
   return null;
+}
+
+// Which of the two the ships carry (the keeper wanted the Sketchfab model first and the bake to compare):
+// 'glb' unless this browser says 'bake' (localStorage promptholm.debug.harpoon). A ship always starts on
+// the bake - it is there before the first frame - and swaps the GLB in when it lands.
+export const HARPOON_LOOK_KEY = 'promptholm.debug.harpoon';
+export function harpoonLook() {
+  try { return globalThis.localStorage && globalThis.localStorage.getItem(HARPOON_LOOK_KEY) === 'bake' ? 'bake' : 'glb'; }
+  catch { return 'glb'; }
 }
 
 export function harpoonState() {
