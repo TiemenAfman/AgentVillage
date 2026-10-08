@@ -44,6 +44,9 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [harpoen.md](harpoen.md) — harpoenkanonnen op het galjoen zoals in Sea of Thieves: richten, schieten,
+  automatisch inspoelen; het schatbeeld en spelers naar je toe, je schip naar land of een ander schip
+  ("chase"); over het strakke touw balanceren of ziplinen naar gelang de helling. Bemannen gedeeld met de kanonnen.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
   ellebogen), losse kleding (Peasant + schort, vest, rok/jurk, sjaal), vijf kapsels, huid- en
