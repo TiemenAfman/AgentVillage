@@ -968,6 +968,15 @@ picks the move from the dancer's id (`danceStep` in `web/js/dance.js`, the one c
 moves the rave's settlers dance too) and dances them to the beat *it* plays (`danceBeat` in
 main.js: the hall, else the music, else the wall clock at the song's tempo).
 
+**A room is one place for the whole sea** ([Plans/DONE/gedeelde-kamers.md](Plans/DONE/gedeelde-kamers.md)).
+The bare room name (`tavern`, `rave`, `piratetavern`) is the instance: whoever is in a tavern, through
+whichever island's door, is in the same one. So a position in a room crosses the socket *without* the
+berth (`indoors` in net.js, both ways; `boat` keeps it) - with it, two players from two islands stood a
+berth apart, outside the walls. The sea's `<islandId>:<slug>` room form is deliberately unused. A
+neighbour's tavern, Kraken and castle gate are interactables too (`roomDoors` in main.js, guest ids
+`guest:<island>:<id>`), and the Kraken's hatch leads out onto the deck of the Kraken you went into
+(`deckOut`), not ours.
+
 **The sea walks every crowd, ours included, and the roster it sends back is in redacted
 names.** A published bundle is the same bundle a stranger is handed — `guestVillage`
 renames `house:<uuid>` to `house:s3` — so the sea knows our settlers by names this page

@@ -14,6 +14,7 @@ import { createStandHeight, DOOR_DIR, findPath } from 'shared/settlerwalk.mjs';
 import { createYouMarker } from './you-marker.js';
 import { gatheringAt, raveAt } from 'shared/daylight.mjs';
 import { keeperOf, styleOf } from 'shared/palette.mjs';
+import { GUARDHOUSE_ID } from 'shared/volcano.mjs';
 import { createArchipelago, placeIsland, berthOf, MAX_BERTHS, worldToScene, nextOrigin, WORLD_HALF, KM, wrapShift } from 'shared/regions.mjs';
 import { isletsNear } from 'shared/islets.mjs';
 import { startTarget, starterSpot, isletSpot } from 'shared/start.mjs';
@@ -1208,6 +1209,66 @@ const hullFollowed = (b) => {
   return !!b.track;
 };
 
+// The doors into a room (interior.js ROOMS): the tavern's, the Salty Kraken's two and the castle's
+// gate. On a neighbour's island as on ours (Plans/DONE/gedeelde-kamers.md): every one of them leads into
+// the one room of its kind the whole sea shares (net.js `indoors`), so whoever goes in at any of
+// them is in there together, and comes out again at the door they went in by. `origin` is where
+// the record's island lies in the scene - ours at [0, 0], a guest's at its region's origin, since
+// guest-island.js draws its records in the island's own frame - and `prefix` keeps a guest's ids
+// apart from ours, as its meshes are (guest-island.js `guest:<island>:<id>`).
+const ROOM_DOORS = new Set(['tavern', 'piratetavern', 'castle']);
+function roomDoors(rec, origin = [0, 0], prefix = '') {
+  const out = [];
+  const [ox, oz] = origin;
+  const p = { x: ox + rec.group.position.x, y: rec.group.position.y, z: oz + rec.group.position.z };
+  const id = prefix + rec.id;
+  if (rec.spec.civicType === 'tavern') {
+    out.push({
+      id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
+      label: 'the tavern', prompt: 'step into the tavern',
+    });
+  } else if (rec.spec.civicType === 'piratetavern') {
+    // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
+    // so `kind: 'tavern'` - answered at its door, at the top of the stair up the rock, with the
+    // stoop's height as its floor so the beach under it does not answer too. A bake from before
+    // the stair has no stoop, and falls back to the middle of the lot.
+    const stoop = (rec.built.surfaces || []).find((f) => f.name === 'stoop');
+    const [sx, sz] = stoop ? [(stoop.x0 + stoop.x1) / 2, (stoop.z0 + stoop.z1) / 2] : [0, 0];
+    const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
+    // Up through the hatch the room is left onto this Kraken's deck, wherever you came in
+    // (leaveInterior): carried by both doors, so it is this ship's deck and not ours.
+    const deck = krakenDeckDoor(rec, origin);
+    out.push({
+      id, kind: 'tavern', room: 'piratetavern',
+      x: p.x + sx * c + sz * s, z: p.z - sx * s + sz * c, r: stoop ? 0.9 : 2.6,
+      ...(stoop ? { floor: stoop.y + p.y } : {}),
+      deck,
+      label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
+    });
+    // And the door in the castle's front on its deck (Plans/kraken-dek.md): into the same room, but up
+    // through the hatch in the loft - and out of the room by its front door you are on the stoop, not here.
+    if (deck && stoop) {
+      out.push({
+        id: `${id}:deck`, kind: 'tavern', room: 'piratetavern', x: deck.at[0], z: deck.at[1], r: 0.8, floor: deck.y,
+        deck,
+        label: 'the Salty Kraken', prompt: 'go below',
+        spot: { at: [KRAKEN_HATCH.x, KRAKEN_HATCH.y, KRAKEN_HATCH.z], yaw: -Math.PI / 2, pitch: 0.05 },
+        front: { at: [p.x + sx * c + sz * s, p.z - sx * s + sz * c], y: stoop.y + p.y },
+      });
+    }
+  } else if (rec.spec.civicType === 'castle') {
+    // At the gate, not the middle of the lot: a seven by seven castle measured from its
+    // centre would answer E from behind its back wall. A getter for the prompt, because
+    // the gate opens at nine on Saturday whether or not anybody rebuilds this list.
+    const [gx, gz] = castleGate(rec, origin);
+    out.push({
+      id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
+      get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
+    });
+  }
+  return out;
+}
+
 function interactables() {
   const out = [];
   // One key does both. Aboard a boat, E puts you ashore - but only where there is shore to put you
@@ -1298,50 +1359,23 @@ function interactables() {
       out.push({ id: rec.id, kind: 'goldsmith', x: p.x, z: p.z, r: 2.4, label: 'the goldsmith' });
     } else if (rec.spec.civicType === 'market') {
       out.push({ id: rec.id, kind: 'market', x: p.x, z: p.z, r: 2.8, label: 'the seed stall' });
-    } else if (rec.spec.civicType === 'tavern') {
-      out.push({
-        id: rec.id, kind: 'tavern', room: 'tavern', x: p.x, z: p.z, r: 2.4,
-        label: 'the tavern', prompt: 'step into the tavern',
-      });
-    } else if (rec.spec.civicType === 'piratetavern') {
-      // The Salty Kraken (Plans/piratenkroeg.md): a tavern's door in every way that matters to E,
-      // so `kind: 'tavern'` - answered at its door, at the top of the stair up the rock, with the
-      // stoop's height as its floor so the beach under it does not answer too. A bake from before
-      // the stair has no stoop, and falls back to the middle of the lot.
-      const stoop = (rec.built.surfaces || []).find((f) => f.name === 'stoop');
-      const [sx, sz] = stoop ? [(stoop.x0 + stoop.x1) / 2, (stoop.z0 + stoop.z1) / 2] : [0, 0];
-      const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y);
-      out.push({
-        id: rec.id, kind: 'tavern', room: 'piratetavern',
-        x: p.x + sx * c + sz * s, z: p.z - sx * s + sz * c, r: stoop ? 0.9 : 2.6,
-        ...(stoop ? { floor: stoop.y + p.y } : {}),
-        label: 'the Salty Kraken', prompt: 'step into the Salty Kraken',
-      });
-      // And the door in the castle's front on its deck (Plans/kraken-dek.md): into the same room, but up
-      // through the hatch in the loft - and out of the room by its front door you are on the stoop, not here.
-      const deck = krakenDeckDoor(rec);
-      if (deck && stoop) {
-        out.push({
-          id: `${rec.id}:deck`, kind: 'tavern', room: 'piratetavern', x: deck.at[0], z: deck.at[1], r: 0.8, floor: deck.y,
-          label: 'the Salty Kraken', prompt: 'go below',
-          spot: { at: [KRAKEN_HATCH.x, KRAKEN_HATCH.y, KRAKEN_HATCH.z], yaw: -Math.PI / 2, pitch: 0.05 },
-          front: { at: [p.x + sx * c + sz * s, p.z - sx * s + sz * c], y: stoop.y + p.y },
-        });
-      }
-    } else if (rec.spec.civicType === 'castle') {
-      // At the gate, not the middle of the lot: a seven by seven castle measured from its
-      // centre would answer E from behind its back wall. A getter for the prompt, because
-      // the gate opens at nine on Saturday whether or not anybody rebuilds this list.
-      const [gx, gz] = castleGate(rec);
-      out.push({
-        id: rec.id, kind: 'castle', room: 'rave', x: gx, z: gz, r: 1.9, label: 'the castle',
-        get prompt() { return raveOn() ? 'step into the rave' : 'try the castle gate'; },
-      });
+    } else if (ROOM_DOORS.has(rec.spec.civicType)) {
+      out.push(...roomDoors(rec));
     } else if (opensChronicle(rec)) {
       // At the foot of the portico, like the castle's gate: web/js/chronicle-house.js.
       out.push(chronicleInteractable(rec));
     } else if (rec.spec.kind !== 'civic') {
       out.push({ id: rec.id, kind: 'house', x: p.x, z: p.z, r: 1.9, label: rec.spec.name });
+    }
+  }
+  // A neighbour's tavern, Kraken and castle open too, into the same rooms as ours (roomDoors).
+  // Only those: the rest of their island is theirs to open, not ours.
+  for (const g of state.guests) {
+    for (const rec of g.records || []) {
+      // Not the volcano's guardhouse, which is drawn as a castle (GUARDHOUSE_LOOKS_LIKE) and
+      // is no castle anybody raves in.
+      if (!rec.group.visible || !ROOM_DOORS.has(rec.spec.civicType) || rec.id === GUARDHOUSE_ID) continue;
+      out.push(...roomDoors(rec, g.region.origin, `guest:${g.region.id}:`));
     }
   }
   // The innkeeper and the mayor (Plans/DONE/kroegbaas-en-burgemeester.md), wherever they are
@@ -2567,6 +2601,8 @@ function promptFor(near) {
 // listeners on the window, so a fresh one per visit would pile them up.
 const rooms = new Map();
 let cameFrom = null;
+// The Salty Kraken's deck door of the ship you went into, for the way out up its hatch.
+let deckOut = null;
 
 // ---- the castle on a Saturday night (Plans/DONE/rave-in-het-kasteel.md) ----
 // The hours are shared/daylight.mjs's (RAVE, raveAt), asked of the world's clock like the
@@ -2583,11 +2619,11 @@ const RAVE_OUT = 'Three o’clock. The lights come up and the castle empties out
 // In front of the gate, which is half the lot's width out from its middle, the way the
 // layout's rot says the building faces (DOOR_DIR - the same table the settlers' doorsteps
 // come from).
-function castleGate(rec) {
+function castleGate(rec, [ox, oz] = [0, 0]) {
   const p = rec.group.position, plot = rec.spec.plot || {};
   const [dx, dz] = DOOR_DIR[plot.rot || 0];
   const reach = (plot.w || 3) / 2 + 0.35;
-  return [p.x + dx * reach, p.z + dz * reach];
+  return [ox + p.x + dx * reach, oz + p.z + dz * reach];
 }
 
 // Who is dancing: our own settlers, dressed as they are outside, the ones who worked most
@@ -2780,6 +2816,8 @@ function enterInterior(room, at, spot = null) {
   // In through the Salty Kraken's deck door: its front door is still the stoop (the room's doorway leads
   // there), so that is where its way out puts you; the hatch is the way back to the deck.
   if (at && at.front) cameFrom = { at: at.front.at, y: at.front.y, facing: null };
+  // And the hatch puts you on the deck of the Kraken you came into, ours or a neighbour's (roomDoors).
+  deckOut = (at && at.deck) || null;
   state.walk.exit();
   state.inside = inside;
   const rave = room === 'rave';
@@ -2800,11 +2838,11 @@ function enterInterior(room, at, spot = null) {
 // The step before the door in the Salty Kraken's castle front (scripts/build-piratetavern.py, the
 // `deck.door-step` floor): where on the island, at what height, and a point to face - away from the
 // door, down the waist. Null for a bake from before the deck was walked.
-function krakenDeckDoor(rec) {
+function krakenDeckDoor(rec, [ox, oz] = [0, 0]) {
   const f = rec && rec.built && (rec.built.surfaces || []).find((q) => q.name === 'door-step');
   if (!f) return null;
   const c = Math.cos(rec.group.rotation.y), s = Math.sin(rec.group.rotation.y), p = rec.group.position;
-  const at = (x, z) => [p.x + x * c + z * s, p.z - x * s + z * c];
+  const at = (x, z) => [ox + p.x + x * c + z * s, oz + p.z - x * s + z * c];
   const mx = (f.x0 + f.x1) / 2, mz = (f.z0 + f.z1) / 2;
   return { at: at(mx, mz), y: f.y + p.y, facing: at(mx - 2, mz) };
 }
@@ -2812,7 +2850,7 @@ function krakenDeckDoor(rec) {
 function leaveInterior(to = null) {
   if (!state.inside) return;
   // Up the Salty Kraken's hatch: out onto its deck at the castle's door, not down at its front door.
-  const deck = to === 'deck' ? krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
+  const deck = to === 'deck' ? deckOut || krakenDeckDoor(state.byId.get('civic:piratetavern')) : null;
   if (deck) cameFrom = { at: deck.at, y: deck.y, facing: deck.facing };
   state.inside = null;
   forgetRoom();
@@ -5626,8 +5664,12 @@ function raiseGuestIslands() {
   // you are already walking - on the phone, every one of them: its home is open water and the
   // fleet arrives after - had houses you walked straight through until walk mode was entered
   // again (#70), and one that was taken down left its walls standing in the water. The
-  // fleet's drops (dropRegion) always come back through here.
-  if (state.walk && state.mode === 'walk') state.walk.setBlockers(walkableBlockers());
+  // fleet's drops (dropRegion) always come back through here. Its doors with them: a
+  // neighbour's tavern opens into ours (roomDoors).
+  if (state.walk && state.mode === 'walk') {
+    state.walk.setBlockers(walkableBlockers());
+    state.walk.setInteractables(interactables());
+  }
 }
 
 // --------------------------------------------------------------- particles

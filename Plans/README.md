@@ -332,6 +332,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 - ✅ [ik-wil-graag-mutliplayer-splendid-nest.md](DONE/ik-wil-graag-mutliplayer-splendid-nest.md) — Een open zee, een tick, en eilanden die joinen
 - ✅ [islander-als-eigen-exe.md](DONE/islander-als-eigen-exe.md) — De islander als eigen exe, het venster als interface
 - ✅ [rave-in-het-kasteel.md](DONE/rave-in-het-kasteel.md) — Een rave in het kasteel
+- ✅ [gedeelde-kamers.md](DONE/gedeelde-kamers.md) — Eén taverne, Kraken en kasteel voor de hele zee, ook door een buurmans deur
 - ✅ [ronde-wereld.md](DONE/ronde-wereld.md) — Een ronde wereld: een kaart met maat, een rand die je rondvaart
 - ✅ [slagerij.md](DONE/slagerij.md) — De slagerij
 - ✅ [smidse.md](DONE/smidse.md) — De smidse
