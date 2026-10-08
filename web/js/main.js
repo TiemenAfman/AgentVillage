@@ -2419,6 +2419,28 @@ function fireHarpoonHere({ boat, i }) {
   if (did === 'released') state.ui.toast('You let go of the line. It reels home.');
   return null;
 }
+// A harpoon on the sea (net.js `harpoon`, Plans/harpoen.md fase B): somebody's line to draw, or our own
+// body hooked by one - drawn to that ship's harpoon by walk mode until it is at the rail, or let go of.
+function onHarpoonMessage(m) {
+  if (!state.harpoons) return;
+  if (m.a === 'line') { state.harpoons.onLine(m); return; }
+  if (!state.walk) return;
+  if (m.a === 'hooked') {
+    const ship = boatAt(m.b);
+    if (!ship || !Number.isInteger(m.i)) return;
+    const mouth = new THREE.Vector3();
+    const at = () => {
+      const mz = ship.craft && ship.craft.gunMuzzle ? ship.craft.gunMuzzle(m.i) : null;
+      if (!mz || !state.boats.includes(ship)) return null;
+      ship.craft.object.updateMatrixWorld();
+      return ship.craft.object.localToWorld(mouth.set(mz.at[0], mz.at[1], mz.at[2]));
+    };
+    if (state.walk.pullTo(at)) {
+      const who = state.peers ? state.peers.nameOf(m.by) : 'Somebody';
+      state.ui.toast(`${who} has you on a harpoon line! <b>Space</b> to struggle free.`);
+    }
+  } else if (m.a === 'free') state.walk.stopPull();
+}
 // Somebody else's gun (net.js `cannon`): the shot flown here as it is there, the gun on their ship
 // laid to the way it went, and a ball the sea says came down on somebody ended where it did.
 const wrapPi = (a) => a - Math.round(a / (Math.PI * 2)) * Math.PI * 2;
@@ -5082,6 +5104,9 @@ function onBoatFromServer(m) {
   const region = regionOfBoat(m.id);
   const craft = b || (region ? boatsFor(region).find((x) => x.id === m.id) || null : null);
   if (!craft) return;
+  // A loose boat on one of our harpoon lines is ours to draw (harpoon-play.js haulBoat): the sea's echo of
+  // where we last said she was would pull her back a step - unless somebody has taken her helm.
+  if (state.harpoons && state.harpoons.towing(m.id) && !m.pilot && !m.sunk) return;
   // Only when the message names one. A `moved` says where the hull is and nothing about
   // whose hand is on it, so taking `m.pilot` as authoritative there wiped the tiller ten
   // times a second - the boat moved for everybody and belonged to nobody.
@@ -8438,6 +8463,9 @@ function frame(nowMs) {
   // mouth where the hull now is, and before the fleet loop sends her position.
   if (state.harpoons) {
     state.harpoons.frame(dt);
+    // Her crew's line in land or a ship draws the ship this page sails (the gunner is not her pilot).
+    const sailed = state.walk ? state.walk.aboard() : null;
+    if (sailed && isShip(sailed)) state.harpoons.towByCrew(sailed, dt);
     // A line made fast or let go is an offer of E come or gone at its land end.
     const sig = state.harpoons.ropes().map((r) => r.key).join(',');
     if (sig !== ropeSig && state.walk) { ropeSig = sig; state.walk.setInteractables(interactables()); }
@@ -9581,6 +9609,7 @@ Everything is copied and checked first; the island then starts again there. The 
     onPanels: (m) => applyPanelMessage(m),
     onSaid: (m) => state.islandchat.said(m),
     onCannon: (m) => onCannonMessage(m),
+    onHarpoon: (m) => onHarpoonMessage(m),
   });
   state.props = createProps({ scene, terrain: state.terrain, material: buildingMat });
   // The guns' balls, flashes, smoke and spray (Plans/kanonnen.md): one set for every ship in sight.
@@ -9593,6 +9622,11 @@ Everything is copied and checked first; the island then starts again there. The 
     hunt: () => state.hunt,
     kindOf: (b) => (isShip(b) ? 'galleon' : 'rowboat'),
     followed: hullFollowed,
+    // Fase B (Plans/harpoen.md): the sea, the other players, a boat by id, and whether this page sails her.
+    net: () => state.net || null,
+    peers: () => (state.peers ? state.peers.list() : []),
+    boatAt: (id) => boatAt(id),
+    stepping: (b) => !hullFollowed(b),
     surfaceAt: (x, z) => (state.world && state.world.surfaceAt ? state.world.surfaceAt(x, z) : 0),
   });
   // And a hull's health over every boat a ball has hit (web/js/hull-bars.js).

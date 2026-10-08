@@ -98,3 +98,26 @@ test('Space jumps off a line with the way it had, and into deep water that is a 
   assert.equal(walk.state.swimming, true, 'in the water');
   assert.ok(walk.state.pos.x < x0, 'carried on the way it was going');
 });
+
+test('hooked by somebody else\'s harpoon the body is drawn to their gun, and Space struggles free', () => {
+  const walk = make();
+  run(walk, 0.2);
+  const ends = [];
+  walk.state.onPullEnd = (why) => ends.push(why);
+  const gun = { x: 10, y: 2.5, z: 0 };
+  assert.equal(walk.pullTo(() => gun), true);
+  run(walk, 0.5);
+  assert.equal(walk.pulled(), true);
+  assert.ok(walk.state.pos.x < 19 && walk.state.grounded === false, `on its way at ${walk.state.pos.x}`);
+  run(walk, 3);
+  assert.equal(walk.pulled(), false);
+  assert.deepEqual(ends, ['arrived']);
+  assert.ok(Math.hypot(walk.state.pos.x - 10, walk.state.pos.z) < 2, 'at the rail');
+  // Again, and this time Space.
+  run(walk, 2);
+  walk.pullTo(() => ({ x: 0, y: 2.5, z: 0 }));
+  run(walk, 0.3);
+  key(' ', true); walk.update(FRAME); key(' ', false);
+  assert.equal(walk.pulled(), false);
+  assert.equal(ends.at(-1), 'free');
+});

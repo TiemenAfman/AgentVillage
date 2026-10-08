@@ -20,7 +20,7 @@ const { createHarpoonPlay } = await import('../web/js/harpoon-play.js');
 const I = CRAFTS.galleon.mounts.findIndex((m) => m.kind === 'harpoon');
 const DT = 1 / 60;
 
-function setup({ ground = () => -3, followed = () => false } = {}) {
+function setup({ ground = () => -3, followed = () => false, others = [], peers = [] } = {}) {
   const scene = new THREE.Scene();
   const craft = createBoat({ scene, material: new THREE.MeshBasicMaterial(), kind: 'ship' });
   const ship = { id: 'boat:ours', x: 0, z: 0, yaw: 0, v: 0, craft };
@@ -32,9 +32,14 @@ function setup({ ground = () => -3, followed = () => false } = {}) {
     dragEnd() { statue.ends++; },
     reelAboard(hull) { statue.aboard = hull; return true; },
   };
+  const sent = [];
+  const net = { harpoonLine: (m) => sent.push({ t: 'line', ...m }), harpoonHook: (m) => sent.push({ t: 'hook', ...m }),
+    harpoonFree: (m) => sent.push({ t: 'free', ...m }), towBoat: (id, by, x, z, yaw) => sent.push({ t: 'tow', id, by, x, z, yaw }) };
+  const all = () => [ship, ...others];
   const play = createHarpoonPlay({
-    scene, boats: () => [ship], sea: () => ({ height: ground }), hunt: () => hunt,
-    kindOf: () => 'galleon', followed, surfaceAt: () => 0,
+    scene, boats: all, sea: () => ({ height: ground }), hunt: () => hunt,
+    kindOf: (b) => b.kind || 'galleon', followed, surfaceAt: () => 0,
+    net: () => net, peers: () => peers, boatAt: (id) => all().find((b) => b.id === id) || null, stepping: (b) => !followed(b),
   });
   const run = (s, each = null) => {
     for (let i = 0; i < Math.round(s / DT); i++) {
@@ -43,7 +48,7 @@ function setup({ ground = () => -3, followed = () => false } = {}) {
       play.frame(DT);
     }
   };
-  return { scene, craft, ship, statue, play, run };
+  return { scene, craft, ship, statue, play, run, sent };
 }
 
 // Aim gun I straight at a point on the water, as walk mode would lay it.
@@ -111,4 +116,62 @@ test('what sound.js hears: the shot, and the reel ticking while it takes line in
   const kinds = new Set(play.events().list.map((e) => e.kind));
   assert.ok(kinds.has('ratchet'), [...kinds].join());
   assert.ok(play.events().list.length <= 12);
+});
+
+test('a line out is said to the sea while it is out, and once when it is in', () => {
+  const { craft, ship, statue, play, run, sent } = setup();
+  statue.gone = true;
+  aimAt(craft, ship, 6, 6, -0.2);
+  play.fire(ship, I);
+  run(4);
+  const lines = sent.filter((m) => m.t === 'line');
+  assert.ok(lines.filter((m) => m.s === 'out').length > 5, 'said while out');
+  assert.equal(lines.at(-1).s, 'off', 'and once when in');
+  assert.equal(lines.filter((m) => m.s === 'off').length, 1);
+  assert.ok(lines.filter((m) => m.s === 'out').length < 4 / 0.1 + 3, 'a few times a second, not every frame');
+});
+
+test('another player struck: the sea is told, and let go of they are freed', () => {
+  const peers = [{ id: 'p2', x: 8, y: 0, z: 9, sailing: false }];
+  const { craft, ship, statue, play, run, sent } = setup({ peers });
+  statue.gone = true;
+  aimAt(craft, ship, 8, 9, -0.12);
+  play.fire(ship, I);
+  run(1.2);
+  assert.equal(play.lineAt(ship, I).hooked().kind, 'player');
+  assert.ok(sent.some((m) => m.t === 'hook' && m.who === 'p2' && m.b === 'boat:ours' && m.i === I));
+  play.fire(ship, I);
+  assert.ok(sent.some((m) => m.t === 'free' && m.who === 'p2'));
+});
+
+test('a loose rowing boat is drawn in and the sea told where; a sailed one is chased instead', () => {
+  const row = { id: 'boat:abcd-n1', kind: 'rowboat', x: 8, z: 9, yaw: 0, pilot: null, craft: {} };
+  const { craft, ship, statue, play, run, sent } = setup({ others: [row] });
+  statue.gone = true;
+  aimAt(craft, ship, 8, 9, -0.1);
+  play.fire(ship, I);
+  run(1.2);
+  assert.equal(play.lineAt(ship, I).hooked().kind, 'rowboat');
+  assert.equal(play.towing(row.id), true);
+  run(3);
+  const mouth = craft.gunMuzzle(I).at;
+  assert.ok(Math.hypot(row.x - mouth[0], row.z - mouth[2]) < 4.5, `drawn in alongside (${row.x}, ${row.z})`);
+  assert.ok(sent.some((m) => m.t === 'tow' && m.id === row.id && m.by === 'boat:ours'));
+  // Not ours to tow once somebody has her helm.
+  row.pilot = 'somebody';
+  run(0.2);
+  assert.equal(play.towing(row.id), false);
+});
+
+test('a line of her crew\'s draws the ship this page sails; somebody else\'s line is drawn here', () => {
+  const { ship, play, run, scene } = setup();
+  play.onLine({ id: 'crewmate', b: 'boat:ours', i: I, s: 'out', at: [0, 1, 40], L: 20, k: 'land' });
+  run(0.1);
+  assert.equal(play.remoteCount(), 1);
+  const z0 = ship.z;
+  for (let k = 0; k < 60; k++) play.towByCrew(ship, 1 / 60);
+  assert.ok(ship.z > z0 + 1, `drawn toward it (${ship.z})`);
+  play.onLine({ id: 'crewmate', b: 'boat:ours', i: I, s: 'off' });
+  assert.equal(play.remoteCount(), 0);
+  assert.ok(scene.children.length > 0);
 });

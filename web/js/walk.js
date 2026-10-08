@@ -400,6 +400,8 @@ export function createWalkMode({
     // and `onGunRope(gun)` (the crouch key at a harpoon) asks main.js for its line to climb onto.
     onGunTow: null,
     onGunRope: null,
+    // Somebody else's harpoon let go of us (walk.js pullTo): `onPullEnd(why)`, 'arrived' | 'free' | 'gone'.
+    onPullEnd: null,
     // On a harpoon's taut line: 'walk' along it or 'zip' down it, or null (stepRope).
     rope: null,
     // The board you are standing at and working, or null. While one is held the page on
@@ -458,6 +460,7 @@ export function createWalkMode({
     if (rides()) { hopWanted = true; return; }   // taken by the next stepBike/stepMount, feet down
     if (climb) { climb.letGo = true; return; }     // a jump on a ladder is letting go of it
     if (onLine) { onLine.jump = true; return; }    // and on a harpoon's line it is jumping off it
+    if (pull) { pull.jump = true; return; }        // and on the end of somebody else's, struggling free
     if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
@@ -2398,6 +2401,65 @@ export function createWalkMode({
     return afterMove(dt);
   }
 
+  // ---- on the end of somebody's harpoon line (Plans/harpoen.md, fase B) ----------------------------
+  // The sea said another player's line struck us ({t:'harpoon', a:'hooked'}, the keeper: "altijd"):
+  // the body is drawn through the air and the water to that ship's harpoon at PULL_SPEED, faced to it,
+  // until it is at the rail - then let go of there, falling with a little of the way it had (onto her
+  // deck or, more often, into the water beside her). Space struggles free; so do a deck, a ladder, a
+  // boat or a line of our own, and PULL_MAX_S. `at()` is main.js's: the mouth of that harpoon in the
+  // scene now, or null once the ship has gone.
+  let pull = null;                 // { at, t, jump }
+  const PULL_SPEED = 4.5;
+  const PULL_ARRIVE = 1.4;
+  const PULL_MAX_S = 20;
+  function pullTo(at) {
+    if (typeof at !== 'function' || state.deck || state.vehicle || climb || onLine || state.dying) return false;
+    if (state.sitting) standUp();
+    if (rides()) dismount({ here: true });
+    cancelDig('reset');
+    pull = { at, t: 0, jump: false };
+    return true;
+  }
+  function stopPull() {
+    if (!pull) return false;
+    pull = null;
+    state.grounded = false;
+    state.vy = 0;
+    airTop = state.pos.y;
+    state.floor = groundAt(state.pos.x, state.pos.z, WATER_Y);
+    return true;
+  }
+  function stepPull(dt) {
+    const p = pull.at();
+    pull.t += dt;
+    if (!p || pull.jump || pull.t > PULL_MAX_S || state.deck || state.vehicle || climb || onLine) {
+      if (state.onPullEnd) state.onPullEnd(pull.jump ? 'free' : 'gone');
+      stopPull();
+      return afterMove(dt);
+    }
+    const dx = p.x - state.pos.x, dy = p.y - state.pos.y, dz = p.z - state.pos.z;
+    const d = Math.hypot(dx, dy, dz) || 1;
+    const ux = dx / d, uy = dy / d, uz = dz / d;
+    if (d <= PULL_ARRIVE) {
+      if (state.onPullEnd) state.onPullEnd('arrived');
+      stopPull();
+      drift = { x: ux * 1.5, z: uz * 1.5 };
+      state.vy = 1.5;
+      return afterMove(dt);
+    }
+    const step = Math.min(d, PULL_SPEED * dt);
+    state.pos.x += ux * step; state.pos.y += uy * step; state.pos.z += uz * step;
+    state.yaw = Math.atan2(ux, uz);
+    state.grounded = false;
+    state.swimming = false;
+    state.dive = false;
+    state.vy = 0;
+    drift = null;
+    state.moving = state.running = state.sprinting = false;
+    frameDistance += step;
+    return afterMove(dt);
+  }
+
   // One frame at a mount: carried by the hull like a seat, laid towards where the camera looks, a ball
   // rammed home over LOAD_S, the run back and out after a shot.
   function stepGun(dt, ix, iz) {
@@ -3174,6 +3236,7 @@ export function createWalkMode({
     }
 
     plane = null;
+    if (pull) return stepPull(dt);
     if (onLine) return stepRope(dt, iz);
     if (climb) return stepClimb(dt, ix, iz);
     if (state.deck && deckBoat) return stepOnDeck(dt, ix, iz, boost);
@@ -4058,7 +4121,7 @@ export function createWalkMode({
     // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
     // giving out - both end in the constructor's onLetGo with where she lies.
     setDown, letGo,
-    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, takeRope, onLine: () => !!onLine, cargo: () => state.cargo, hoistOnto, lowerOff,
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, takeRope, onLine: () => !!onLine, pullTo, stopPull, pulled: () => !!pull, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
     // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and
