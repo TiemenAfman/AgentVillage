@@ -83,6 +83,39 @@ test('a ship you jump from runs out on her own, and stops being run when she is 
   assert.equal(ship.v, 0, 'she is not at rest');
 });
 
+test('let go of her wheel and stay aboard: she keeps her way and her heading, sails set', () => {
+  const { walk, ship, left } = harness();
+  ship.v = 8;
+  walk.board(ship);
+  assert.ok(walk.leaveHelm());
+  const yaw0 = ship.yaw;
+  // A minute and a half on her deck, standing at the wheel's foot: well past any run-out.
+  for (let i = 0; i < 90 * 60; i++) walk.update(FRAME);
+  assert.deepEqual(left, [], 'standing still went over the side');
+  assert.ok(Math.abs(ship.v - 8) < 1e-6, `under her sails she went from 8 to ${ship.v}`);
+  assert.ok(Math.abs(ship.yaw - yaw0) < 1e-9, 'the rudder was not left amidships');
+  assert.ok(ship.z > 8 * 85, `she made only ${ship.z.toFixed(0)} units in ninety seconds`);
+  // Back at the wheel the sails are the throttle's again: struck.
+  assert.ok(walk.takeHelm());
+  assert.equal(ship.underSail, 0);
+});
+
+test('over the side her sails are struck and she runs out as before', () => {
+  const { walk, ship, left } = harness();
+  ship.v = 8;
+  walk.board(ship);
+  walk.leaveHelm();
+  for (let i = 0; i < 30 * 60; i++) walk.update(FRAME);
+  walk.state.deck.x = 1.95; walk.state.deck.z = 0;
+  for (let i = 0; i < 240 && !left.length; i++) { walk.state.deck.x += 0.05; walk.update(FRAME); }
+  assert.deepEqual(left, [ship.id]);
+  assert.equal(ship.underSail, 0, 'sails still set on a ship nobody is aboard');
+  let t = 0;
+  for (; t < 100 * 60 && walk.runningOut(); t++) walk.runOut(FRAME);
+  assert.ok(t / 60 < CRAFTS.galleon.sail.runOut, `she ran ${(t / 60).toFixed(0)} s, past her run-out`);
+  assert.equal(ship.v, 0);
+});
+
 test('a ship that had no way on her is not left running, and a Benchy never is', () => {
   const still = harness();
   still.ship.v = 0;

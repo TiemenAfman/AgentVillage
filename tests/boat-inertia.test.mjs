@@ -10,7 +10,7 @@ import { CRAFTS } from '../shared/crafts.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { stepBoat, BOAT_TURBO } = await import('../web/js/boat.js');
+const { stepBoat, BOAT_TURBO, setSail, stepUnderSail, hullSpeed, KNOTS_PER_UNIT } = await import('../web/js/boat.js');
 delete globalThis.document;
 
 const FRAME = 1 / 60;
@@ -77,13 +77,66 @@ test('the sea takes her position for as long as she runs out, from full turbo to
   const t0 = 1_000_000;
   boats.letGo(ID, ANN, t0);
   assert.ok(boats.moved(ID, ANN, 0, 20, 0, t0 + 40_000), 'the sea stopped her halfway through her run-out');
-  // Jumped over the side: off the crew, and the hull is still theirs to run out (tests/ship-runout.test.mjs).
-  assert.ok(boats.leave(ID, ANN));
+  // Still aboard, her sails set (Plans/galjoen-vaart-houden.md): she is theirs to sail on long past a
+  // run-out, for as long as they stay on her.
+  assert.ok(boats.moved(ID, ANN, 0, 22, 0, t0 + 5 * 60_000), 'the sea froze a ship sailing on under her sails');
+  // Jumped over the side: off the crew, and the hull is still theirs to run out (tests/ship-runout.test.mjs),
+  // for her run-out counted from the jump.
+  const jump = t0 + 5 * 60_000 + 1000;
+  assert.ok(boats.leave(ID, ANN, jump));
   assert.ok(!boats.aboard(ID, ANN));
-  assert.ok(boats.moved(ID, ANN, 0, 25, 0, t0 + 41_000), 'the sea stopped her when the last of the crew jumped');
-  assert.ok(boats.moved(ID, ANN, 0, 30, 0, t0 + SAIL.runOut * 1000 - 1));
-  assert.equal(boats.moved(ID, ANN, 0, 40, 0, t0 + SAIL.runOut * 1000 + 1), null, 'still steering long after');
+  assert.ok(boats.moved(ID, ANN, 0, 25, 0, jump + 1000), 'the sea stopped her when the last of the crew jumped');
+  assert.ok(boats.moved(ID, ANN, 0, 30, 0, jump + SAIL.runOut * 1000 - 1));
+  assert.equal(boats.moved(ID, ANN, 0, 40, 0, jump + SAIL.runOut * 1000 + 1), null, 'still steering long after');
   assert.ok(SAIL.runOut * 1000 > COAST_MS, 'a ship is no lighter than a Benchy');
+});
+
+test('somebody else aboard does not hold her: only the one who let go of the wheel moves her', () => {
+  const ID = 'boat:abcd1234';
+  const ANN = 'a0'.padEnd(12, '0'), BOB = 'b0'.padEnd(12, '0');
+  const boats = createBoats({ moorings: [{ id: ID, x: 0, z: 0, yaw: 0 }] });
+  assert.ok(boats.board(ID, ANN, [0, 0]));
+  assert.ok(boats.board(ID, BOB, [0, 0]));
+  boats.take(ID, ANN);
+  const t0 = 1_000_000;
+  boats.letGo(ID, ANN, t0);
+  assert.equal(boats.moved(ID, BOB, 0, 5, 0, t0 + 1000), null, 'a crewman who never had the wheel moved her');
+  assert.ok(boats.moved(ID, ANN, 0, 5, 0, t0 + 3 * 60_000));
+  // Bob takes the wheel: from then on it is his word, and Ann's is not read.
+  assert.equal(boats.take(ID, BOB).pilot, BOB);
+  assert.equal(boats.moved(ID, ANN, 0, 6, 0, t0 + 3 * 60_000 + 10), null);
+});
+
+test('stepped under her sails she holds her speed and her heading, and strikes them aground', () => {
+  const b = run(ship(), { throttle: 1, turn: 0 }, 20);
+  const v0 = b.v;
+  setSail(b);
+  assert.ok(b.underSail > 0.99, `sails set to ${b.underSail}`);
+  for (let i = 0; i < 120 / FRAME; i++) stepUnderSail(b, FRAME, OPEN_SEA);
+  assert.ok(Math.abs(b.v - v0) < 1e-6, `two minutes under sail took her from ${v0} to ${b.v}`);
+  assert.ok(Math.abs(b.x) < 1e-6 && Math.abs(b.yaw) < 1e-9, 'she wandered off her heading');
+  // Half speed when the wheel was let go is half speed held.
+  const half = ship({ v: SAIL.top / 2 });
+  setSail(half);
+  for (let i = 0; i < 30 / FRAME; i++) stepUnderSail(half, FRAME, OPEN_SEA);
+  assert.ok(Math.abs(half.v - SAIL.top / 2) < 1e-6, `half sail drifted to ${half.v}`);
+  // Onto a beach: she stops, and the sails do not drive her on into it.
+  const beach = (x, z) => (z > 40 ? 1 : -2.5);
+  const g = ship({ v: SAIL.top });
+  setSail(g);
+  for (let i = 0; i < 20 / FRAME; i++) stepUnderSail(g, FRAME, beach);
+  assert.equal(g.v, 0);
+  assert.equal(g.underSail, 0, 'aground with her sails still set');
+  // A boat that is not heavy never sets any.
+  const benchy = { x: 0, z: 0, yaw: 0, v: 5, craft: { spec: CRAFTS.rowboat } };
+  assert.equal(setSail(benchy), 0);
+});
+
+test('the speedometer reads a followed hull off her track, not her own v', () => {
+  const b = ship({ v: 0, track: [{ at: 0, x: 0, z: 0 }, { at: 500, x: 0, z: 5 }, { at: 1000, x: 0, z: 10 }] });
+  assert.ok(Math.abs(hullSpeed(b) - 10) < 1e-9);
+  assert.equal(hullSpeed(ship({ v: -3 })), 3);
+  assert.ok(Math.abs(10 * KNOTS_PER_UNIT - 77.75) < 0.01, 'a unit is not four metres');
 });
 
 test('a boat with no runOut of her own keeps the short coast', () => {

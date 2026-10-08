@@ -36,7 +36,7 @@ import { setSeeThrough, BODY_MID, SILHOUETTE, SEE_EASE } from './see-through.js'
 import { worldTime, localZone } from 'shared/worldclock.mjs';
 import { createRoadDebug } from './road-debug.js';  
 import { createGuestIsland } from './guest-island.js';
-import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf } from './boat.js';
+import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf, strikeSail, logOf } from './boat.js';
 import { housePlacement } from './house-placement.js';
 import { isShipyard, shipyardGround } from './shipyard.js';
 import { isPirateTavern, pirateTavernGround, pirateGangway } from './pirate-ground.js';
@@ -4018,6 +4018,7 @@ function exitWalk({ force = false } = {}) {
   const b = ownHull();
   if (b) {
     b.v = 0;
+    strikeSail(b);
     b.track = null;
     if (state.net) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
     skyBoat = b;
@@ -8073,6 +8074,10 @@ function frame(nowMs) {
   // walk mode has the feet - and in orbit too, where the strip is hidden and this costs one
   // string compare.
   state.vitals.setHealth(state.net ? state.net.health() : 1);
+  // The log: the boat under us, at her wheel, on her deck or on her ladder - read off her track when
+  // somebody else is sailing her (boat.js hullSpeed), so everybody aboard sees the same number.
+  const logHull = state.mode === 'walk' && !state.inside && state.walk ? ownHull() : null;
+  state.vitals.setLog(logHull ? logOf(logHull) : null);
   // And the air: the page's own sum, the sea's word correcting it (stepBreath above).
   stepBreath(nowMs);
   questDive();

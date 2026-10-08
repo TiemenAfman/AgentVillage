@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
 import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
-import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh } from './boat.js';
+import { stepBoat, hullOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh, setSail, strikeSail, stepUnderSail } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
@@ -1426,6 +1426,8 @@ export function createWalkMode({
   function board(boat) {
     if (!boat) return;
     putBikeAway();
+    // At the wheel the throttle is ours again, not the sails' left standing.
+    strikeSail(boat);
     state.vehicle = boat;
     standUp();
     // A statue in the arms goes onto the hull: a pilot has both hands on the tiller.
@@ -1482,7 +1484,9 @@ export function createWalkMode({
   const RUNNING = 0.05;
   let loose = null;
   const heavy = (b) => { const s = specOf(b); return !!(s && s.sail && s.sail.runOut); };
-  function letRun(b) { loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
+  // Off her for good: the sails are struck (boat.js setSail - they stood only while somebody who let
+  // go of her wheel stayed aboard), and from here she runs out on the water's drag.
+  function letRun(b) { strikeSail(b); loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
   const onHull = (b) => b === deckBoat || b === state.vehicle || !!(climb && climb.boat === b);
   // The hull we are running out, or null: she is not once she has stopped, once somebody else has
   // the wheel, or while we are on her again.
@@ -1534,6 +1538,9 @@ export function createWalkMode({
       ({ x, z, y } = at);
     }
     state.vehicle = null;
+    // Her sails stay as they were set (Plans/galjoen-vaart-houden.md): she keeps the way she has and
+    // the heading she is on, the rudder amidships, for as long as we are aboard her.
+    setSail(b);
     deckBoat = b;
     state.deck = { boat: b.id, x, z, y, vy: 0, grounded: true, yaw: 0 };
     state.swimming = false;
@@ -1817,7 +1824,7 @@ export function createWalkMode({
     if (climb.aloft) return stepMastClimb(dt, ix, iz);
     const c = climb, b = c.boat;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround);
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1911,7 +1918,7 @@ export function createWalkMode({
   function stepMastClimb(dt, ix, iz) {
     const c = climb, b = c.boat, l = c.aloft;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround);
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -1994,7 +2001,7 @@ export function createWalkMode({
   // One frame seated on a deck: carried by the hull, and up on the first step or a jump.
   function stepDeckSeat(dt, ix, iz) {
     const b = deckBoat, d = state.deck;
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround);
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -2023,7 +2030,7 @@ export function createWalkMode({
   function stepOnDeck(dt, ix, iz, boost) {
     if (state.deck.seat && state.sitting) return stepDeckSeat(dt, ix, iz);
     const b = deckBoat, spec = specOf(b);
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround);
+    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround);
     const push = Math.min(1, Math.hypot(ix, iz));
     const turbo = stepPool(state.stamina.body, boost && push > 0.02, dt);
     stepPool(state.stamina.boat, false, dt);

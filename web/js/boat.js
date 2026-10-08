@@ -345,6 +345,64 @@ export function stepBoat(b, { throttle = 0, turn = 0, turbo = false } = {}, dt, 
 }
 
 // ---------------------------------------------------------------------------------
+// Sails left standing (Plans/galjoen-vaart-houden.md). A heavy hull (one whose craft has a
+// `sail.runOut`: the galleon) whose helm is let go by somebody who stays aboard keeps the way she
+// had: `b.underSail` is the share of her top speed the sails were set to when the wheel was let go,
+// and the hull is stepped with that as a steady throttle and the rudder amidships - so she holds
+// her speed and her heading, and a crew of one can walk to the guns. Struck (0) the moment she
+// grounds, or the held throttle would grind her into the sand for ever; and by walk.js when the
+// last of us goes over the side, after which she runs out on the water's drag as before. Kept on
+// the hull record, which is this page's own: nothing of it is on the wire.
+export function heavyHull(b) {
+  const sail = b && b.craft && b.craft.spec && b.craft.spec.sail;
+  return !!(sail && sail.runOut > 0);
+}
+export function setSail(b) {
+  if (!heavyHull(b)) { if (b) b.underSail = 0; return 0; }
+  const top = b.craft.spec.sail.top;
+  b.underSail = clamp((b.v || 0) / top, 0, 1);
+  return b.underSail;
+}
+export function strikeSail(b) { if (b) b.underSail = 0; }
+// One step of a hull nobody has the helm of: under her sails if they are set, else on the water's drag.
+export function stepUnderSail(b, dt, heightAt) {
+  const t = b.underSail > 0 ? b.underSail : 0;
+  stepBoat(b, t ? { throttle: t } : {}, dt, heightAt);
+  if (t && b.aground) b.underSail = 0;
+  return b;
+}
+// The speed a hull is making, in units a second, off the track of samples another page sends
+// (main.js hullSample, timeline.js: `{ at, x, z }`, `at` in ms on this page's clock) - what a body
+// on a deck somebody else is sailing reads, so every page aboard shows the same number - else her own
+// `v`, for a hull this page steps. Over the whole track (a few beats), not its last pair: samples
+// arrive on the socket's beat, and one late packet halves the speed a single pair says.
+export function hullSpeed(b) {
+  if (!b) return 0;
+  const tr = b.track;
+  if (tr && tr.length >= 2) {
+    const a = tr[0], c = tr[tr.length - 1];
+    const dt = (c.at - a.at) / 1000;
+    if (dt > 0.05) {
+      let d = 0;
+      for (let i = 1; i < tr.length; i++) d += Math.hypot(tr[i].x - tr[i - 1].x, tr[i].z - tr[i - 1].z);
+      return d / dt;
+    }
+  }
+  return Math.abs(b.v || 0);
+}
+// Units a second to knots: one unit is one ground cell, four metres (CLAUDE.md, the Blender
+// pipeline), and a knot is 1852 m an hour.
+export const KNOTS_PER_UNIT = (4 * 3600) / 1852;
+// What the HUD's log (web/js/vitals.js setLog) shows for a hull: knots, the share of her top speed
+// (the bar; turbo fills it), and whether her sails are standing with nobody at the wheel.
+export function logOf(b) {
+  const sail = b && b.craft && b.craft.spec && b.craft.spec.sail;
+  const top = sail ? sail.top : BOAT_TOP;
+  const speed = hullSpeed(b);
+  return { knots: speed * KNOTS_PER_UNIT, fraction: Math.min(1, speed / top), sails: b.underSail > 0, ship: heavyHull(b) };
+}
+
+// ---------------------------------------------------------------------------------
 // The mesh. buildBoatGeometry is the hull sailIn already brings a settler ashore in, drawn
 // with the shared building material, so a boat on the water is one more draw call and no
 // new art, no loader and nothing fetched at boot.

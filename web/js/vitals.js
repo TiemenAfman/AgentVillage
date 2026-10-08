@@ -33,6 +33,10 @@ export function createVitals(root, { haze = [] } = {}) {
   const tipsy = root.querySelector('.vital.tipsy');
   // The gold mine's digging bar (Plans/goudmijn-zoektocht.md): shown in the mine only, full or not.
   const dig = root.querySelector('.vital.dig');
+  // The log (Plans/galjoen-vaart-houden.md): the speed of the boat under you, aboard only.
+  const log = root.querySelector('.vital.log');
+  const logText = log && log.querySelector('em');
+  const logIcon = log && log.querySelector('span');
 
   let hurtFlip = false;
 
@@ -97,6 +101,23 @@ export function createVitals(root, { haze = [] } = {}) {
       if (dig.dataset.said === String(v)) return;
       dig.dataset.said = String(v);
       dig.style.setProperty('--f', String(v));
+    },
+    // `at`: logOf (web/js/boat.js) of the hull we are on, or null off every boat. Written only when the
+    // tenth of a knot, the bar or the sails change - it is called every frame.
+    setLog(at) {
+      if (!log) return;
+      log.hidden = !at;
+      if (!at) return;
+      const kn = Math.round(Math.max(0, at.knots) * 10) / 10;
+      const f = Math.round(Math.min(1, Math.max(0, at.fraction)) * 500) / 500;
+      const said = `${kn}|${f}|${at.sails ? 1 : 0}|${at.ship ? 1 : 0}`;
+      if (log.dataset.said === said) return;
+      log.dataset.said = said;
+      log.style.setProperty('--f', String(f));
+      log.classList.toggle('sails', !!at.sails);
+      if (logIcon) logIcon.textContent = at.ship ? '⛵' : '🚣';
+      if (logText) logText.textContent = `${kn.toFixed(1)} kn`;
+      log.title = at.sails ? 'Sails set: she holds this speed with nobody at the wheel' : '';
     },
     setHaze,
   };

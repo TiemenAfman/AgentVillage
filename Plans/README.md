@@ -44,6 +44,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
+- 🚧 [galjoen-vaart-houden.md](galjoen-vaart-houden.md) — laat je het roer los en blijf je aan boord, dan blijven
+  de zeilen staan en houdt het galjoen vaart en koers (alleen de kanonnen of het harpoen bemannen); pas wie eraf
+  springt laat haar uitrollen. Een log in de HUD (knopen) voor iedereen aan boord. De zee laat de kustvaarder haar
+  bewegen zolang hij aan boord is: de open zee moet worden geredeployd.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
   ellebogen), losse kleding (Peasant + schort, vest, rok/jurk, sjaal), vijf kapsels, huid- en
