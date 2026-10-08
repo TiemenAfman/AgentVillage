@@ -26,12 +26,6 @@ const PARTS = Object.fromEntries(Object.entries(RESIDENTS).map(([sex, b]) =>
   [sex, Object.fromEntries(b.parts.map((p) => [p.id, p]))]));
 export function residentPartOf(sex, id) { return PARTS[sex]?.[id] || null; }
 export function residentRig(sex) { return RESIDENTS[sex].rig; }
-// The skin parts that show for one outfit: the always part and the bare pieces whose `shows`
-// holds `<bottom>/<feet>` (build-residents.py: the shins under a skirt, above a clog).
-export function skinPartsFor(sex, bottom, feet) {
-  const combo = `${bottom}/${feet}`;
-  return RESIDENTS[sex].parts.filter((p) => p.kind === 'skin' && p.shows.includes(combo)).map((p) => p.id);
-}
 // A body's skin parts, each with `mask`: the outfits it shows under, as SKIN_COMBOS bits.
 export function skinPieces(sex) {
   return RESIDENTS[sex].parts.filter((p) => p.kind === 'skin')

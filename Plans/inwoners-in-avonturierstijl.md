@@ -253,6 +253,19 @@ in de browser was in het verborgen paneel niet eerlijk te meten.
   dorpsfiguur aankleedt, en een stuk dat de bake niet heeft wordt overgeslagen in plaats van alles stil
   te leggen.
 
+### Fase 5 (8 oktober 2026): opruimen
+
+- `villager-mesh.js`, `RESIDENT_PIECES`/`RESIDENT_PIVOTS` en het oude pad in `createFigures` **blijven**:
+  de vulkaan tekent zijn Codex-bewoners en wachters ermee (keuze van de keeper), en `playerGeometry`
+  in walk.js zet zijn hoed en tas op het oude hoofd. Wat niets meer las is weg (`skinPartsFor`).
+- CLAUDE.md heeft een alinea over de geskinde inwoners onder "A settler who is not drawn".
+
+**Nog open, aan de keeper:** de nieuwe inwoners standaard aanzetten. Nu staan ze achter `?skinned`.
+Aanzetten is één regel (`skinnedWanted` in settler-figures.js), verandert het beeld van elk eiland en
+hoort dus in een minor. Verder: de kruiwagen zelf (bak en wiel) staat nog op de oude maat, en de
+tijd per frame is nog niet in een echte Chrome gemeten (alleen draw calls, driehoeken en de CPU van
+`draw()` onder Node).
+
 ### Keuzes van de keeper (8 oktober 2026)
 
 - Draw calls: houd het onder ~40 per pass; liever minder losse kledingvarianten.
