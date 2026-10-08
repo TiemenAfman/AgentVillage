@@ -70,11 +70,13 @@ function shellParts(FLOOR) {
     parts.push(box(0.08, 0.015, 0.08, C.iron, { x, y: FLOOR + 0.8, z }));
   }
   // A rope ladder hanging in at the way in, the way back up - from any floor it is the way out.
-  for (let y = 0.1; y < 0.8; y += 0.12) parts.push(box(0.28, 0.02, 0.03, C.rope, { x: DOOR_HALF + 0.3, y: FLOOR + y, z: SOUTH - 0.1 }));
+  for (let y = 0.1; y < 0.8; y += 0.12) parts.push(box(0.28, 0.02, 0.03, C.rope, { x: LADDER.x, y: FLOOR + y, z: SOUTH - 0.1 }));
   // The lid: a ceiling of rock.
   roof.push(box(w + WALL * 2, 0.2, d + WALL * 2, C.rockDark, { y: FLOOR + CEILING, z: midZ }));
   return { parts, roof };
 }
+// The rope ladder by the way in: where it hangs, and where E at it is answered (a step in front).
+const LADDER = { x: DOOR_HALF + 0.3, z: SOUTH - 0.45 };
 const LAMPS = [[-HALF_W + 0.2, NORTH + 0.6], [HALF_W - 0.2, NORTH + 0.6], [-HALF_W + 0.2, SOUTH - 0.9], [HALF_W - 0.2, SOUTH - 0.9]];
 
 // The field as it stands: a mound of loose earth on every spot not dug, a rock where there is one, a
@@ -143,6 +145,10 @@ export function buildGoldMine({ FLOOR, rect, run, on = {} }) {
     areas: [{ x0: -HALF_W, x1: HALF_W, z0: NORTH, z1: SOUTH }],
     spawn: { x: 0, z: SPAWN_Z },
     doorway: { z: SOUTH + WALL, hx: DOOR_HALF + 0.02 },
+    // The rope ladder by the way in answers E as the way out (interior.js `exits`, no `to`: out by
+    // the door like walking through it). Both of main.js's words for the mine send you to it, and it
+    // was only drawn, so pressing E at it did nothing (Plans/speeltest-quests.md).
+    exits: [{ id: 'goldmine:ladder', kind: 'exit', x: LADDER.x, z: LADDER.z, r: 0.55, label: 'the ladder', prompt: 'climb the ladder out of the mine' }],
     camera: { back: 1.8, up: 0.62, aim: 0.3 },
     show: (opts) => createMineShow({ ...opts, FLOOR, rect, run, on }),
   };
