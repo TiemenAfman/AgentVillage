@@ -1829,6 +1829,9 @@ export function createWalkMode({
     } else if (c.letGo) {
       // Let go where you hang: falling from there, with the hull's way on you like any jump off her.
       const away = hullVelocity(frame, b.v || 0);
+      // Over deep water the statue on the back stays with the ship (her cargo again), since nobody swims
+      // with her (letGo 'water') and the shore she was carried from may be an islet away.
+      if (state.carry && canDive(groundAt(x, z, WATER_Y), WATER_Y)) putOnBoat(b);
       climb = null;
       state.grounded = false;
       state.vy = 0;
@@ -1843,6 +1846,9 @@ export function createWalkMode({
       const first = c.path[0];
       const [wx, wz] = toWorld(frame, first.x, first.z);
       const g = groundAt(wx, wz, WATER_Y);
+      // Not into deep water with the statue on the back (nobody swims with her): you hang at the foot,
+      // and up again she goes back on her deck. Lowered into the rowing boat (lowerOff) is the way down.
+      if (state.carry && canDive(g, WATER_Y)) { blockedBy('carry'); return afterMove(dt); }
       climb = null;
       state.pos.set(wx, g < 0 ? WATER_Y - SWIM_SINK : g, wz);
       state.floor = g;

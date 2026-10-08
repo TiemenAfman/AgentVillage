@@ -345,7 +345,8 @@ function tick(dt){
       }
       // With the statue (Met de schatkist): on the back for the climb, as walk.js carries her up a ladder.
       const laden=document.querySelector('#motion-carry-back').checked;
-      if(f.rig.carrying()!==laden)f.rig.setCarry(laden);f.backLaden=laden;
+      // only on a change of the box, so a statue lifted with Beeld optillen climbs on the back too
+      if(laden!==!!f.backLaden){f.rig.setCarry(laden);f.backLaden=laden;}
       f.rig.update({moving:climbDir!==0,grounded:true,distance:0,climbing:{rise:climbRise,at:climbY}},dt);
       f.stand.updateMatrixWorld(true);
       showHoldsFor(figures.indexOf(f),f,climbRise);
