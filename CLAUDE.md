@@ -800,8 +800,11 @@ silently never appears anywhere else. It is the same asymmetry `buildBundle`/`pa
 have always had; it only became possible to get wrong when a second door was cut beside them.
 
 **A crowd is rebuilt on every publish, and the difference between two of them is the only
-thing that knows who is new** (and the one thing carried over whole is the gold errand -
-see the gold pit below). `createCrowd(island, { known })` is handed the ids the crowd
+thing that knows who is new** (and the two things carried over whole are the gold errand -
+see the gold pit below - and the gathering: out to the square, on it, or on the way home, through
+the same `walk.adopt`; a working island republishes every minute, and the lunch walk on Hoogezand
+is longer than that, so without it the whole procession was stood back at its doors each minute
+and never arrived, `tests/gathering-republish.test.mjs`). `createCrowd(island, { known })` is handed the ids the crowd
 before it had; anybody not in that set walks up from the landing beach. `known` is null for
 the first crowd an island ever has — and after a sea restart — so a whole village never
 comes ashore at once, and more than `MAX_ARRIVING` (8) is a scan catching up rather than an
@@ -1216,7 +1219,10 @@ reconnects. The *islander* (`serve.mjs`) owns this machine: the scan, `data/`, t
 the mail, the tickets, and it listens on loopback only. The *client* draws both.
 
 Single player is not a mode. `serve.mjs` starts a sea in its own process bound to loopback
-and joins it with one island in it; hosting is that same sea bound to the network; joining
+- on a **worker thread** of its own (`lib/sea-thread.mjs`: `listen`, `address`, `close`, and
+`setTime` as a promise), because a scan holds the islander's event loop 1.5 to 2 s every minute
+(sync `discover` over ~1400 transcripts, then placeAll; once over half a minute) and the sea's beat
+on that same loop froze every settler on every screen, `tests/sea-thread.test.mjs` - and joins it with one island in it; hosting is that same sea bound to the network; joining
 is somebody else's address (`config.multiplayer.sea.mode`, changed at runtime through
 `POST /api/sea`). One code path — the difference between being alone and being in company
 is how many rows are in `world.islands`. There is deliberately no offline mode to keep in
