@@ -2040,6 +2040,14 @@ export function createSound({ camera, scene, island, makeElement = null }) {
     return null;
   }
 
+  // A loop that is only ever a recording: the keeper's own joined loop for `name` once it is made,
+  // else null - never the computed family. Asked for like need(), so the file is fetched.
+  function recorded(name) {
+    if (Object.hasOwn(SFX_FAMILIES, name)) asked.add(name);
+    const own = samples[name];
+    return own && own.loop ? own.loop : null;
+  }
+
   // The keeper's own recordings (Plans/meer-geluiden.md, phase 9; HOME/audio/sfx, named by
   // shared/sfx.mjs): main.js fetches and decodes them (web/js/sfx-loader.js) and hands the ready
   // AudioBuffers in here - this module still fetches and decodes nothing. Each is brought to the
@@ -2421,13 +2429,18 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       pub.at = site ? site.at : null;
       const full = clamp(pub.busy / 9, 0, 1);
       pub.full = kind === 'kraken' ? KRAKEN_CREW + (1 - KRAKEN_CREW) * full : full;
+      // The chatter is a recording or nothing (the keeper, 8 October 2026): the computed murmur
+      // came across as surf or static rather than voices, so a tavern with no recording of its own
+      // (HOME/audio/sfx/murmur.*, kraken.*) is heard by its music and its glasses alone. Asked for
+      // all the same, so the keeper's file is fetched once a tavern is within earshot.
+      const chatter = recorded(pub.buffer);
       // Outside: through the door, by the distance to it.
       let want = 0;
-      if (site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
+      if (chatter && site && !look.indoors && live('tavern') && pub.d < TAVERN_RANGE) {
         want = Math.min(0.25, pub.full * 0.22 * evening) * edge(pub.d, TAVERN_RANGE);
       }
       pub.want = want;
-      const buf = want > 0 || pub.out.audio.isPlaying ? need(pub.buffer) : null;
+      const buf = want > 0 ? chatter : null;
       if (pub.at) pub.out.holder.position.set(pub.at[0], pub.at[1] + 1, pub.at[2]);
       pub.out.filter.frequency.setTargetAtTime(
         PUB_SHUT + (PUB_OPEN - PUB_SHUT) * Math.exp(-(Number.isFinite(pub.d) ? pub.d : 99) / PUB_OPEN_R), now, 0.2);
@@ -2440,8 +2453,8 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       const inside = room === (kind === 'village' ? 'tavern' : 'piratetavern');
       pub.inside = inside;
       const music = playlists.tavern || live('jazz');
-      const inWant = inside && live('tavern') ? (kind === 'village' ? (music ? 0.12 : 0.26) : 0.11) : 0;
-      loopTo(pub.in, inWant > 0 || pub.in.audio.isPlaying ? need(pub.buffer) : null, inWant);
+      const inWant = chatter && inside && live('tavern') ? (kind === 'village' ? (music ? 0.12 : 0.26) : 0.11) : 0;
+      loopTo(pub.in, inWant > 0 ? chatter : null, inWant);
     }
   }
 

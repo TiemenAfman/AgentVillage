@@ -47,15 +47,11 @@ const PART_IDS = new Set(MIX_PARTS.map(([id]) => id));
 const LEVEL_IDS = new Set(MIX_LEVELS.map(([id]) => id));
 export const busOf = (part) => (MIX_PARTS.find(([id]) => id === part) || [])[2] || null;
 
-// Parts that start switched off. The taverns' murmur, heard from outside, came across as surf or
-// static rather than voices (the keeper, 8 October 2026): off until somebody turns it on in the tab.
-export const MIX_OFF = Object.freeze(['tavern']);
-
-// Everything at full and every part on but those: a page that never opened the tab hears that.
+// Everything at full and everything on: a page that never opened the tab sounds as it always did.
 export function mixDefaults() {
   const out = {};
   for (const [id] of MIX_LEVELS) out[id] = 1;
-  for (const [id] of MIX_PARTS) out[id] = !MIX_OFF.includes(id);
+  for (const [id] of MIX_PARTS) out[id] = true;
   return out;
 }
 
@@ -110,7 +106,7 @@ export function saveMix(key, value, storage = browserStorage()) {
   } catch { /* kept for this page only */ }
 }
 
-// Back to the defaults.
+// Back to everything at full.
 export function forgetMix(storage = browserStorage()) {
   try { if (storage) storage.removeItem(MIX_KEY); } catch { /* nothing kept to forget */ }
 }

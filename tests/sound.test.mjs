@@ -104,9 +104,17 @@ function removeListener(type, fn) { const s = listeners.get(type); if (s) s.dele
 function dispatch(type) { for (const fn of [...(listeners.get(type) || [])]) fn({ type }); }
 
 let store = {};
-// The taverns start switched off (sound-mix.js MIX_OFF); a test about them turns them on as a
-// keeper would, in Settings -> Audio.
-const TAVERN_ON = { 'promptholm.sound.mix': JSON.stringify({ tavern: true }) };
+// A tavern's chatter is a recording or nothing (the computed murmur sounded like surf): a test
+// about it hands the keeper's file in first, and gets back the loop it was joined into once a
+// second of frames has made it.
+function chatter(sound, name = 'murmur') {
+  const mark = ctx.buffers.length;
+  sound.setSamples(name, [recording(6, 0.4, 7)]);
+  run(sound, 0.5);
+  const loop = ctx.buffers.slice(mark).find((b) => b.length === 6 * 22050 - Math.floor(1.5 * 22050));
+  assert.ok(loop, 'the recording joined into a loop');
+  return loop;
+}
 globalThis.localStorage = {
   getItem: (k) => (k in store ? store[k] : null),
   setItem: (k, v) => { store[k] = String(v); },
@@ -312,14 +320,14 @@ test('a gull over the quay, rarely, and never after dark', () => {
 });
 
 test('the tavern hums when there is somebody at its door, and not otherwise', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   // Nobody near the door, and nobody else either, so distance is not the reason.
   const look = village(4, { anim: 'still' });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   const sound = made(look);
   sound.setOn(true);
   dispatch('pointerdown');
-  const murmur = ctx.buffers[ctx.buffers.length - 4];  // surf, wind, murmur, hammer, gull, clink
+  const murmur = chatter(sound);
   const humming = () => ctx.started.filter((b) => b === murmur).length;
   for (let i = 0; i < 60; i++) sound.update(1 / 60);
   assert.equal(humming(), 0, 'an empty tavern runs no source at all');
@@ -548,11 +556,10 @@ test('the village tavern has a jazz trio, on its own part, switched apart from t
   look.tavern = { inside: true };
   sound.update(1 / 6);
   assert.ok(sound.stats().jazz.want > 0.3, 'whole inside');
-  sound.setMix('tavern', true);
   sound.setMix('jazz', false);
   sound.update(1 / 6);
   assert.equal(sound.stats().jazz.want, 0, 'Tavern jazz off: no jazz');
-  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true, jazz: false }, 'and only those two kept');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { jazz: false }, 'and only that kept');
 });
 
 test('without an element to play through, tracks are ignored and the rooms keep their own music', () => {
@@ -580,11 +587,12 @@ function heardSound(look, opts) {
 }
 
 test('a tavern is heard through its door: open at the threshold, shut along the wall', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   const look = village(4, { anim: 'still', tavern: false });
   look.pubs = [{ kind: 'village', at: [2, 0, 2] }];
   for (const f of look.crowds[0].values()) { f.pos[0] = 3; f.pos[1] = 2; }
   const sound = heardSound(look);
+  chatter(sound);
   run(sound, 1);
   const atDoor = sound.stats().pubs.village;
   assert.ok(atDoor.playing && atDoor.want > 0, 'four at the door: it hums');
@@ -598,28 +606,31 @@ test('a tavern is heard through its door: open at the threshold, shut along the 
 });
 
 test('the Salty Kraken hums with nobody from the village there, and has a voice of its own', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   const look = village(2, { anim: 'still', tavern: false });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   look.pubs = [{ kind: 'kraken', at: [6, 0, 0] }];
   const sound = heardSound(look);
   sound.update(1 / 6);
-  assert.deepEqual(sound.stats().making, ['kraken'], 'its murmur is made the first time it is wanted, a step a frame');
+  assert.deepEqual(sound.stats().making, [], 'with no recording of the crew, nothing is computed for them');
+  assert.ok(sound.wanted().includes('kraken'), 'but a recording is asked for');
+  run(sound, 1);
+  assert.equal(sound.stats().pubs.kraken.playing, false, 'and nothing murmurs');
+  const kraken = chatter(sound, 'kraken');
   run(sound, 1);
   const k = sound.stats().pubs.kraken;
   assert.ok(k.playing && k.want > 0, 'the crew are always in');
   assert.equal(sound.stats().pubs.village.playing, false, 'and the village tavern, which is not there, is silent');
   assert.equal(sound.stats().buffers, 7, 'one more buffer, the Kraken\'s own');
-  const kraken = ctx.buffers[ctx.buffers.length - 1];
   assert.equal(kraken.numberOfChannels, 1);
   assert.ok(loudest(kraken) > 0, 'and it reaches the speakers');
 });
 
 test('inside the village tavern the murmur is the room, whole, and outside it is not', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   const look = village(3, { anim: 'still' });
   const sound = heardSound(look);
-  const murmur = ctx.buffers[ctx.buffers.length - 4];
+  const murmur = chatter(sound);
   look.indoors = true;
   look.room = 'tavern';
   run(sound, 1);
@@ -662,15 +673,15 @@ test('the borrel is a loop on the square while the village is out there, made on
 });
 
 test('Settings -> Audio: a bus or a part at zero silences what it says, and nothing else', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   const look = village(40);
   look.pubs = [{ kind: 'village', at: [-8, 0, -6] }];
   for (const f of look.crowds[0].values()) if (f.pos[0] < -6) f.anim = 'still';
   const sound = heardSound(look);
-  run(sound, 3);
   const surf = ctx.buffers[ctx.buffers.length - 6];
-  const murmur = ctx.buffers[ctx.buffers.length - 4];
   const hammer = ctx.buffers[ctx.buffers.length - 3];
+  const murmur = chatter(sound);
+  run(sound, 3);
   const now = () => ({ surf: loudest(surf), murmur: loudest(murmur), hammer: loudest(hammer) });
   // A hammer is a one-shot, so it is heard only between blows: a second of frames finds one.
   const hammered = () => { let best = 0; for (let i = 0; i < 60; i++) { sound.update(1 / 60); best = Math.max(best, loudest(hammer) || 0); } return best; };
@@ -683,10 +694,10 @@ test('Settings -> Audio: a bus or a part at zero silences what it says, and noth
   assert.equal(loudest(murmur) || 0, 0, 'Speech at zero: the tavern is silent');
   assert.ok(loudest(surf) > 0, 'and the sea is not');
   assert.ok(hammered() > 0, 'nor the hammers');
-  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true, speech: 0 }, 'only what moved is kept');
+  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { speech: 0 }, 'only what moved is kept');
 
   sound.setMix('speech', 1);
-  assert.deepEqual(JSON.parse(store['promptholm.sound.mix']), { tavern: true }, 'a slider back at full leaves nothing behind');
+  assert.equal(store['promptholm.sound.mix'], undefined, 'a slider back at full leaves nothing behind');
   sound.setMix('work', false);
   run(sound, 0.2);
   assert.equal(hammered(), 0, 'Crafts and hammers off: no blow is even struck');
@@ -1328,7 +1339,7 @@ test('a one-shot with recordings plays one of them each time, never the same one
 });
 
 test('a loop with recordings is joined from them, and its computed version is never made', () => {
-  store = { ...TAVERN_ON };
+  store = {};
   const look = village(2, { anim: 'still', tavern: false });
   for (const f of look.crowds[0].values()) { f.pos[0] = 40; f.pos[1] = 40; }
   const sound = heardSound(look);
