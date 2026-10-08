@@ -17,7 +17,8 @@ globalThis.document = {
 
 const { createQuestLog } = await import('../web/js/quest-log.js');
 const { giverSpeech, pirateSpeech, voiceOf } = await import('../web/js/pirate.js');
-const { buildGoldMine } = await import('../web/js/mine-room.js');
+const { buildGoldMine, MINE_ROOM } = await import('../web/js/mine-room.js');
+const { SPOTS } = await import('shared/mine.mjs');
 const { createMineRun } = await import('../web/js/mine.js');
 
 const memory = () => {
@@ -78,19 +79,46 @@ test('a spot nobody has dug is not drawn, a dug one is; the mine is looked down 
     return (g.index ? g.index.count : g.attributes.position.count) / 3;
   };
   const rocks = () => run.plan().rock.reduce((a, b) => a + b, 0);
+  // Every spot is a tile of the floor (12 triangles); what is left over is the rocks.
+  const TILE = 12;
   show.enter();
-  const perRock1 = tris() / rocks();
-  // Down a floor (another count of rocks, another count of earth): the field is still rocks only.
+  const perRock1 = (tris() - SPOTS * TILE) / rocks();
+  // Down a floor (another count of rocks, another count of earth): the field is still flat tiles and
+  // rocks - an undug spot is the floor, and nothing else.
   run.dig(run.plan().goal);
   run.descend();
   show.enter();
   assert.notEqual(rocks(), 0);
-  assert.equal(tris() / rocks(), perRock1, 'an undug spot adds nothing to the field');
+  assert.equal((tris() - SPOTS * TILE) / rocks(), perRock1, 'an undug spot adds nothing to the floor');
+  // Nothing in the middle of a spot below the floor until it is dug: no bed, no hole.
+  const sunk = (i) => {
+    const { x, z } = MINE_ROOM.spotRoom(i);
+    const p = scene.children.find((c) => c.isMesh).geometry.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      if (Math.abs(p.getX(k) - x) < 0.15 && Math.abs(p.getZ(k) - z) < 0.15 && p.getY(k) < -0.01 && p.getY(k) > -0.2) return true;
+    }
+    return false;
+  };
   const before = tris();
   const earth = [...run.plan().rock.keys()].find((i) => !run.plan().rock[i] && i !== run.plan().goal);
+  assert.ok(!sunk(earth), 'an undug spot is flat floor');
   run.dig(earth);
   show.enter();
   assert.ok(tris() > before, 'a dug spot is a hole you can see');
+  assert.ok(sunk(earth), 'and it goes down into the floor');
+  // The way down is a shaft with its ladder, not a hatch on the floor.
+  run.dig(run.plan().goal);
+  show.enter();
+  const g = run.plan().goal, { x: gx, z: gz } = MINE_ROOM.spotRoom(g);
+  const p = scene.children.find((c) => c.isMesh).geometry.attributes.position;
+  let low = 0, high = -1;
+  for (let k = 0; k < p.count; k++) {
+    if (Math.abs(p.getX(k) - gx) > 0.3 || Math.abs(p.getZ(k) - gz) > 0.3) continue;
+    low = Math.min(low, p.getY(k));
+    high = Math.max(high, p.getY(k));
+  }
+  assert.ok(low < -0.8, `the shaft goes down out of sight (${low})`);
+  assert.ok(high > 0.15, `and its ladder stands up out of it (${high})`);
   assert.equal(def.camera.pitch, MINE_PITCH);
   assert.ok(MINE_PITCH > 0.6 && MINE_PITCH <= 0.95, 'well down, and inside what the mouse may reach');
   // interior.js hands a room's own pitch to the walk on the way in.
