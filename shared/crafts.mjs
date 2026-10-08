@@ -169,6 +169,19 @@ export const CRAFTS = Object.freeze({
       drag: 0.1, creep: 0.15, bite: 0.1, astern: 1.2, yawLag: 1.0, runOut: 60,
       probes: Object.freeze([[0, 6.3], [1.9, 4.2], [-1.9, 4.2], [2.2, 1.5], [-2.2, 1.5]].map(Object.freeze)),
     }),
+    // How she rides the swell (web/js/boat.js `swellOf`; the page's alone, the sea never reads it).
+    // She had the rowing boat's numbers - 0.03 up, 0.04 pitch, 0.03 roll, on periods of 3 to 5 s - and
+    // on a hull 13 units (52 m) long a pitch of 0.04 is the bow going a metre up and down every few
+    // seconds while she lies still: the keeper's "deint te veel, zeker bij stilstand". A ship this
+    // size spans the short swell and averages it out, so lying still she only stirs: `still` is a
+    // tenth of the rowing boat's pitch (bow ~10 cm), a quarter of its roll and rise, on periods of 7
+    // to 11 s (`rates`, rad/s for rise, pitch, roll). Making way she cuts into it and moves more, up
+    // to `way` at her top speed - still under half the rowing boat's pitch. Each is [rise, pitch, roll].
+    swell: Object.freeze({
+      still: Object.freeze([0.008, 0.004, 0.008]),
+      way: Object.freeze([0.02, 0.014, 0.012]),
+      rates: Object.freeze([0.9, 0.7, 0.55]),
+    }),
   }),
 });
 
