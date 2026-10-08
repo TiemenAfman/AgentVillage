@@ -544,7 +544,7 @@ test('the village tavern has a jazz trio, on its own part, switched apart from t
   assert.equal(sound.stats().jazz.making, false, 'a bar a step, and done within two seconds of frames');
   sound.update(1 / 6);
   const out = sound.stats().jazz;
-  assert.ok(out.playing && out.want > 0 && out.want < 0.12 && out.cut < 1000, 'muffled through the walls');
+  assert.ok(out.playing && out.want > 0 && out.want < 0.1 && out.cut < 400, 'dull through the walls');
   look.tavern = { inside: true };
   sound.update(1 / 6);
   assert.ok(sound.stats().jazz.want > 0.3, 'whole inside');

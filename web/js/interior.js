@@ -18,6 +18,7 @@ import { createWalkMode } from './walk.js';
 import { clamp } from 'shared/rng.mjs';
 import { buildRave } from './rave.js';
 import { buildPirateTavern } from './pirate-tavern.js';
+import { tavernPatrons, createPatronsShow } from './tavern-patrons.js';
 import { wallBeat } from './dance.js';
 import { createHalos, createShafts } from './room-glow.js';
 import { createHearthFire } from './hearth-fire.js';
@@ -420,9 +421,23 @@ function buildTavern() {
     { hex: 0xcfe2ea, intensity: 1.2, dist: 3.2, at: [-4.4, FLOOR + 0.92, 1.1] },
   );
 
+  // ---- the regulars ---------------------------------------------------------
+  // A full house on the benches (tavern-patrons.js), and on their feet: two at each end of the
+  // bar, clear of the stools, two warming themselves by the fire, and one at the karaoke mic.
+  const patrons = tavernPatrons({
+    tables: TABLES, floor: FLOOR,
+    stand: [
+      [-1.78, -1.22, Math.PI * 0.85], [-2.05, -1.0, Math.PI * 0.6],
+      [2.15, -1.35, -Math.PI * 0.8], [2.5, -1.45, -Math.PI * 0.55],
+      [-2.4, -0.15, -2.2], [-2.35, -0.85, -1.0],
+      [MIC[0] + 0.2, MIC[2] - 0.12, -Math.PI / 2, FLOOR + STAGE_H],
+    ],
+  });
+
   return {
     name: 'the tavern',
     parts, roof, blockers, seats, lights, figures,
+    show: (opts) => createPatronsShow({ ...opts, layout: { patrons } }),
     fireAt: [FX + 0.24, FLOOR + 0.03, FZ],
     // The cells the stage covers, handed to walk mode as a deck to stand on.
     stage: { ...STAGE, height: FLOOR + STAGE_H },

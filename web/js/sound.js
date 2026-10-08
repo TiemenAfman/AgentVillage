@@ -1707,10 +1707,13 @@ function* jazzSong(ctx) {
 }
 
 // How loud: in the village tavern it is under the chatter, a band in the corner; outside it is a
-// tune through the window that is gone before the end of the square.
+// dull beat through the wall that is gone before the end of the square.
 const JAZZ_LOUD = 0.34;
-const JAZZ_OUT = 0.12;
+const JAZZ_OUT = 0.1;
 const JAZZ_RANGE = 22;
+// Outside, the band through the wall: the bass and the kick, the piano a murmur, the cymbal gone.
+// It was 700 and came across as a band playing out on the square (the keeper, 8 October 2026).
+const JAZZ_CUT = 360;
 
 // --------------------------------------------------------------- every family, by name
 
@@ -2085,7 +2088,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
   const SONGS = {
     rave: { make: raveSong, loud: RAVE_LOUD, out: RAVE_OUT, range: RAVE_RANGE, cut: 320, part: 'songs' },
     shanty: { make: shantySong, loud: SHANTY_LOUD, out: SHANTY_OUT, range: SHANTY_RANGE, cut: 480, part: 'songs' },
-    tavern: { make: jazzSong, loud: JAZZ_LOUD, out: JAZZ_OUT, range: JAZZ_RANGE, cut: 700, part: 'jazz' },
+    tavern: { make: jazzSong, loud: JAZZ_LOUD, out: JAZZ_OUT, range: JAZZ_RANGE, cut: JAZZ_CUT, part: 'jazz' },
   };
 
   // The keeper's own tracks (lib/music.mjs: HOME/audio/kroeg, rave, pirates), per song, as urls.
