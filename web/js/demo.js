@@ -14,6 +14,8 @@ import {
 } from './buildings.js';
 import * as models from './models.js';
 import { figureGeometry } from './settlers.js';
+import { mesh as bakedPart } from './buildings.js';
+import { harpoonModel, makeHarpoonGun, bakedHarpoonGun, HARPOON_PIECES } from './harpoon.js';
 import { createNameplate } from './nameplate.js';
 import { buildBorders, buildFieldDecals, orchardTrees, NONE } from './hamlets.js';
 import { bedGeometry } from './crops.js';
@@ -1157,6 +1159,38 @@ const REAL = [
     }, undefined, (err) => console.warn('model sheet: could not load', url, err));
   });
   row += 4;
+}
+
+// The galleon's harpoon gun (Plans/harpoen.md), the Sketchfab model and the island's own bake side by
+// side to compare, as the keeper asked: each at three times its size, aimed level, swung and lifted.
+{
+  const z = row * ROW;
+  heading('Harpoon', z);
+  const S = 3;
+  const AIMS = [[0, 0], [0.6, 0.25], [-0.5, 0.6]];
+  const stand = (gun, x) => {
+    gun.object.scale.setScalar(S);
+    gun.object.position.set(x, FIELD_Y, z);
+    scene.add(gun.object);
+  };
+  const at = Object.fromEntries(HARPOON_PIECES.map((k) => [k, models.part(`harpoon ${k}:0`).at]));
+  at.muzzle = models.anchorsOf('harpoon').muzzle;
+  const geometryOf = (k) => mergeParts(models.assetParts('harpoon').filter((n) => n.startsWith(`harpoon ${k}:`)).map((n) => bakedPart(n)));
+  AIMS.forEach(([yaw, pitch], i) => {
+    const gun = bakedHarpoonGun(geometryOf, material, at);
+    gun.aim(yaw, pitch);
+    stand(gun, 4 + i * 2.2);
+  });
+  tag(6.2, z + 2.4, 'Harpoon · bake', `${models.assetTris('harpoon')} tris · house style`);
+  harpoonModel((template) => {
+    AIMS.forEach(([yaw, pitch], i) => {
+      const gun = makeHarpoonGun(template);
+      gun.aim(yaw, pitch);
+      stand(gun, -8.4 + i * 2.2);
+    });
+  });
+  tag(-6.2, z + 2.4, 'Harpoon · GLB', 'J.D.Productions, CC BY 4.0 · ~7400 tris');
+  row += 2;
 }
 
 // ---- camera --------------------------------------------------------------------

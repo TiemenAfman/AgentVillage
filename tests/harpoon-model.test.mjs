@@ -128,3 +128,18 @@ test('the house-style bake keeps the GLB\'s frame, so the page can draw either o
   assert.ok(muzzle.distanceTo(world(N.muzzle)) < 0.002, `muzzle ${muzzle.toArray()} / ${world(N.muzzle).toArray()}`);
   assert.ok(Math.abs(at('yoke').x) < 1e-9 && Math.abs(at('yoke').z) < 1e-9, 'the yoke turns on the axis of the pedestal');
 });
+
+test('the baked gun is put together on the same frame and aims the same way', async () => {
+  const { HARPOON } = await import('../web/js/harpoon-mesh.js');
+  const at = Object.fromEntries(harpoon.HARPOON_PIECES.map((k) => [k, HARPOON.parts[`harpoon ${k}:0`].at]));
+  at.muzzle = HARPOON.anchors.muzzle;
+  const gun = harpoon.bakedHarpoonGun(() => new THREE.BoxGeometry(0.01, 0.01, 0.01), new THREE.MeshBasicMaterial(), at);
+  gun.object.updateMatrixWorld(true);
+  const p = gun.muzzleAt(), dir = gun.aimDir();
+  assert.ok(p.distanceTo(new THREE.Vector3().fromArray(at.muzzle)) < 1e-9);
+  assert.ok(dir.z > 0.999);
+  gun.aim(-0.4, 0.25);
+  gun.object.updateMatrixWorld(true);
+  gun.aimDir(dir);
+  assert.ok(Math.abs(dir.y - Math.sin(0.25)) < 1e-6 && dir.x < -0.3, `${dir.toArray()}`);
+});

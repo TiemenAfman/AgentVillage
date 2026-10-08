@@ -71,7 +71,42 @@ export function harpoonState() {
 export function makeHarpoonGun(template) {
   const object = template.clone(true);
   const node = (k) => object.getObjectByName(HARPOON_NODES[k]);
-  const yoke = node('yoke'), gun = node('gun'), bolt = node('bolt'), muzzle = node('muzzle');
+  return rig(object, node('yoke'), node('gun'), node('bolt'), node('muzzle'));
+}
+
+// The same gun out of the house-style bake (scripts/build-harpoon.py, web/js/harpoon-mesh.js), on the
+// same frame and with the same handle. `geometryOf(piece)` is the caller's: the merged geometry of
+// every slot of `harpoon <piece>` around that piece's own origin (buildings.js mesh + mergeParts - not
+// imported here, because buildings.js makes a TextureLoader when it is imported). `at` holds each
+// piece's origin in the set's frame, and `muzzle` (models.part(...).at, models.anchorsOf('harpoon')).
+export const HARPOON_PIECES = Object.freeze(['mount', 'yoke', 'gun', 'bolt']);
+export function bakedHarpoonGun(geometryOf, material, at) {
+  const solid = (k) => {
+    const m = new THREE.Mesh(geometryOf(k), material);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  };
+  const object = new THREE.Group();
+  object.name = HARPOON_NODES.mount;
+  object.add(solid('mount'));
+  const hang = (name, parent, p, from, child) => {
+    const g = new THREE.Group();
+    g.name = name;
+    g.position.set(p[0] - from[0], p[1] - from[1], p[2] - from[2]);
+    if (child) g.add(child);
+    parent.add(g);
+    return g;
+  };
+  const yoke = hang(HARPOON_NODES.yoke, object, at.yoke, [0, 0, 0], solid('yoke'));
+  const gun = hang(HARPOON_NODES.gun, yoke, at.gun, at.yoke, solid('gun'));
+  const bolt = hang(HARPOON_NODES.bolt, gun, at.bolt, at.gun, solid('bolt'));
+  const muzzle = hang(HARPOON_NODES.muzzle, gun, at.muzzle, at.gun, null);
+  return rig(object, yoke, gun, bolt, muzzle);
+}
+
+// What both kinds hand back: the angles, and the points the line and the shot need.
+function rig(object, yoke, gun, bolt, muzzle) {
   const yaw0 = yoke.rotation.y, pitch0 = gun.rotation.x;
   const ahead = new THREE.Vector3();
   const tmp = new THREE.Vector3();
