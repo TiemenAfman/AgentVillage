@@ -90,7 +90,7 @@ test('the old guns are out of the galleon, and her two new ones stand on her wai
   let out = 0;
   for (let i = 0; i < p.length; i += 3) if (Math.abs(p[i]) > 2.5 && p[i + 2] > -2.4 && p[i + 2] < 1.4 && p[i + 1] > 3 && p[i + 1] < 4) out++;
   assert.equal(out, 0, `${out} corners still stand out of the ports`);
-  const guns = CRAFTS.galleon.cannons;
+  const guns = CRAFTS.galleon.mounts.filter((m) => m.kind === 'cannon');
   assert.equal(guns.length, 2);
   assert.ok(guns[0].x > 0 && guns[1].x < 0);
   for (const g of guns) {
@@ -103,7 +103,7 @@ test('a laid barrel turns about its trunnions, and the muzzle a ball leaves from
   const s = cannonShape();
   assert.ok(s, 'the cannon set is baked');
   assert.ok(Math.abs(s.rest - 0.166) < 0.02, `rest elevation ${s.rest}`);
-  const spec = CRAFTS.galleon.cannons[0];
+  const spec = CRAFTS.galleon.mounts[0];
   const pin = layPoint(spec, restLay(), 0, true, 0, 0, 0);
   for (const pitch of [C.GUN_PITCH_MIN, 0, C.GUN_PITCH_MAX]) {
     for (const yaw of [-C.GUN_TRAVERSE, 0, C.GUN_TRAVERSE]) {

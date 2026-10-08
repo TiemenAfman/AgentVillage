@@ -487,11 +487,14 @@ function withLadders(hull, spec, more = []) {
 }
 
 // The guns as runs of the hull's geometry: per gun, per part, where its corners start, how many, and
-// the baked positions to turn. `layGun` writes them; the colours never move.
+// the baked positions to turn. `layGun` writes them; the colours never move. Indexed like the deck's
+// `mounts` (a mount of another kind - a harpoon - has no gun here: null).
 function gunRuns(spec) {
-  if (!cannonShape()) return { parts: [], guns: [] };
+  const mounts = spec.mounts || [];
+  if (!cannonShape()) return { parts: [], guns: mounts.map(() => null) };
   const parts = [], guns = [];
-  for (const g of spec.cannons || []) {
+  for (const g of mounts) {
+    if (g.kind !== 'cannon') { guns.push(null); continue; }
     const carriage = carriageGeometry(), barrel = barrelGeometry();
     parts.push(carriage, barrel);
     guns.push({ spec: g, lay: restLay(), kick: 0, runs: [
@@ -649,6 +652,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   {
     let at = geometry.attributes.position.count;
     for (let i = guns.length - 1; i >= 0; i--) {
+      if (!guns[i]) continue;
       for (let k = guns[i].runs.length - 1; k >= 0; k--) { at -= guns[i].runs[k].count; guns[i].runs[k].from = at; }
     }
   }
@@ -670,7 +674,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     pos.needsUpdate = true;
     geometry.computeBoundingSphere();
   }
-  for (let i = 0; i < guns.length; i++) layGun(i, guns[i].lay, 0);
+  for (let i = 0; i < guns.length; i++) if (guns[i]) layGun(i, guns[i].lay, 0);
   const oars = rowing ? rowing.oars : [];
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
@@ -802,7 +806,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
 
     // Her guns (Plans/kanonnen.md): how many, how one is laid, laying one, and its muzzle in her own
     // frame (y above her waterline, as her geometry has it: web/js/cannon.js).
-    guns: guns.length,
+    guns: guns.filter(Boolean).length,
     gunSpec: (i) => (guns[i] ? guns[i].spec : null),
     gunLay: (i) => (guns[i] ? { lay: guns[i].lay.slice(), kick: guns[i].kick } : null),
     layGun,

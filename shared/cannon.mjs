@@ -58,13 +58,13 @@ export const HULL_BOX = Object.freeze({ hx: 2.0, hz: 6.2, y0: -1.2, y1: 2.0 });
 // the barrel's mouth stands over her own bulwark.
 export const OWN_CLEAR = 1.2;
 
-// Clamp a laying of the gun to what it can do: `yaw` is the traverse off square (radians, + to
-// her bow on the starboard gun), `pitch` the bore's elevation.
-export function clampLay(yaw, pitch) {
-  return [
-    yaw < -GUN_TRAVERSE ? -GUN_TRAVERSE : yaw > GUN_TRAVERSE ? GUN_TRAVERSE : yaw,
-    pitch < GUN_PITCH_MIN ? GUN_PITCH_MIN : pitch > GUN_PITCH_MAX ? GUN_PITCH_MAX : pitch,
-  ];
+// Clamp a laying of the gun to what it can do: `yaw` is the traverse off its rest heading (radians),
+// `pitch` the bore's elevation. `mount` (shared/crafts.mjs, a deck's `mounts`) may carry its own
+// `yawLim` and `pitchLim`; without, a gun's.
+export function clampLay(yaw, pitch, mount = null) {
+  const y = mount && mount.yawLim != null ? mount.yawLim : GUN_TRAVERSE;
+  const [lo, hi] = mount && mount.pitchLim ? mount.pitchLim : [GUN_PITCH_MIN, GUN_PITCH_MAX];
+  return [yaw < -y ? -y : yaw > y ? y : yaw, pitch < lo ? lo : pitch > hi ? hi : pitch];
 }
 
 // Ease a laying towards where it is wanted at GUN_TURN, `dt` seconds.

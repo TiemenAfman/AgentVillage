@@ -14,6 +14,7 @@ import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
+import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
 import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
@@ -313,6 +314,11 @@ export function createWalkMode({
     yaw: 0,          // where the player faces
     camYaw: 0,       // where the camera looks from
     camPitch: 0.28,
+    // Manning something on a ship's deck - one of her guns (Plans/kanonnen.md): { i, kind, lay,
+    // loaded, loading, recoil, kick, inside } - see manGun. Null otherwise.
+    gun: null,
+    // In the air out of a gun's mouth, until the feet are down (the rig curls up for it).
+    launched: false,
     // Through the settler's own eyes: the wheel past its nearest stop, or V. The pose that
     // goes to the sea is the same either way - this is only where our own camera stands.
     firstPerson: false,
@@ -381,6 +387,10 @@ export function createWalkMode({
     // each happens, for main.js to tell the sea (crew is the sea's to count, lib/boats.mjs).
     onBoarded: null,
     onLeftDeck: null,
+    // At a gun (Plans/kanonnen.md): `onGunFire({ boat, i, kind, lay, self })` makes the shot and
+    // answers { at, v } in the world; `onGunEvent(what, gun)` hears loading, loaded, empty and the rest.
+    onGunFire: null,
+    onGunEvent: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
     // island's. See setWorking.
@@ -708,6 +718,13 @@ export function createWalkMode({
       if (!typingInto(e.target) && MOVE_KEYS.includes(mk)) { keys.add(mk); e.preventDefault(); }
       return;
     }
+    // At a mount its own keys come first (stepGun): E or Escape lets go of it, the dance key loads or
+    // unloads, the crouch key climbs in or out; a step or a jump leaves it through the feet.
+    if (state.gun && !e.repeat) {
+      if (k === 'e' || k === 'escape') { e.preventDefault(); leaveGun(); return; }
+      if (k === 'r') { e.preventDefault(); loadGun(); return; }
+      if (k === 'c') { e.preventDefault(); climbInGun(); return; }
+    }
     if (MOVE_KEYS.includes(k)) {
       keys.add(k);
       e.preventDefault();
@@ -897,6 +914,9 @@ export function createWalkMode({
     if (!state.active) return;
     const side = SIDE_OF[e.button];
     if (!side) return;
+    // At a gun the left button is its linstock - under the lock; a click that takes the lock does not fire.
+    if (state.gun && e.button === 0 && document.pointerLockElement === dom) { fireGun(); return; }
+    if (state.gun && e.button === 2) return;
     if (shieldIn(side) && canFight()) guardUp(side, true);
     if (e.button === 2) { if (!shieldIn(side)) act(side); return; }
     if (document.pointerLockElement === dom) { if (!shieldIn(side)) act(side); return; }
@@ -968,7 +988,8 @@ export function createWalkMode({
   // placeCamera raises the aim by as much as it was pushed, so looking up still looks up - the body
   // slides down out of the frame instead, which is the price of the sky. It used to stop at -0.25 on
   // land; `relaxPitch` is what is left of that, easing a pitch back into a range that shrank.
-  const pitchRange = () => (state.firstPerson ? [-1.35, 1.35] : [SWIM_PITCH_MIN, 0.95]);
+  const pitchRange = () => (state.gun ? gunPitchRange()
+    : state.firstPerson ? [-1.35, 1.35] : [SWIM_PITCH_MIN, 0.95]);
   function relaxPitch(dt) {
     const lo = pitchRange()[0];
     if (state.camPitch < lo) state.camPitch = Math.min(lo, state.camPitch + (lo - state.camPitch) * (1 - Math.exp(-8 * dt)) + 1e-4);
@@ -1444,7 +1465,7 @@ export function createWalkMode({
   const isFollowing = (b) => (following ? !!following(b) : false);
   const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
   const specOf = (b) => (b && b.craft && b.craft.spec) || null;
-  function offDeck() { state.deck = null; deckBoat = null; deckJump = false; climb = null; }
+  function offDeck() { state.deck = null; deckBoat = null; deckJump = false; climb = null; state.gun = null; }
   // A ship left running. Off her deck - over the rail, or off her ladder - a heavy hull has way on
   // her still, and nothing steps a boat that nobody is aboard: she froze where you jumped, which
   // is no run-out at all. So the page that was sailing her carries on doing it (`loose`; main.js
@@ -1993,7 +2014,204 @@ export function createWalkMode({
   }
   // One frame on the deck. The hull coasts on under nobody's hand (gas off, the same
   // stepBoat), the feet step in its frame, and the body is put back in the world from there.
+  // ---- manning a mount: a gun (Plans/kanonnen.md) ----------------------------------------------
+  // Something on her deck that is manned (craft.mounts; a gun is `kind: 'cannon'`): E beside it takes
+  // it and the body stands behind it, turned with it; the mouse lays it - across within its traverse,
+  // up and down within its elevation (the mount's `yawLim`/`pitchLim`), at the gun's own pace, which is
+  // what makes it a gun and not a turret - and the camera stands low behind the breech looking down the
+  // bore (placeCamera), as the keeper's reference has it. On a gun the dance key rams a ball home
+  // (LOAD_S) or draws it again, the left button fires a loaded gun, the crouch key climbs into an empty
+  // one (and out), and firing that fires you (launchSelf). E, Escape, a jump or a step lets go of it.
+  // The firing itself - where the ball goes, the flash, the boom, the sea - is main.js's (`onGunFire`);
+  // walk mode only says when.
+  // How far the camera's pitch is from the elevation: a level bore has the camera a little above it
+  // and looking a little down, as anybody standing behind a gun does.
+  const GUN_CAM_PITCH = 0.14;
+  const GUN_CAM_BACK = 1.4, GUN_CAM_UP = 0.55;
+  // How far a gun runs back on its trucks when it fires: back in the first sixth of RECOIL_S, and run
+  // out again over the rest.
+  const GUN_KICK = 0.14;
+  const mountsOf = () => { const sp = specOf(deckBoat); return (sp && sp.mounts) || []; };
+  const wrapAngle = (a) => a - Math.round(a / (Math.PI * 2)) * Math.PI * 2;
+  function gunPitchRange() {
+    const m = state.gun && mountsOf()[state.gun.i];
+    const [lo, hi] = (m && m.pitchLim) || [GUN_PITCH_MIN, GUN_PITCH_MAX];
+    return [GUN_CAM_PITCH - hi, GUN_CAM_PITCH - lo];
+  }
+  // The mount whose breech you are standing at, if any (E offers it): within a pace of where its
+  // gunner stands, or of the carriage itself.
+  function gunNear() {
+    const d = state.deck;
+    if (!d || !deckBoat || climb || d.seat || state.gun) return null;
+    let best = null, bestD = 0.75;
+    mountsOf().forEach((g, i) => {
+      const away = Math.min(Math.hypot(d.x - g.stand[0], d.z - g.stand[1]), Math.hypot(d.x - g.x, d.z - g.z) - 0.3);
+      if (away < bestD) { bestD = away; best = i; }
+    });
+    return best;
+  }
+  // Where whoever mans mount `g` laid at `lay` stands, in her frame: its `stand`, turned with the
+  // carriage about the carriage's middle.
+  function gunStand(g, lay) {
+    const dx = g.stand[0] - g.x, dz = g.stand[1] - g.z;
+    const c = Math.cos(lay[0]), sn = Math.sin(lay[0]);
+    return [g.x + dx * c + dz * sn, g.z - dx * sn + dz * c];
+  }
+  const gunEvent = (what, gun) => { if (state.onGunEvent) state.onGunEvent(what, gun); };
+  function manGun(i) {
+    const d = state.deck, b = deckBoat, g = mountsOf()[i];
+    if (!d || !b || !g || climb || state.sitting || state.carry || rides()) return false;
+    cancelDig('reset');
+    state.crouching = state.lying = state.dancing = false;
+    const laid = b.craft && b.craft.gunLay ? b.craft.gunLay(i) : null;
+    const lay = laid ? laid.lay : [0, GUN_PITCH_REST];
+    state.gun = { i, kind: g.kind, boat: b.id, lay, loaded: false, loading: 0, recoil: 0, kick: 0, inside: false };
+    const [sx, sz] = gunStand(g, lay);
+    d.x = sx; d.z = sz; d.y = g.y; d.vy = 0; d.grounded = true;
+    d.yaw = g.yaw + lay[0];
+    state.camYaw = b.yaw + d.yaw;
+    state.camPitch = GUN_CAM_PITCH - lay[1];
+    keys.clear();
+    deckJump = false;
+    gunEvent('manned', state.gun);
+    return true;
+  }
+  // Off the mount, onto the deck behind it (the nearest place the model has room to stand).
+  function leaveGun() {
+    const gun = state.gun, d = state.deck, b = deckBoat;
+    if (!gun) return false;
+    state.gun = null;
+    if (d && b) {
+      const surface = b.craft && b.craft.walk;
+      const at = surface ? nearestStand(surface, d.x, d.z, d.y + 0.2) : null;
+      if (at) { d.x = at.x; d.z = at.z; d.y = at.y; }
+      d.vy = 0; d.grounded = true;
+      state.camPitch = 0.28;
+    }
+    keys.clear();
+    gunEvent('left', gun);
+    return true;
+  }
+  // The dance key at a gun: ram a ball home, or draw the one that is in it ("Unload cannonball").
+  function loadGun() {
+    const gun = state.gun;
+    if (!gun || gun.kind !== 'cannon' || gun.inside || gun.recoil > 0 || gun.loading > 0) return false;
+    if (gun.loaded) { gun.loaded = false; gunEvent('unloaded', gun); return true; }
+    gun.loading = LOAD_S;
+    gunEvent('loading', gun);
+    return true;
+  }
+  // The crouch key at an empty gun: in at its muzzle, and out again.
+  function climbInGun() {
+    const gun = state.gun;
+    if (!gun || gun.kind !== 'cannon' || gun.loaded || gun.loading > 0 || gun.recoil > 0) return false;
+    gun.inside = !gun.inside;
+    gunEvent(gun.inside ? 'in' : 'out', gun);
+    return true;
+  }
+  // The left button: a loaded gun fires its ball, a gun you are in fires you. `onGunFire` (main.js)
+  // makes the shot and answers { at, v } in the world - the muzzle and the way out of it - which a
+  // body in the gun then flies along (launchSelf).
+  function fireGun() {
+    const gun = state.gun, b = deckBoat;
+    if (!gun || !b || gun.recoil > 0) return false;
+    if (gun.kind === 'cannon' && !gun.inside && !gun.loaded) { gunEvent('empty', gun); return false; }
+    const self = gun.inside;
+    gun.loaded = false;
+    gun.recoil = RECOIL_S;
+    const out = state.onGunFire ? state.onGunFire({ boat: b, i: gun.i, kind: gun.kind, lay: gun.lay.slice(), self }) : null;
+    if (self && out) launchSelf(out.at, out.v);
+    return true;
+  }
+  // Out of a gun's mouth: in the air at `at` with `v`, off the ship (the sea is told, as by a jump
+  // over her side), and from there nothing new - the arc is the jump's own fall with the way kept in
+  // `drift` (which nothing damps in the air), and the landing, or the plunge into deep water, are walk
+  // mode's as they always were. Exported for the workbench, which fires a body off a stand-in.
+  function launchSelf(at, v) {
+    const b = deckBoat;
+    state.gun = null;
+    if (state.deck) offDeck();
+    state.sitting = null;
+    state.pos.set(at[0], at[1], at[2]);
+    state.grounded = false;
+    state.swimming = false;
+    state.dive = false;
+    state.vy = v[1];
+    airTop = state.pos.y;
+    drift = { x: v[0], z: v[2] };
+    state.floor = groundAt(at[0], at[2], WATER_Y);
+    state.launched = true;
+    state.yaw = Math.atan2(v[0], v[2]);
+    state.camYaw = state.yaw;
+    place(camBack * 1.6);
+    if (b && state.onLeftDeck) state.onLeftDeck(b);
+    return true;
+  }
+  // One frame at a mount: carried by the hull like a seat, laid towards where the camera looks, a ball
+  // rammed home over LOAD_S, the run back and out after a shot.
+  function stepGun(dt, ix, iz) {
+    const b = deckBoat, d = state.deck, gun = state.gun, g = mountsOf()[gun.i];
+    if (!b || !g) { state.gun = null; return afterMove(dt); }
+    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    stepPool(state.stamina.body, false, dt);
+    stepPool(state.stamina.boat, false, dt);
+    state.turbo = false;
+    // A step, or a jump, and you have let go of it (not from inside a gun: the barrel holds you).
+    if (!gun.inside && (deckJump || Math.hypot(ix, iz) > 0.3)) {
+      leaveGun();
+      return stepOnDeck(dt, ix, iz, false);
+    }
+    deckJump = false;
+    const base = b.yaw + g.yaw;
+    const want = clampLay(wrapAngle(state.camYaw - base), GUN_CAM_PITCH - state.camPitch, g);
+    // The camera is held within the traverse, so turning past it turns the gun no further.
+    state.camYaw = base + want[0];
+    gun.lay = slewLay(gun.lay, want, dt);
+    if (gun.loading > 0) {
+      gun.loading = Math.max(0, gun.loading - dt);
+      if (gun.loading === 0) { gun.loaded = true; gunEvent('loaded', gun); }
+    }
+    if (gun.recoil > 0) gun.recoil = Math.max(0, gun.recoil - dt);
+    const k = gun.recoil / RECOIL_S;
+    gun.kick = k <= 0 ? 0 : GUN_KICK * (k > 5 / 6 ? (1 - k) * 6 : k * 6 / 5);
+    if (b.craft && b.craft.layGun) b.craft.layGun(gun.i, gun.lay, gun.kick);
+    const [sx, sz] = gunStand(g, gun.lay);
+    d.x = sx; d.z = sz; d.y = g.y;
+    d.yaw = g.yaw + gun.lay[0];
+    state.pos.copy(hullPoint(b, d.x, d.y, d.z));
+    planeOf(b);
+    state.yaw = b.yaw + d.yaw;
+    state.moving = state.running = state.sprinting = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.floor = state.pos.y;
+    state.vy = 0;
+    d.vy = 0;
+    d.grounded = true;
+    state.bob += dt;
+    return afterMove(dt);
+  }
+  // The camera at a mount: low behind the breech, looking down the bore past the muzzle - laid with
+  // the gun, not with the mouse, so what you see is where it points.
+  const gunEye = new THREE.Vector3(), gunLook = new THREE.Vector3();
+  function placeGunCamera() {
+    const b = deckBoat, gun = state.gun, g = b && gun ? mountsOf()[gun.i] : null;
+    if (!g) return false;
+    const heading = b.yaw + g.yaw + gun.lay[0];
+    const cp = Math.cos(gun.lay[1]);
+    gunLook.set(Math.sin(heading) * cp, Math.sin(gun.lay[1]), Math.cos(heading) * cp);
+    const at = hullPoint(b, g.x, g.y, g.z);
+    gunEye.set(at.x - gunLook.x * GUN_CAM_BACK, at.y + GUN_CAM_UP - gunLook.y * GUN_CAM_BACK * 0.5, at.z - gunLook.z * GUN_CAM_BACK);
+    camera.up.copy(PLANE_UP);
+    camera.position.copy(gunEye);
+    setNear(nearBase);
+    camera.lookAt(gunEye.x + gunLook.x * 10, gunEye.y + gunLook.y * 10 - 0.6, gunEye.z + gunLook.z * 10);
+    armLen = Infinity;
+    return true;
+  }
+
   function stepOnDeck(dt, ix, iz, boost) {
+    if (state.gun) return stepGun(dt, ix, iz);
     if (state.deck.seat && state.sitting) return stepDeckSeat(dt, ix, iz);
     const b = deckBoat, spec = specOf(b);
     if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
@@ -2210,12 +2428,14 @@ export function createWalkMode({
   // over (x, z) - which put a body remembered under a gallery on top of it.
   function enter({ at, y = Infinity, facing, pitch, blockers, interactables, onInteract, onSendAway, onPlant,
     onNextSeed, onPrevSeed, onBuild, onAvatar, onExit, onRelease, onToggleMinimap, onGive,
-    onBoarded, onLeftDeck }) {
+    onBoarded, onLeftDeck, onGunFire, onGunEvent }) {
     takeBlockers(blockers);
     climb = null;
     drift = null;
     state.onBoarded = onBoarded || null;
     state.onLeftDeck = onLeftDeck || null;
+    state.onGunFire = onGunFire || null;
+    state.onGunEvent = onGunEvent || null;
     state.onGive = onGive;
     state.interactables = interactables || [];
     state.working = null;
@@ -2392,6 +2612,16 @@ export function createWalkMode({
     }
     if (raw.zoom && raw.zoom !== 1) zoomBy(raw.zoom);
     if (p.hit('bike')) toggleBike();
+    // At a mount: the plant button (the pad's right trigger) fires it, the dance button loads it, crouch
+    // climbs in, interact or exit lets go, a jump steps off.
+    if (state.gun) {
+      if (p.hit('primary')) fireGun();
+      if (p.hit('dance')) loadGun();
+      if (p.hit('crouch')) climbInGun();
+      if (p.hit('interact') || p.hit('exit')) leaveGun();
+      if (p.hit('jump')) deckJump = true;
+      return;
+    }
     if (p.hit('jump')) jump();
     // Held, it swims a diver up - the pad's Space (update reads it).
     padJump = p.down('jump');
@@ -3012,6 +3242,7 @@ export function createWalkMode({
         if (plunge) { state.dive = true; state.vy = plunge; }
         else { state.pos.y = underfoot; state.vy = 0; }
         state.grounded = true;
+        state.launched = false;
         // Down from too high with her in the arms: she is thrown out of them where you land (or, in
         // the water, onto the shore you came from - letGo).
         if (state.carry && airTop - state.pos.y > CARRY_FALL) letGo('fall');
@@ -3165,6 +3396,8 @@ export function createWalkMode({
       horseback: state.mount ? state.riderMotion || true : false,
       dancing: dancingNow(),
       dying: state.dying,
+      // Out of a gun's mouth (launchSelf): curled up on the way up, opening out as it comes down.
+      launched: state.launched && !state.grounded ? { rise: state.vy } : null,
       climbing: climb ? state.climbing : null,
       // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
       // its pose across the ends of (classic-avatar.js LADDER_FADE)
@@ -3201,7 +3434,8 @@ export function createWalkMode({
     else armLen = Infinity;
     // A boom pulled in to within a head's width of the eye would put the lens inside the figure: the
     // body goes, as in first person, and comes back as the boom lets out again.
-    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE);
+    // And inside a gun there is nobody to see: only the barrel.
+    classicAvatar.object.visible = !(state.active && !fp && armLen < ARM_HIDE) && !(state.gun && state.gun.inside);
 
     // what is within reach?
     return reach();
@@ -3311,6 +3545,7 @@ export function createWalkMode({
   }
   const pivot = new THREE.Vector3(), armDir = new THREE.Vector3();
   function placeCamera(fp, dt = 0) {
+    if (state.gun && placeGunCamera()) return;
     // camera sits behind and above, and never dips under the ground
     const dist = state.lying ? back * 1.7 : back;
     const cx = state.pos.x - Math.sin(state.camYaw) * dist * Math.cos(state.camPitch);
@@ -3510,6 +3745,9 @@ export function createWalkMode({
   }
 
   return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut,
+    // The guns on her deck (Plans/kanonnen.md): which one is within reach, manning and letting go of
+    // one, and the three things done at it; `launchSelf` is a body out of a gun's mouth.
+    gunNear, manGun, leaveGun, loadGun, fireGun, climbInGun, launchSelf, gun: () => state.gun,
     // The hull we stand on - or are climbing to or from, which is as much ours as her deck is.
     onDeck: () => (state.deck ? deckBoat : climb ? climb.boat : null),
     setBoats(fn) { boatsOf = typeof fn === 'function' ? fn : () => []; },
@@ -3554,6 +3792,7 @@ export function createWalkMode({
     // else swings or sips on the press, exactly as onDown / onUp do for a mouse button.
     hand(side, down) {
       if (!state.active || state.paused) return;
+      if (state.gun) { if (down) fireGun(); return; }
       if (!down) { guardUp(side, false); return; }
       if (shieldIn(side)) { if (canFight()) guardUp(side, true); } else act(side);
     },

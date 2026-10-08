@@ -155,15 +155,20 @@ export const CRAFTS = Object.freeze({
     // the bow (`yaw` in the hull's frame, 0 forward). `y` is the seat, as a stool's is (walk.js sitOn);
     // `reach` how far from it E offers it, and `floor` the height a body must be above to be in the nest.
     nest: Object.freeze({ seat: Object.freeze({ x: 0, z: 0.17, y: 9.2, yaw: 0 }), reach: 0.65, floor: 8.6 }),
-    // Her two guns (Plans/kanonnen.md, the keeper's own model, scripts/build-cannon.py): one a side
-    // in the waist, between the mainmast (z 0) and the quarterdeck stairs (from z -1.4), square out
-    // over the bulwark - which is 0.16 over the deck there and the bore 0.3, so a gun clears it at
-    // any laying. `x`, `z` the middle of the carriage on the deck, `y` the deck under it (the walk
-    // map's 1.108), `yaw` the way it points at rest in her frame (0 forward, so +pi/2 is starboard,
-    // +x), `stand` where whoever mans it stands, behind the breech. The order is the gun's number on
-    // the wire ({t:'cannon', i}). web/js/boat.js welds both into the hull's one geometry.
-    cannons: Object.freeze([1, -1].map((s) => Object.freeze({
-      x: s * 1.5, z: -1.0, y: 1.108, yaw: s * Math.PI / 2, stand: Object.freeze([s * 0.85, -1.0]),
+    // What can be manned on her deck (one mechanism for every kind - Plans/kanonnen.md, and the
+    // harpoon's plan beside it): walk.js manGun takes any of them, and `kind` says what is drawn there
+    // and what the left button does. Her two guns, the keeper's own model (scripts/build-cannon.py):
+    // one a side in the waist, between the mainmast (z 0) and the quarterdeck stairs (from z -1.4),
+    // square out over the bulwark - which is 0.16 over the deck there and the bore 0.3, so a gun
+    // clears it at any laying. `x`, `z` the middle of the carriage on the deck, `y` the deck under it
+    // (the walk map's 1.108), `yaw` the way it points at rest in her frame (0 forward, so +pi/2 is
+    // starboard, +x), `stand` where whoever mans it stands, behind the breech; `yawLim` how far it
+    // traverses either side of `yaw` and `pitchLim` the elevation it is laid between (radians,
+    // shared/cannon.mjs's GUN_TRAVERSE and GUN_PITCH_MIN/MAX for a gun). The order is the mount's
+    // number on the wire ({t:'cannon', i}). web/js/boat.js welds every gun into the hull's one geometry.
+    mounts: Object.freeze([1, -1].map((s) => Object.freeze({
+      kind: 'cannon', x: s * 1.5, z: -1.0, y: 1.108, yaw: s * Math.PI / 2, stand: Object.freeze([s * 0.85, -1.0]),
+      yawLim: 0.61, pitchLim: Object.freeze([-0.12, 0.42]),
     }))),
     // A ship is mass, and every number after `turnMin` is that mass (stepBoat reads each one and
     // falls back to the rowing boat's when it is missing): she takes 6 s to reach her top speed, and

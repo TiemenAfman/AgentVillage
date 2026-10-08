@@ -8,7 +8,7 @@
 //
 // Everything here is in the hull's own frame: +z her bow, y above her waterline (where her geometry
 // has its origin: boat.js drops the bake by SHIP_DRAUGHT), and a gun's spec is shared/crafts.mjs's
-// `CRAFTS.galleon.cannons[i]` with its `y` above DECK_Y like every deck there.
+// a `kind: 'cannon'` of `CRAFTS.galleon.mounts` with its `y` above DECK_Y like every deck there.
 import { mesh } from './buildings.js';
 import * as models from './models.js';
 import { DECK_Y } from 'shared/hull.mjs';
