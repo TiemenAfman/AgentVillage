@@ -1,4 +1,4 @@
-// Promptholm.com: three small things, and the page reads fine with none of them running.
+// agentsofthesea.com: three small things, and the page reads fine with none of them running.
 
 // 1. The latest release. The download links already point at /releases/latest/download/,
 //    which GitHub always resolves to the newest assets; this only fills in the version, the
