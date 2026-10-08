@@ -18,7 +18,7 @@ import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, p
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
 import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
-import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
+import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
 import { createTipsy, drinkIn, stepTipsy } from './tipsy.js';
 import { danceStep, wallBeat } from './dance.js';
@@ -1334,7 +1334,10 @@ export function createWalkMode({
   // Set PASS_TREES_AND_FENCES false to have them back.
   const PASS_TREES_AND_FENCES = true;
   const passedThrough = (b) => PASS_TREES_AND_FENCES && (b.tree === true || b.fence === true);
-  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded) {
+  // `pad`: a body that much wider, against the solids alone - what a route from above asks of the way
+  // between two of its points, so a corner that slips between two samples of the line still meets one
+  // (body-route.js clear).
+  function blocked(x, z, from = state.pos.y, placing = false, hopping = !state.grounded, pad = 0) {
     // Water is no wall to a swimmer any more (see SWIM_SPEED). Only a placement still wants
     // a shore close by - unboard's step-back loop relies on it to find the beach rather than
     // drop you in the channel beside the hull.
@@ -1372,7 +1375,7 @@ export function createWalkMode({
       for (const c of inNow) depth += Math.max(0, depthInSolid(c, x, z, BODY_R));
       return depth < depthNow - 1e-6;
     };
-    if (blockerIndex.some(x, z, BODY_R, (b) => walls(b) && inside(b, x, z, BODY_R)
+    if (blockerIndex.some(x, z, BODY_R + pad, (b) => walls(b) && inside(b, x, z, BODY_R + pad)
       && !(b.hop && (open || astride(b))) && !leaving(b))) return true;
     for (const d of decks) if (deckWall(d, x, z, from)) return true;
     for (const s of surfaces) if (s.axis && stairWall(s, x, z, from)) return true;
@@ -2125,7 +2128,8 @@ export function createWalkMode({
   function rides() { return state.bike || state.mount; }
   let horse = null;
   function mount() {
-    if (!bikes || !state.active || state.paused || state.working || state.vehicle || rides()) return false;
+    // A parked body mounts too: a long route from above is ridden (goTo's `ride`).
+    if (!bikes || !(state.active || state.parked) || state.paused || state.working || state.vehicle || rides()) return false;
     if (state.carry) { blockedBy('carry'); return false; }
     if (state.digging) return false;
     if (!state.grounded || state.swimming || state.sitting || state.lying) return false;
@@ -2160,13 +2164,14 @@ export function createWalkMode({
   // Off it, and put away. Stepped off to the left, then the right, then where the saddle was,
   // whichever is somewhere to stand - the same "somewhere legal" test a landing from a boat uses.
   // A horse is wider than a frame: off it at 0.45 rather than 0.3.
-  function dismount() {
+  // `here`: where the saddle was first - the end of a ridden route, which is where the keeper clicked.
+  function dismount({ here = false } = {}) {
     const b = rides();
     if (!b) return false;
     const reach = state.mount ? 0.45 : 0.3, shore = state.mount ? MOUNT_SHORE : BIKE_SHORE;
     const lx = Math.cos(b.yaw), lz = -Math.sin(b.yaw);   // the rider's left hand
     let at = [b.x, b.z];
-    for (const side of [reach, -reach]) {
+    for (const side of here ? [0, reach, -reach] : [reach, -reach]) {
       const x = b.x + lx * side, z = b.z + lz * side;
       if (!blocked(x, z, b.y, true) && groundAt(x, z, b.y) >= shore) { at = [x, z]; break; }
     }
@@ -2296,16 +2301,27 @@ export function createWalkMode({
 
   // Walk the parked body along `points` ([[x, z], ...], local coordinates - findPath's own
   // output). Null stops it where it is. Refused unless parked: on foot the feet are yours.
-  function goTo(points) {
+  // `ride`: get on the body's own ride (F: the horse, or the Traveller's bicycle) for the way and
+  // off it at the end - main.js asks for it on a long route (RIDE_FROM). `onStuck({ x, z, next })` is
+  // called when the body gets no nearer to its next point for ROUTE_GIVE_UP on foot, with the route
+  // dropped, for main.js to plan again from where it stands; a rider stuck gets off first and walks on.
+  function goTo(points, { ride = false, onStuck = null } = {}) {
     if (!state.parked) return false;
     state.route = points && points.length ? points.map(([x, z]) => [x, z]) : null;
     state.routeBest = Infinity;
     state.routeSince = 0;
+    state.routeRide = !!(ride && state.route);
+    state.routeStuck = onStuck;
+    state.routeEnd = state.route ? state.route[state.route.length - 1] : null;
+    state.routeFrom = [state.pos.x, state.pos.z];
+    // A new route on foot gets off a ride the last one left it on.
+    if (!state.routeRide && rides()) dismount();
     return true;
   }
   // Where an A* over cells may not go, for main.js to hand findPath: the same test the feet
   // make, asked at a cell's middle.
-  const blockedAt = (x, z) => blocked(x, z, undefined, true);
+  // `pad` widens the body (see blocked).
+  const blockedAt = (x, z, pad = 0) => blocked(x, z, undefined, true, undefined, pad);
   // The floor a body standing at `from` finds at (x, z), or null when it could not be put there.
   const standFloor = (x, z, from = Infinity) => {
     const y = groundAt(x, z, from);
@@ -2419,21 +2435,116 @@ export function createWalkMode({
 
   // A parked body's input: towards the next point of its route, as the (ix, iz) the keys
   // would give with the camera looking along +z (camYaw 0: forward is +z, right is -x).
-  // A point is reached at ROUTE_NEAR; a body that has not got nearer for ROUTE_GIVE_UP
-  // seconds (a wall the cell grid did not know about, another player) stops and sleeps.
-  const ROUTE_NEAR = 0.35, ROUTE_GIVE_UP = 2;
-  function routeInput(dt) {
+  // The body keeps to the line it was planned on (body-route.js asks a body CLEAR_PAD wider along
+  // it, no more): it aims ROUTE_LOOK along the line from the point it last passed, and passes a point
+  // within ROUTE_NEAR of it, or once it is beyond it along the line and no further than that off it.
+  // Passing at 0.35 and heading straight for the next point from there walked a line beside the planned
+  // one, into the corner of a house it had been planned past. A body that has not got nearer for
+  // ROUTE_GIVE_UP seconds (another player, a building put up meanwhile) is stuck (routeStuck).
+  const ROUTE_NEAR = 0.1, ROUTE_LOOK = 0.3, ROUTE_GIVE_UP = 2;
+  // Drops the points passed at (x, z) with `near` as above; the point to steer at, or null at the end.
+  function routeAim(x, z, near, look) {
     const r = state.route;
-    while (r && r.length && Math.hypot(r[0][0] - state.pos.x, r[0][1] - state.pos.z) < (r.length > 1 ? ROUTE_NEAR : 0.15)) {
-      r.shift();
+    while (r && r.length) {
+      const p = r[0], o = state.routeFrom || p;
+      const sx = p[0] - o[0], sz = p[1] - o[1], len = Math.hypot(sx, sz);
+      const d = Math.hypot(p[0] - x, p[1] - z);
+      const end = r.length === 1;
+      const beyond = len > 1e-6 && ((x - p[0]) * sx + (z - p[1]) * sz) / len > 0
+        && Math.abs(((x - o[0]) * sz - (z - o[1]) * sx) / len) < near;
+      if (d >= (end ? Math.max(near, 0.15) : near) && !(beyond && !end)) break;
+      state.routeFrom = r.shift();
       state.routeBest = Infinity;
     }
-    if (!r || !r.length) { state.route = null; return [0, 0]; }
-    const dx = r[0][0] - state.pos.x, dz = r[0][1] - state.pos.z;
+    if (!r || !r.length) { state.route = null; return null; }
+    const p = r[0], o = state.routeFrom;
+    if (!o) return p;
+    const sx = p[0] - o[0], sz = p[1] - o[1], len = Math.hypot(sx, sz);
+    if (len < 1e-6) return p;
+    const along = ((x - o[0]) * sx + (z - o[1]) * sz) / len + look;
+    return along >= len ? p : [o[0] + (sx * Math.max(0, along)) / len, o[1] + (sz * Math.max(0, along)) / len];
+  }
+  // How far the body is from the point it is making for, counted as progress: a body held up gets no
+  // nearer for ROUTE_GIVE_UP and is stuck.
+  function routeProgress(x, z, dt) {
+    const p = state.route[0];
+    const d = Math.hypot(p[0] - x, p[1] - z);
+    if (d < state.routeBest - 0.02) { state.routeBest = d; state.routeSince = 0; return true; }
+    if ((state.routeSince += dt) > ROUTE_GIVE_UP) { routeStuck(); return false; }
+    return true;
+  }
+  function routeInput(dt) {
+    const aim = routeAim(state.pos.x, state.pos.z, ROUTE_NEAR, ROUTE_LOOK);
+    if (!aim || !routeProgress(state.pos.x, state.pos.z, dt)) return [0, 0];
+    const dx = aim[0] - state.pos.x, dz = aim[1] - state.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d < state.routeBest - 0.02) { state.routeBest = d; state.routeSince = 0; }
-    else if ((state.routeSince += dt) > ROUTE_GIVE_UP) { state.route = null; return [0, 0]; }
+    if (d < 1e-6) return [0, 0];
     return [-dx / d, dz / d];
+  }
+  // Got no nearer for ROUTE_GIVE_UP: off the ride and on along the same route on foot (a horse is wider
+  // than a body and turns wide), or, on foot, the route dropped and main.js told, which plans again.
+  function routeStuck() {
+    state.routeBest = Infinity;
+    state.routeSince = 0;
+    if (rides()) { state.routeRide = false; dismount(); return; }
+    const next = state.route && state.route[0];
+    const cb = state.routeStuck;
+    state.route = null;
+    state.routeRide = false;
+    state.routeStuck = null;
+    if (cb) cb({ x: state.pos.x, z: state.pos.z, next });
+  }
+
+  // A route ridden (goTo's `ride`): the reins and the bars as a rider would hold them. Turned towards
+  // the next point, at a pace the turn and what is left of the way allow - a trot along the streets, a
+  // gallop on a long straight while the body's pool lasts (the same pool Shift spends, so a spent one is
+  // a trot), a walk into a tight corner and up to the end. Returns [turn, rein, gallop], walk.js's ix/iz.
+  const RIDE_NEAR = 0.5;           // a point is passed this close on horseback: it turns wider than feet
+  const RIDE_LOOK = 0.8;           // and it looks further along the line, or it weaves along it
+  const RIDE_CORNER = 0.55;        // radians off the next point: slow to the corner pace
+  const RIDE_CORNER_V = 1.2;       // the corner pace: at MOUNT_TURN a turn this fast is 0.46 round, inside RIDE_NEAR
+  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/s²)
+  const RIDE_GALLOP_RUN = 2.5;     // units of straight way ahead before a gallop is worth it
+  const BIKE_CRUISE = 3.5;         // a bicycle on a route keeps to this, well under BIKE_TOP
+  function rideInput(dt) {
+    const b = rides();
+    const aim = routeAim(b.x, b.z, RIDE_NEAR, RIDE_LOOK);
+    if (!aim || !routeProgress(b.x, b.z, dt)) return [0, 0, false];
+    const r = state.route;
+    const ax = aim[0] - b.x, az = aim[1] - b.z;
+    const dx = r[0][0] - b.x, dz = r[0][1] - b.z;
+    const d = Math.max(1e-6, Math.hypot(dx, dz));
+    let err = Math.atan2(ax, az) - b.yaw;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    // What is left, and how much of it runs on straight ahead of the next point.
+    let left = d, straight = d, bent = false;
+    for (let i = 1; i < r.length; i++) {
+      const ax = r[i][0] - r[i - 1][0], az = r[i][1] - r[i - 1][1], len = Math.hypot(ax, az);
+      left += len;
+      if (!bent && len > 1e-6 && (ax * dx + az * dz) / (len * d) > 0.97) straight += len;
+      else bent = true;
+    }
+    const top = state.mount ? MOUNT_TOP * MOUNT_GALLOP : BIKE_CRUISE;
+    // Whatever is ahead (a corner at the corner pace, the end at a walk) is reached in time: a pace
+    // that can still come down to it in the way there is left.
+    const reach = (v, way) => Math.sqrt(v * v + 2 * RIDE_BRAKE * Math.max(0, way));
+    let want = Math.min(top, reach(0.5, left - 0.3));
+    if (bent) want = Math.min(want, reach(RIDE_CORNER_V, straight - RIDE_NEAR));
+    if (Math.abs(err) > RIDE_CORNER) want = Math.min(want, RIDE_CORNER_V * (Math.abs(err) > 1.6 ? 0.4 : 1));
+    const gallop = !!state.mount && Math.abs(err) < 0.2 && straight > RIDE_GALLOP_RUN && want > MOUNT_TOP * 1.1;
+    const pace = state.mount ? (gallop ? MOUNT_TOP * MOUNT_GALLOP : MOUNT_TOP) : BIKE_TOP;
+    // Going too fast for that: the reins or the brakes, not only easing off (which a bicycle takes
+    // seconds to feel).
+    const rein = b.v > want + 0.3 ? -clamp((b.v - want) / 1.5, 0.2, 1) : clamp(want / pace, 0, 1);
+    // `yaw -= turn * rate` in both stepMount and stepBike: a positive turn is to the right.
+    return [clamp(-err * 3, -1, 1), rein, gallop];
+  }
+  // On at the start of a ridden route, off at its end - or, where there is no room for the horse, the
+  // route is simply walked.
+  function rideRoute() {
+    if (!state.route || !state.routeRide || rides()) return;
+    if (!mount()) state.routeRide = false;
   }
 
   // Sent home by the sea (`evicted` after a capture or a drowning), the body first goes down
@@ -2520,7 +2631,7 @@ export function createWalkMode({
 
     // Shift, or the pad's sprint toggle (which the phone's touchpad drives too). What it
     // means depends on where you are, and is decided below; this is only the asking.
-    const boost = keys.has('shift') || stick.run;
+    let boost = keys.has('shift') || stick.run;
     let ix = 0, iz = 0;
     if (keys.has('w') || keys.has('arrowup')) iz += 1;
     if (keys.has('s') || keys.has('arrowdown')) iz -= 1;
@@ -2531,7 +2642,24 @@ export function createWalkMode({
     const keyX = ix, stickX = stick.x, stickZ = stick.z;
     if (Math.abs(stick.x) > 0.01 || Math.abs(stick.z) > 0.01) { ix += stick.x; iz += stick.z; }
     stick.x = 0; stick.z = 0;   // the pad refills this every frame it is touched
-    if (state.parked) [ix, iz] = routeInput(dt);
+    if (state.parked) {
+      rideRoute();
+      if (state.routeRide && rides()) [ix, iz, boost] = rideInput(dt);
+      else [ix, iz] = routeInput(dt);
+      // There: reined in, off where the saddle is, and the last step or two on foot.
+      if (!state.route && state.routeRide) state.routeRide = false;
+      if (!state.route && rides() && Math.abs(rides().v) < 0.3) {
+        dismount({ here: true });
+        const end = state.routeEnd;
+        state.routeEnd = null;
+        if (end && Math.hypot(end[0] - state.pos.x, end[1] - state.pos.z) > 0.15) {
+          state.route = [end];
+          state.routeFrom = [state.pos.x, state.pos.z];
+          state.routeBest = Infinity;
+          state.routeSince = 0;
+        }
+      }
+    }
 
     plane = null;
     if (climb) return stepClimb(dt, ix, iz);
@@ -2651,8 +2779,13 @@ export function createWalkMode({
       const m = state.mount;
       stepPool(state.stamina.body, false, dt);
       stepPool(state.stamina.boat, false, dt);
+      // A route ridden from above gallops for nothing, as feet on one sprint for nothing (below): the
+      // horse's pool is a game in the saddle (Martijn, 8 October 2026: "gratis paard sprint van
+      // boven"), so it is handed no pool and fills meanwhile as if standing.
+      const skyRide = state.parked && state.routeRide;
+      if (skyRide) stepPool(state.stamina.horse, false, dt);
       const turn = state.parked ? ix : keyX + stickTurn(stickX, stickZ);
-      stepMount(m, { rein: iz, turn, gallop: boost && iz > 0.02, hop: hopWanted, pool: state.stamina.horse }, dt, {
+      stepMount(m, { rein: iz, turn, gallop: boost && iz > 0.02, hop: hopWanted, pool: skyRide ? null : state.stamina.horse }, dt, {
         ground: (x, z) => groundAt(x, z, m.air ? m.floor : m.y),
         blocked: (x, z) => blocked(x, z, m.y),
         ceiling: (x, z) => ceilingAt(x, z, m.floor) - HEAD - MOUNT_HEAD,

@@ -185,6 +185,62 @@ Wat dit zegt voor `mountPose`:
   hoort in `bodyY`/`bodyX`/`headX`; een ruiter op het zadelpunt deint dan vanzelf mee.
 - **Draf en kanter** heeft deze referentie niet (alleen Walk en Run). Daarvoor Muybridge.
 
+## Van boven op pad (8 oktober 2026)
+
+Martijn: "routing loopt tegen een huis aan en stopt. dit fixen en laat hem ook het paard gebruiken want hij
+is traag". Een route van boven (klik op de grond, of *Walk here* in het dossier) is `web/js/body-route.js`
+`planRoute`, aangeroepen door `walkBodyTo` in `main.js` en gelopen door `walk.goTo`.
+
+**Waarom hij vastliep.** De A* (`findPath`, die van de bewoners, ongewijzigd) toetste alleen of een *cel*
+vrij is, en de route liep recht van celmidden naar celmidden. Een huis staat op de vrije hoek van zijn
+kavel (9 tot 25 graden), dus een gedraaide muurhoek of een verandapaaltje stak tussen twee vrije middens
+de lijn in. Het lichaam gleed ertegen, kwam twee seconden niet dichterbij en gaf het stil op. Nagespeeld met
+de echte walk mode in een straat echte huizen: 102 van 300 ritten liepen vast (`tests/body-route.test.mjs`).
+
+**Wat de route nu doet.**
+- Een stap tussen twee cellen is alleen een weg als een lichaam over de hele lijn tussen de twee plekken
+  past (`clear`), elke `CLEAR_STEP` (0,2) gevraagd met `CLEAR_PAD` (0,1) speling: elk punt waar de voeten
+  stoppen ligt binnen een halve stap van een monster, dus een smalle hoek glipt er niet meer tussendoor.
+  Rond waar het lichaam staat en het aangeklikte punt geldt die speling niet (`LOOSE`), want een lichaam
+  tegen een muur moet er nog van weg kunnen. `walk.blockedAt(x, z, pad)` kreeg die `pad`.
+- Een aangeklikt dak: de route eindigt aan de rand ervan, niet in het huis.
+- De route wordt rechtgetrokken (`straighten`): een punt valt weg als de lijn erlangs vrij is, alleen over
+  land loopt, geen dek of te mijden cel raakt en geen trede hoger dan 0,25 per monster vraagt.
+- Het lichaam volgt de lijn waarop gepland is (`routeAim` in walk.js): het mikt 0,3 vooruit op de lijn en
+  passeert een punt op 0,1 (of zodra het er voorbij is). Op 0,35 passeren en dan schuin naar het volgende
+  punt liep een lijn naast de geplande, de hoek van een huis in.
+- Loopt het toch vast (een andere speler, een gebouw dat intussen verscheen), dan roept walk.js `onStuck`
+  aan en plant `walkBodyTo` opnieuw vanaf waar het staat, om de cel heen die het niet in kwam, tot drie
+  keer (`REPLANS`). Daarna zegt een toast "Your settler cannot get through there." in plaats van stil op te
+  geven.
+
+**Rijden.** Een route van `RIDE_FROM` (20) cellen of meer wordt gereden (`goTo(points, { ride: true })`):
+het lichaam stapt op wat F hem geeft (`rideKind()`: de Avonturier en de Wanderer het paard, de Reiziger zijn
+fiets - de fiets was weinig extra werk, dezelfde besturing), rijdt de route en stapt aan het eind af op de
+plek van het zadel (`dismount({ here: true })`), waarna het de laatste stap loopt. Waar geen paard past
+(`mount()` weigert) wordt gelopen. De ruiter stuurt naar een punt `RIDE_LOOK` (0,8) vooruit op de lijn en
+passeert punten op `RIDE_NEAR` (0,5); het tempo is wat er nog af kan voor wat er aankomt: een bocht op
+`RIDE_CORNER_V` (1,2), het eind op een stap, met `RIDE_BRAKE` (3) afremmen, de rem gebruikt als hij te hard
+gaat. Galop op een recht stuk van meer dan `RIDE_GALLOP_RUN` (2,5) met de neus op de lijn, anders draf. De
+fiets houdt `BIKE_CRUISE` (3,5) aan. Blijft de ruiter hangen, dan stapt hij af en loopt de route verder.
+Een route van boven galoppeert gratis: `stepMount` krijgt dan geen pool (de paardenpool uit "Het paard heeft
+zijn eigen adem" vult intussen bij), zoals voeten op een route van boven gratis sprinten. Martijns keuze van
+8 oktober: "gratis paard sprint van boven".
+
+**De galop is overal sneller** (Martijn: "paard sprint wordt overal sneller"). Op 3,4 was de Avonturier te
+paard op een route van boven trager dan zijn eigen gratis sprint van 2,7 (411 s te voet, 437 s te paard in een
+dicht straatjesdorp): optrekken en afremmen kostten meer dan de galop won. `HORSE_GALLOP` is nu 4,8 (1,8 keer
+de sprint), en zodat een hoef niet glijdt gaat de galopcadans naar 3,0 Hz en de grondtijd (`duty`) naar ,16:
+4,8 x ,16 / 3,0 = ,26 per stand, wat ,2 bij 2,6 Hz op 3,4 gaf. `CADENCE`/`CADENCE_MAX` in mount.js volgen.
+
+**Gemeten** (28 routes van 20-40 cellen, `tests/body-route.test.mjs`-dorp): de Avonturier 411 s te voet,
+364 s te paard; op open veld 394 tegen 333 s. De Reiziger 693 s te voet, 508 s op de fiets (open 663 / 480).
+In een dorp met een bocht om de vier cellen wint het paard het minst; hoe langer de rechte stukken, hoe meer.
+
+**Anderen** zien de ruiter zoals altijd: `FLAG_RIDING` gaat mee met `bike || mount`, ook geparkeerd, en
+peers.js leest de gang uit de snelheid. Nieuw: `FLAG_ASLEEP` alleen voor een geparkeerd lichaam *zonder*
+route, anders kreeg een paard dat voor een bocht inhield een Zzz.
+
 ## Het paard heeft zijn eigen adem (8 oktober 2026)
 
 Martijns wens: "paard moet eigen stamina krijgen, veel hoger dan mens". Tot dan betaalde de ruiter
@@ -196,7 +252,7 @@ de galop uit zijn eigen pool (BODY: 6 s sprint), dus een galop duurde zes second
 - **Getallen** (bij te stellen):
   - `HORSE = { drain: 40, delay: 1.5, refill: 20 }`: 40 s volle galop (6,7× de 6 s van een mens),
     1,5 s op adem komen, 20 s van leeg tot vol. Op `HORSE_GALLOP` 3,4 is 40 s ongeveer 135 eenheden:
-    een galop over een flink gegroeid eiland, niet alleen over het plein.
+    een galop over een flink gegroeid eiland, niet alleen over het plein (op de latere galop van 4,8 ongeveer 190).
   - `MOUNT_TROT_SHARE = 0.1` (mount.js): een draf kost een tiende, dus 400 s draf maakt hem leeg.
   - `MOUNT_WALK = 1.0` (mount.js): op of onder 1,0 per seconde (een halfingedrukte stick, inhouden,
     stilstaan, grazen) kost het niets en loopt de pool vol. Met alleen het toetsenbord is W altijd
