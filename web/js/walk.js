@@ -14,6 +14,7 @@ import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
 import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segmentEntry, camBodyEntry, camSeesPastSolid } from './solids.js';
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
+import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION } from 'shared/harpoon.mjs';
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
@@ -395,8 +396,12 @@ export function createWalkMode({
     // answers { at, v } in the world; `onGunEvent(what, gun)` hears loading, loaded, empty and the rest.
     onGunFire: null,
     onGunEvent: null,
-    // A harpoon line on the hull being manned (Plans/harpoen.md): `onGunTow(hull, gun, dt)` draws her along it.
+    // A harpoon line on the hull being manned (Plans/harpoen.md): `onGunTow(hull, gun, dt)` draws her along it,
+    // and `onGunRope(gun)` (the crouch key at a harpoon) asks main.js for its line to climb onto.
     onGunTow: null,
+    onGunRope: null,
+    // On a harpoon's taut line: 'walk' along it or 'zip' down it, or null (stepRope).
+    rope: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
     // island's. See setWorking.
@@ -452,6 +457,7 @@ export function createWalkMode({
     if (state.carry) return;                            // both hands are full
     if (rides()) { hopWanted = true; return; }   // taken by the next stepBike/stepMount, feet down
     if (climb) { climb.letGo = true; return; }     // a jump on a ladder is letting go of it
+    if (onLine) { onLine.jump = true; return; }    // and on a harpoon's line it is jumping off it
     if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
@@ -2205,6 +2211,9 @@ export function createWalkMode({
   // The crouch key at an empty gun: in at its muzzle, and out again.
   function climbInGun() {
     const gun = state.gun;
+    // At a harpoon the crouch key is onto its line instead (Plans/harpoen.md), when it holds land or
+    // a ship: main.js finds the line and hands it back through takeRope.
+    if (gun && gun.kind === 'harpoon') return !!(state.onGunRope && state.onGunRope(gun));
     if (!gun || gun.kind !== 'cannon' || gun.loaded || gun.loading > 0 || gun.recoil > 0 || gun.fuse > 0) return false;
     gun.inside = !gun.inside;
     gunEvent(gun.inside ? 'in' : 'out', gun);
@@ -2280,6 +2289,115 @@ export function createWalkMode({
     if (b && state.onLeftDeck) state.onLeftDeck(b);
     return true;
   }
+  // ---- on a harpoon's line (Plans/harpoen.md) ------------------------------------------------------
+  // A line a harpoon has made fast in land or another ship is a way across, as long as it holds: the
+  // keeper's "zipline / balance on rope (afhankelijk van de hoek)". Walked along W/S while it rises less
+  // than ZIP_SLOPE (no balance to keep - the keeper: "je hoeft niet te balanceren"), slid down hanging
+  // from it when it is steeper, and never climbed up a steep one. Space jumps off it like off a rail -
+  // JUMP_V, with the way you had on it in `drift` - and in deep water that is the plunge. Off an end you
+  // are on her deck (where the harpoon's gunner stands) or on the ground at the hook. `line` is main.js's
+  // (web/js/harpoon-play.js ropes()): `ends()` the two fast points in the scene, or null once it has let
+  // go, and `deck` = { boat, x, z, y } the stand at the gun in her frame.
+  let onLine = null;              // { line, t, v, jump }: `t` along it from the gun's end
+  const ROPE_WALK = 0.9;          // u/s along a line: carefully, a foot before the other
+  const ROPE_HANG = 0.42;         // how far the feet hang under a line slid down
+  const ROPE_STEP_OFF = 0.35;     // past the hook's end, onto the ground
+  const ropeAt = { x: 0, y: 0, z: 0 };
+  function takeRope(line, from = 'a') {
+    const e = line && line.ends ? line.ends() : null;
+    if (!e || state.vehicle || climb || rides() || state.sitting || state.carry || state.dying) return false;
+    const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y, e.b.z - e.a.z);
+    const mode = ropeMode(e.a, e.b);
+    // Up a steep one there is nothing to hold on to but the line itself.
+    if (mode.mode === 'none' || (mode.mode === 'zip' && (from === 'a') !== (mode.low === 1))) return false;
+    if (state.gun) leaveGun();
+    const b = deckBoat;
+    if (state.deck) { offDeck(); if (b && state.onLeftDeck) state.onLeftDeck(b); }
+    cancelDig('reset');
+    state.crouching = state.lying = state.dancing = false;
+    onLine = { line, t: from === 'a' ? 0 : len, v: 0, jump: false };
+    state.swimming = false;
+    state.dive = false;
+    keys.clear();
+    return true;
+  }
+  function offRope(jumped, along) {
+    onLine = null;
+    state.rope = null;
+    state.grounded = false;
+    state.vy = jumped ? JUMP_V : 0;
+    airTop = state.pos.y;
+    drift = { x: along.x, z: along.z };
+    state.floor = groundAt(state.pos.x, state.pos.z, WATER_Y);
+  }
+  function stepRope(dt, iz) {
+    const r = onLine;
+    const e = r.line.ends();
+    const still = { x: 0, z: 0 };
+    if (!e) { offRope(false, still); return afterMove(dt); }
+    const { a, b } = e;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const len = Math.hypot(dx, dy, dz);
+    const m = ropeMode(a, b);
+    if (m.mode === 'none' || len < 0.5) { offRope(false, still); return afterMove(dt); }
+    const ux = dx / len, uz = dz / len;
+    // A jump takes the way the body had on the line, not this frame's keys (W is often let go first).
+    if (r.jump) { offRope(true, { x: ux * r.v, z: uz * r.v }); return afterMove(dt); }
+    let speed;
+    if (m.mode === 'walk') {
+      // W walks the way the camera looks along the line, S the other way.
+      const ahead = dx * Math.sin(state.camYaw) + dz * Math.cos(state.camYaw) >= 0 ? 1 : -1;
+      speed = iz * ROPE_WALK * ahead;
+      // Let go of W and the feet stop, but the way they had eases off rather than vanishing, for a jump.
+      r.v = speed !== 0 ? speed : r.v * Math.max(0, 1 - 4 * dt);
+    } else {
+      // Down it hanging from it: gravity's share along the line, less the friction of the hands.
+      const toLow = m.low === 1 ? 1 : -1;
+      const drop = Math.abs(dy) / len;
+      r.v = Math.max(0, Math.min(ZIP_TOP, Math.abs(r.v) + (ZIP_G * drop - ZIP_FRICTION * Math.abs(r.v)) * dt)) * toLow;
+      speed = r.v;
+    }
+    r.t += speed * dt;
+    const along = { x: ux * speed, z: uz * speed };
+    if (r.t <= 0) {
+      // At the gun: onto her deck, where the gunner stands.
+      const d = r.line.deck, hull = d && d.boat;
+      onLine = null;
+      state.rope = null;
+      if (hull) {
+        const surface = hull.craft && hull.craft.walk;
+        const at = surface ? nearestStand(surface, d.x, d.z, d.y + 0.2) : null;
+        deckBoat = hull;
+        state.deck = { boat: hull.id, x: at ? at.x : d.x, z: at ? at.z : d.z, y: at ? at.y : d.y, vy: 0, grounded: true, yaw: state.yaw - hull.yaw };
+        if (state.onBoarded) state.onBoarded(hull, { stowed: false });
+        return afterMove(dt);
+      }
+      offRope(false, along);
+      return afterMove(dt);
+    }
+    if (r.t >= len) {
+      // At the hook: a step past it, on the ground there (or, a hook in another ship, in the water by her).
+      const x = b.x + ux * ROPE_STEP_OFF, z = b.z + uz * ROPE_STEP_OFF;
+      state.pos.set(x, Math.max(b.y, groundAt(x, z, WATER_Y)), z);
+      offRope(false, still);
+      return afterMove(dt);
+    }
+    alongLine(a, b, r.t, ropeAt);
+    state.rope = m.mode;
+    state.pos.set(ropeAt.x, ropeAt.y - (m.mode === 'zip' ? ROPE_HANG : 0), ropeAt.z);
+    if (Math.abs(speed) > 0.01) state.yaw = Math.atan2(ux * Math.sign(speed), uz * Math.sign(speed));
+    else if (m.mode === 'walk' && r.v === 0) state.yaw = Math.atan2(ux, uz);
+    state.moving = m.mode === 'walk' && Math.abs(speed) > 0.01;
+    state.running = state.sprinting = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.floor = state.pos.y;
+    state.vy = 0;
+    frameDistance += Math.abs(speed) * dt;
+    state.bob += dt;
+    return afterMove(dt);
+  }
+
   // One frame at a mount: carried by the hull like a seat, laid towards where the camera looks, a ball
   // rammed home over LOAD_S, the run back and out after a shot.
   function stepGun(dt, ix, iz) {
@@ -3056,6 +3174,7 @@ export function createWalkMode({
     }
 
     plane = null;
+    if (onLine) return stepRope(dt, iz);
     if (climb) return stepClimb(dt, ix, iz);
     if (state.deck && deckBoat) return stepOnDeck(dt, ix, iz, boost);
 
@@ -3570,7 +3689,8 @@ export function createWalkMode({
       horseback: state.mount ? state.riderMotion || true : false,
       dancing: dancingNow(),
       dying: state.dying,
-      climbing: climb ? state.climbing : null,
+      // Sliding down a harpoon's line the body hangs from it by its hands, as on a ladder's rungs.
+      climbing: climb ? state.climbing : state.rope === 'zip' ? { rise: 0 } : null,
       // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
       // its pose across the ends of (classic-avatar.js LADDER_FADE)
       onLadder: !!climb,
@@ -3938,7 +4058,7 @@ export function createWalkMode({
     // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
     // giving out - both end in the constructor's onLetGo with where she lies.
     setDown, letGo,
-    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, takeRope, onLine: () => !!onLine, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
     // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and

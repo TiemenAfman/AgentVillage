@@ -39,6 +39,7 @@ import { createGuestIsland } from './guest-island.js';
 import { createBoat, DECK_Y, BOW, hullPointOf, hullTiltOf, strikeSail, logOf, hullSpeed, nearestSail, sailOf } from './boat.js';
 import { createCannonFx } from './cannon-fx.js';
 import { createHarpoonPlay } from './harpoon-play.js';
+import { ropeMode } from 'shared/harpoon.mjs';
 import { createHullBars } from './hull-bars.js';
 import { BALL_SPEED, HUMAN_SPEED, ROWBOAT_BOX } from 'shared/cannon.mjs';
 import { housePlacement } from './house-placement.js';
@@ -1260,6 +1261,18 @@ function interactables() {
   // ladders and left by jumping or by the ladder, so on her deck E is the wheel and nothing else.
   const aboard = state.walk && state.walk.aboard();
   const deck = !aboard && state.walk && state.walk.deckWhere();
+  // On foot at the land end of a harpoon's line (Plans/harpoen.md): E is onto it - walked if it lies
+  // flat enough, slid down if it falls from here, and not offered at all up a steep one.
+  if (!aboard && !deck && state.harpoons && !state.walk.onLine()) {
+    for (const rope of state.harpoons.ropes()) {
+      const e = rope.ends();
+      if (!e) continue;
+      const m = ropeMode(e.a, e.b);
+      if (m.mode === 'none' || (m.mode === 'zip' && m.low !== 0)) continue;
+      out.push({ id: `rope:${rope.key}`, kind: 'rope', rope, x: e.b.x, z: e.b.z, r: 1.4, label: 'the harpoon line',
+        prompt: m.mode === 'zip' ? 'slide down the line' : 'walk the line' });
+    }
+  }
   if (deck) {
     const b = deck.boat;
     // Only a free wheel, or one that is ours already: a second hand on it is the sea's refusal
@@ -2227,6 +2240,7 @@ function walkCallbacks() {
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
       else if (it.kind === 'leavehelm') { if (state.walk.leaveHelm()) { if (state.net) { state.net.letGoBoat(it.id, sailOf(state.walk.onDeck())); state.net.setRoom(null, state.walk); } state.walk.setInteractables(interactables()); } }
       else if (it.kind === 'gun') { if (state.walk.manGun(it.i)) state.walk.setInteractables(interactables()); }
+      else if (it.kind === 'rope') { if (state.walk.takeRope(it.rope, 'b')) state.walk.setInteractables(interactables()); }
       else if (it.kind === 'nestseat') {
         if (state.walk.state.sitting) state.walk.standUp();
         else state.walk.sitOnDeck(it.seat);
@@ -2281,6 +2295,15 @@ function walkCallbacks() {
     onGunFire: (shot) => (shot.kind === 'harpoon' ? fireHarpoonHere(shot) : fireCannonHere(shot)),
     // A harpoon's line drawing our own hull along it (web/js/harpoon-play.js; walk.js stepGun).
     onGunTow: (b, gun, dt) => { if (gun.kind === 'harpoon' && state.harpoons) state.harpoons.tow(b, gun, dt); },
+    // The crouch key at a harpoon whose line holds land or a ship: out along it.
+    onGunRope: (gun) => {
+      const hb = boatAt(gun.boat);
+      const rope = hb && state.harpoons ? state.harpoons.ropeAt(hb, gun.i) : null;
+      if (!rope) { state.ui.toast('Hook the shore or a ship first: then the line is a way across.'); return false; }
+      if (!state.walk.takeRope(rope, 'a')) { state.ui.toast('Too steep to climb: a line is only slid down.'); return false; }
+      state.walk.setInteractables(interactables());
+      return true;
+    },
     onGunEvent: (what, gun) => {
       if (what === 'empty') state.ui.toast('Load it first: R rams a ball home.');
       if (what === 'in') state.ui.toast('In the barrel. Light the fuse and you are fired out of it!');
@@ -2288,6 +2311,7 @@ function walkCallbacks() {
       if (what === 'manned' || what === 'left') state.walk.setInteractables(interactables());
       // Off a harpoon with its line out: the line is let go of, and reels home on its own.
       if (what === 'left' && gun && gun.kind === 'harpoon' && state.harpoons) { const hb = boatAt(gun.boat); if (hb) state.harpoons.release(hb, gun.i); }
+      if (what === 'manned' && gun && gun.kind === 'harpoon' && state.harpoons) { const hb = boatAt(gun.boat); if (hb) state.harpoons.manned(hb, gun.i); }
     },
   };
 }
@@ -2321,7 +2345,10 @@ function syncGunHud() {
     const what = held ? (held.kind === 'statue' ? 'the statue' : held.kind === 'land' ? 'the shore' : 'a ship') : null;
     if (!line || line.state === 'stowed') { head = 'Harpoon ready'; lines = [`${fire} fire the harpoon`, `${key('E')} leave`]; }
     else if (line.state === 'flying') { head = 'The line runs out...'; lines = [`${fire} let go of the line`]; }
-    else if (held) { head = `Hooked on ${what}, reeling in`; lines = [`${fire} let go of the line`, `${key('E')} leave`]; }
+    else if (held) {
+      head = `Hooked on ${what}, reeling in`;
+      lines = [`${fire} let go of the line`, ...(held.kind !== 'statue' ? [`${key('C')} out along the line`] : []), held.kind === 'statue' ? `${key('E')} leave (and let go)` : `${key('E')} leave (the line stays fast)`];
+    }
     else { head = 'Reeling the line home...'; lines = [`${key('E')} leave`]; }
     gunHud.className = held ? 'loaded' : '';
   } else if (g.fuse > 0) {
@@ -2362,6 +2389,7 @@ function gunFuseFx() {
   state.cannonFx.fuse([ventAt.x, ventAt.y, ventAt.z], g.fuse > 0);
 }
 let shotsFired = 0;
+let ropeSig = '';
 // A gun fired from our deck: the muzzle and the way out of it in the scene, read off the transform
 // the hull is drawn with this frame, so the ball leaves the bore that is drawn. A ball goes to the
 // effects and the sea; a body (`self`) is answered { at, v } for walk mode to fly along.
@@ -8408,7 +8436,12 @@ function frame(nowMs) {
 
   // The harpoons' lines (web/js/harpoon-play.js): after walk mode has stepped, so a line leaves the
   // mouth where the hull now is, and before the fleet loop sends her position.
-  if (state.harpoons) state.harpoons.frame(dt);
+  if (state.harpoons) {
+    state.harpoons.frame(dt);
+    // A line made fast or let go is an offer of E come or gone at its land end.
+    const sig = state.harpoons.ropes().map((r) => r.key).join(',');
+    if (sig !== ropeSig && state.walk) { ropeSig = sig; state.walk.setInteractables(interactables()); }
+  }
 
   // The fleet. A boat somebody is sailing is being moved by walk mode, so this only has to
   // put the hull where that has left it; a moored one sits still and bobs.

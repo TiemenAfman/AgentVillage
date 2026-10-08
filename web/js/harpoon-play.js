@@ -9,8 +9,9 @@
 //
 // Only our own hull is ever moved, and only while no other page is stepping her (hullFollowed): on the
 // sea a boat goes where her pilot's page - or the page that just let go of her - says (lib/boats.mjs).
-// The fire button with a line out lets go of it; leaving the gun lets go too, and the bolt is reeled home
-// on its own. Nothing goes to the sea yet (fase B: others seeing the line, players hooked, a loose boat
+// The fire button with a line out lets go of it. Leaving the gun lets go of a line on the statue (and the
+// bolt is reeled home on its own); one made fast in land or a ship stays where it is, unreeled, as a way
+// across (ropes(): walk.js takeRope) until it is let go of, or the ship drifts far enough to part it. Nothing goes to the sea yet (fase B: others seeing the line, players hooked, a loose boat
 // towed).
 import * as THREE from 'three';
 import { createHarpoonLine } from './harpoon-line.js';
@@ -24,6 +25,9 @@ const HOLD = Object.freeze({ statue: REEL_MIN, land: 6, galleon: 9, rowboat: 4 }
 const HULL_R = Object.freeze({ galleon: 2.4, rowboat: 0.8 });
 const HULL_Y = Object.freeze({ galleon: 1.6, rowboat: 0.4 });
 const STATUE_R = 0.45;
+// How much further than the line is long the two ends may come apart before it parts (a ship drifting
+// off a line nobody is reeling).
+const SNAP = 2.5;
 // A statue the reel has within this of the gun's mouth is on board.
 const ABOARD_AT = REEL_MIN + 0.4;
 
@@ -91,10 +95,18 @@ export function createHarpoonPlay(deps) {
     e.held = null;
     e.line.release();
   }
-  // Leaving the gun lets go of its line.
+  // Leaving the gun: a line on land or a ship is left fast, and stops reeling; anything else is let go.
   function release(b, i) {
     const e = lines.get(`${b.id}:${i}`);
-    if (e && e.line.state !== 'stowed') letGoOf(e);
+    if (!e || e.line.state === 'stowed') return;
+    const h = e.line.hooked();
+    if (h && h.kind !== 'statue') e.line.reeling = false;
+    else letGoOf(e);
+  }
+  // Back at it: the reel takes in again.
+  function manned(b, i) {
+    const e = lines.get(`${b.id}:${i}`);
+    if (e) e.line.reeling = true;
   }
 
   // Our hull, drawn along a line of hers that holds land or a ship (walk.js stepGun, onGunTow).
@@ -122,6 +134,8 @@ export function createHarpoonPlay(deps) {
         line.minL = HOLD[h.kind] ?? REEL_MIN;
       }
       if (h && h.kind === 'statue') haulStatue(e, m.at);
+      // A ship drifting off a line nobody reels parts it.
+      if (h && h.kind !== 'statue' && !line.reeling && Math.hypot(h.x - m.at.x, h.y - m.at.y, h.z - m.at.z) > line.L + SNAP) letGoOf(e);
       if (!h && e.held) e.held = null;
       if (b.craft.harpoonBolt) b.craft.harpoonBolt(e.i, line.state === 'stowed');
       if (e.bolt) {
@@ -172,5 +186,31 @@ export function createHarpoonPlay(deps) {
     return out;
   };
 
-  return { fire, release, tow, frame, lineAt, cues };
+  // The lines that are a way across: made fast in land or a ship. Each as walk.js takeRope wants it:
+  // `ends()` the gun's mouth (a) and the hook (b) in the scene now, or null once it has let go, and
+  // `deck` where on her a body comes off it at the gun's end (the gunner's stand, in her frame).
+  const ends = new Map();
+  function ropeOf(e) {
+    let r = ends.get(e);
+    if (!r) {
+      const spec = e.boat.craft && e.boat.craft.spec && e.boat.craft.spec.mounts ? e.boat.craft.spec.mounts[e.i] : null;
+      const a = new THREE.Vector3();
+      r = {
+        key: `${e.boat.id}:${e.i}`,
+        ends() {
+          const h = e.line.hooked();
+          if (!h || h.kind === 'statue' || !(deps.boats() || []).includes(e.boat)) return null;
+          const m = mouthOf(e.boat, e.i, a);
+          return m ? { a: { x: a.x, y: a.y, z: a.z }, b: { x: h.x, y: h.y, z: h.z } } : null;
+        },
+        deck: spec ? { boat: e.boat, x: spec.stand[0], z: spec.stand[1], y: spec.y } : null,
+      };
+      ends.set(e, r);
+    }
+    return r;
+  }
+  const ropes = () => [...lines.values()].filter((e) => { const h = e.line.hooked(); return h && h.kind !== 'statue'; }).map(ropeOf);
+  const ropeAt = (b, i) => { const e = lines.get(`${b.id}:${i}`); const h = e && e.line.hooked(); return h && h.kind !== 'statue' ? ropeOf(e) : null; };
+
+  return { fire, release, manned, tow, frame, lineAt, cues, ropes, ropeAt };
 }
