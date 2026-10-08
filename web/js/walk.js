@@ -395,6 +395,8 @@ export function createWalkMode({
     // answers { at, v } in the world; `onGunEvent(what, gun)` hears loading, loaded, empty and the rest.
     onGunFire: null,
     onGunEvent: null,
+    // A harpoon line on the hull being manned (Plans/harpoen.md): `onGunTow(hull, gun, dt)` draws her along it.
+    onGunTow: null,
     // The board you are standing at and working, or null. While one is held the page on
     // it owns the keyboard and the mouse; only the keys that walk you away are still the
     // island's. See setWorking.
@@ -598,6 +600,14 @@ export function createWalkMode({
     const item = state.carry;
     state.carry = null;
     if (classicAvatar.setCarry) classicAvatar.setCarry(false);
+    state.cargo = { item, hull };
+    if (hull.craft && hull.craft.setCargo) hull.craft.setCargo(cargoMesh(item, material));
+    return true;
+  }
+  // Laid on a hull without passing through the arms: the statue a harpoon's line hauled aboard
+  // (Plans/harpoen.md). Only with the hands and the hulls empty of it already.
+  function takeAsCargo(item, hull) {
+    if (!hull || state.carry || state.cargo) return false;
     state.cargo = { item, hull };
     if (hull.craft && hull.craft.setCargo) hull.craft.setCargo(cargoMesh(item, material));
     return true;
@@ -2226,7 +2236,12 @@ export function createWalkMode({
   function stepGun(dt, ix, iz) {
     const b = deckBoat, d = state.deck, gun = state.gun, g = mountsOf()[gun.i];
     if (!b || !g) { state.gun = null; return afterMove(dt); }
-    if (!isFollowing(b)) stepBoat(b, {}, dt, boatGround(b));
+    if (!isFollowing(b)) {
+      stepBoat(b, {}, dt, boatGround(b));
+      // A harpoon's line on her (Plans/harpoen.md): main.js draws her along it, here, before the body
+      // is stood on her, so the gunner rides the tow rather than sliding a frame behind it.
+      if (state.onGunTow) state.onGunTow(b, gun, dt);
+    }
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -3881,7 +3896,7 @@ export function createWalkMode({
     // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
     // giving out - both end in the constructor's onLetGo with where she lies.
     setDown, letGo,
-    lift, putDown, carrying: () => state.carry, putOnBoat, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, cargo: () => state.cargo, hoistOnto, lowerOff,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
     // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and

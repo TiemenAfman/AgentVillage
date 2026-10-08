@@ -38,6 +38,9 @@ export function createHarpoonLine({ material = null, world = {} } = {}) {
     // The line's length: paid out while flying, the reel's to shorten after.
     L: 0,
     reeling: true,
+    // How short the reel draws the line on what it holds: REEL_MIN for a statue brought to the gun's
+    // mouth, more for a ship drawn to a rock or another ship (main.js sets it when it hooks).
+    minL: REEL_MIN,
     taut: false,
     hook: null,                 // { kind, id, target, off: [x, y, z] } while hooked
     cues: { fired: 0, hooked: 0, clicks: 0, tension: 0 },
@@ -72,6 +75,7 @@ export function createHarpoonLine({ material = null, world = {} } = {}) {
     line.state = 'flying';
     line.L = 0;
     line.hook = null;
+    line.minL = REEL_MIN;
     line.cues.fired++;
     return true;
   };
@@ -124,7 +128,7 @@ export function createHarpoonLine({ material = null, world = {} } = {}) {
   }
   function wind(dt) {
     const before = line.L;
-    line.L = Math.max(REEL_MIN, line.L - REEL_SPEED * dt);
+    line.L = Math.max(line.minL, line.L - REEL_SPEED * dt);
     wound += before - line.L;
     clicks();
   }
@@ -143,6 +147,8 @@ export function createHarpoonLine({ material = null, world = {} } = {}) {
 
   // The hooked end, for whoever does the pulling: { kind, id, x, y, z } or null.
   line.hooked = () => (line.state === 'hooked' ? { kind: line.hook.kind, id: line.hook.id, x: bolt.x, y: bolt.y, z: bolt.z } : null);
+  // All the line is in that the reel will take: what it holds is as close as it comes.
+  line.reeledIn = () => line.state === 'hooked' && line.L <= line.minL + 1e-9;
   line.mesh = mesh;
 
   const t = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3();
