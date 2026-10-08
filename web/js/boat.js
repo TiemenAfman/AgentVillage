@@ -23,7 +23,7 @@ import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y, SEAT_Y, FLOORBOARDS } from 'shared/hull.mjs';
 import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
-import { createSurface } from 'shared/hullwalk.mjs';
+import { createSurface, createSide } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
 import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
 import * as models from './models.js';
@@ -148,6 +148,33 @@ export function hullOver(hulls, x, z, ground) {
   let h = ground;
   for (const b of hulls) {
     if (b.hull > h && Math.abs(x - b.x) < b.hx && Math.abs(z - b.z) < b.hz) h = b.hull;
+  }
+  return h;
+}
+
+// And a ship that is a boat herself - every island's galleon, ours or somebody else's, moored, under
+// way or running out - to a boat (Plans/speeltest-quests.md B1: a rowing boat rowed straight through
+// her, out to under her ladder and into her hull). She is in no blocker list: she moves, and the
+// list is the island's. So the ground a hull is handed has every ship in `boats` stood up out of the
+// water too, where her model is at the waterline (`craft.side`, shared/hullwalk.mjs createSide) as
+// she is drawn now, at her own heading - not a box, or the foot of her ladders, 0.2 off her side, is
+// out of reach and nobody hoists anything. Her side reads SHIP_SIDE_H, over BOAT_SCRAPE like the
+// Batavia's, so a bow that meets it stops as at a quay and backs off the same way. `self` is the hull
+// being stepped, which is never in its own way.
+export const SHIP_SIDE_H = 1.0;
+// Past this from her middle nothing of her is near: she is 10.2 long and 4.4 wide at the water.
+const SHIP_NEAR = 7;
+export function shipsOver(boats, x, z, ground, self) {
+  let h = ground;
+  if (h >= SHIP_SIDE_H) return h;
+  for (const b of boats) {
+    const side = b !== self && b.craft && b.craft.side;
+    if (!side) continue;
+    const dx = x - b.x, dz = z - b.z;
+    if (Math.abs(dx) > SHIP_NEAR || Math.abs(dz) > SHIP_NEAR) continue;
+    // Into her frame: shared/deck.mjs toLocal, with forward (sin, cos) of her yaw.
+    const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
+    if (side(dx * fz - dz * fx, dx * fx + dz * fz)) return SHIP_SIDE_H;
   }
   return h;
 }
@@ -388,6 +415,7 @@ const SHIP = 'pirateship hull';
 // The ship's walking surface, cut from her model (scripts/build-shipwalk.mjs): what a body on her deck
 // stands on and walks into. One for every ship, since every ship is the same hull.
 export const SHIP_SURFACE = createSurface(SHIPWALK);
+export const SHIP_SIDE = createSide(SHIPWALK);
 // The wheel stands on a round plinth of three tiers that the model has 0.2 over the quarterdeck, and the
 // pilot stands on top of it, not in it: asked of the model, since it is the model that has the plinth.
 const HELM_AT = [0, -3.2];
@@ -541,6 +569,51 @@ function rowboatGeometry() {
   return { geometry: mergeParts(parts), oars };
 }
 
+// The sea inside the rowing boat. Her floorboards are 0.035 over still water (FLOORBOARDS less
+// DRAUGHT), and the water's swell (+-0.09, aWave in world.js) and her own bob and pitch come over
+// that, so the sea showed in the bottom of her and she looked to be sinking. Floating her higher
+// would lift her keel out of the water instead; so the water is kept out of her the way a boat in
+// any game does it: a lid over her opening that writes depth and no colour, drawn after everything
+// opaque (`renderOrder`) and so before the water, which is transparent and drawn last. What is in
+// the boat - the floorboards, the rower, the statue - is already drawn under it; the water behind
+// it fails the depth test. LID is its height over the keel: under the lowest of her sheer (0.21,
+// abaft amidships) and over anything the water reaches inside her, so from the side it never shows
+// a hole above her gunwale. Its outline is her own at that height, a hair inside her planking.
+export const ROWBOAT_LID = 0.2;
+const LID_BAND = 0.03, LID_SLICE = 0.05, LID_IN = 0.95;
+export function rowboatLid() {
+  const half = new Map();
+  for (const n of rowParts()) {
+    if (OAR.test(n)) continue;
+    const part = models.part(n);
+    const p = part.positions, at = part.at || [0, 0, 0];
+    for (let i = 0; i < p.length; i += 3) {
+      if (Math.abs(p[i + 1] + at[1] - ROWBOAT_LID) > LID_BAND) continue;
+      const k = Math.round((p[i + 2] + at[2]) / LID_SLICE);
+      half.set(k, Math.max(half.get(k) || 0, Math.abs(p[i] + at[0])));
+    }
+  }
+  const ks = [...half.keys()].sort((a, b) => a - b);
+  if (ks.length < 3) return null;
+  // Stern to stem down her starboard side, and back up the other: [x, z] in her own frame.
+  const side = ks.map((k) => [half.get(k) * LID_IN, k * LID_SLICE]);
+  return [...side, ...side.reverse().map(([x, z]) => [-x, z])];
+}
+
+function lidMesh() {
+  const outline = rowboatLid();
+  if (!outline) return null;
+  // A shape in (x, -z), laid flat: rotateX(-PI/2) takes (x, y, 0) to (x, 0, -y).
+  const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const geometry = new THREE.ShapeGeometry(shape);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, ROWBOAT_LID - DRAUGHT, 0);
+  const lid = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
+  lid.renderOrder = 10;
+  lid.raycast = () => {};
+  return lid;
+}
+
 export function createBoat({ scene, material, kind = 'rowboat' }) {
   const ship = kind === 'ship' && models.has(SHIP);
   // The rowing boat, if it has been baked; the drawn hull otherwise. The same `models.has` guard
@@ -552,6 +625,9 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   const oars = rowing ? rowing.oars : [];
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = true;   // sailIn's boat does; a hull with no shadow reads as a decal
+  // The water kept out of her (rowboatLid above): a child, so the swell carries it with her.
+  const lid = rowing ? lidMesh() : null;
+  if (lid) object.add(lid);
   scene.add(object);
   let heading = 0;
   let cargo = null;
@@ -610,6 +686,8 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     // What a body on her deck walks on and into (shared/hullwalk.mjs); the rowing boat has none, since
     // her whole deck is her helm.
     walk: ship ? SHIP_SURFACE : null,
+    // Her side at the waterline, where another boat meets her (shipsOver); a rowing boat is in nobody's way.
+    side: ship ? SHIP_SIDE : null,
     camScale: ship ? 10 : 2.2,
     beam: ship ? 3.5 : 0.3,
     // The oars, for whoever pulls them: the stroke now (0..1, see STROKE) and where a hand holds
@@ -684,6 +762,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
       cargo = null;
       scene.remove(object);
       geometry.dispose();
+      if (lid) { lid.geometry.dispose(); lid.material.dispose(); }
     },
   };
 }

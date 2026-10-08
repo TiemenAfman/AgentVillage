@@ -32,6 +32,10 @@ const CEILING = 1.2;
 const DOOR_HALF = 0.4;
 // Where a dig's hole is, measured from the feet: walk.js DIG_REACH (0.6), which is one spot.
 const AHEAD = 0.6;
+// How far down the camera looks on the way in (camPitch, radians; walk.js lets the mouse go to 0.95).
+export const MINE_PITCH = 0.75;
+// The lamps on the posts at the top floor; a floor deeper is a little darker (dim()).
+const LAMP = 3.2;
 // The spot under the field's (x, z), in room space.
 const fieldSpot = (x, z) => spotAt(x, z - FIELD_Z);
 const spotRoom = (i) => { const c = spotCentre(i); return { x: c.x, z: c.z + FIELD_Z }; };
@@ -43,6 +47,10 @@ function shellParts(FLOOR) {
   const w = HALF_W * 2, d = SOUTH - NORTH;
   const midZ = (SOUTH + NORTH) / 2;
   parts.push(box(w + WALL * 2, 0.24, d + WALL * 2, C.earth, { y: FLOOR - 0.24, z: midZ }));
+  // The field: one even bed of loose earth over all of it, the same everywhere, so it shows where
+  // there is digging to be done and nothing of where a spot is. Without it the undrawn spots were
+  // the cave's dark floor, and from above the field was a black patch with the holes lost in it.
+  parts.push(box(FIELD + CELL * 0.2, 0.012, FIELD + CELL * 0.2, C.loose, { y: FLOOR, z: FIELD_Z }));
   // Rough rock walls: overlapping boulders of a few sizes along each face, so the line is broken.
   const boulder = (x, z, s) => {
     const h = CEILING * (0.9 + rng.next() * 0.25);
@@ -70,15 +78,19 @@ function shellParts(FLOOR) {
     parts.push(box(0.08, 0.015, 0.08, C.iron, { x, y: FLOOR + 0.8, z }));
   }
   // A rope ladder hanging in at the way in, the way back up - from any floor it is the way out.
-  for (let y = 0.1; y < 0.8; y += 0.12) parts.push(box(0.28, 0.02, 0.03, C.rope, { x: DOOR_HALF + 0.3, y: FLOOR + y, z: SOUTH - 0.1 }));
+  for (let y = 0.1; y < 0.8; y += 0.12) parts.push(box(0.28, 0.02, 0.03, C.rope, { x: LADDER.x, y: FLOOR + y, z: SOUTH - 0.1 }));
   // The lid: a ceiling of rock.
   roof.push(box(w + WALL * 2, 0.2, d + WALL * 2, C.rockDark, { y: FLOOR + CEILING, z: midZ }));
   return { parts, roof };
 }
+// The rope ladder by the way in: where it hangs, and where E at it is answered (a step in front).
+const LADDER = { x: DOOR_HALF + 0.3, z: SOUTH - 0.45 };
 const LAMPS = [[-HALF_W + 0.2, NORTH + 0.6], [HALF_W - 0.2, NORTH + 0.6], [-HALF_W + 0.2, SOUTH - 0.9], [HALF_W - 0.2, SOUTH - 0.9]];
 
-// The field as it stands: a mound of loose earth on every spot not dug, a rock where there is one, a
-// hole where there was a dig, and the stair (or the key) where the goal was dug open.
+// The field as it stands: a rock where there is one, a hole where there was a dig, and the stair (or
+// the key) where the goal was dug open. A spot nobody has dug is not drawn at all - the cave's floor is
+// the field, so nothing shows where the spots are until you dig one (the keeper's, Plans/speeltest-quests.md;
+// it was a mound of loose earth on every spot). The prompt still says when E would dig.
 function fieldParts(FLOOR, run) {
   const parts = [];
   const f = run.plan();
@@ -95,11 +107,7 @@ function fieldParts(FLOOR, run) {
       parts.push(box(s * 0.35, 0.22, s * 0.35, C.rock, { x: x + jz * 2, y: FLOOR + 0.24, z: z + jx * 2, ry: turn * 3, rx: 0.3, rz: 0.35 }));
       continue;
     }
-    if (!run.isDug(i)) {
-      parts.push(box(s, 0.05, s, C.loose, { x, y: FLOOR, z, ry: turn * 0.2 }));
-      parts.push(box(s * 0.6, 0.08, s * 0.55, C.loose, { x: x + jx, y: FLOOR, z: z + jz, ry: turn }));
-      continue;
-    }
+    if (!run.isDug(i)) continue;
     // A hole, and the earth thrown up beside it.
     parts.push(box(s * 0.78, 0.012, s * 0.78, C.dark, { x, y: FLOOR, z }));
     parts.push(box(s * 0.3, 0.05, s * 0.25, C.loose, { x: x + s * 0.42, y: FLOOR, z: z - s * 0.3, ry: turn }));
@@ -139,11 +147,18 @@ export function buildGoldMine({ FLOOR, rect, run, on = {} }) {
     ceiling: CEILING,
     background: 0x0b0806,
     fog: [6, 16],
-    ambience: { sky: 0x6a5840, ground: 0x241a10, hemi: 0.7, hex: 0xffd9a0, amb: 0.3 },
+    ambience: { sky: 0x6a5840, ground: 0x241a10, hemi: 0.9, hex: 0xffd9a0, amb: 0.45 },
     areas: [{ x0: -HALF_W, x1: HALF_W, z0: NORTH, z1: SOUTH }],
     spawn: { x: 0, z: SPAWN_Z },
     doorway: { z: SOUTH + WALL, hx: DOOR_HALF + 0.02 },
-    camera: { back: 1.8, up: 0.62, aim: 0.3 },
+    // The rope ladder by the way in answers E as the way out (interior.js `exits`, no `to`: out by
+    // the door like walking through it). Both of main.js's words for the mine send you to it, and it
+    // was only drawn, so pressing E at it did nothing (Plans/speeltest-quests.md).
+    exits: [{ id: 'goldmine:ladder', kind: 'exit', x: LADDER.x, z: LADDER.z, r: 0.55, label: 'the ladder', prompt: 'climb the ladder out of the mine' }],
+    // Looked down into from above (the keeper's, Plans/speeltest-quests.md): low behind you, the body
+    // stood in front of the spot you dig and the hole never showed. Up there the camera is through the
+    // rock ceiling, which interior.js takes off as the lid it is; the mouse may still look flatter.
+    camera: { back: 3.0, up: 0.62, aim: 0.3, pitch: MINE_PITCH },
     show: (opts) => createMineShow({ ...opts, FLOOR, rect, run, on }),
   };
 }
@@ -153,7 +168,7 @@ function createMineShow({ scene, material, FLOOR, rect, run, on }) {
   let walk = null, refresh = null;
   // Four lamps, lit warm, and dimmer the deeper you go. A fixed count: it is in the program's key.
   const lamps = LAMPS.map(([x, z]) => {
-    const l = new THREE.PointLight(0xffb85a, 2.4, 8, 1.6);
+    const l = new THREE.PointLight(0xffb85a, LAMP, 9, 1.6);
     l.position.set(x, FLOOR + 0.75, z);
     scene.add(l);
     return l;
@@ -224,7 +239,7 @@ function createMineShow({ scene, material, FLOOR, rect, run, on }) {
   }
   function dim() {
     const deep = (run.floor() - 1) / 6;
-    for (const l of lamps) l.intensity = 2.4 - 0.9 * deep;
+    for (const l of lamps) l.intensity = LAMP - 0.9 * deep;
   }
   return {
     // Every visit starts at the top (the keeper's rule), so the field is seeded here, not when built.
