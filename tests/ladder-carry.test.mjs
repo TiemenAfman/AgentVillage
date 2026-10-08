@@ -42,9 +42,8 @@ const FRAME = 1 / 60;
 const SHIP = CRAFTS.galleon;
 const L = SHIP.ladders.find((l) => l.x > 0);   // her starboard ladder, at +x: she lies at the origin, bow north
 
-// Sea, with a quay along her starboard side to lift the statue on. She is not swum out to: in water
-// deep enough to dive the statue slips out of the arms onto the shore (walk.js letGo 'water'). `quay`
-// false takes the quay away, for the way down into deep water.
+// Sea, with a quay along her starboard side to lift the statue on. `quay` false takes the quay away,
+// for the way down into deep water - where she floats, and a swimmer keeps her in the arms.
 let quay = true;
 const ground = (x) => (quay && x > 2.5 ? 0.1 : -2.5);
 
@@ -128,17 +127,15 @@ test('down the ladder from a deck she is on: the statue comes along on the back,
   assert.deepEqual(walk.cargo(), { item: 'statue', hull: ship });
 });
 
-test('not down into deep water with her: hanging at the foot, and up again she is the ship\'s once more', () => {
-  const { walk, ship, refused } = upAndOver();
+test('down into deep water with her: off the foot of the ladder swimming, the statue still in the arms', () => {
+  const { walk, refused } = upAndOver();
   quay = false;
-  const going = push(walk, [1, 0], 20);
+  const going = push(walk, [1, 0], 20, (o) => o.some((f) => f.climbing) && !o[o.length - 1].climbing && !o[o.length - 1].deck);
   assert.ok(going.some((f) => f.climbing && f.carry === 'statue'), 'down the rungs with her on the back');
-  assert.ok(refused.includes('carry'), 'told why at the foot');
-  assert.ok(!walk.state.swimming, 'never in the water');
-  assert.equal(walk.carrying(), 'statue', 'still on the back, hanging');
-  push(walk, [-1, 0], 30, (o) => o[o.length - 1].deck);
-  assert.ok(walk.state.deck, 'back on her deck');
-  assert.deepEqual(walk.cargo(), { item: 'statue', hull: ship });
+  assert.ok(!refused.includes('carry'), 'nothing refused at the foot');
+  assert.ok(walk.state.swimming, 'in the water');
+  assert.equal(walk.carrying(), 'statue', 'she floats, and the swimmer keeps her');
+  assert.equal(walk.cargo(), null);
 });
 
 test('a carrier does not let go of the ladder: Space is nothing with her on the back', () => {
