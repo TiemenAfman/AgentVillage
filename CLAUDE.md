@@ -855,6 +855,10 @@ off main.js `seatOf`'s `rowing`), the origin a hip's height under the seat (`SEA
 above it and the sea lowers settlers to it, so the rowing boat's own heights are `DRAUGHT`, `SEAT`, `FLOORBOARDS`,
 `SEAT_Y` in shared/hull.mjs, and the page puts a body on `SEAT_Y` (`craft.deck()`) - no sea redeploy, and a sea or
 page from before draws the old heights a few centimetres off.
+Her floorboards are only 0.035 over still water and the swell is 0.09, so the sea is kept out of her by a
+**lid** (`rowboatLid`, `ROWBOAT_LID` in boat.js): her own outline at 0.2 over the keel, under her sheer, a
+child mesh that writes depth and no colour, `renderOrder` 10 so it is drawn after everything opaque (the rower,
+the statue) and before the transparent water (`tests/rowboat-lid.test.mjs`).
 
 The welcome carries **every** boat (`snapshot` in `lib/boats.mjs`), untouched ones at their
 mooring - leaving those out let two pages that had heard different things draw one ship in
@@ -864,6 +868,30 @@ berth; `onBoatFromServer` in main.js reads a position on that berth as `shipBert
 An unattended boat does not stay marooned either: after five quiet minutes the sea's own
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
+
+**The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
+eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
+keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
+`cannon carriage`, `cannon barrel` with its origin on the trunnion axis, `anchor.muzzle`). Where they stand is
+`CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
+harpoon's too), and boat.js welds every gun into the hull's one geometry and moves its corners on the CPU when it
+is laid (`layGun`, web/js/cannon.js `layPoint`/`muzzleOf`), like the oars. Walk mode mans one (`manGun`, E at the
+breech): the camera (low behind the breech) lays it within its limits at `GUN_TURN`, R (the dance key) rams a
+ball home, the **right** button lights the fuse (the left only under a pointer lock, else it drags to aim) and the
+gun goes off `FUSE_S` later - pressed again it snuffs, lit again it starts over; C climbs into an empty one (the
+view is then down the bore) and firing that is `launchSelf` - the jump's own fall with `drift` kept, landing or
+plunging as any fall does, tucked and tumbling, and coming down on a building's top rather than through it
+(`roofUnder`). Its state is the big `#gun-hud` (main.js `syncGunHud`), not the E prompt. The flight is `shared/cannon.mjs` (closed-form `ballAt`, `ballHit`, trig-free), flown by every page
+(`web/js/cannon-fx.js`: balls, flash, smoke, blast, spray, three draw calls, no lights; sounds `boom`/`blast`/
+`splash` on the part `cannons`) and by the sea (`lib/cannons.mjs`): `{t:'cannon', a:'fire'}` is passed on by the
+roster only from somebody aboard that ship, and the sea's flight hurts through `hurt()` (cause `cannon`) whoever
+is in the blast - never the gunner, never anybody on their own island - and the volcano's agents through
+`combat.blast`; a ball that lands on a body is said as `{t:'cannon', a:'boom'}`. No `SEA_V`: a patch, but
+others see a shot (and anybody is hurt) only once the open sea runs this code. A hull takes `HULL_HITS` balls (a
+galleon 5, a rowing boat 2; whole again after `HULL_MEND_MS`) and then sinks (`boats.wreck`: `{t:'boat',
+...mooring, sunk: [x, z]}`, crew in the water, the boat whole at her berth) - never in her own island's waters or
+untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` and floats a bar over her
+(`web/js/hull-bars.js`, two instanced meshes).
 
 **Two things about a crowd arriving on a screen.** Nobody is drawn before the sea has said
 where they are: a body enrolled by a roster starts at its island's own middle, and drawing
@@ -972,6 +1000,11 @@ and a footprint has to be held up all round, so a bulwark's top is not walked al
 not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
+The same cut also writes **her side at the waterline** (`SHIPWALK.side`, `sideCut`: per 0.1 of her length the
+least and most x of the hull from 0.1 under the water to a rowing boat's gunwale), read by `createSide` and
+`shipsOver` in boat.js: every galleon in `setBoats`, as drawn now and at her heading, is a wall to every other
+hull walk.js steps (`boatGround(b)` leaves `b` out), so a rowing boat stops at her side and still reaches her
+ladders' feet (`tests/boat-ships.test.mjs`). A galleon does not yet shove a rowing boat out of her way.
 **Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
 bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
 DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds
