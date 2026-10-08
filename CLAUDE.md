@@ -1199,6 +1199,9 @@ while riding" check in walk.js asks `rides()`, and net.js/main.js read `s.bike |
 not only a jump (the rider's head is `MOUNT_HEAD` higher); the gait is a band of the speed (`gaitOf`, the
 horse's own edges, not the feet's), the cadence saturates near 2 Hz, and `mountPose` lays the gait over
 fauna.js's own `'still'` pose, so standing it breathes, swishes and shifts its weight like the stable's horse.
+The gallop is paid from the horse's own pool (`HORSE` in stamina.js, `state.stamina.horse`, handed to
+`stepMount` as `pool`; `gaitShare`: gallop all, trot `MOUNT_TROT_SHARE`, at or under `MOUNT_WALK` it fills),
+never the rider's; the yellow bar turns chestnut with a horse while riding (`setStamina(pool, { horse })`).
 Peers: no new bit - `FLAG_RIDING` on an Adventurer's look is a horse (`mounted` in peers.js).
 
 **There are three processes now, and only one of them is dangerous.** The *sea*

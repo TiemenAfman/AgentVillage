@@ -74,7 +74,16 @@ export function createVitals(root, { haze = [] } = {}) {
 
   return {
     setHealth: (fraction) => write(health, fraction, { flash: true }),
-    setStamina: (pool) => write(stamina, pool ? pool.level : 1, { spent: pool && pool.spent }),
+    // `horse`: the pool is the horse's (walk.js stamina.horse) - the bar turns chestnut and its
+    // emoji a horse (`.vital.stamina.horse` in ui.css), so nobody takes a full bar for their own legs.
+    setStamina(pool, { horse = false } = {}) {
+      if (stamina && stamina.classList.contains('horse') !== horse) {
+        stamina.classList.toggle('horse', horse);
+        const icon = stamina.querySelector('span');
+        if (icon) icon.textContent = horse ? '🐎' : '⚡';
+      }
+      write(stamina, pool ? pool.level : 1, { spent: pool && pool.spent });
+    },
     // The blue bar, a fraction of a full lung: invisible while whole - which is all of the
     // time on the surface - and back on screen the frame it starts to drain.
     setAir: (fraction) => write(air, fraction),

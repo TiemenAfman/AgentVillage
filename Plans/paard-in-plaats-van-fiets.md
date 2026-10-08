@@ -223,17 +223,52 @@ passeert punten op `RIDE_NEAR` (0,5); het tempo is wat er nog af kan voor wat er
 `RIDE_CORNER_V` (1,2), het eind op een stap, met `RIDE_BRAKE` (3) afremmen, de rem gebruikt als hij te hard
 gaat. Galop op een recht stuk van meer dan `RIDE_GALLOP_RUN` (2,5) met de neus op de lijn, anders draf. De
 fiets houdt `BIKE_CRUISE` (3,5) aan. Blijft de ruiter hangen, dan stapt hij af en loopt de route verder.
-Een route van boven galoppeert zonder de pool te gebruiken, zoals voeten op een route van boven gratis
-sprinten; de chip "Stamina paard" was nog niet gemerged. Komt die erin, dan is dit de plek om te kiezen.
+Een route van boven galoppeert gratis: `stepMount` krijgt dan geen pool (de paardenpool uit "Het paard heeft
+zijn eigen adem" vult intussen bij), zoals voeten op een route van boven gratis sprinten. Martijns keuze van
+8 oktober: "gratis paard sprint van boven".
 
-**Gemeten** in een dicht straatjesdorp (27 routes van 20-40 cellen): de Reiziger 693 s te voet, 499 s op de
-fiets. De Avonturier sprint op een route van boven al gratis op 2,7; te paard (galop 3,4) is hij daar niet
-sneller (411 s te voet, 437 s te paard) en op open veld gelijk (394 vs 406 s): optrekken en afremmen kosten
-wat de galop wint. Of het paard van boven harder mag, ligt bij Martijn (gevraagd via de coördinator).
+**De galop is overal sneller** (Martijn: "paard sprint wordt overal sneller"). Op 3,4 was de Avonturier te
+paard op een route van boven trager dan zijn eigen gratis sprint van 2,7 (411 s te voet, 437 s te paard in een
+dicht straatjesdorp): optrekken en afremmen kostten meer dan de galop won. `HORSE_GALLOP` is nu 4,8 (1,8 keer
+de sprint), en zodat een hoef niet glijdt gaat de galopcadans naar 3,0 Hz en de grondtijd (`duty`) naar ,16:
+4,8 x ,16 / 3,0 = ,26 per stand, wat ,2 bij 2,6 Hz op 3,4 gaf. `CADENCE`/`CADENCE_MAX` in mount.js volgen.
+
+**Gemeten** (28 routes van 20-40 cellen, `tests/body-route.test.mjs`-dorp): de Avonturier 411 s te voet,
+364 s te paard; op open veld 394 tegen 333 s. De Reiziger 693 s te voet, 508 s op de fiets (open 663 / 480).
+In een dorp met een bocht om de vier cellen wint het paard het minst; hoe langer de rechte stukken, hoe meer.
 
 **Anderen** zien de ruiter zoals altijd: `FLAG_RIDING` gaat mee met `bike || mount`, ook geparkeerd, en
 peers.js leest de gang uit de snelheid. Nieuw: `FLAG_ASLEEP` alleen voor een geparkeerd lichaam *zonder*
 route, anders kreeg een paard dat voor een bocht inhield een Zzz.
+
+## Het paard heeft zijn eigen adem (8 oktober 2026)
+
+Martijns wens: "paard moet eigen stamina krijgen, veel hoger dan mens". Tot dan betaalde de ruiter
+de galop uit zijn eigen pool (BODY: 6 s sprint), dus een galop duurde zes seconden.
+
+- **Een derde pool**, `HORSE` in `web/js/stamina.js`, naast `BODY` en `BOAT`, op walk.js'
+  `state.stamina.horse`. Net als de boot: één pool per walk mode, niet per paard (F geeft altijd
+  hetzelfde paard), op de pagina alleen. Niets op de lijn, niets in `lib/` of de zee.
+- **Getallen** (bij te stellen):
+  - `HORSE = { drain: 40, delay: 1.5, refill: 20 }`: 40 s volle galop (6,7× de 6 s van een mens),
+    1,5 s op adem komen, 20 s van leeg tot vol. Op `HORSE_GALLOP` 3,4 is 40 s ongeveer 135 eenheden:
+    een galop over een flink gegroeid eiland, niet alleen over het plein (op de latere galop van 4,8 ongeveer 190).
+  - `MOUNT_TROT_SHARE = 0.1` (mount.js): een draf kost een tiende, dus 400 s draf maakt hem leeg.
+  - `MOUNT_WALK = 1.0` (mount.js): op of onder 1,0 per seconde (een halfingedrukte stick, inhouden,
+    stilstaan, grazen) kost het niets en loopt de pool vol. Met alleen het toetsenbord is W altijd
+    een draf, dus vult hij dan alleen in stilstand.
+- **Leeg = geen galop**: `stepMount` krijgt de pool mee (`pool`), vraagt de galop alleen zolang
+  `canBoost` ja zegt en betaalt na de stap naar de snelheid (`gaitShare`). Leeg valt hij terug op
+  draf, en net als bij een mens gaat hij pas weer open bij `RECOVER_AT` (een kwart). Een draf op een
+  lege pool houdt hem leeg: alleen stap of stilstand geeft adem terug.
+- **De ruiter verbruikt niets**: in het zadel vullen zijn eigen pools (body en boat) gewoon bij.
+- **HUD**: zolang je rijdt is de staminabalk die van het paard, kastanjebruin met 🐎 in plaats van
+  ⚡ (`setStamina(pool, { horse })` in vitals.js, `.vital.stamina.horse` in ui.css). Afgestapt zie je
+  weer de jouwe.
+- **Rust**: afgestapt (of te voet, op de boot, in gesprek) loopt de paardenpool bij zolang walk mode
+  draait, zoals de boot. Wie hem leeg wegzet, vindt hem na ~21 s weer vol.
+- **Workbench**: `/avatar-motion.html` → Paard toont een balkje met het percentage en hoe lang de
+  pool in deze gang nog duurt, met Vol en Leeg om het tempo te beoordelen.
 
 ## Wat weggaat
 
