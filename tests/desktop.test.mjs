@@ -119,3 +119,50 @@ test('walk and noclip ask again once the browser\'s cooldown after Escape is ove
     assert.match(src, /SecurityError/, f);
   }
 });
+
+// --- the graphics card: chosen on the page, applied by a new window (Plans/sneller-op-igpu.md) ---
+
+const { desktopGpu, gpuNote } = await import('../web/js/desktop.js');
+
+test('a browser tab has no card to choose', () => {
+  assert.equal(desktopGpu(fakeWindow(undefined)), null);
+});
+
+test('the card is asked by navigation and the row waits for Rust to say which one runs', () => {
+  const win = fakeWindow(true);
+  const g = desktopGpu(win);
+  assert.equal(desktopGpu(win), g, 'one controller per window');
+  assert.equal(g.running, null, 'an older window never answers, and then there is no row');
+  const seen = [];
+  g.onChange((s) => seen.push(s));
+  g.choose('low');
+  assert.equal(win.location.href, 'promptholm://gpu/low');
+  g.choose('rtx');
+  assert.equal(win.location.href, 'promptholm://gpu/low', 'an unknown word is never sent');
+  g.restart();
+  assert.equal(win.location.href, 'promptholm://gpu/restart');
+  win.promptholmGpu({ running: 'fast', chosen: 'low' });
+  win.promptholmGpu({ running: 'fast', chosen: 'low' });
+  assert.deepEqual(seen, [{ running: 'fast', chosen: 'low' }], 'told once per change');
+  assert.equal(g.running, 'fast');
+  assert.equal(g.chosen, 'low');
+});
+
+test('the note says what draws now and what after a restart', () => {
+  assert.match(gpuNote({ running: 'fast', chosen: 'fast', name: 'NVIDIA GeForce RTX 4090' }), /fast graphics card \(NVIDIA GeForce RTX 4090\)\. Changing it restarts/);
+  assert.match(gpuNote({ running: 'fast', chosen: 'low' }), /After a restart it draws on the power-saving graphics card/);
+  assert.match(gpuNote({ running: 'low', chosen: 'fast' }), /draws on the power-saving graphics card\. After a restart it draws on the fast/);
+});
+
+test('Rust and the page agree on the card\'s door, its words and its switches', () => {
+  const rs = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const gpu = readFileSync(new URL('../src-tauri/src/gpu.rs', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('../web/js/desktop.js', import.meta.url), 'utf8');
+  assert.match(rs, /GPU_HOST: &str = "gpu"/);
+  assert.match(js, /promptholm:\/\/gpu\//);
+  assert.match(gpu, /window\.promptholmGpu/);
+  for (const w of ['fast', 'low', 'restart', 'query']) assert.ok(gpu.includes(`"${w}"`) || js.includes(`'${w}'`), w);
+  assert.match(gpu, /--force_high_performance_gpu/);
+  assert.match(gpu, /--force_low_power_gpu/);
+  assert.doesNotMatch(gpu + rs, /"--force-(high|low)/, 'the hyphenated spelling does nothing');
+});

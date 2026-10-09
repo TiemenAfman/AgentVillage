@@ -1,7 +1,7 @@
 # Sneller op de iGPU
 
-**🚧 Status: gemeten op 9 oktober 2026. De vlag van het venster is gerepareerd, en welke onderdelen
-lichter moeten kiest de keeper.**
+**🚧 Status: gemeten op 9 oktober 2026. De vlag van het venster is gerepareerd, het venster heeft een
+instelling "Graphics card" (snel/zuinig), en welke onderdelen lichter moeten kiest de keeper.**
 
 ## Aanleiding
 
@@ -87,11 +87,24 @@ Arc. Met 485 bewoners is van boven de main thread het plafond, ook op de RTX (~3
    het 4K-paneel zou een plafond op het aantal pixels (in plaats van op de ratio) eerlijker zijn.
 6. Water, zeebodem, hemel, wolken, mist, grond en bomen: elk ≤ 2 ms, niet de moeite van een kwaliteitsverlies.
 
+## De instelling "Graphics card" (gedaan, keuze van de keeper)
+
+Settings → Graphics → *Graphics card*, alleen in promptholm.exe: **Fast (discrete)** (standaard) of **Power saving
+(integrated)**. `src-tauri/src/gpu.rs` bewaart de keuze in `gpu.json` naast `window.json` en zet bij de start
+`--force_high_performance_gpu` of `--force_low_power_gpu` in de browserargumenten. De pagina vraagt via
+`promptholm://gpu/<fast|low|query|restart>` (dezelfde deur als fullscreen, geen IPC) en Rust antwoordt
+`window.promptholmGpu({ running, chosen })`; de regel zegt welke kaart nu tekent (met de naam die WebGL meldt) en welke
+na een herstart. **Restart the window now** start een nieuwe kopie van de exe met `--after-window <pid>` en sluit dit
+venster; de islander blijft draaien. De nieuwe kopie wacht tot het oude proces weg is en probeert het venster tot 8 s
+opnieuw te bouwen, omdat WebView2 een tweede browserproces met andere switches op hetzelfde profiel weigert.
+
+Gemeten in het echte venster via CDP (eigen profiel met `WEBVIEW2_USER_DATA_FOLDER`, islander uit de worktree op
+4791): fast → `NVIDIA GeForce RTX 4090 Laptop GPU`; Power saving + herstart → `Intel(R) Arc(TM) Graphics`; terug naar
+fast + herstart → weer de RTX. De islander bleef alle drie de keren draaien.
+
 ## Open: kiest de keeper
 
 - Welke van 2-5 op `modest` lichter mogen, en hoeveel kwaliteit dat mag kosten.
-- Of het venster een instelling "GPU: snel / zuinig" krijgt (herstart nodig, zie boven), bijvoorbeeld voor op de
-  accu.
 - Of de CPU-kant van boven (punt "CPU" hierboven) een eigen plan krijgt.
 
 ## Opnieuw meten

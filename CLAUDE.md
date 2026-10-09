@@ -3038,6 +3038,17 @@ line), so measuring through it changes nothing else. On this laptop, with other 
 time and even seconds-long GPU windows drift by half from one minute to the next: time the GPU with
 `EXT_disjoint_timer_query_webgl2` (Chrome offers it) between `scene.onBeforeRender` and `onAfterRender` - the
 shadow pass falls between - and compare an object on and off in short alternating pairs.
+**Which card is the keeper's choice** (Settings -> Graphics -> *Graphics card*, only in the window): `src-tauri/src/gpu.rs`
+keeps `fast` or `low` in `gpu.json` beside window.json (read before the window is built, `browser_args` puts the
+switch after Tauri's default), the page asks through `promptholm://gpu/<fast|low|query|restart>` (desktop.js
+`desktopGpu`, the fullscreen's door) and is told `window.promptholmGpu({ running, chosen })`; no answer (an older
+window) is no row. *Restart the window now* starts a fresh copy of the exe with the same arguments plus
+`--after-window <pid>` and destroys this window; the islander is untouched and the splash finds it. The new copy
+waits for that pid, then retries the build for 8 s: one WebView2 profile folder is one browser process, and a second
+one asking for other switches is refused while the first lives. That is also why a worktree's exe hangs windowless
+while the keeper's window is open (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` makes the switches differ): test it with
+`WEBVIEW2_USER_DATA_FOLDER` on a scratch folder - gpu.json and window.json are still the real AppData's, so put
+them back afterwards.
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
