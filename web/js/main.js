@@ -2448,7 +2448,7 @@ function fireHarpoonHere({ boat, i }) {
   return null;
 }
 // A harpoon on the sea (net.js `harpoon`, Plans/harpoen.md fase B): somebody's line to draw, or our own
-// body hooked by one - drawn to that ship's harpoon by walk mode until it is at the rail, or let go of.
+// body hooked by one - drawn to that ship's harpoon by walk mode and over her rail onto her deck, or let go of.
 function onHarpoonMessage(m) {
   if (!state.harpoons) return;
   if (m.a === 'line') { state.harpoons.onLine(m); return; }
@@ -2463,7 +2463,7 @@ function onHarpoonMessage(m) {
       ship.craft.object.updateMatrixWorld();
       return ship.craft.object.localToWorld(mouth.set(mz.at[0], mz.at[1], mz.at[2]));
     };
-    if (state.walk.pullTo(at)) {
+    if (state.walk.pullTo(at, { ship, mount: m.i })) {
       const who = state.peers ? state.peers.nameOf(m.by) : 'Somebody';
       state.ui.toast(`${who} has you on a harpoon line! <b>Space</b> to struggle free.`);
     }

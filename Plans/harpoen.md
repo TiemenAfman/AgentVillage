@@ -217,8 +217,11 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
    - **De trek naar de schipper**: de pagina die het schip vaart, trekt het langs de lijn van de bemanning
      (`towByCrew`).
    - **Spelers grijpen**: `a:'hook'` gaat via de zee alleen naar de gegrepen speler, en nooit op diens eigen eiland.
-     Die wordt door de eigen pagina naar de reling gehaald (walk.js `pullTo`); Space rukt los.
+     Die wordt door de eigen pagina naar de reling gehaald (walk.js `pullTo`); Space rukt los. Aan de reling springt
+     hij in een korte boog (`OVER_S`, hoger als hij onder het dek losliet) over de bulwark het dek op, waar de schutter
+     van dat harpoen staat (`pullLanding`: `nearestStand` op haar model) en is vanaf dan crew (`onBoarded` →
+     `boardBoat`), net als bovenaan een ladder. Test: tests/harpoon-rope-walk.test.mjs.
    - **Een losse boot slepen**: de schutter haalt hem binnen en zegt de zee `{t:'boat', a:'tow'}`.
    - Een patch zonder `SEA_V`, maar anderen zien het pas na een redeploy van de open zee (stack 28, met de hand).
-   - **Open**: een speler die bij de reling aankomt, valt meestal naast het schip in het water: er is geen landing
-     op het dek uit de lucht. En van een gesleepte boot ziet een ander alleen de stappen die de zee doorgeeft.
+   - ✅ Een speler die bij de reling aankomt, landt op het dek (hierboven); vroeger viel hij meestal naast het schip.
+   - **Open**: van een gesleepte boot ziet een ander alleen de stappen die de zee doorgeeft.

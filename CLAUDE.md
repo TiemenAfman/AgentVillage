@@ -916,7 +916,9 @@ down (`hang`, `roping: 'zip'`). Sounds `harpoon`/`ratchet`/`creak` on the part `
 passed on only from somebody aboard that ship - every page draws it from that ship's harpoon (harpoon-play.js
 remote lines) and her pilot's page draws her along a line of her crew's (`towByCrew`); `a:'hook'` on a player is
 checked (on foot or swimming, in reach, never on their own island) and told to them alone as `a:'hooked'`, and
-their own walk mode reels them in (`pullTo`, Space struggles free); a loose boat is drawn in by the gunner's page
+their own walk mode reels them in (`pullTo`, Space struggles free) and, at the rail, hops them over her bulwark onto
+the gunner's deck behind that harpoon (`pullLanding`: `nearestStand` on her model, `OVER_S`), crew from there
+(`onBoarded`) like the top of a ladder; a loose boat is drawn in by the gunner's page
 and said as `{t:'boat', a:'tow', by}` (lib/boats.mjs `tow`: nobody at her helm or aboard, not a skiff, a step at a
 time), whose echo main.js leaves for as long as the line holds her. Others see any of it only once the open sea
 runs this code.
