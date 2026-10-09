@@ -9,14 +9,14 @@
 // asked for: only points that the craft itself lets a body stand on.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CRAFTS } from '../shared/crafts.mjs';
+import { CRAFTS, SHIP_DRAUGHT } from '../shared/crafts.mjs';
 import { deckAt, railed } from '../shared/deck.mjs';
+import { DECK_Y } from '../shared/hull.mjs';
 import { PIRATESHIP } from '../web/js/pirateship-mesh.js';
 
-// Where boat.js puts the bake: keel up by nothing, dropped by the draught (SHIP_TALL * 7 / 58.56 in
-// boat.js), and DECK_Y (shared/hull.mjs) is what the craft's own y is measured from.
-const DRAUGHT = 12.29 * 7 / 58.56;
-const DECK_Y = 0.1855 - 0.13;
+// Where boat.js puts the bake: keel up by nothing, dropped by the draught (the bake's own waterline,
+// shared/craft-galleon.mjs), and DECK_Y (shared/hull.mjs) is what the craft's own y is measured from.
+const DRAUGHT = SHIP_DRAUGHT;
 
 const pos = PIRATESHIP.parts['pirateship hull'].positions;
 // Up-facing triangles only, as tuples in the craft's own frame, so that the walk over 30000 of them
@@ -50,6 +50,10 @@ function surfaces(x, z) {
 }
 
 const galleon = CRAFTS.galleon;
+// The waist and the quarterdeck, as the craft has them (read off the bake's anchors): the two floors
+// the aft flights run between.
+const WAIST = deckAt(galleon, 0, 0);
+const QUARTERDECK = deckAt(galleon, 0, -3.45);
 // A hair over what a tread's edge is from a straight line through its treads, and well under a
 // riser (0.08): a settler on a stair is on it, not in it, and not floating over it.
 const TOLERANCE = 0.05;
@@ -77,15 +81,16 @@ test('wherever the galleon says there is planking, the bake has a surface at tha
 test('the stairs are ramps: every tread of the aft flights is stood on', () => {
   // The quarterdeck stairs, on both sides, sampled at the treads' own depth: from the waist's
   // 1.108 up to the quarterdeck's 1.738 in a straight climb, with no 0.6 step at a wall.
+  assert.ok(QUARTERDECK - WAIST > 0.5, `the quarterdeck ${QUARTERDECK} is a flight above the waist ${WAIST}`);
   for (const s of [1, -1]) {
     let last = deckAt(galleon, s * 1.45, -1.3);
-    assert.equal(last, 1.108, 'the waist below the stairs');
+    assert.equal(last, WAIST, 'the waist below the stairs');
     for (let z = -1.3; z >= -2.4; z -= 0.05) {
       const y = deckAt(galleon, s * 1.45, z);
       assert.notEqual(y, null, `no planking at z ${z.toFixed(2)}`);
       assert.ok(y - last < 0.12, `a step of ${(y - last).toFixed(2)} at z ${z.toFixed(2)}: that is a wall, not a stair`);
       last = y;
     }
-    assert.equal(last, 1.738, 'the quarterdeck at the top');
+    assert.equal(last, QUARTERDECK, 'the quarterdeck at the top');
   }
 });

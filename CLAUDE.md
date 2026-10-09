@@ -879,6 +879,28 @@ An unattended boat does not stay marooned either: after five quiet minutes the s
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
 
+**The galleon's craft is read off her bake, never typed** ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md), chip 2a).
+`scripts/build-pirateship.py` sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
+`rail.<n>.a|b` (a run of bulwark on its floor), `solid`, `mast`, `port.<n>.lo|hi` (an opening in the bulwark down
+to the deck), `climb.side-*`/`climb.mast` (lo = the climber's stand, `CLIMB_OUT` outside the ropes; hi = where
+they step off), `mount.<cannon|harpoon>[-name].lo|hi` (**lo = where the gunner stands, hi = the carriage on the
+planking, the bearing lo -> hi is the yaw**; yawLim/pitchLim are the kind's, `MOUNT_LIMITS`), and the points
+`helm`, `nest`, `cargo`, `waterline` - and `scripts/build-craft.mjs` (`npm run models:craft`, run by `npm run
+models -- pirateship` *before* the walk map, since build-shipwalk cuts at `SHIP_DRAUGHT`) derives
+`shared/craft-galleon.mjs`: literals only, `source` = sha1 of anchors + height + the hull's positions, and
+`tests/craft-bake.test.mjs` fails on a stale one. What is no anchor is cut from the hull's triangles
+(`scripts/hull-cut.mjs`, shared with build-shipwalk): her length at the water, `near`, `beam`, the probes, and
+the two heights a rope ladder ends against (the bulwark beside a side ladder - the outermost thing on the
+planking, or a bucket by the landing is read as the rail - and the nest's rim). `shared/crafts.mjs` spreads
+`GALLEON` into `CRAFTS.galleon` and keeps only what is tuned by hand: `crew`, `BULWARK` (a rail's `top` =
+its floor + BULWARK), `LADDER_HW`, `NEST_REACH`, `sail`, `swell` - and, until chip 4, the hand-picked
+`sail.probes`: `shared/quay.mjs` lays every island's galleon berth from them, so taking `GALLEON.probes`
+is the QUAY_VERSION bump. `deck.nest` is no deck of the hull (the sea's clamp never reaches it; it goes to
+`aloft`/`nest`). The craft's rectangles come in no order of their own: find the waist by place, never as
+`deck[0]`. `tests/craft-old-numbers.test.mjs` holds the derived craft to the old hand-typed one (1e-3;
+the two measured tops 1e-2; the harpooners' stands moved 4 cm onto their bearing) and goes with the sloop.
+boat.js reads `HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
+
 **The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
 eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
 keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
