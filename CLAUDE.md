@@ -3010,6 +3010,19 @@ WebView2 profile (throttled to 0.5 s, always on Destroyed; a position off every 
 window is built hidden and shown once placed. Pitfall: started from a Claude desktop session these writes land
 in the MSIX LocalCache (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\com.promptholm.island\`), not the
 real AppData.
+**The window asks for the discrete GPU - with underscores** ([Plans/sneller-op-igpu.md](Plans/sneller-op-igpu.md)):
+`--force_high_performance_gpu` in `BROWSER_ARGS`. Chromium matches a switch literally, and the hyphenated
+spelling the window carried up to 0.10.7 did nothing (measured in Chrome: `--force-low-power-gpu` left it on the
+RTX, `--force_low_power_gpu` put it on the Arc). Without it Chromium takes the adapter that drives the screen:
+the RTX while the keeper's AOC monitor is on, the Intel Arc on the laptop panel alone - which is where the
+`modest` tier and 55 ms frames came from. The adapter is picked once, when the GPU process starts: no
+`powerPreference` and nothing at runtime switches it, only a new window with another switch. A browser tab
+(Chrome, `/play`) follows Windows' per-app graphics preference for chrome.exe and nothing the page says.
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` is *appended* to `BROWSER_ARGS` (read the msedgewebview2.exe command
+line), so measuring through it changes nothing else. On this laptop, with other sessions loading the CPU, frame
+time and even seconds-long GPU windows drift by half from one minute to the next: time the GPU with
+`EXT_disjoint_timer_query_webgl2` (Chrome offers it) between `scene.onBeforeRender` and `onAfterRender` - the
+shadow pass falls between - and compare an object on and off in short alternating pairs.
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the

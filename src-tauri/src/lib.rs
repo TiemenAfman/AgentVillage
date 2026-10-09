@@ -30,10 +30,15 @@ use tauri::{
 
 /// Tauri's own default (the msWebOOUI/msPdfOOUI/msSmartScreenProtection set) has to be
 /// repeated here, because `additional_browser_args` replaces it rather than adding to it.
-/// --force-high-performance-gpu because on a laptop with two graphics cards Chromium picks the integrated one to save
-/// power, and on this machine that is the card whose driver keeps falling over.
+/// --force_high_performance_gpu because on a laptop with two graphics cards Chromium takes the
+/// adapter that drives the screen, which on the keeper's laptop without its monitor is the Intel
+/// Arc (the same island ran 50-70 ms a frame on it). Underscores, not hyphens: Chromium matches
+/// this switch literally and silently ignores `--force-high-performance-gpu`, which is what this
+/// line said until October 2026 (measured: `--force-low-power-gpu` left Chrome on the RTX,
+/// `--force_low_power_gpu` put it on the Arc). The adapter is chosen once, when the GPU process
+/// starts: nothing on the page (`powerPreference`) can switch it later.
 const BROWSER_ARGS: &str =
-    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force-high-performance-gpu";
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
 
 /// How long a close the page was asked to confirm stays asked. A second Alt+F4 inside it
 /// closes without asking again - the way out when the page is hung or never answers, so a
