@@ -49,7 +49,7 @@ test('a flat line is walked with W, and stepped off onto the ground at the hook'
   assert.equal(walk.takeRope(rope, 'b'), true);
   walk.state.camYaw = -Math.PI / 2;          // looking along -x, out over the water
   key('w', true);
-  run(walk, 2);
+  run(walk, 4);
   const s = walk.state;
   assert.equal(walk.onLine(), true);
   assert.equal(s.rope, 'walk');
@@ -58,7 +58,7 @@ test('a flat line is walked with W, and stepped off onto the ground at the hook'
   // And back in: S, with the same view.
   key('w', false);
   key('s', true);
-  run(walk, 4);
+  run(walk, 8);
   key('s', false);
   assert.equal(walk.onLine(), false, 'off at the hook');
   assert.ok(s.grounded && s.pos.x > 20, `on the ground at ${s.pos.x}`);
@@ -85,7 +85,7 @@ test('Space jumps off a line with the way it had, and into deep water that is a 
   walk.takeRope(rope, 'b');
   walk.state.camYaw = -Math.PI / 2;
   key('w', true);
-  run(walk, 3);
+  run(walk, 6);
   key('w', false);
   const x0 = walk.state.pos.x;
   key(' ', true);
