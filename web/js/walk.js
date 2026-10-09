@@ -18,7 +18,7 @@ import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
-import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
+import { climbWay, climbWayDown, climbAlong, onWay, topNear, ladderLanding } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
@@ -653,14 +653,12 @@ export function createWalkMode({
     if (row.craft && row.craft.setCargo) row.craft.setCargo(null);
     state.cargo = { item, hull: ship };
     if (ship.craft && ship.craft.setCargo) ship.craft.setCargo(cargoMesh(item, material));
-    const [lx, lz] = ladder.land;
-    const floor = deckAt(specOf(ship), lx, lz) ?? ladder.top;
-    const land = ship.craft && ship.craft.walk ? nearestStand(ship.craft.walk, lx, lz, floor + 0.2) : null;
+    const land = landingOf(ship, ladder);
     state.vehicle = null;
     climb = null;
     deckBoat = ship;
     const yaw = Math.atan2(-(ladder.x < 0 ? -1 : 1), 0);
-    state.deck = { boat: ship.id, x: land ? land.x : lx, z: land ? land.z : lz, y: land ? land.y : floor, vy: 0, grounded: true, yaw };
+    state.deck = { boat: ship.id, x: land.x, z: land.z, y: land.y, vy: 0, grounded: true, yaw };
     state.swimming = false;
     state.grounded = true;
     state.vy = 0;
@@ -1527,6 +1525,11 @@ export function createWalkMode({
   const isFollowing = (b) => (following ? !!following(b) : false);
   const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
   const specOf = (b) => (b && b.craft && b.craft.spec) || null;
+  // Past this from a hull's middle none of her ladders is near (`near` on the craft, shared/crafts.mjs;
+  // the galleon's thirteen of length and her ladders inside it: 7).
+  const nearOf = (spec) => (spec && spec.near) ?? 7;
+  // Where a ladder of hers lands a body (ladder-way.js ladderLanding): one sum for every reader.
+  const landingOf = (b, ladder) => ladderLanding(b.craft && b.craft.walk, specOf(b), ladder);
   function offDeck() { state.deck = null; deckBoat = null; deckJump = false; climb = null; state.gun = null; }
   // A ship left running. Off her deck - over the rail, or off her ladder - a heavy hull has way on
   // her still, and nothing steps a boat that nobody is aboard: she froze where you jumped, which
@@ -1838,8 +1841,8 @@ export function createWalkMode({
     for (const b of boatsOf()) {
       const spec = specOf(b);
       if (!spec || !spec.ladders || !spec.ladders.length) continue;
-      // A ship is thirteen long and her ladders inside that: further than that is nowhere near one.
-      if (Math.hypot(state.pos.x - b.x, state.pos.z - b.z) > 7) continue;
+      // Her ladders are inside her length: further than that from her middle is nowhere near one.
+      if (Math.hypot(state.pos.x - b.x, state.pos.z - b.z) > nearOf(spec)) continue;
       const frame = frameOf(b);
       const [lx, lz] = toLocal(frame, state.pos.x, state.pos.z);
       const ly = state.pos.y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
@@ -1868,12 +1871,15 @@ export function createWalkMode({
     for (const b of boatsOf()) {
       const spec = specOf(b);
       if (!spec || !spec.ladders || !spec.ladders.length) continue;
-      if (Math.hypot(x - b.x, z - b.z) > 7) continue;
+      if (Math.hypot(x - b.x, z - b.z) > nearOf(spec)) continue;
       const frame = frameOf(b);
       const [lx, lz] = toLocal(frame, x, z);
       const ly = y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
       for (const q of spec.ladders) {
-        const w = climbWay(ladderPath(spec, q, sea));
+        // The way their own page climbs (startClimb): over the top to where the ladder lands on her model.
+        const rope = ladderPath(spec, q, sea);
+        rope[rope.length - 1] = landingOf(b, q);
+        const w = climbWay(rope);
         const top = ly > w.path[1].y - 0.01 ? topNear(w, { x: lx, y: ly, z: lz }) : null;
         if (top === null) continue;
         const [fx, fz] = dirToWorld(frame, q.x < 0 ? 1 : -1, 0);
@@ -1896,9 +1902,9 @@ export function createWalkMode({
     // Where the ladder lands is a place on the model, and the nearest free one is where you step
     // down: a cannon can stand where a table of numbers said there was nothing. Worked out here, as
     // the end of the way up, and not on arriving - found then, it moved the feet 0.14 in one frame.
-    const last = rope[rope.length - 1];
-    const land = b.craft && b.craft.walk ? nearestStand(b.craft.walk, last.x, last.z, last.y) : null;
-    if (land) rope[rope.length - 1] = { x: land.x, z: land.z, y: land.y };
+    // The same place every other reader lands (landingOf), so another page sees the step over the
+    // top end where this one ends it.
+    rope[rope.length - 1] = landingOf(b, ladder);
     const way = dir > 0 ? climbWay(rope, at) : climbWayDown(rope, at);
     offDeck();
     standUp();
@@ -3887,20 +3893,34 @@ export function createWalkMode({
   // The hull we are on this frame, read for the boom: her frame, the height of her y = 0 and her
   // walk map (shared/hullwalk.mjs), or null off one. `reach` is how high a floor of hers counts as
   // the deck under the camera: no higher than half a unit over the point looked at, or the roof of
-  // her castle - or her yards - would be floors to a camera on the waist.
+  // her castle - or her yards - would be floors to a camera on the waist - and never up to a lid
+  // over that point (`ceilingIn`, kept as `lid`): in a cabin under the poop the poop deck is no floor
+  // to lift a camera down there onto, it is the lid it stays under (Plans/nieuwe-sloep.md). On a
+  // hull with no lid over the body - the galleon as she is - the reach is what it was.
   let camHull = null;
+  const hullLocal = [0, 0];
   function hullForCamera(pivotY) {
     const b = deckBoat || state.vehicle || (climb && climb.boat) || null;
     const walkMap = b && b.craft && b.craft.walk;
     if (!walkMap) return null;
     const base = hullPoint(b, 0, 0, 0).y;
-    return { frame: frameOf(b), base, walk: walkMap, reach: pivotY - base + 0.5 };
+    const frame = frameOf(b);
+    toLocal(frame, state.pos.x, state.pos.z, hullLocal);
+    const lid = walkMap.ceilingIn ? walkMap.ceilingIn(hullLocal[0], hullLocal[1], pivotY - base) : null;
+    const reach = Math.min(pivotY - base + 0.5, lid == null ? Infinity : lid - 0.05);
+    return { frame, base, walk: walkMap, reach, lid };
   }
-  const hullLocal = [0, 0];
   function hullDeckAt(h, x, z) {
     toLocal(h.frame, x, z, hullLocal);
     const f = h.walk.floorIn(hullLocal[0], hullLocal[1], h.reach, 0);
     return f == null ? null : h.base + f;
+  }
+  // Her lid over a point (the underside of a deck, a beam) in the scene, or null under the open sky.
+  function hullLidAt(h, x, y, z) {
+    if (!h.walk.ceilingIn) return null;
+    toLocal(h.frame, x, z, hullLocal);
+    const c = h.walk.ceilingIn(hullLocal[0], hullLocal[1], y - h.base);
+    return c == null ? null : h.base + c;
   }
   // Whether the point is inside something the boom must stop at, of what is sampled.
   function solidPoint(x, y, z) {
@@ -3916,6 +3936,14 @@ export function createWalkMode({
     if (camHull) {
       const deck = hullDeckAt(camHull, x, z);
       if (deck != null && y < deck + CAM_R * 0.5) return true;
+      // And, with the body under a lid of hers, her lid over the point as a slab, like plank() for a
+      // deck from above: the boom stops under the poop deck from inside the cabin instead of going up
+      // through it. Only then: on an open deck a level spar over the lens - a yard - is a small thing
+      // the camera looks past (solids.js camSeesPast), and as a slab it pulled the boom in by a unit.
+      if (camHull.lid != null) {
+        const lid = hullLidAt(camHull, x, y, z);
+        if (lid != null && y > lid - CAM_R) return true;
+      }
     }
     return false;
   }

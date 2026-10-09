@@ -14,9 +14,25 @@
 //
 // No clock and no three.js: points are { x, y, z } in whatever frame the caller climbs in (a hull's,
 // or the world's), and the caller steps it (`climbAlong`) as it always stepped a ladder.
-import { pathAt, pathLength } from 'shared/deck.mjs';
+import { pathAt, pathLength, deckAt } from 'shared/deck.mjs';
+import { nearestStand } from 'shared/hullwalk.mjs';
 import { stepWay, CLIMB_SPEED } from './classic-avatar.js';
 import { GAIT_CLIPS } from './gait-clips.js';
+
+// Where a ship's rope ladder lands on her: the nearest place her model (`surface`, shared/hullwalk.mjs
+// createSurface) can stand a body at the ladder's `land`, asked from a step over the planks there
+// (deckAt, else the ladder's `top`), never the coordinate itself - a cannon or a post can stand where a
+// table of numbers said there was nothing. One sum, so the top of a climb (walk.js startClimb), a hoist
+// from a rowing boat (hoistOnto), what another page makes of a climber over the top (ladderAt, through
+// `ladderPath`'s way with this as its end) and the motion workbench all end exactly where `ladderUp`
+// lands: Mixamo's Climbing Up A Ladder To Standing is played along the way to this point, so a body
+// found a different spot on arriving moved 0.14 in one frame. Without a surface, the deck's own point.
+export function ladderLanding(surface, craft, ladder) {
+  const [lx, lz] = ladder.land;
+  const floor = deckAt(craft, lx, lz) ?? ladder.top;
+  const at = surface ? nearestStand(surface, lx, lz, floor + 0.2) : null;
+  return at ? { x: at.x, z: at.z, y: at.y } : { x: lx, z: lz, y: floor };
+}
 
 // How much of its own pace the climb over the top is played at: as fast, against the clip, as the
 // rungs below it are climbed against the climb's own clip (CLIMB_SPEED, 1.8 times Climbing Up A

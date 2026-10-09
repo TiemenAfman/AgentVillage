@@ -1966,6 +1966,26 @@ pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`
 changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
 under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
 `tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
+**A ladder at a port lands on the deck, and where any ship's ladder lands is one sum** ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md), chip 2b).
+A ladder in `CRAFTS.*.ladders` may carry `port` (half the width of the opening in the bulwark); its `top` is then
+the deck's level at `land`, and `ladderPath` (shared/deck.mjs) is three points - foot, deck level outside the skin,
+`land` - straight in over the sill, so Climbing Up A Ladder To Standing ends on the planks and never astride a
+rail; without `port` the four points of old, to the byte (`tests/port-ladder.test.mjs` on the galleon's hull with
+such a ladder). `ladderBoxes` hangs it to the deck and belays it flat on the planks (`PORT_BELAY`). Where a ship's
+ladder lands is `ladderLanding` in web/js/ladder-way.js (`nearestStand` on her walk map from a step over the planks
+at `land`), the one reading for walk.js `startClimb`, `hoistOnto`, `ladderAt` (what another page reads off a
+climber over the top) and the workbench's *Poortladder* (the galleon with a port ladder at her waist; her bulwark
+still stands there until the sloop's bake cuts the port) - the end of the way is substituted before `climbWay`, so
+the clip ends where `ladderUp` lands. How far from her middle a ladder is looked for is the craft's `near` (7
+without one). **A hull may have a lid**: `createSurface(...).ceilingIn(x, z, y)` (shared/hullwalk.mjs) is the
+lowest *level* surface over a point (a rope of the rigging is no lid), and walk.js `hullForCamera` bounds the
+floors under the camera at the lid over the body (`reach`, kept as `lid`); only while the body is under one,
+`solidPoint` takes her lid over a sampled point as a slab (`CAM_R`), so in a cabin under the poop the boom stays
+under the deck through a full turn. Gated on purpose: ungated, a yard 0.14 over the lens pulled the boom in by a
+unit, and a rule that read a floor the camera is under the lid of as no floor changed the galleon's camera under
+her fife rail - measured, 1158 camera positions on the galleon are bit for bit what they were. Known gap: at a
+cabin's doorway with the body outside and the camera behind it inside, the poop deck is still a floor the camera
+is lifted onto.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,

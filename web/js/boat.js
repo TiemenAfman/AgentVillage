@@ -527,19 +527,24 @@ const SHIP_HELM = { x: HELM_AT[0], y: (SHIP_SURFACE.floorIn(HELM_AT[0], HELM_AT[
 // 2 * RUNG_R, and hung RUNG_OUT outside the ladder's `x`, where the climber's hands and feet close
 // on them. They were 0.2 apart and 0.045 thick, half a body's height between two, and the clip's
 // hands and feet held on to nothing.
+// A ladder at a port (`port`, shared/deck.mjs ladderPath: the bulwark cut away to the deck there) hangs
+// to the deck's level - its `top` - and its ropes lie flat on the planks inside the sill, PORT_BELAY in,
+// to where they are made fast; one over a bulwark runs 0.6 in over the rail.
 const ROPE = 0x9c7f52, RUNG = 0x6e4d2b;
 const ROPE_W = 0.022;
+const PORT_BELAY = 0.3;
 export function ladderBoxes(spec) {
   const out = [];
   for (const l of spec.ladders || []) {
     const s = l.x < 0 ? -1 : 1;
     const x = s * (Math.abs(l.x) + RUNG_OUT);
     const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
-    const inward = Math.abs(l.x) - 0.6;
+    const inward = Math.abs(l.x) - (l.port ? PORT_BELAY : 0.6);
     for (const side of [-1, 1]) {
       const z = l.z + side * l.hw;
       out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { x, y: foot, z }));
-      // Over the bulwark and down its inside face a little, where the ropes are belayed.
+      // Over the bulwark and down its inside face a little, where the ropes are belayed - or, at a
+      // port, flat over the sill onto the deck.
       out.push(box(Math.abs(x) - inward, ROPE_W, ROPE_W, ROPE, { x: s * (inward + Math.abs(x)) / 2, y: top, z }));
     }
     for (let k = 1; foot + k * RUNG_STEP < top - 0.06; k++) {

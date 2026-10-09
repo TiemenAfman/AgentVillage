@@ -118,6 +118,12 @@ Chip 1 en chip 2 (a/b/c) kunnen parallel; chip 3 wacht op checkpoint A; chip 4 o
   begrenst `reach` op het plafond en `solidPoint` ziet het plafond als plaat (zoals `plank()`), via het
   bestaande `applyCeiling`. Test: 360°-sweep in een hut op een synthetisch craft.
 - Test `tests/port-ladder.test.mjs` op een synthetisch craft met `port`.
+- *Stand 9 oktober*: gebouwd (branch `claude/epic-babbage-2daa62`): `ladderPath` met `port`, `ladderBoxes`,
+  `ladderLanding` (ladder-way.js, de ene som voor `startClimb`/`hoistOnto`/`ladderAt`), `near` van het craft,
+  `ceilingIn` + camera-lid (alleen terwijl het lijf onder een lid staat: ongegated trok een ra de boom een
+  eenheid in), de test en de workbench-optie *Poortladder*. Open: bij de hutdeur (lijf buiten, camera binnen)
+  tilt het achterdek de camera nog door de plaat - een regel daarvoor veranderde de camera van het galjoen
+  onder de nagelbank en is eruit gehaald; in chip 4 op het echte craft opnieuw meten.
 
 ### Chip 2c — Zeil en vlag als bewegende delen (vóór de bake; no-op zonder die parts)
 
