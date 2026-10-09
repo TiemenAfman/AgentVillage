@@ -186,11 +186,26 @@ const dist3 = (a, b) => {
 // the height of its feet then), straight up the outside of the hull to the bulwark, over it and
 // down onto the deck. Climbed backwards it is the way down. Points of { x, z, y }, y on the same
 // scale as a deck's, above DECK_Y.
+//
+// A ladder with a `port` (half the width of an opening in the bulwark, Plans/nieuwe-sloep.md: the
+// sloop's two entrances, the bulwark cut away to the deck) hangs to the deck's own level: `top` is
+// then the height of the planks at `land`, and the way goes straight in over the sill at that
+// height - three points, no climb over a rail. Mixamo's Climbing Up A Ladder To Standing
+// (web/js/ladder-way.js) then ends on the deck, where it was made to end, and never astride a
+// bulwark with one hand in the air. Without a `port` the way is what it always was, to the byte.
 export function ladderPath(craft, ladder, y0) {
   const s = sideOf(ladder);
   const out = s * (Math.abs(ladder.x) + CLIMB_OUT);
   const [lx, lz] = ladder.land;
   const floor = deckAt(craft, lx, lz);
+  if (ladder.port) {
+    return [
+      { x: out, z: ladder.z, y: y0 },
+      // The deck's level, still outside her skin: from here the step over the sill goes inward.
+      { x: out, z: ladder.z, y: ladder.top },
+      { x: lx, z: lz, y: floor === null ? ladder.top : floor },
+    ];
+  }
   return [
     { x: out, z: ladder.z, y: y0 },
     { x: out, z: ladder.z, y: ladder.top },
