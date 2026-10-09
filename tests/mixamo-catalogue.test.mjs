@@ -99,22 +99,32 @@ test('categories, keys and the export are in clips.json\'s shape', () => {
 });
 
 // The preview's conversion against the bake itself, on a clip the bake was made from - when the
-// keeper's library is on this machine (it is not in git).
-const HANG = path.join(clipsDirOf(process.env.MIXAMO_OUT || MIXAMO_DEFAULT), 'hanging-idle.fbx');
-test('a clip converted in the browser is the baked clip, joint for joint', { skip: !fs.existsSync(HANG) && 'no Mixamo library here' }, async () => {
+// keeper's library is on this machine (it is not in git). The FBX in assets/mixamo/ are not in git
+// either, so the pair is named by hand: which baked clip, from which source (its `source` in
+// gait-clips.js), is which file of the library. A clip baked again from another source is no longer
+// that pair and is skipped, not failed - `hang` went from Hanging Idle to Hanging By Hands Gently
+// Swaying on 9 Oct 2026; add the new pair here when a clip moves.
+const LIBRARY = clipsDirOf(process.env.MIXAMO_OUT || MIXAMO_DEFAULT);
+const PAIRS = [
+  { clip: 'hang', source: 'hanging-swaying.fbx', file: 'hanging-idle-c9c98f5f.fbx' },
+  { clip: 'hang', source: 'hanging-idle.fbx', file: 'hanging-idle.fbx' },
+];
+const pair = PAIRS.find((p) => GAIT_CLIPS[p.clip] && GAIT_CLIPS[p.clip].source === p.source && fs.existsSync(path.join(LIBRARY, p.file)));
+test('a clip converted in the browser is the baked clip, joint for joint',
+  { skip: !pair && 'no baked clip whose source is in the Mixamo library here' }, async () => {
   const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
   const { previewClip } = await import('../web/js/mixamo-preview.js');
-  const buf = fs.readFileSync(HANG);
+  const buf = fs.readFileSync(path.join(LIBRARY, pair.file));
   const fbx = new FBXLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
   const c = previewClip(fbx, fbx.animations[0]);
-  const B = GAIT_CLIPS.hang;
-  assert.ok(Math.abs(c.seconds - B.seconds) < 0.01);
+  const B = GAIT_CLIPS[pair.clip];
+  assert.ok(Math.abs(c.seconds - B.seconds) < 0.01, `${pair.file} is ${c.seconds} s, the baked ${pair.clip} ${B.seconds} s`);
   for (const u of [0, 0.25, 0.5, 0.75]) {
     const a = c.rows[Math.round(u * (c.rows.length - 1))], b = B.rows[Math.round(u * B.rows.length)];
     for (let j = 0; j < GAIT_JOINTS.length; j++) {
       const qa = new THREE.Quaternion(...a.slice(j * 4, j * 4 + 4)), qb = new THREE.Quaternion(...b.slice(j * 4, j * 4 + 4));
       assert.ok(qa.angleTo(qb) < 0.05, `${GAIT_JOINTS[j]} at ${u}: ${(qa.angleTo(qb) * 180 / Math.PI).toFixed(1)} degrees`);
     }
-    assert.ok(Math.abs(a.at(-1) - b.at(-1)) < 0.01, 'the hips\' drop');
+    assert.ok(Math.abs(a.at(-1) - b.at(-1)) < 0.01, "the hips' drop");
   }
 });
