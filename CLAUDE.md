@@ -1872,6 +1872,14 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill; fetching clips from mixamo.com in bulk (outside git) is the `mixamo-fetch` skill.
+**Which clips to bake is chosen in the workbench's Mixamo catalogue** (`/avatar-motion.html` → Mixamo-catalogus,
+`web/js/mixamo-catalogue.js`): the keeper's whole library (`config.mixamo.dir`, else `MIXAMO_OUT`, else `D:\Mixamo`;
+`lib/mixamo.mjs`) through `/api/mixamo` and `/api/mixamo/<file>.fbx` - keeper-only, never in a bundle, release or the
+sea, only a bare `<word>.fbx` out of `anims/y-bot` (the fetcher's token lies beside it). The FBX is parsed with three's
+FBXLoader (vendored, imported dynamically there only) and turned by `mixamo-preview.js` into a baked clip's shape - the
+bake's own sums for a clip played by time, held to the baked `hang` within 3 degrees (`tests/mixamo-catalogue.test.mjs`) -
+which the rig plays as `pose.preview` (`playClips`'s first branch; nothing on the island sets it). Stars are per browser
+(`promptholm.mixamo.favourites`); *Exporteer keuze* gives them in `assets/mixamo/clips.json`'s shape for a bake chip.
 **On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`),
 backwards going down and still while hanging; the Traveller reaches up procedurally (`climbReach`: one hand
 at a time from overhead to the chest). **The ladder is cut to the clip, not the clip to the ladder** (the

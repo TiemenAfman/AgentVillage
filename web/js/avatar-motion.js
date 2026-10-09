@@ -16,6 +16,7 @@ import { createBoat } from './boat.js';
 import { climbWay, climbWayDown, climbAlong, onWay } from './ladder-way.js';
 import { pathAt } from 'shared/deck.mjs';
 import { ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
+import { createMixamoCatalogue } from './mixamo-catalogue.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -71,6 +72,12 @@ function showHorsePool(riding,share){
 const rider=figures.find(f=>f.id===(new URLSearchParams(location.search).get('rider')||'adventurer'))||figures.find(f=>f.id==='adventurer');
 const seatAt=new THREE.Vector3();
 const traveller = figures[0].rig;
+// The Mixamo catalogue (web/js/mixamo-catalogue.js): every clip of the keeper's library, played on one
+// of the bodies that play clips (not the Traveller, whose walk is his own). While a clip plays it owns
+// the stage: that one body, standing where it stands, the clip's hips' travel added when In Place is off.
+const trialBodies=figures.filter(f=>f.id!=='traveller');
+const catalogue=createMixamoCatalogue({bodies:trialBodies.map(f=>({id:f.id,name:CHARACTERS.find(c=>c.id===f.id).name+(f.id.startsWith('wanderer-')?f.id.endsWith('female')?' (vrouw)':' (man)':'')}))});
+let trialAt=null;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 const track=new THREE.Group();scene.add(track);
 for(let i=-60;i<=60;i++){
@@ -211,6 +218,7 @@ let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===bodyKey(spec))f.rig.set(spec);}});
 document.querySelector('#motion-inventory').onclick=()=>inventory.open();
+document.querySelector('#motion-mixamo').onclick=()=>catalogue.toggle();
 document.querySelector('#motion-holds').onchange=e=>{showHolds=e.target.checked;};
 document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.checked;if(horseHelper)horseHelper.visible=e.target.checked;};
 // Close up on one body at a time, to judge how a hat or a strap sits: off, then each in turn.
@@ -260,6 +268,9 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
+  const trial=catalogue.frame(dt);
+  trialAt=trial?trialTick(trial,dt):null;
+  if(trial)return;
   const masted=mode==='climb'&&(onMast||onNest), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
@@ -387,6 +398,28 @@ function tick(dt){
   if(jumpAt!==null&&time-jumpAt>2*JUMP_V/GRAVITY)jumpAt=null;
   distance=riding?rider.distance:close<0?figures.reduce((a,f)=>a+f.distance,0)/figures.length:figures[close].distance;
 }
+// One step of a clip under trial: everything else put away, the chosen body alone on the track.
+function trialTick(trial,dt){
+  for(const l of ladders)l.visible=false;
+  for(const g of stepRigs)g.visible=false;
+  for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
+  if(mast)mast.visible=false;
+  if(nest)nest.visible=false;
+  if(horse)horse.visible=false;
+  showHorsePool(false,0);
+  document.querySelector('#motion-climb').hidden=true;
+  const chosen=trialBodies[trial.body]||trialBodies[0];
+  for(const f of figures){
+    f.stand.visible=f===chosen;
+    if(f!==chosen)continue;
+    if(f.rig.digging())f.rig.dig(false);
+    const hip=f.rig.hipY||.25;
+    f.stand.rotation.set(0,0,0);
+    f.stand.position.set(f.x+trial.travel[0]*hip,0,f.distance+trial.travel[1]*hip);
+    f.rig.update({preview:{clip:trial.clip,u:trial.u},grounded:true,moving:false,distance:0},dt);
+  }
+  return chosen.stand.position;
+}
 function render(){
   // Camera and nearby scenery follow the actual moving body; the ground marks stay fixed.
   track.position.z=Math.floor(distance/2)*2;
@@ -396,6 +429,16 @@ function render(){
   const riding=mode==='horse'&&!!horse;
   const x=riding||close<0?0:figures[close].stand.position.x, near=(close<0?1:mode==='climb'?.95:.72)*(riding?1.9:1);
   // Close up, the camera rises with a jump so the leap stays in the frame.
+  if(trialAt){
+    const at=trialAt;
+    // between the two panels: a little left of the middle, since the catalogue is the wider
+    camera.position.set(at.x+(side?1.6:1.05)*.9,.42,at.z+(side?.03:1.45)*.9);camera.lookAt(at.x,.26,at.z);
+    camera.setViewOffset(innerWidth,innerHeight,innerWidth*.04,0,innerWidth,innerHeight);
+    track.position.z=Math.floor(at.z/2)*2;floor.position.z=track.position.z;
+    sun.position.set(-2,4,at.z+3);sun.target.position.set(at.x,.26,at.z);sun.target.updateMatrixWorld();
+    renderer.render(scene,camera);
+    return;
+  }
   const lift=riding?.3:mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
   const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
   camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
@@ -405,7 +448,7 @@ function render(){
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
+window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
   // held: true stops the clock, so a check can step to one moment and look at it.
   held:false,
   advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};
