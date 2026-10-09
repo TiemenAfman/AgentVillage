@@ -212,6 +212,13 @@ export const CRAFTS = Object.freeze({
   }),
 });
 
+// The outline a ball can hit the galleon by, in her own frame (+z forward, y above the sea's surface):
+// her hull from under the waterline to the top of her bulwarks, the length of her from stern to the
+// root of the bowsprit. Coarse on purpose - the sea flies the same ball (shared/cannon.mjs inHull) and
+// has no model. Here beside the rest of what she is, so a new hull (Plans/nieuwe-sloep.md) changes
+// one file; cannon.mjs reads it from here and carries it on under its old name.
+export const HULL_BOX = Object.freeze({ hx: 2.0, hz: 6.2, y0: -1.2, y1: 2.0 });
+
 // Which kind a boat is. An island's first boat - `boat:<region>`, the one it has always had,
 // at the berth it always had - is its galleon, one an island; the ones its keeper builds at
 // the harbours (`boat:<region>-<side><k>`, lib/boatyard.mjs) and a wanderer's skiff

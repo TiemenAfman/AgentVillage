@@ -1196,7 +1196,20 @@ const seatPoint = new THREE.Vector3();
 const seatTilt = new THREE.Quaternion();
 function poseHull(b) {
   b.craft.place(b.x, b.z, b.yaw);
+  if (b.craft.sails) b.craft.sails(sailShareOf(b));
   b.craft.bob(frameSeconds);
+}
+// The sail a hull is drawn under (boat.js `sails`, Plans/nieuwe-sloep.md chip 2c): what this page knows
+// of her. Her own setting where there is one - ours at the wheel or on her deck (`underSail`), and a
+// followed hull whose setting came with the hand-over (onBoatFromServer writes it) - else, for a hull
+// somebody else sails and said nothing of, the step nearest the way she is making off her track
+// (hullSpeed / her top), so a ship seen crossing the bay carries sail and one lying still does not.
+// Nothing of it is on the wire: a page from before this draws her as she was.
+function sailShareOf(b) {
+  if (Number.isFinite(b.underSail)) return b.underSail;
+  if (!hullFollowed(b)) return sailOf(b);
+  const sail = b.craft && b.craft.spec && b.craft.spec.sail;
+  return sail && sail.top > 0 ? nearestSail(hullSpeed(b) / sail.top) : 0;
 }
 
 // A ship, as opposed to a boat: room for a crew, so it is boarded by her rope ladders (walk.js)
@@ -8509,8 +8522,7 @@ function frame(nowMs) {
     // Deciding here whether it was worth sending is what made this sixty messages a second
     // and took the socket down under the pilot - see `hull` in net.js.
     if ((b === mine || b === running) && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
-    b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(frameSeconds);
+    poseHull(b);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
   }
   // While you are sailing, whether there is anywhere to step out changes with every metre,

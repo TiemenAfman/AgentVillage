@@ -901,7 +901,22 @@ others see a shot (and anybody is hurt) only once the open sea runs this code. A
 galleon 5, a rowing boat 2; whole again after `HULL_MEND_MS`) and then sinks (`boats.wreck`: `{t:'boat',
 ...mooring, sunk: [x, z]}`, crew in the water, the boat whole at her berth) - never in her own island's waters or
 untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` and floats a bar over her
-(`web/js/hull-bars.js`, two instanced meshes).
+(`web/js/hull-bars.js`, two instanced meshes). The outline a ball hits her by is `HULL_BOX` in
+shared/crafts.mjs (cannon.mjs re-exports it; crafts imports nothing from cannon). **Nothing counts her
+mounts**: every reader goes by index and by `kind` (`mounts.findIndex(kind === 'harpoon')`, never 2), the sea
+checks only `i < 8`, and the tests about them hold "every cannon before every harpoon, each on a deck" -
+the sloop ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md)) mounts `[cannon, cannon, harpoon]`.
+**Her sail and flag are moving parts of her one geometry** (chip 2c of that plan): `isShipMoving` in boat.js
+(`pirateship sail|flag`, her own predicate beside `isKrakenMoving`) keeps them out of the hull part and
+`shipMotionParts` welds them in as the last runs after the guns, measured once (`web/js/ship-motion.js`
+`measureSail`: yard = highest row, foot, the yard's direction; `measureFlag`: the luff at the part's `at`);
+`bob(time)` moves their corners on the sea's clock through `moveSail`/`moveFlag` (pure, the Kraken's own
+ripple and flag sums, `tests/ship-sail.test.mjs` holds them equal to `MOTION`). The share of sail drawn is
+`craft.sails(share)` - main.js `sailShareOf`: her `underSail` where there is one, else for a followed hull the
+step nearest `hullSpeed / top` - eased at `SAIL_EASE` (0.5/s, two seconds furled to full, at most a second
+per bob). A bake with no such part welds nothing and the hull is byte for byte what it was; the weld is
+tested on a synthetic sail through the loader hook `tests/support/sloop-parts-loader.mjs`
+(`tests/ship-sail-weld.test.mjs`). `/demo` sets and strikes her sail every four seconds.
 **Her two harpoons are mounts too, after the cannons** ([Plans/harpoen.md](Plans/harpoen.md); `kind: 'harpoon'`,
 forecastle, one a side - appended, never inserted, the index is on the wire). Not welded: the keeper's first choice is
 the Sketchfab GLB (`web/models/harpoon.glb` from the committed `assets/harpoon/source-harpoon.glb` by
