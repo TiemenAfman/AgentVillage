@@ -14,6 +14,12 @@ const files = [
   ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],
   ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],   // demo page, and the volcano's imps (imp.js, lazily)
   ['examples/jsm/utils/SkeletonUtils.js', 'addons/utils/SkeletonUtils.js'],     // one skeleton per imp (imp.js, lazily)
+  // The motion workbench's Mixamo catalogue only (web/js/mixamo-catalogue.js, a dynamic import):
+  // the game never loads an FBX, its clips are baked (scripts/bake-mixamo-gait.py).
+  ['examples/jsm/loaders/FBXLoader.js', 'addons/loaders/FBXLoader.js'],
+  ['examples/jsm/libs/fflate.module.js', 'addons/libs/fflate.module.js'],
+  ['examples/jsm/curves/NURBSCurve.js', 'addons/curves/NURBSCurve.js'],
+  ['examples/jsm/curves/NURBSUtils.js', 'addons/curves/NURBSUtils.js'],
   ['examples/jsm/controls/TransformControls.js', 'addons/controls/TransformControls.js'],   // editor only
   ['examples/jsm/renderers/CSS3DRenderer.js', 'addons/renderers/CSS3DRenderer.js'],         // the HTML panels
   // Bloom and SMAA in rooms (post.js, Plans/bloom-en-aa.md), and what they import.

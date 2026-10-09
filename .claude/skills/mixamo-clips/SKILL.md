@@ -146,6 +146,11 @@ by name) after stepping it to the same moment. They should agree to about 0.1.
 
 ## 5. Check and ship
 
+- **Choosing** what to bake: the workbench's *Mixamo-catalogus* plays every clip of the keeper's library
+  (`D:\Mixamonims\y-bot`, fetched with `mixamo-fetch`) on the Adventurer or a Wanderer before anything is
+  baked, and *Exporteer keuze* hands the starred ones over as `clips.json` entries plus name, file and id.
+  It runs the bake's conversion for a timed clip (`web/js/mixamo-preview.js`), so a gait, a climb or the
+  swim looks close but not final there - the bake decides.
 - `/avatar-motion.html` (the motion workbench): Lopen, Rennen, Sprinten, Zwemmen, Graven, Klimmen,
   Springen, Dichtbij, Zijaanzicht. In a hidden browser pane no frames run between screenshots:
   set `travellerPreview.held = true` and step with `travellerPreview.advance(frames)`.

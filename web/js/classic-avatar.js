@@ -1308,6 +1308,7 @@ function buildRig(spec, material) {
   // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging By Hands Gently Swaying, `hang`: hanging free, where the
   // Hanging Idle it replaced hung off a ledge against a wall, the keeper's choice of 9 Oct 2026).
   const poseHang = clipPose();
+  const posePreview = clipPose();
   let hangT = 0, ropeArms = 0;
   // Over a harpoon's line walked flat (walk.js state.rope 'walk'): Mixamo's Careful Walk (`ropeWalk`),
   // one foot before the other with the arms out, played by distance - `ropeS` is how far into its
@@ -1365,6 +1366,15 @@ function buildRig(spec, material) {
   const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
   function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back, ladder }) {
     if (!G.clips) return;
+    // A clip under trial (the motion workbench's Mixamo catalogue, web/js/mixamo-catalogue.js):
+    // `pose.preview = { clip, u, drop }`, a clip shaped like a baked one (mixamo-preview.js) read at
+    // `u` without wrapping. It owns the whole body; nothing on the island ever sets it.
+    if (pose.preview) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      applyClip(sampleOnce(pose.preview.clip, pose.preview.u, posePreview), clipMix, { arms: true, drop: pose.preview.drop !== false });
+      return;
+    }
     // Dying owns the whole body: its own clip, played once from the moment it began, or - with
     // none baked - every clip eased out, and the procedural fall (dyingPose) does it.
     if (pose.dying) {
