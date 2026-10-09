@@ -1305,7 +1305,8 @@ function buildRig(spec, material) {
   let ladderT = 0;
   const LADDER_EASE = 0.4;
   const poseClimb = clipPose();
-  // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging Idle, `hang`).
+  // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging By Hands Gently Swaying, `hang`: hanging free, where the
+  // Hanging Idle it replaced hung off a ledge against a wall, the keeper's choice of 9 Oct 2026).
   const poseHang = clipPose();
   let hangT = 0, ropeArms = 0;
   // Over a harpoon's line walked flat (walk.js state.rope 'walk'): Mixamo's Careful Walk (`ropeWalk`),
@@ -1375,7 +1376,7 @@ function buildRig(spec, material) {
       applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
       return;
     }
-    // Sliding down a harpoon's line (walk.js state.rope 'zip'): Mixamo's Hanging Idle, by time - two
+    // Sliding down a harpoon's line (walk.js state.rope 'zip'): Mixamo's Hanging By Hands Gently Swaying, by time - two
     // hands on the line over the head and the legs hanging. Before the ladder: walk.js says `climbing`
     // too, which is what a body with no clips (the Traveller) reaches up by.
     hangT = pose.roping === 'zip' ? hangT + dt : 0;

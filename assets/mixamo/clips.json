@@ -13,6 +13,6 @@
   "climb": "climbing-ladder.fbx",
   "climbOn": "start-climbing-ladder.fbx",
   "climbTop": "climbing-to-top.fbx",
-  "hang": "hanging-idle.fbx",
+  "hang": "hanging-swaying.fbx",
   "ropeWalk": "careful-walk.fbx"
 }

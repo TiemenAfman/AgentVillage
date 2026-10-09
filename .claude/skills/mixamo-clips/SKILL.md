@@ -48,7 +48,7 @@ into `assets/mixamo/` as below.
    `clips.json` and the baked `gait-clips.js` are committed; a machine without the FBX downloads
    them again (each listed file is named after its Mixamo clip: Walking, Running, Sprint,
    Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging, Climbing Ladder, Falling Forward Death and
-   Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip; also Hanging Idle - "Hanging From A Ledge Idle", `hang` - and Walking - "Careful Walk", `ropeWalk`, saved as careful-walk.fbx) before it can re-bake.
+   Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip; also Hanging Idle - "Hanging By Hands Gently Swaying", `hang`, saved as hanging-swaying.fbx - and Walking - "Careful Walk", `ropeWalk`, saved as careful-walk.fbx) before it can re-bake.
 2. Decide how it is played and say so in `bake-mixamo-gait.py`:
    - **by distance** (a gait: walk, run, sprint): nothing to add; it needs a travelling clip and
      gets `stride`, `speed` and `contact` (where in the cycle the left foot comes down).

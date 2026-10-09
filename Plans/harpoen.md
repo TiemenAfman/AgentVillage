@@ -183,17 +183,16 @@ schip) is een pad. Het is een nieuwe stand in walk.js, `state.rope = { a, b, t, 
   blijft hij staan waar hij is, ook halverwege een pas. Alternatieven die zijn gemeten: *Male Careful Walk*
   (`walking-c9c608c6`, voeten 0,30 uit elkaar, armen nauwelijks uit), *Catwalk Walk Forward Crossed* (voeten gekruist
   op één lijn, maar de armen langs het lijf), *Sneak Walk* (armen voor het lijf, sluipend) en *Teeter* / *Wobbling*
-  (balanceren op een rand, maar staand, zonder pas). Ziplinen is *Hanging Idle* (`hang`). De Reiziger, die geen clips
+  (balanceren op een rand, maar staand, zonder pas). Ziplinen is *Hanging By Hands Gently Swaying* (`hang`, sinds 9 oktober). De Reiziger, die geen clips
   speelt, loopt de gang met de armen procedureel opzij (`ROPE_SPREAD`) en reikt bij het glijden omhoog. Alles te zien in
   `/avatar-motion.html` onder *Touwlopen* en *Zipline*, voor alle vier de lichamen.
-- **Tempo**: `ROPE_WALK` (0,9) is twee keer de gewone wandelpas. Omdat de voet niet mag glijden, bepaalt de pas van de
-  clip (1,53 been per twee stappen, 0,32 op de Avonturier) dan de cadans: ruim vijf stappen per seconde, waar de clip
-  zelf er nog geen één doet. Dat is een keuze voor de keeper (zie het open punt bij stap 6).
-- **Zipline, voorstel**: de huidige `hang` is *Hanging From A Ledge Idle* (handen 0,5 been uit elkaar, tegen een muur).
-  Beter voor een lijn boven het hoofd lijkt *Hanging By Hands Gently Swaying* (`hanging-idle-c9c98f5f`, vrij hangend,
-  zacht zwaaiend, loopt naadloos rond in 2,3 s), of *Moving Sideways While Hanging From A Bar* (`moving-while-hanging`,
-  handen dicht bij elkaar aan een stang, maar het verschuift zijwaarts). *Hanging* (`hanging`) houdt één hand lager dan
-  de andere. Niet vervangen tot de keeper kiest.
+- **Tempo**: `ROPE_WALK` is 0,45, het wandeltempo (keuze van de keeper, 9 oktober). Omdat de voet niet mag glijden,
+  bepaalt de pas van de clip (1,53 been per twee stappen, 0,32 op de Avonturier) de cadans: bij de 0,9 van eerst was dat
+  ruim vijf stappen per seconde, nu zo'n tweeënhalf.
+- **Zipline**: `hang` was *Hanging From A Ledge Idle* (handen 0,5 been uit elkaar, tegen een muur). Sinds 9 oktober is het
+  *Hanging By Hands Gently Swaying* (`hanging-idle-c9c98f5f`, als `hanging-swaying.fbx`: vrij hangend, zacht zwaaiend,
+  loopt naadloos rond in 2,3 s), de keuze van de keeper. Bekeken en afgevallen: *Moving Sideways While Hanging From A Bar*
+  (schuift zijwaarts) en *Hanging* (één hand lager dan de andere).
 - **Anderen** zien je via de `y` en de positie die al over de lijn gaan. Hangt een peer aan een touw dat
   zij kennen, dan tekenen ze hem zo, zoals `ladderAt`. Anders lijkt het een val. Er komt geen pose-bit bij.
 
@@ -221,13 +220,12 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
 5. ✅ Het eigen schip naar land of een ander schip slepen (`harpoon-tow.js`, walk.js `onGunTow` na `stepUnderSail`),
    alleen een romp die deze pagina stapt. Een lijn die niemand inspoelt knapt als het schip wegdrijft.
 6. ✅ Over het touw: `takeRope` (C aan het harpoen, E bij de haak): lopen, glijden en eraf springen, met een echte
-   walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging Idle* (clip `hang`), bij het lopen de gewone gang
+   walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging By Hands Gently Swaying* (clip `hang`), bij het lopen de gewone gang
    met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js), sinds 9 oktober Mixamo's *Careful Walk* (`ropeWalk`) voor
    elk lijf dat clips speelt (`tests/rope-walk-clip.test.mjs`). Allebei te zien in `/avatar-motion.html` onder
    *Touwlopen* en *Zipline*. De Reiziger, die geen clips heeft, reikt bij het glijden omhoog zoals op een ladder.
-   **Open**: het tempo op het touw (`ROPE_WALK` 0,9 geeft met de Careful Walk ruim vijf stappen per seconde), wat het
-   lijf doet als het stilstaat halverwege een pas, en of *Hanging By Hands Gently Swaying* de zipline-clip wordt (zie
-   *Animaties* hierboven). Keuzes van de keeper.
+   Touwtempo 0,45 en de zipline-clip zijn gekozen (9 oktober). **Open**: wat het lijf doet als het stilstaat halverwege
+   een pas op het touw (nu blijft het zo staan).
 7. ✅ Geluid: part `harpoons`, families `harpoon`, `ratchet` en `creak`.
 8. ✅ Fase B, de zee (`lib/harpoons.mjs`, lib/boats.mjs `tow`, net.js, harpoon-play.js):
    - **Het touw voor anderen**: `{t:'harpoon', a:'line'}`, alleen van wie aan boord is. Andere pagina's tekenen het
