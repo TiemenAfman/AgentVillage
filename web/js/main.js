@@ -56,7 +56,7 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName, isModestGpu } from './graphics-settings.js';
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
@@ -347,9 +347,6 @@ function gpuName() {
   } catch { return 'unknown'; }
 }
 
-// An integrated GPU driving a full-screen scene with a big shadow map is the most
-// likely thing to fall over, so ask it for less.
-const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
 canvas.addEventListener('webglcontextrestored', () => {
   recoverCanvas(new Error('The island needs to rebuild its 3D canvas.'));
 });
@@ -398,9 +395,9 @@ async function openBoardWithoutIsland() {
 }
 
 // A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
-// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
-// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
+// isModestGpu (graphics-settings.js) knows desktop names, and no Adreno, Mali or PowerVR is
+// among them, so every phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || isModestGpu(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 // The best this screen is drawn at; the quality governor below only ever takes from it.
 // A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
@@ -438,7 +435,7 @@ setStatsShown(params.has('stats') || loadStatsShown());
 // Why this page took itself for the tier it is, for Settings -> Graphics' quality line.
 const tierReason = HANDHELD ? (modest ? 'light' : 'full quality')
   : params.has('modest') ? '?modest'
-  : MODEST_GPU.test(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
+  : isModestGpu(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
   : gpuShortName(graphicsGpu);
 // Frames counted for that line's fps: one increment a frame, read only while Settings is open.
 let framesDrawn = 0;
