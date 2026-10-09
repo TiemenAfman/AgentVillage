@@ -121,3 +121,60 @@ test('hooked by somebody else\'s harpoon the body is drawn to their gun, and Spa
   assert.equal(walk.pulled(), false);
   assert.equal(ends.at(-1), 'free');
 });
+
+test('hauled in by a ship\'s harpoon the body lands over her rail on her deck, and is crew', async () => {
+  const { CRAFTS } = await import('../shared/crafts.mjs');
+  const { createSurface, nearestStand } = await import('../shared/hullwalk.mjs');
+  const { SHIPWALK } = await import('../web/js/shipwalk-map.js');
+  const { deckAt } = await import('../shared/deck.mjs');
+  const { DECK_Y } = await import('../shared/hull.mjs');
+  const walk = make();
+  run(walk, 0.2);
+  // Her starboard harpoon (the second of the two after the cannons), her bow to +z, lying at x 8 in
+  // the deep water off the shore - the swimmer is on the beach at x 20.
+  const spec = CRAFTS.galleon;
+  const mount = spec.mounts.findIndex((g) => g.kind === 'harpoon' && g.x > 0);
+  const g = spec.mounts[mount];
+  const ship = { id: 'boat:abcd1234', x: 8, z: 0, yaw: 0, v: 0, craft: { spec, object: null, walk: createSurface(SHIPWALK) } };
+  const boarded = [], ends = [];
+  walk.state.onBoarded = (b) => boarded.push(b.id);
+  walk.state.onPullEnd = (why) => ends.push(why);
+  // Her harpoon's mouth, as main.js hands it over: in her frame (bow +z, yaw 0), a little over the gun.
+  const mouth = () => ({ x: ship.x + g.x, y: DECK_Y + g.y + 0.3, z: ship.z + g.z });
+  // Hauled out of the water at her side: the pull lets go below her deck, so the hop has to rise.
+  walk.state.pos.set(ship.x + 6, -0.3, 3);
+  assert.equal(walk.pullTo(mouth, { ship, mount }), true);
+  let top = -Infinity;
+  for (let i = 0; i < 300 && walk.pulled(); i++) { walk.update(FRAME); top = Math.max(top, walk.state.pos.y); }
+  run(walk, 0.2);
+  assert.equal(walk.pulled(), false);
+  assert.deepEqual(ends, ['boarded']);
+  assert.deepEqual(boarded, [ship.id], 'the sea was told we are aboard');
+  assert.equal(walk.onDeck(), ship, 'on her deck');
+  const d = walk.state.deck;
+  assert.equal(d.boat, ship.id);
+  // Where her model has room to stand behind that harpoon, never a coordinate of our own.
+  const want = nearestStand(ship.craft.walk, g.stand[0], g.stand[1], (deckAt(spec, g.stand[0], g.stand[1]) ?? g.y) + 0.2);
+  assert.ok(want, 'her model has no place to stand behind the harpoon');
+  assert.ok(Math.hypot(d.x - want.x, d.z - want.z) < 1e-9 && Math.abs(d.y - want.y) < 1e-9, `on the deck at ${d.x},${d.z}`);
+  assert.equal(walk.state.swimming, false, 'not in the water beside her');
+  assert.ok(top > DECK_Y + want.y + 0.5, `over her bulwark: the hop rose only to ${top.toFixed(2)}`);
+  // And she is walked like any deck: a second later still on her, standing.
+  run(walk, 1);
+  assert.equal(walk.onDeck(), ship);
+  assert.equal(walk.state.deck.grounded, true);
+});
+
+test('struggling free of a ship\'s harpoon line still lets go where you are', () => {
+  const walk = make();
+  run(walk, 0.2);
+  const ends = [];
+  walk.state.onPullEnd = (why) => ends.push(why);
+  const ship = { id: 'boat:abcd1234', x: 0, z: 0, yaw: 0, v: 0, craft: { spec: { mounts: [] }, object: null } };
+  walk.pullTo(() => ({ x: 0, y: 2.5, z: 0 }), { ship, mount: 0 });
+  run(walk, 0.3);
+  key(' ', true); walk.update(FRAME); key(' ', false);
+  assert.equal(walk.pulled(), false);
+  assert.equal(walk.onDeck(), null);
+  assert.deepEqual(ends, ['free']);
+});

@@ -400,7 +400,7 @@ export function createWalkMode({
     // and `onGunRope(gun)` (the crouch key at a harpoon) asks main.js for its line to climb onto.
     onGunTow: null,
     onGunRope: null,
-    // Somebody else's harpoon let go of us (walk.js pullTo): `onPullEnd(why)`, 'arrived' | 'free' | 'gone'.
+    // Somebody else's harpoon let go of us (walk.js pullTo): `onPullEnd(why)`, 'boarded' (over her rail, crew) | 'arrived' | 'free' | 'gone'.
     onPullEnd: null,
     // On a harpoon's taut line: 'walk' along it or 'zip' down it, or null (stepRope).
     rope: null,
@@ -2402,20 +2402,28 @@ export function createWalkMode({
   // ---- on the end of somebody's harpoon line (Plans/harpoen.md, fase B) ----------------------------
   // The sea said another player's line struck us ({t:'harpoon', a:'hooked'}, the keeper: "altijd"):
   // the body is drawn through the air and the water to that ship's harpoon at PULL_SPEED, faced to it,
-  // until it is at the rail - then let go of there, falling with a little of the way it had (onto her
-  // deck or, more often, into the water beside her). Space struggles free; so do a deck, a ladder, a
-  // boat or a line of our own, and PULL_MAX_S. `at()` is main.js's: the mouth of that harpoon in the
-  // scene now, or null once the ship has gone.
-  let pull = null;                 // { at, t, jump }
+  // until it is at the rail. Space struggles free; so do a deck, a ladder, a boat or a line of our own,
+  // and PULL_MAX_S. `at()` is main.js's: the mouth of that harpoon in the scene now, or null once the
+  // ship has gone. With `ship` and `mount` (the gunner's hull and the harpoon's index) the arrival is a
+  // short hop over her bulwark onto the planks behind that harpoon - the nearest place her model has to
+  // stand there (nearestStand), never a coordinate - and the body is crew from then on, as off the top
+  // of a ladder (`onBoarded`). Without them it is let go of at the rail, falling with a little of the
+  // way it had: let go there, it almost always fell beside her into the water.
+  let pull = null;                 // { at, t, jump, ship, mount, over }
   const PULL_SPEED = 4.5;
   const PULL_ARRIVE = 1.4;
   const PULL_MAX_S = 20;
-  function pullTo(at) {
+  // The hop over the rail: how long, and how far over the straight line from where the pull let go to
+  // the deck it rises at its middle - more when it let go below her planks (hauled up out of the water
+  // to within PULL_ARRIVE of the mouth), or the arc ran through her bulwark, ~0.5 over the planks.
+  const OVER_S = 0.45;
+  const OVER_LIFT = 0.6;
+  function pullTo(at, { ship = null, mount = null } = {}) {
     if (typeof at !== 'function' || state.deck || state.vehicle || climb || onLine || state.dying) return false;
     if (state.sitting) standUp();
     if (rides()) dismount({ here: true });
     cancelDig('reset');
-    pull = { at, t: 0, jump: false };
+    pull = { at, t: 0, jump: false, ship, mount, over: null };
     return true;
   }
   function stopPull() {
@@ -2427,7 +2435,53 @@ export function createWalkMode({
     state.floor = groundAt(state.pos.x, state.pos.z, WATER_Y);
     return true;
   }
+  // Where on the gunner's deck a body hauled in by harpoon `mount` comes down: behind it, where its gunner
+  // stands, or the nearest free place to that on her model. Null when there is no such ship or mount.
+  function pullLanding(ship, mount) {
+    const spec = specOf(ship), g = spec && spec.mounts ? spec.mounts[mount] : null;
+    if (!g) return null;
+    const [sx, sz] = g.stand || [g.x, g.z];
+    const floor = deckAt(spec, sx, sz) ?? g.y;
+    const surface = ship.craft && ship.craft.walk;
+    if (!surface) return { x: sx, z: sz, y: floor };
+    return nearestStand(surface, sx, sz, floor + 0.2) || nearestStand(surface, sx, sz, g.y + 0.2, 1.5);
+  }
+  // One frame of the hop over the rail: from where the pull let go to the landing, both moved with her
+  // (the landing is a point of her frame, read off her as drawn now), on an arc. At its end on her deck.
+  function stepOver(dt) {
+    const o = pull.over, b = o.ship;
+    o.t = Math.min(OVER_S, o.t + dt);
+    const k = o.t / OVER_S;
+    const s = k * k * (3 - 2 * k);
+    const to = hullPoint(b, o.land.x, o.land.y, o.land.z);
+    state.pos.set(
+      o.from.x + (to.x - o.from.x) * s,
+      o.from.y + (to.y - o.from.y) * s + (OVER_LIFT + Math.max(0, to.y - o.from.y)) * 4 * k * (1 - k),
+      o.from.z + (to.z - o.from.z) * s,
+    );
+    state.grounded = false;
+    state.swimming = false;
+    state.dive = false;
+    state.vy = 0;
+    drift = null;
+    state.moving = state.running = state.sprinting = false;
+    if (k < 1) return afterMove(dt);
+    pull = null;
+    deckBoat = b;
+    state.deck = { boat: b.id, x: o.land.x, z: o.land.z, y: o.land.y, vy: 0, grounded: true, yaw: state.yaw - b.yaw };
+    state.pos.copy(to);
+    planeOf(b);
+    state.grounded = true;
+    state.floor = state.pos.y;
+    airTop = state.pos.y;
+    place(camBack * 1.5);
+    if (state.onPullEnd) state.onPullEnd('boarded');
+    if (state.onBoarded) state.onBoarded(b, { stowed: false });
+    return afterMove(dt);
+  }
   function stepPull(dt) {
+    // Over the rail already: past letting go, so Space no longer frees anybody from it.
+    if (pull.over) return stepOver(dt);
     const p = pull.at();
     pull.t += dt;
     if (!p || pull.jump || pull.t > PULL_MAX_S || state.deck || state.vehicle || climb || onLine) {
@@ -2439,6 +2493,11 @@ export function createWalkMode({
     const d = Math.hypot(dx, dy, dz) || 1;
     const ux = dx / d, uy = dy / d, uz = dz / d;
     if (d <= PULL_ARRIVE) {
+      const land = pull.ship ? pullLanding(pull.ship, pull.mount) : null;
+      if (land) {
+        pull.over = { ship: pull.ship, land, from: state.pos.clone(), t: 0 };
+        return stepOver(dt);
+      }
       if (state.onPullEnd) state.onPullEnd('arrived');
       stopPull();
       drift = { x: ux * 1.5, z: uz * 1.5 };
