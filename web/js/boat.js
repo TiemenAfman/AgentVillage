@@ -21,7 +21,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y, SEAT_Y, FLOORBOARDS } from 'shared/hull.mjs';
-import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
+import { CRAFTS, SHIP_DRAUGHT } from 'shared/crafts.mjs';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { createSurface, createSide } from 'shared/hullwalk.mjs';
 import { SHIPWALK } from './shipwalk-map.js';
@@ -164,8 +164,8 @@ export function hullOver(hulls, x, z, ground) {
 // Batavia's, so a bow that meets it stops as at a quay and backs off the same way. `self` is the hull
 // being stepped, which is never in its own way.
 export const SHIP_SIDE_H = 1.0;
-// Past this from her middle nothing of her is near: she is 10.2 long and 4.4 wide at the water.
-const SHIP_NEAR = 7;
+// Past this from her middle nothing of her is near: half her length at the water and a boat's length
+// more (shared/craft-galleon.mjs `near`, 7 for a hull 10.1 long at the water).
 export function shipsOver(boats, x, z, ground, self) {
   let h = ground;
   if (h >= SHIP_SIDE_H) return h;
@@ -173,7 +173,7 @@ export function shipsOver(boats, x, z, ground, self) {
     const side = b !== self && b.craft && b.craft.side;
     if (!side) continue;
     const dx = x - b.x, dz = z - b.z;
-    if (Math.abs(dx) > SHIP_NEAR || Math.abs(dz) > SHIP_NEAR) continue;
+    if (Math.abs(dx) > b.craft.spec.near || Math.abs(dz) > b.craft.spec.near) continue;
     // Into her frame: shared/deck.mjs toLocal, with forward (sin, cos) of her yaw.
     const fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
     if (side(dx * fz - dz * fx, dx * fx + dz * fz)) return SHIP_SIDE_H;
@@ -490,23 +490,22 @@ export function swellOf(swell, t, way = 0, out = [0, 0, 0]) {
   return out;
 }
 // The pirate ship (scripts/build-pirateship.py, Greggory_Fisher's model, CC-BY-4.0): baked keel
-// on y = 0 like the Benchy, its waterline and main deck read off the source's own proportions
-// (7 and 12.55 of 58.56 up, the bake's SHIP_TALL). Every island's first boat is one
-// (shared/crafts.mjs kindOf), laid in deep water off its berth (main.js shipBerth).
+// on y = 0 like the Benchy, its waterline the bake's own `anchor.waterline` (shared/craft-galleon.mjs
+// `draught`, SHIP_DRAUGHT). Every island's first boat is one (shared/crafts.mjs kindOf), laid in deep
+// water off its berth (main.js shipBerth).
 const SHIP = 'pirateship hull';
-// SHIP_TALL and SHIP_DRAUGHT are shared/crafts.mjs's, because the walk map is cut from the hull where
-// she floats and has to agree.
-// The wheel, on the quarterdeck two units abaft the middle: measured by the bake's own
-// downward rays (build-pirateship.py prints the deck heights, 1.631 above the keel there).
-// In the hull's frame, +z forward. The pilot stands here rather than on the middle of the
-// hull, which on a ship this size is the foot of the main mast.
+// SHIP_DRAUGHT is shared/crafts.mjs's, because the walk map is cut from the hull where she floats and
+// has to agree.
+// The wheel, on the quarterdeck abaft the middle: the bake's `anchor.helm` (the craft's `helm`). In
+// the hull's frame, +z forward. The pilot stands here rather than on the middle of the hull, which on
+// a ship this size is the foot of the main mast.
 // The ship's walking surface, cut from her model (scripts/build-shipwalk.mjs): what a body on her deck
 // stands on and walks into. One for every ship, since every ship is the same hull.
 export const SHIP_SURFACE = createSurface(SHIPWALK);
 export const SHIP_SIDE = createSide(SHIPWALK);
 // The wheel stands on a round plinth of three tiers that the model has 0.2 over the quarterdeck, and the
 // pilot stands on top of it, not in it: asked of the model, since it is the model that has the plinth.
-const HELM_AT = [0, -3.2];
+const HELM_AT = CRAFTS.galleon.helm;
 const SHIP_HELM = { x: HELM_AT[0], y: (SHIP_SURFACE.floorIn(HELM_AT[0], HELM_AT[1], 1.9) ?? 1.738) + DECK_Y, z: HELM_AT[1] };
 
 // The rope ladders (craft.ladders, shared/crafts.mjs) as boxes, from the same numbers the
@@ -838,9 +837,10 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   const swelled = [0, 0, 0];
   // Where the cargo stands, in the hull's frame (y above the waterline, like the deck itself): in the
   // rowing boat the stern sheets, behind the oarsman - who faces aft, so it is in front of him - on
-  // the floorboards; on the ship the main deck ahead of the wheel, on whatever the model has there.
+  // the floorboards; on the ship where her bake's `anchor.cargo` is (the craft's `cargo`: the main
+  // deck ahead of the wheel), on whatever the model has there.
   const cargoAt = ship
-    ? { x: 0, y: (SHIP_SURFACE.floorIn(0, 1.5, 1.9) ?? 1.738) + DECK_Y, z: 1.5, scale: 3 }
+    ? { x: CRAFTS.galleon.cargo.x, y: (SHIP_SURFACE.floorIn(CRAFTS.galleon.cargo.x, CRAFTS.galleon.cargo.z, 1.9) ?? CRAFTS.galleon.cargo.y) + DECK_Y, z: CRAFTS.galleon.cargo.z, scale: 3 }
     : { x: 0, y: FLOORBOARDS - DRAUGHT, z: -0.3, scale: 0.8 };
 
   // The stroke: where the oars are, and how far she has gone since the last place().
@@ -881,7 +881,8 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     },
     cargo: () => cargo,
     // Where the pilot stands in the hull's frame (null: the middle), how far back the camera
-    // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side.
+    // sits aboard, as a multiple of walk mode's own, and half the beam, for going over the side
+    // (the ship's is her bake's: half her width overall, yards and all).
     helm: ship ? SHIP_HELM : null,
     spec: ship ? CRAFTS.galleon : CRAFTS.rowboat,
     // What a body on her deck walks on and into (shared/hullwalk.mjs); the rowing boat has none, since
@@ -890,7 +891,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     // Her side at the waterline, where another boat meets her (shipsOver); a rowing boat is in nobody's way.
     side: ship ? SHIP_SIDE : null,
     camScale: ship ? 10 : 2.2,
-    beam: ship ? 3.5 : 0.3,
+    beam: ship ? CRAFTS.galleon.beam : 0.3,
     // The oars, for whoever pulls them: the stroke now (0..1, see STROKE) and where a hand holds
     // each, in the hull's frame (`y` above DECK_Y, like a craft's deck). Null on a ship.
     rowing: oars.length ? {

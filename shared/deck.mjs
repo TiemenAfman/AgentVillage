@@ -145,7 +145,7 @@ export function stepDeck(s, input, craft, dt, move) {
 // carried along it at one speed and a hull that pitches under it cannot make it fall.
 
 // How far outside the ropes' plumb line a climber's feet are: on the rungs, not in the hull.
-const CLIMB_OUT = 0.16;
+export const CLIMB_OUT = 0.16;
 // Every rope ladder is cut to the climb, not the climb to the ladder (the keeper's choice, 7 Oct
 // 2026): Mixamo's Climbing Up A Ladder on the Adventurer rises 0.5778 legs a cycle - 0.1220 on his
 // leg of 0.2111 - with each hand and each foot taking hold once a cycle, the left and the right half

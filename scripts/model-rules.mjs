@@ -35,25 +35,42 @@ export const sheetNames = () => [...Object.keys(SHEETS), ...CANOPY];
 // (scripts/build-batavia.py): she is modelled keel on the ground like everything else, and
 // this is the one number the island lowers her by. `muzzle` is the mouth of a gun's bore at rest
 // (scripts/build-cannon.py): where a ball leaves it and the flash stands, turned with the barrel.
-export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline', 'muzzle'];
+// `helm`, `nest` and `cargo` are a sailed ship's (scripts/build-pirateship.py, read by
+// scripts/build-craft.mjs into shared/craft-galleon.mjs): where her pilot stands at the wheel, where
+// a body sits in her crow's nest, and where cargo is set down on her deck - each a point on the
+// planking, and the craft takes its heights off the walk map, not off these.
+export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline', 'muzzle', 'helm', 'nest', 'cargo'];
 // And what a ship measures of herself, for whoever walks or sails her later rather than for
 // anything that hangs on her now: `deck.<name>.lo|hi`, opposite corners of a rectangle of
 // planking at its height; `stair.<name>.lo|hi`, a ladder running fore and aft, `lo` the
 // corner at its foot on the floor it starts from and `hi` the opposite corner at its head
-// on the floor it reaches; and `mast.<name>`, where a mast stands. Corners come in pairs -
-// checkSet refuses half of one - because a rectangle is the thing being carried, and an
-// empty can only carry a point.
-export const SHIP_ANCHOR = /^(?:(?:deck|stair)\.[a-z]+(?:-[a-z]+)*\.(?:lo|hi)|mast\.[a-z]+)$/;
+// on the floor it reaches; `mast.<name>`, where a mast stands; and `port.<n>.lo|hi`, opposite
+// corners of an opening in her bulwark down to the deck - a gun port with its lid up, or the gap a
+// rope ladder is boarded through (Plans/nieuwe-sloep.md) - `lo` and `hi` on the deck at either end
+// of it, so a ladder whose foot hangs beside one is boarded through it rather than over the rail.
+// Corners come in pairs - checkSet refuses half of one - because a rectangle is the thing being
+// carried, and an empty can only carry a point.
+export const SHIP_ANCHOR = /^(?:(?:deck|stair)\.[a-z]+(?:-[a-z]+)*\.(?:lo|hi)|mast\.[a-z]+(?:-[a-z]+)*|port\.[0-9]+\.(?:lo|hi))$/;
 // A building walked on (the Salty Kraken's stair, web/js/buildings.js pirateSurfaces/pirateSolids)
 // uses the ship's deck and stair corners for its floors, and two more: `rail.<n>.a|b`, the two
 // ends of one straight run of rail on the floor under it, and `solid.<name>.lo|hi`, opposite
 // corners of a box walk mode may not enter, and `climb.<name>.lo|hi`, a rope ladder that is climbed
 // rather than walked: `lo` where a climber stands at its foot, `hi` where they step off at its head,
 // the way from one to the other along the ground being the way they face it (walk.js). All three come
-// in pairs like the rest.
-export const WALKED_ANCHOR = /^(?:rail\.[0-9]+\.(?:a|b)|(?:solid|climb)\.[a-z]+\.(?:lo|hi))$/;
-export const isAnchor = (name) => ANCHORS.includes(name) || SHIP_ANCHOR.test(name) || WALKED_ANCHOR.test(name);
-const PAIRED = /^((?:deck|stair|solid|climb|rail)\..+)\.(lo|hi|a|b)$/;
+// in pairs like the rest. A name may carry a hyphen, as a deck's may (`climb.side-port`): a ship has
+// two of most things.
+export const WALKED_ANCHOR = /^(?:rail\.[0-9]+\.(?:a|b)|(?:solid|climb)\.[a-z]+(?:-[a-z]+)*\.(?:lo|hi))$/;
+// What can be manned on a ship's deck (Plans/kanonnen.md, Plans/harpoen.md): `mount.<kind>[-<name>].lo|hi`,
+// `kind` one of what web/js/boat.js can draw and walk.js can man - a cannon or a harpoon gun - and the
+// name what tells two of a kind apart (`mount.cannon-s`, `mount.cannon-p`). `lo` is where whoever mans
+// it stands, `hi` the middle of its carriage or foot on the planking, and the bearing from `lo` to `hi`
+// is the way it points at rest: an empty carries a point and no direction, so the direction is the pair.
+// Where a mount may traverse and elevate is the kind's (scripts/build-craft.mjs MOUNT_LIMITS), not the
+// bake's.
+export const MOUNT_KINDS = ['cannon', 'harpoon'];
+export const MOUNT_ANCHOR = new RegExp(`^mount\\.(?:${MOUNT_KINDS.join('|')})(?:-[a-z]+)*\\.(?:lo|hi)$`);
+export const isAnchor = (name) => ANCHORS.includes(name) || SHIP_ANCHOR.test(name) || WALKED_ANCHOR.test(name) || MOUNT_ANCHOR.test(name);
+const PAIRED = /^((?:deck|stair|port|solid|climb|rail|mount)\..+)\.(lo|hi|a|b)$/;
 const OTHER_END = { lo: 'hi', hi: 'lo', a: 'b', b: 'a' };
 
 // What an asset is for, taken from its name. A collection in a .blend has to start with
@@ -208,7 +225,7 @@ export function checkSet(set, data) {
     }
     const anchors = info.anchors || {};
     for (const name of Object.keys(anchors)) {
-      if (!isAnchor(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}, nor a ship's deck.<name>.lo|hi, stair.<name>.lo|hi or mast.<name>, nor a walked building's rail.<n>.a|b, solid.<name>.lo|hi or climb.<name>.lo|hi`);
+      if (!isAnchor(name)) bad.push(`${set}/${asset}: anchor.${name} is not one of ${ANCHORS.join(', ')}, nor a ship's deck.<name>.lo|hi, stair.<name>.lo|hi, mast.<name> or port.<n>.lo|hi, nor a walked building's rail.<n>.a|b, solid.<name>.lo|hi or climb.<name>.lo|hi, nor a mount.<${MOUNT_KINDS.join('|')}>[-<name>].lo|hi`);
       const pair = PAIRED.exec(name);
       if (pair && !(`${pair[1]}.${OTHER_END[pair[2]]}` in anchors)) bad.push(`${set}/${asset}: anchor.${name} is one corner of ${pair[1]} and the other is missing`);
     }

@@ -12,11 +12,11 @@
 // Heights are in the hull's own frame, above DECK_Y, exactly as shared/crafts.mjs has them: the bake
 // dropped by her draught (SHIP_DRAUGHT) and by DECK_Y. Only what a body on her can meet is kept: from
 // 0.3 under the lowest deck to 2.6 (the poop is at 1.95, and a body on it is 0.55 tall), in steps of 2 cm.
-import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SHIP_DRAUGHT } from '../shared/crafts.mjs';
 import { DECK_Y } from '../shared/hull.mjs';
+import { SIDE, sideCut as cutSide, sourceOf } from './hull-cut.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const { PIRATESHIP } = await import(pathToFileURL(`${root}web/js/pirateship-mesh.js`).href);
@@ -34,9 +34,7 @@ export const ALOFT = { cell: 0.05, x0: -0.9, z0: -0.9, nx: 36, nz: 36, y0: 8.3, 
 const WALKABLE = 0.35;
 
 // What the map was cut from, so that a re-baked ship that has not been cut again is caught.
-export function sourceOf(pos) {
-  return createHash('sha1').update(Buffer.from(new Float32Array(pos).buffer)).digest('hex').slice(0, 16);
-}
+export { sourceOf };
 
 export function cut(pos, g = GRID) {
   const lift = SHIP_DRAUGHT + DECK_Y;
@@ -102,57 +100,11 @@ export function layer(pos, g) {
   return { cell: g.cell, x0: g.x0, z0: g.z0, nx: g.nx, nz: g.nz, y0: g.y0, q: g.q, off: b64(new Uint8Array(ends.buffer)), hits: b64(hits) };
 }
 
-// Her side at the waterline, for the boats that meet it (web/js/boat.js shipsOver). The walk map
-// starts at the lowest deck and knows nothing of the hull under it, and a rowing boat sailed straight
-// through her (Plans/speeltest-quests.md B1). So: the plan of everything of the hull from a little
-// under the water to a rowing boat's gunwale over it (the rowboat's bake stands 0.275 above the water
-// it rides on), cut across in slices `dz` long, each slice the least and the most x of the hull in it
-// - in hundredths, in her own frame (+z forward). A slice with nothing in it is lo > hi. Not a box:
-// she is 4.4 wide amidships and narrows to a point at the stem, and a ladder's foot hangs 0.2 off her
-// side, where a rowing boat must still come to hoist the statue up it.
-export const SIDE = { z0: -6.5, dz: 0.1, n: 125, below: 0.1, above: 0.4 };
-
-// A polygon (points [x, y, z]) cut to `lo <= p[axis] <= hi` (Sutherland-Hodgman, two planes).
-function clipTo(poly, axis, lo, hi) {
-  for (const [lim, keep] of [[lo, (v) => v >= lo], [hi, (v) => v <= hi]]) {
-    const out = [];
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i], b = poly[(i + 1) % poly.length];
-      const ina = keep(a[axis]), inb = keep(b[axis]);
-      if (ina) out.push(a);
-      if (ina !== inb) {
-        const t = (lim - a[axis]) / (b[axis] - a[axis]);
-        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
-      }
-    }
-    poly = out;
-    if (!poly.length) return poly;
-  }
-  return poly;
-}
-
-export function sideCut(pos, s = SIDE) {
-  const lo = new Array(s.n).fill(Infinity), hi = new Array(s.n).fill(-Infinity);
-  for (let t = 0; t < pos.length; t += 9) {
-    // Height over the water she floats in: the bake dropped by her draught.
-    const tri = [0, 1, 2].map((k) => [pos[t + 3 * k], pos[t + 3 * k + 1] - SHIP_DRAUGHT, pos[t + 3 * k + 2]]);
-    const band = clipTo(tri, 1, -s.below, s.above);
-    if (band.length < 3) continue;
-    const zs = band.map((p) => p[2]);
-    const first = Math.max(0, Math.floor((Math.min(...zs) - s.z0) / s.dz));
-    const last = Math.min(s.n - 1, Math.floor((Math.max(...zs) - s.z0) / s.dz));
-    for (let k = first; k <= last; k++) {
-      const piece = clipTo(band, 2, s.z0 + k * s.dz, s.z0 + (k + 1) * s.dz);
-      for (const p of piece) {
-        if (p[0] < lo[k]) lo[k] = p[0];
-        if (p[0] > hi[k]) hi[k] = p[0];
-      }
-    }
-  }
-  // Rounded outwards, so the hull is never a hair narrower than her model.
-  const q = (v, up) => (Number.isFinite(v) ? (up ? Math.ceil(v * 100) : Math.floor(v * 100)) : (up ? -1 : 1));
-  return { z0: s.z0, dz: s.dz, lo: lo.map((v) => q(v, false)), hi: hi.map((v) => q(v, true)) };
-}
+// Her side at the waterline, for the boats that meet it (web/js/boat.js shipsOver): the cut is
+// scripts/hull-cut.mjs's, shared with the craft's generator (scripts/build-craft.mjs), at the draught
+// the craft floats her at. Re-exported for tests/shipwalk.test.mjs.
+export { SIDE };
+export const sideCut = (pos, s = SIDE) => cutSide(pos, SHIP_DRAUGHT, s);
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const { hits } = cut(positions);

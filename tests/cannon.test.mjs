@@ -93,8 +93,10 @@ test('the old guns are out of the galleon, and her two new ones stand on her wai
   const guns = CRAFTS.galleon.mounts.filter((m) => m.kind === 'cannon');
   assert.equal(guns.length, 2);
   assert.ok(guns[0].x > 0 && guns[1].x < 0);
+  // The waist: the level planking amidships (the craft's rectangles are the bake's, in no order of
+  // their own - shared/craft-galleon.mjs).
+  const deck = CRAFTS.galleon.deck.find((d) => !d.slope && Math.abs(d.x) <= d.hx && Math.abs(d.z) <= d.hz);
   for (const g of guns) {
-    const deck = CRAFTS.galleon.deck[0];
     assert.ok(Math.abs(g.x) + 0.2 < deck.hx + 0.1 && Math.abs(g.z) < deck.hz, 'on the waist');
   }
 });
