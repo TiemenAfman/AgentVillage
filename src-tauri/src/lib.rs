@@ -17,6 +17,7 @@
 #[allow(dead_code)] // shared with the islander exe, which uses the other half of it
 mod island;
 mod bubble;
+mod gpu;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -28,17 +29,19 @@ use tauri::{
     WebviewWindowBuilder, Window, WindowEvent,
 };
 
-/// Tauri's own default (the msWebOOUI/msPdfOOUI/msSmartScreenProtection set) has to be
-/// repeated here, because `additional_browser_args` replaces it rather than adding to it.
-/// --force_high_performance_gpu because on a laptop with two graphics cards Chromium takes the
-/// adapter that drives the screen, which on the keeper's laptop without its monitor is the Intel
-/// Arc (the same island ran 50-70 ms a frame on it). Underscores, not hyphens: Chromium matches
-/// this switch literally and silently ignores `--force-high-performance-gpu`, which is what this
-/// line said until October 2026 (measured: `--force-low-power-gpu` left Chrome on the RTX,
-/// `--force_low_power_gpu` put it on the Arc). The adapter is chosen once, when the GPU process
-/// starts: nothing on the page (`powerPreference`) can switch it later.
-const BROWSER_ARGS: &str =
-    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --force_high_performance_gpu";
+/// The browser arguments are gpu.rs's: Tauri's default repeated (`additional_browser_args`
+/// replaces it) plus the switch for the card the keeper chose, `--force_high_performance_gpu` unless
+/// Settings -> Graphics said otherwise. Underscores, not hyphens: Chromium matches the switch
+/// literally and silently ignored `--force-high-performance-gpu`, which is what this window said
+/// until October 2026 (Plans/sneller-op-igpu.md). The adapter is chosen once, when the GPU process
+/// starts: a change of card is a new window (`gpu_request`'s restart).
+const GPU_HOST: &str = "gpu";
+
+/// The card this window was started on, and the one the next window will be.
+struct GpuChoice {
+    running: gpu::Gpu,
+    chosen: Mutex<gpu::Gpu>,
+}
 
 /// How long a close the page was asked to confirm stays asked. A second Alt+F4 inside it
 /// closes without asking again - the way out when the page is hung or never answers, so a
@@ -218,6 +221,50 @@ fn stays_here(url: &Url, own_host: &str) -> bool {
 
 fn memory_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_local_data_dir().ok().map(|d| d.join("window.json"))
+}
+
+/// The card's choice lives beside window.json, in a file of its own so the throttled window
+/// writes never touch it. Same MSIX caveat: from a Claude desktop session it lands in the
+/// package's LocalCache.
+fn gpu_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_local_data_dir().ok().map(|d| d.join("gpu.json"))
+}
+
+fn tell_gpu(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("main") else { return };
+    let st = app.state::<GpuChoice>();
+    let chosen = st.chosen.lock().map(|c| *c).unwrap_or(st.running);
+    let _ = win.eval(gpu::tell_line(st.running, chosen));
+}
+
+/// promptholm://gpu/<fast|low|query|restart>. A choice is written down and said back; restart
+/// starts the next window (which waits for this one to be gone, see `run`) and closes this one.
+/// The islander is untouched: it outlives the window anyway.
+fn gpu_request(app: &AppHandle, what: &str) {
+    let app = app.clone();
+    let what = what.trim_matches('/').to_string();
+    std::thread::spawn(move || {
+        if let Some(g) = gpu::Gpu::from_word(&what) {
+            let saved = gpu_path(&app).map(|p| gpu::save(&p, g).is_ok()).unwrap_or(false);
+            if saved {
+                if let Ok(mut c) = app.state::<GpuChoice>().chosen.lock() {
+                    *c = g;
+                }
+            }
+        } else if what == "restart" {
+            let own: Vec<String> = std::env::args().skip(1).collect();
+            let next = gpu::restart_args(&own, std::process::id());
+            let started = std::env::current_exe().and_then(|exe| gpu::spawn_next(&exe, &next));
+            if started.is_ok() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.destroy();
+                }
+                return;
+            }
+            // No new window: this one stays, and the page still says "at the next start".
+        }
+        tell_gpu(&app);
+    });
 }
 
 fn load_memory(app: &AppHandle) -> Option<WindowMemory> {
@@ -420,10 +467,25 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![start_island, open_log])
         .setup(move |app| {
+            // The card is decided before the window exists: Chromium reads it when its GPU
+            // process starts, and only then (gpu.rs).
+            let gpu_choice = gpu_path(app.handle()).map(|p| gpu::load(&p)).unwrap_or(gpu::Gpu::Fast);
+            app.manage(GpuChoice { running: gpu_choice, chosen: Mutex::new(gpu_choice) });
+            // A window started by another one changing card: wait until that one and its
+            // WebView2 browser process have let go of the profile, which refuses a second
+            // environment with other switches while it lives.
+            let own: Vec<String> = std::env::args().skip(1).collect();
+            let restarted = gpu::after_pid(&own);
+            if let Some(pid) = restarted {
+                gpu::wait_for(pid, Duration::from_secs(10));
+            }
             // Built here rather than declared in tauri.conf.json because the browser
             // arguments and the two navigation hooks only exist on the builder.
-            let closer = app.handle().clone();
-            let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let handle = app.handle().clone();
+            let make = || {
+                let closer = handle.clone();
+                let own_host = own_host.clone();
+                let builder = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title("Promptholm")
                 .inner_size(1600.0, 1000.0)
                 .min_inner_size(640.0, 400.0)
@@ -444,6 +506,7 @@ pub fn run() {
                                 }
                             }
                             Some(FULLSCREEN_HOST) => fullscreen_request(&closer, url.path()),
+                            Some(GPU_HOST) => gpu_request(&closer, url.path()),
                             _ => {}
                         }
                         return false;
@@ -458,9 +521,13 @@ pub fn run() {
                     open_elsewhere(&url);
                     NewWindowResponse::Deny
                 });
-            #[cfg(windows)]
-            let builder = builder.additional_browser_args(BROWSER_ARGS);
-            let window = builder.build()?;
+                #[cfg(windows)]
+                let builder = builder.additional_browser_args(&gpu::browser_args(gpu_choice));
+                builder.build()
+            };
+            // After a restart the old browser process may still hold the profile for a moment;
+            // a first start has nothing to wait for and gets one try.
+            let window = if restarted.is_some() { gpu::retry(Duration::from_secs(8), make)? } else { make()? };
             if let Some(m) = load_memory(app.handle()) {
                 apply_memory(app.handle(), &window, &m);
                 if let Ok(mut st) = app.state::<WindowState>().0.lock() {

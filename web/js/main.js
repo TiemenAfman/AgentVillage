@@ -9142,6 +9142,7 @@ Everything is copied and checked first; the island then starts again there. The 
       tier: graphicsTier({ modest, phone: HANDHELD }), reason: tierReason,
       rung: quality.rung().name, auto: quality.auto(), fps: framesPerSecond(),
     }),
+    gpuName: () => gpuShortName(graphicsGpu),
     statsShown: () => !!statsReadout,
     onStatsShown: (on) => { saveStatsShown(on); setStatsShown(on); },
   });
