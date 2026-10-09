@@ -18,7 +18,7 @@
 // in the keyboard rather than in the sign.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp } from 'shared/rng.mjs';
+import { clamp, hash32 } from 'shared/rng.mjs';
 import { BEACH_MAX } from 'shared/terrain.mjs';
 import { DRAUGHT, DECK_Y, SEAT_Y, FLOORBOARDS } from 'shared/hull.mjs';
 import { CRAFTS, SHIP_TALL, SHIP_DRAUGHT } from 'shared/crafts.mjs';
@@ -29,6 +29,7 @@ import { buildBoatGeometry, mesh, box, mergeParts } from './buildings.js';
 import { cannonShape, carriageGeometry, barrelGeometry, restLay, layPoint, muzzleOf } from './cannon.js';
 import * as models from './models.js';
 import { harpoonModel, harpoonLook, makeHarpoonGun, bakedHarpoonGun, HARPOON_PIECES } from './harpoon.js';
+import { measureSail, measureFlag, moveSail, moveFlag, easeShare } from './ship-motion.js';
 
 export const BOAT_TOP = 9.5;        // 1.44x running (RUN_SPEED 6.6), 5.0x swimming (SWIM_SPEED 1.9)
 export const BOAT_REVERSE = 2.8;    // pushing off a beach, not a way to travel - well below cruising speed
@@ -494,8 +495,15 @@ export function swellOf(swell, t, way = 0, out = [0, 0, 0]) {
 // (7 and 12.55 of 58.56 up, the bake's SHIP_TALL). Every island's first boat is one
 // (shared/crafts.mjs kindOf), laid in deep water off its berth (main.js shipBerth).
 const SHIP = 'pirateship hull';
+const SHIP_SET = 'pirateship';
 // SHIP_TALL and SHIP_DRAUGHT are shared/crafts.mjs's, because the walk map is cut from the hull where
 // she floats and has to agree.
+// What moves on her (Plans/nieuwe-sloep.md, chip 2c): her sail and her flag, baked as parts of their own
+// (`pirateship sail`, `pirateship flag`, with or without a suffix) and welded into the hull's geometry as
+// its last runs (`shipMotionParts`), where web/js/ship-motion.js moves their corners every frame. Her own
+// predicate, apart from buildings.js's `isKrakenMoving`: the Kraken is a building, read by name through its
+// merge, and this is a boat. A bake with no such part (the galleon before the sloop) welds nothing extra.
+export const isShipMoving = (n) => /^pirateship (sail|flag)( .+)?(:\d+)?$/.test(n);
 // The wheel, on the quarterdeck two units abaft the middle: measured by the bake's own
 // downward rays (build-pirateship.py prints the deck heights, 1.631 above the keel there).
 // In the hull's frame, +z forward. The pilot stands here rather than on the middle of the
@@ -590,6 +598,31 @@ function gunRuns(spec) {
     ] });
   }
   return { parts, guns };
+}
+
+// Her sail and flag as runs of the hull's geometry, after the guns (Plans/nieuwe-sloep.md chip 2c): each
+// moving part placed where the bake had it and sunk by the draught like the hull, measured once
+// (ship-motion.js: the sail's yard, foot and the yard's direction; the flag's luff and the way it flies)
+// and its baked corners kept beside it, so `bob` can write where they are now. Each part is made the same
+// attribute layout as the hull (a cloth drawn on a texture sheet would carry `aSheet` the hull has not,
+// and mergeGeometries refuses the lot), since it is one geometry and one draw call or nothing. Nothing is
+// welded for a bake that has no moving part.
+function shipMotionParts(hull) {
+  const names = models.hasAsset(SHIP_SET) ? models.assetParts(SHIP_SET).filter(isShipMoving) : [];
+  const parts = [], movers = [];
+  for (const name of names) {
+    const p = models.part(name);
+    const at = [p.at[0], p.at[1] - SHIP_DRAUGHT, p.at[2]];
+    const g = mesh(name, 0xffffff, { x: at[0], y: at[1], z: at[2] });
+    for (const a of Object.keys(g.attributes)) if (!hull.attributes[a]) g.deleteAttribute(a);
+    const base = Float32Array.from(g.attributes.position.array);
+    const kind = /^pirateship sail/.test(name) ? 'sail' : 'flag';
+    const measure = kind === 'sail' ? measureSail(base) : measureFlag(base, at);
+    if (!measure) { g.dispose(); continue; }
+    parts.push(g);
+    movers.push({ kind, name, base, count: g.attributes.position.count, [kind]: measure, seed: (hash32(`ship:${name}`) % 1000) / 1000 * TAU });
+  }
+  return { parts, movers };
 }
 
 // Her harpoon guns (Plans/harpoen.md): not welded into the hull like the cannons, because the one the
@@ -767,17 +800,33 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   // leave the island drawing something rather than throwing on the boot path.
   const rowing = !ship && models.hasAsset(ROWBOAT) ? rowboatGeometry() : null;
   const armed = ship ? gunRuns(CRAFTS.galleon) : { parts: [], guns: [] };
-  const geometry = ship ? withLadders(mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }), CRAFTS.galleon, armed.parts)
+  const hull = ship ? mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }) : null;
+  // Her sail and flag, welded after the guns: the very last runs.
+  const moving = ship ? shipMotionParts(hull) : { parts: [], movers: [] };
+  const geometry = ship ? withLadders(hull, CRAFTS.galleon, [...armed.parts, ...moving.parts])
     : rowing ? rowing.geometry : buildBoatGeometry();
-  // Where each gun's runs start: counted back from the end, since they were merged last.
+  // Where each gun's runs start: counted back from the end, since they were merged last - past the
+  // moving parts, which come after them.
   const guns = armed.guns;
+  const movers = moving.movers;
   {
     let at = geometry.attributes.position.count;
+    for (let i = movers.length - 1; i >= 0; i--) { at -= movers[i].count; movers[i].from = at; }
     for (let i = guns.length - 1; i >= 0; i--) {
       if (!guns[i]) continue;
       for (let k = guns[i].runs.length - 1; k >= 0; k--) { at -= guns[i].runs[k].count; guns[i].runs[k].from = at; }
     }
+    // Each mover writes straight into its own stretch of the position array: a view, made once. The
+    // attribute's array is never replaced (layGun and row write into it too), so the views stay good.
+    const arr = geometry.attributes.position.array;
+    for (const m of movers) m.out = arr.subarray(m.from * 3, (m.from + m.count) * 3);
   }
+  // The sail she is drawn under (Plans/nieuwe-sloep.md chip 2c): `sailWant` is what this page reads of
+  // her (main.js sailShareOf: her own `underSail`, or the step nearest her speed for a hull somebody else
+  // sails), `sailDrawn` follows it at SAIL_EASE a second in `bob`, so setting or striking sail is seen
+  // happening. Before her first `bob` a setting is taken as it is: a ship that comes into view under
+  // full sail is drawn under it, not seen hoisting it. `sailT` is the clock the cloth was last moved at.
+  let sailWant = 0, sailDrawn = 0, sailT = NaN, sailMoved = false;
   const laid = [0, 0, 0];
   // Her harpoons, indexed like the mounts (null for a cannon): made below, once the object is.
   let harpoons = [];
@@ -948,9 +997,36 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
       // the swell rides on top of that rather than replacing it.
       object.position.y = swelled[0];
       object.rotation.set(swelled[1], heading, swelled[2]);
+      // Her sail and flag, in the hull's one geometry (ship-motion.js), on the same clock: the drawn
+      // share of sail eased towards what is wanted by the time since the last move (capped, so a tab
+      // coming back does not hoist in one step), then every moving corner written. Asked twice at one
+      // clock the second call changes nothing.
+      if (ship) {
+        const dt = Number.isFinite(sailT) ? t - sailT : 0;
+        if (dt > 0) sailDrawn = easeShare(sailDrawn, sailWant, Math.min(dt, 1));
+        if (movers.length && (dt !== 0 || !sailMoved)) {
+          for (const m of movers) {
+            if (m.kind === 'sail') moveSail(m, t, sailDrawn, m.out);
+            else moveFlag(m, t, m.out);
+          }
+          geometry.attributes.position.needsUpdate = true;
+          sailMoved = true;
+        }
+        sailT = t;
+      }
     },
     // How much way the swell thinks she is making, 0..1 (for tests).
     way: () => way,
+    // The sail she is to be drawn under (SAIL_STEPS: -1 backed .. 1 full), from whoever reads her
+    // (main.js); `bob` eases the cloth there. A rowing boat has none and ignores it.
+    sails(share) {
+      if (!ship) return;
+      sailWant = Number.isFinite(share) ? clamp(share, -1, 1) : 0;
+      if (!Number.isFinite(sailT)) sailDrawn = sailWant;
+    },
+    // The share of sail drawn now (eased), and how many moving parts she has (0 on a bake without them).
+    sailShare: () => sailDrawn,
+    sailParts: movers.length,
 
     // Her guns (Plans/kanonnen.md): how many, how one is laid, laying one, and its muzzle in her own
     // frame (y above her waterline, as her geometry has it: web/js/cannon.js).

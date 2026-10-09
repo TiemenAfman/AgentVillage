@@ -17,7 +17,10 @@ const { CRAFTS } = await import('../shared/crafts.mjs');
 const { createBoat } = await import('../web/js/boat.js');
 const { createHarpoonPlay } = await import('../web/js/harpoon-play.js');
 
+// The first harpoon mount, wherever the craft lists it (after the cannons: two today, one on the sloop's
+// bow to come - Plans/nieuwe-sloep.md); never a number written down here.
 const I = CRAFTS.galleon.mounts.findIndex((m) => m.kind === 'harpoon');
+assert.ok(I >= 0, 'the galleon mounts no harpoon');
 const DT = 1 / 60;
 
 function setup({ ground = () => -3, followed = () => false, others = [], peers = [] } = {}) {

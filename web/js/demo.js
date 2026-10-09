@@ -1035,7 +1035,20 @@ function shorePatch(originX, originZ, cells, { inlet }) {
   const galleon = createBoat({ scene, material, kind: 'ship' });
   galleon.place(1.5 * 6.5, z, 0);
   galleon.object.position.y = FIELD_Y;
-  tag(1.5 * 6.5, z + 8.2, 'Galleon', 'every island\'s first boat');
+  // Her sail set and struck in turn, every SAIL_CYCLE seconds (boat.js `sails`, Plans/nieuwe-sloep.md
+  // chip 2c): the cloth eases between furled and full in `bob`, which also puts her on the swell - so
+  // she is lifted onto the field again after it. Nothing to see until a bake has a `pirateship sail`.
+  {
+    const SAIL_CYCLE = 4;
+    let t = 0;
+    lives.push((dt) => {
+      t += dt;
+      galleon.sails(Math.floor(t / SAIL_CYCLE) % 2);
+      galleon.bob(t);
+      galleon.object.position.y += FIELD_Y;
+    });
+  }
+  tag(1.5 * 6.5, z + 8.2, 'Galleon', `every island's first boat${galleon.sailParts ? ' · sail set and struck in turn' : ''}`);
   // Her gun (Plans/kanonnen.md, the keeper's own model) on its own, at twice its size: laid as low,
   // as at rest and as high as it goes - the barrel turned on its trunnions, the carriage still.
   const gun = cannonShape();
