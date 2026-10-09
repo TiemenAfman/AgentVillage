@@ -28,6 +28,11 @@ when it is done (or stuck on the keeper's choice) reports to the coordinator wit
 branch and last commit, what changed, the tests (passed/failed, which), what is still open, and
 whether it needs a redeploy, a restart or a release (patch or minor). If that message is held, the
 same report as its last answer. Needing newer code, it merges `main` into its own branch.
+A chip runs only the tests of what it touched and what leans on that (importers, the model tests after a
+bake); the **whole suite runs in the coordinator alone**, after merging - several finished chips merged first
+and then one run. Four chips each running the whole suite at once made one run take 42 minutes and every
+"failure" they reported was contention (`plan-scan`, `layout-measure`, `sea-want` passing alone), while the
+one failure that mattered - two chips green apart, red together - only the coordinator's run can see.
 On 6 October 2026 chips merged and pushed themselves and one shipped a regression to GitHub's `main`
 (the sea stopped noticing a departed islander); `~/.claude/hooks/worktree-guard.py` now refuses
 those commands from a worktree, and the `/chip` skill writes this into every task it hands out.
