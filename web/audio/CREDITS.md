@@ -13,6 +13,10 @@ domain only. Each is cut to mono at 32 kHz (Ogg Vorbis, `ffmpeg -ac 1 -ar 32000 
 | `cluck-1..3.ogg` | a hen | three calls out of "Annoyed Hen" by Joseph SARDIN, <https://bigsoundbank.com/annoyed-hen-s0453.html> | CC0 1.0 |
 | `cluck-4.ogg` | a hen | the first call of "Hen scared" by Joseph SARDIN, <https://bigsoundbank.com/hen-scared-s1040.html> | CC0 1.0 |
 | `bleat-1..4.ogg` | a goat | "Bleating Goat" 1-2 and "Goat" 1-2 by Joseph SARDIN, <https://bigsoundbank.com/bleating-goat-1-s0279.html> (s0279, s0280, s1380, s1381) | CC0 1.0 |
+| `snort-1..2.ogg` | a horse blowing | "Breath horse #4" and "Breath of a horse #1" by Joseph SARDIN, <https://bigsoundbank.com/breath-horse-4-s1543.html>, <https://bigsoundbank.com/breath-of-a-horse-1-s0285.html> | CC0 1.0 |
+| `snort-3..4.ogg` | a horse's soft neigh | "Little neighing call" 1-2 by Joseph SARDIN, <https://bigsoundbank.com/little-neighing-call-1-s1212.html> (s1212, s1213) | CC0 1.0 |
+| `quack-1..4.ogg` | a duck | four calls out of "Ducks" by Joseph SARDIN, <https://bigsoundbank.com/ducks-s0276.html> (0.3, 5.6, 18.1 and 19.6 s in) | CC0 1.0 |
+| `crow-1..4.ogg` | a rooster at dawn | "Cock Song" 1, the first crow of "Song of a Rooster", of "Cock song" 2 and of "Crowing #4", by Joseph SARDIN, <https://bigsoundbank.com/cock-song-1-s0440.html> (s0440, s0474, s0441, s0704) | CC0 1.0 |
 
 Additional sounds: Joseph SARDIN - [BigSoundBank.com](https://bigsoundbank.com) (credit asked for,
 not required, by the CC0 licence).

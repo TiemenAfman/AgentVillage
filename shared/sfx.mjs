@@ -53,6 +53,7 @@ export const SFX_FAMILIES = {
   quack: [false, 'a duck'],
   bleat: [false, 'a goat'],
   snort: [false, 'a horse'],
+  crow: [false, 'a rooster among the hens at dawn'],
   peck: [false, 'a hen pecking'],
   scratch: [false, 'a hen scratching the ground'],
   chirp: [false, 'a sparrow'],

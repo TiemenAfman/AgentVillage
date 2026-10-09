@@ -6,7 +6,7 @@
 // The taverns' chatter is the reason this exists; the sheep, cows, hens and goats came next. Computed, it sounded like surf or static, and a
 // recording that only the keeper heard left every other page with no chatter at all (the keeper,
 // 8 October 2026).
-// The farm animals' calls (the keeper, 8 October 2026): four takes each, so a field does not say
+// The farm animals' calls (the keeper, 8 and 9 October 2026): four takes each, so a field does not say
 // the same thing twice running (sound.js need() picks one at random, never the last).
 const takes = (family) => Object.freeze([1, 2, 3, 4].map((k) => `${family}-${k}.ogg`));
 
@@ -17,4 +17,7 @@ export const ISLAND_SFX = Object.freeze({
   moo: takes('moo'),
   cluck: takes('cluck'),
   bleat: takes('bleat'),
+  snort: takes('snort'),
+  quack: takes('quack'),
+  crow: takes('crow'),
 });

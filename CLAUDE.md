@@ -2521,7 +2521,7 @@ kept from build(). A playing bed is restarted on its new buffer (`keepBuffer`): 
 changes the next `play()`.
 **The island ships recordings of its own too** (`web/audio`, listed in `web/js/island-sfx.js`, CC0 only, sources in
 `web/audio/CREDITS.md`): sfx-loader.js's `defaults`, played on every page - visitors, the phone and the web included
-(`/audio/` is on `PUBLIC_PREFIX`) - for a family the keeper has no file for - the taverns' chatter and four takes each of `baa`, `moo`, `cluck`, `bleat`. The taverns' chatter (`murmur`, `kraken`)
+(`/audio/` is on `PUBLIC_PREFIX`) - for a family the keeper has no file for - the taverns' chatter and four takes each of `baa`, `moo`, `cluck`, `bleat`, `snort`, `quack` and `crow` (a rooster among the hens at dawn, `crowAtDawn`). The taverns' chatter (`murmur`, `kraken`)
 is a recording or nothing: sound.js `recorded()` never computes it, since the synthesised murmur sounded like surf.
 
 **A hamlet's name stands over each way in; the entrances are derived, and the keeper may set them.**

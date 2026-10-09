@@ -812,6 +812,15 @@ const ANIMAL_SHOTS = {
     for (const at of [0, 0.26]) add(out, call(n, sr, rng, { f0: 380, f1: 260, form: [[1100, 4, 1], [2500, 6, 0.6]], at: Math.floor(at * sr), len: Math.floor(0.19 * sr), breath: 0.35 }));
     return out;
   }, 0.08),
+  // A rooster at dawn: cock-a-doodle-doo, three short syllables rising and a long one falling, nasal
+  // and loud. The island's own recording (web/audio/crow-*.ogg) stands in for this almost everywhere.
+  crow: (c) => shot(c, 1.6, 'crow', (n, sr, rng) => {
+    const out = new Float32Array(n);
+    for (const [at, len, f0, f1] of [[0, 0.12, 520, 600], [0.16, 0.12, 600, 680], [0.32, 0.14, 680, 720], [0.5, 0.75, 760, 520]]) {
+      add(out, call(n, sr, rng, { f0, f1, form: [[1200, 4, 1], [2800, 6, 0.6]], vib: 0.02, vibHz: 9, at: Math.floor(at * sr), len: Math.floor(len * sr), breath: 0.2 }));
+    }
+    return out;
+  }, 0.09),
   bleat: (c) => shot(c, 0.7, 'bleat', (n, sr, rng) => call(n, sr, rng, { f0: 420, f1: 360, form: [[850, 4, 1], [2100, 6, 0.6]], vib: 0.05, vibHz: 8, trem: 0.75, tremHz: 13 }), 0.07),
   snort: (c) => shot(c, 0.6, 'snort', (n, sr, rng) => {
     const r = lowpass(noise(n, rng), sr, 900);
@@ -856,6 +865,9 @@ const ACT_SOUNDS = {
   sparrow: { chirp: 'chirp', fly: 'flap', hop: null, steal: 'chirp' },
 };
 const ACT_ALIAS = { butt: 'bonk' };
+// The rooster's hours and how often he crows in them, in seconds.
+const CROW_HOURS = [5, 9];
+const CROW_GAP = [40, 110];
 const CALLS = {
   sheep: { buf: 'baa', every: 45 }, cow: { buf: 'moo', every: 70 }, chicken: { buf: 'cluck', every: 28 },
   duck: { buf: 'quack', every: 35 }, goat: { buf: 'bleat', every: 55 }, horse: { buf: 'snort', every: 60 },
@@ -2747,6 +2759,7 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       animalSay(need(ACT_ALIAS[word] || word), a.at, 0.6 * edge(flat(a.at), ANIMAL_RANGE), 0.92 + Math.random() * 0.16);
     }
     if (lastAct.size > 64) lastAct.clear();
+    crowAtDawn(look);
     if ((look.night || 0) > 0.5) return;
     const herd = (look.herds || []).filter((a) => a && a.at && CALLS[a.kind] && flat(a.at) < ANIMAL_RANGE)
       .sort((a, b) => flat(a.at) - flat(b.at)).slice(0, 12);
@@ -2759,6 +2772,26 @@ export function createSound({ camera, scene, island, makeElement = null }) {
       animalSay(need(c.buf), a.at, 0.55 * edge(flat(a.at), ANIMAL_RANGE), 0.9 + Math.random() * 0.2);
     }
     if (nextCall.size > 256) nextCall.clear();
+  }
+
+  // A rooster among the hens at dawn (the keeper, 9 October 2026): from the nearest hen within earshot,
+  // between CROW_HOURS, on a slow clock of its own like the rare birds, never in the first minute.
+  let crowIn = CROW_GAP[0];
+  function crowAtDawn(look) {
+    crowIn -= PICK_S;
+    const h = look.hour;
+    if (h == null || h < CROW_HOURS[0] || h >= CROW_HOURS[1]) return;
+    let hen = null;
+    for (const a of look.herds || []) {
+      if (a && a.at && a.kind === 'chicken' && flat(a.at) < ANIMAL_RANGE && (!hen || flat(a.at) < flat(hen.at))) hen = a;
+    }
+    if (!hen) return;
+    need('crow');
+    if (crowIn > 0) return;
+    // Another animal had the yard a moment ago (ANIMAL_GAP): he tries again on the next pick.
+    if (animalSay(need('crow'), hen.at, 0.6 * edge(flat(hen.at), ANIMAL_RANGE), 0.95 + Math.random() * 0.1)) {
+      crowIn = CROW_GAP[0] + Math.random() * (CROW_GAP[1] - CROW_GAP[0]);
+    }
   }
 
   // The workshops (look.crafts, from main.js craftCues): each a cue that this module diffs against

@@ -1113,6 +1113,28 @@ test('a field of three hundred sheep is four voices and a bleat every few second
   assert.equal(baa(), n, 'and not heard from a room');
 });
 
+// The rooster (the keeper, 9 October 2026): among the hens, at dawn only, on a slow clock.
+test('a rooster crows among the hens at dawn, now and then, and not at noon', () => {
+  store = {};
+  const herds = [{ id: 'stable:1', kind: 'chicken', at: [3, 0, 2] }];
+  const look = inland({ hour: 6, herds });
+  const sound = heardSound(look);
+  const crows = () => shots(1.6);
+  run(sound, 30);
+  assert.equal(crows(), 0, 'never in the first half minute');
+  assert.ok(sound.wanted().includes('crow'), 'but asked for, so a recording is fetched in time');
+  run(sound, 240);
+  const n = crows();
+  assert.ok(n >= 1 && n <= 6, `crowing, but not all morning: ${n} in four minutes`);
+  look.hour = 12;
+  run(sound, 240);
+  assert.equal(crows(), n, 'nothing at noon');
+  look.hour = 6;
+  look.herds = [{ id: 'stable:1', kind: 'chicken', at: [300, 0, 2] }];
+  run(sound, 240);
+  assert.equal(crows(), n, 'nor from a henhouse out of earshot');
+});
+
 // --- the sea is heard at the sea -------------------------------------------
 
 test('the middle of the island does not hear the surf, even with a river through it', () => {
