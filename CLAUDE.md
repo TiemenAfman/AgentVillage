@@ -910,7 +910,7 @@ the floating statue is dragged to the gun (treasure.js `drag`/`reelAboard`), lan
 only while no other page steps her (`web/js/harpoon-tow.js` via walk.js `onGunTow`, after `stepUnderSail`). A line in
 land or a ship stays fast when the gun is left: C at the gun or E at the hook puts you on it (walk.js `takeRope`,
 `onLine` - not the ladder's `onRope`): walked flat, slid down steep, never climbed up steep, Space jumps off with the
-way you had; the rig holds its arms out walking one (`roping: 'walk'`) and hangs by Mixamo's Hanging Idle sliding
+way you had; a body that plays clips walks one by Mixamo's Careful Walk (`ropeWalk`, `roping: 'walk'`; the Traveller the gait with his arms out, `ROPE_SPREAD`) - played by distance through the bake's `along`, how far along the stride the hips are each row (`ALONG` in bake-mixamo-gait.py), since the clip dawdles and hurries and played evenly slid the planted foot twice as far; its arms, out some 37 degrees, are lifted and stretched to near level over it, `ROPE_CLIP_SPREAD`/`ROPE_CLIP_STRETCH` - and hangs by Mixamo's Hanging Idle sliding
 down (`hang`, `roping: 'zip'`). Sounds `harpoon`/`ratchet`/`creak` on the part `harpoons`. On the sea (fase B,
 `lib/harpoons.mjs`, a patch with no `SEA_V`): `{t:'harpoon', a:'line'}` says a line's state a few times a second,
 passed on only from somebody aboard that ship - every page draws it from that ship's harpoon (harpoon-play.js

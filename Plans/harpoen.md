@@ -172,12 +172,28 @@ schip) is een pad. Het is een nieuwe stand in walk.js, `state.rope = { a, b, t, 
   laat los) laat je vallen.
 - **Vaste touwen** op het schip (de stagen van boegspriet naar mast) kunnen later met dezelfde code.
   Eerst alleen het harpoentouw.
-- **Animaties**: in `D:\Mixamo\anims\y-bot` staat geen koorddans- of zipline-clip. Wel *Catwalk Idle To
-  Walk Forward* (voet voor voet) en *Hanging Idle* (twee handen boven het hoofd). Het voorstel is
-  balanceren als de catwalk-gang met de armen procedureel uit en zijwaartse schommel uit `sway`, en
-  ziplinen als *Hanging Idle* met de benen iets opgetrokken. Voor de Reiziger wordt het procedureel,
-  zoals `climbReach`. Met `/mixamo-fetch` zoek ik nog naar een echte *balance walk*. Alles is te zien en
-  te beoordelen in `/avatar-motion.html` onder twee nieuwe knoppen, *Touwlopen* en *Zipline*.
+- **Animaties**: in de volledige bibliotheek (`D:\Mixamo\anims\y-bot`, 2419 clips, 9 oktober doorzocht) staat
+  geen koorddans-, balk- of ziplineclip. Het lopen is Mixamo's *Careful Walk* (`walking-c9c7fda5`, clip `ropeWalk`):
+  armen opzij (handen gemiddeld 0,55 been van de heup, de breedste van alle loopclips), de voeten bijna op één lijn
+  (0,10 been uit elkaar) en langzaam. Hij wordt op afstand gespeeld, maar niet gelijkmatig: de clip zwaait het ene been
+  in een seconde en het andere in twee, dus de bake schrijft per rij hoe ver de heupen in de pas zijn (`along`) en de rig
+  zoekt daarin op hoe ver het lijf gelopen is. Gelijkmatig gleed de staande voet twee keer zo ver. De armen van de clip
+  staan maar zo'n 37 graden uit, dus de rig tilt ze er nog `ROPE_CLIP_SPREAD` (0,55 rad) bij en strekt de elleboog grotendeels
+  (`ROPE_CLIP_STRETCH`), tot bijna horizontaal: koorddansersarmen, op verzoek van de keeper. Stil op het touw
+  blijft hij staan waar hij is, ook halverwege een pas. Alternatieven die zijn gemeten: *Male Careful Walk*
+  (`walking-c9c608c6`, voeten 0,30 uit elkaar, armen nauwelijks uit), *Catwalk Walk Forward Crossed* (voeten gekruist
+  op één lijn, maar de armen langs het lijf), *Sneak Walk* (armen voor het lijf, sluipend) en *Teeter* / *Wobbling*
+  (balanceren op een rand, maar staand, zonder pas). Ziplinen is *Hanging Idle* (`hang`). De Reiziger, die geen clips
+  speelt, loopt de gang met de armen procedureel opzij (`ROPE_SPREAD`) en reikt bij het glijden omhoog. Alles te zien in
+  `/avatar-motion.html` onder *Touwlopen* en *Zipline*, voor alle vier de lichamen.
+- **Tempo**: `ROPE_WALK` (0,9) is twee keer de gewone wandelpas. Omdat de voet niet mag glijden, bepaalt de pas van de
+  clip (1,53 been per twee stappen, 0,32 op de Avonturier) dan de cadans: ruim vijf stappen per seconde, waar de clip
+  zelf er nog geen één doet. Dat is een keuze voor de keeper (zie het open punt bij stap 6).
+- **Zipline, voorstel**: de huidige `hang` is *Hanging From A Ledge Idle* (handen 0,5 been uit elkaar, tegen een muur).
+  Beter voor een lijn boven het hoofd lijkt *Hanging By Hands Gently Swaying* (`hanging-idle-c9c98f5f`, vrij hangend,
+  zacht zwaaiend, loopt naadloos rond in 2,3 s), of *Moving Sideways While Hanging From A Bar* (`moving-while-hanging`,
+  handen dicht bij elkaar aan een stang, maar het verschuift zijwaarts). *Hanging* (`hanging`) houdt één hand lager dan
+  de andere. Niet vervangen tot de keeper kiest.
 - **Anderen** zien je via de `y` en de positie die al over de lijn gaan. Hangt een peer aan een touw dat
   zij kennen, dan tekenen ze hem zo, zoals `ladderAt`. Anders lijkt het een val. Er komt geen pose-bit bij.
 
@@ -206,10 +222,12 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
    alleen een romp die deze pagina stapt. Een lijn die niemand inspoelt knapt als het schip wegdrijft.
 6. ✅ Over het touw: `takeRope` (C aan het harpoen, E bij de haak): lopen, glijden en eraf springen, met een echte
    walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging Idle* (clip `hang`), bij het lopen de gewone gang
-   met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js). Allebei te zien in `/avatar-motion.html` onder
+   met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js), sinds 9 oktober Mixamo's *Careful Walk* (`ropeWalk`) voor
+   elk lijf dat clips speelt (`tests/rope-walk-clip.test.mjs`). Allebei te zien in `/avatar-motion.html` onder
    *Touwlopen* en *Zipline*. De Reiziger, die geen clips heeft, reikt bij het glijden omhoog zoals op een ladder.
-   **Open**: een echte balansloop van Mixamo, zodra `/mixamo-fetch` klaar is (op 8 oktober om 16:00 stond het op
-   1531/2446) en er een tussen zit.
+   **Open**: het tempo op het touw (`ROPE_WALK` 0,9 geeft met de Careful Walk ruim vijf stappen per seconde), wat het
+   lijf doet als het stilstaat halverwege een pas, en of *Hanging By Hands Gently Swaying* de zipline-clip wordt (zie
+   *Animaties* hierboven). Keuzes van de keeper.
 7. ✅ Geluid: part `harpoons`, families `harpoon`, `ratchet` en `creak`.
 8. ✅ Fase B, de zee (`lib/harpoons.mjs`, lib/boats.mjs `tow`, net.js, harpoon-play.js):
    - **Het touw voor anderen**: `{t:'harpoon', a:'line'}`, alleen van wie aan boord is. Andere pagina's tekenen het
