@@ -319,6 +319,13 @@ en de Wanderer blind (A/B geschud) in dezelfde kleren, kleuren, licht en camera.
 fijne details (knoopjes, veters) - met een tiende van zijn driehoeken. Meer driehoeken voor hemd (520),
 broek (330), laarzen (190) en haar (300); de zwaarste figuur blijft onder 3.000.
 
+**Even groot** (de keeper: "maak alle inwoners ook ongeveer even groot"): de lengte uit `settlerLook`
+(0,9-1,1) zet ook de pas op zee, dus die blijft; alleen het tekenen neemt er een deel van
+(`drawnLook`: 30% van de lengte-, 40% van de breedte- en 30% van de hoofdspreiding) en een leerling is
+0,94 in plaats van een kind op 0,62 met een volwassen hoofd. Ooghoogte van 240 figuren: van 0,21-0,40
+naar 0,365-0,419 (leerlingen inbegrepen); `tests/resident-walk.test.mjs` houdt het vast. De vulkaan
+houdt de oude maten.
+
 Ook: kamerfiguren (Finn, Meg, de barman en uitsmijter van de rave) trokken allemaal dezelfde garderobe
 (`figure:<style>`), nu elk hun eigen; het dode `playerGeometry` in walk.js is weg. Open: de ambachtslui
 (smid, bakker, slager, visser, mijnwerker, goudsmid, voerman, werfhanden) staan op de speler-rig; de

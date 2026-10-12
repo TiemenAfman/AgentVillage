@@ -13,7 +13,7 @@ import {
   meshAsset, mergeParts, shipLivery,
 } from './buildings.js';
 import * as models from './models.js';
-import { figureGeometry } from './settlers.js';
+import { figureGeometry, APPRENTICE_SCALE } from './settlers.js';
 import { mesh as bakedPart } from './buildings.js';
 import { harpoonModel, makeHarpoonGun, bakedHarpoonGun, HARPOON_PIECES } from './harpoon.js';
 import { createNameplate } from './nameplate.js';
@@ -579,7 +579,7 @@ line(FURNITURE, ([type, name, note], x, z) => {
 line(STYLES, (style, x, z) => {
   for (const [k, kind] of [[-0.5, 'adult'], [0.5, 'apprentice']]) {
     const geo = figureGeometry(style, { sailor: false });
-    if (kind === 'apprentice') geo.scale(0.62, 0.62, 0.62);
+    if (kind === 'apprentice') geo.scale(APPRENTICE_SCALE, APPRENTICE_SCALE, APPRENTICE_SCALE);
     const m = new THREE.Mesh(geo, material);
     m.position.set(x + k * 0.7, 0, z);
     m.castShadow = true;
