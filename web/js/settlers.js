@@ -6,7 +6,7 @@
 //   web/js/settler-walk.js     where a body is. No three.js, no document, no colour.
 //   web/js/settler-figures.js  what is drawn there. Every mesh, every sine wave.
 //
-// Only these four exports outlived the split - characters.js, demo.js, facetoface.js,
-// interior.js and walk.js still import them from here - because crowd-view.js took over
+// Only these exports outlived the split - characters.js, demo.js, facetoface.js and
+// interior.js still import them from here - because crowd-view.js took over
 // walking every figure off the wire and there is no local simulation left to feed them.
-export { eyeHeight, styleLook, settlerLook, figureGeometry } from './settler-figures.js';
+export { eyeHeight, styleLook, settlerLook, figureGeometry, APPRENTICE_SCALE } from './settler-figures.js';

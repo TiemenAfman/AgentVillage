@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { avatarPlayerGeometry, DEFAULT_AVATAR } from './avatar.js';
-import { figureGeometry, styleLook, settlerLook } from './settlers.js';
+import { figureGeometry, styleLook, settlerLook, APPRENTICE_SCALE } from './settlers.js';
 
 const canvas = document.querySelector('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -26,7 +26,7 @@ const entries = [
   ['Dorpswerker', 'Werkjas & schort', figureGeometry('sonnet', { look: { ...styleLook('sonnet'), hatShape: 'cap', hat: 0x5c8a4a } }), 1],
   ['Ambachtsvrouw', 'Opgestoken haar & werkbroek', figureGeometry('opus', { look: { ...settlerLook('showcase:opus', 'opus'), presentation: 'woman', outfit: 'trousers', hatShape: 'none' } }), 1],
   ['Dorpsbewoonster', 'Werkrok & hoofddoek', figureGeometry('fable', { look: { ...styleLook('fable'), presentation: 'woman', outfit: 'skirt', hatShape: 'band' } }), 1],
-  ['Leerling', 'Kleiner, met groter hoofd', figureGeometry('haiku', { look: settlerLook('showcase:child', 'haiku', 'apprentice') }), .62],
+  ['Leerling', 'Een tikje kleiner', figureGeometry('haiku', { look: settlerLook('showcase:child', 'haiku', 'apprentice') }), APPRENTICE_SCALE],
   ['Zeeman', 'Herkenbare havenpet', figureGeometry('sonnet', { sailor: true }), 1],
 ];
 const cards = [];

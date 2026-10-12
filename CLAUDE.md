@@ -770,7 +770,11 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   (`residentTrim()` in the shader), because one more attribute broke WebGL's sixteen. **The walk** is the
   stride's own (`walkCadence`, `walkSwing` in settler-figures.js, `tests/resident-walk.test.mjs`): cadence from
   the real speed so a planted foot stays put, the bob highest as the legs pass, a light hip roll - the old
-  clock-driven walk wobbled. The bar it was judged against is the Wanderer itself:
+  clock-driven walk wobbled. **Everybody about as tall** (the keeper's ask): the body is drawn with
+  `drawnLook` - a share of the look's height, build and head spread (`DRAWN_SPREAD`), an apprentice at
+  `APPRENTICE_SCALE` 0.94, not a 0.62 child - while the look itself, which sets the stride on the sea, is
+  untouched; `f.look`/`f.baseScale` hold the drawn values, so `eyeHeight`, sitting and the barrow follow.
+  The bar it was judged against is the Wanderer itself:
   `scripts/render-resident-bar.py` renders the two blind, A/B shuffled, same clothes, light and camera.
 
 **Nothing in the browser reaches the network without naming which machine it means.**

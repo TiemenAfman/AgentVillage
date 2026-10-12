@@ -134,6 +134,17 @@ const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
 // lowest with its feet apart - the old bob, |sin|, had it the other way round, and at 0.035 it was
 // three times a person's), the hips' roll, and how far a thigh swings each way at a walk and a run.
 const WALK_BOB = 0.012, WALK_ROLL = 0.012, WALK_SWING = 0.5, RUN_SWING = 0.72;
+// How the skinned body is drawn of its `look` (the keeper, 12 October 2026: "maak alle inwoners ook
+// ongeveer even groot"). settlerLook's height (0.9-1.1) comes out of the `:look` stream and sets the
+// stride on the sea, so it stays as it is; only the drawing takes a share of its spread - a few
+// percent either way - and of the build's and the head's, and an apprentice is a little smaller
+// rather than a child at 0.62 with an adult's head. The old body (the volcano) keeps the look whole.
+export const DRAWN_SPREAD = { height: 0.3, build: 0.4, head: 0.3 };
+export const APPRENTICE_SCALE = 0.94;
+export function drawnLook(look) {
+  const at = (key) => 1 + ((look[key] ?? 1) - 1) * DRAWN_SPREAD[key];
+  return { ...look, height: at('height'), build: at('build'), head: at('head') };
+}
 export function walkSwing(f) { return f.speed > 0.8 ? RUN_SWING : WALK_SWING; }
 // Radians of the stride a second: a cycle is two steps, and a step is as long as the swing makes it
 // (the foot WALK_SWING out either side of the hip), so the feet keep pace with the ground.
@@ -242,7 +253,8 @@ export function figureGeometry(style, { sailor = false, look = null, skinned = s
   return mergeParts([...bodyParts, ...headParts]);
 }
 
-function skinnedFigureGeometry(look, id, kind) {
+function skinnedFigureGeometry(given, id, kind) {
+  const look = drawnLook(given);
   const w = residentWardrobe(id, look, kind);
   const c = w.colors;
   const wear = [['skin', look.skin], [w.top, c.top]];
@@ -955,8 +967,9 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
   // The skinned crowd's dressing (shared/palette.mjs residentWardrobe, the `:wardrobe` stream):
   // the pieces of the bake it comes to, each in its batch, each instance naming the figure's pose
   // row, the skin also which outfit it shows its bare pieces for.
-  function enrolSkinned(f, look, kind) {
+  function enrolSkinned(f, given, kind) {
     pose.ensure(body.n);
+    const look = drawnLook(given);
     const w = residentWardrobe(f.id, look, kind);
     const sex = w.sex, c = w.colors;
     const wear = [['skin', look.skin], [w.top, c.top]];
@@ -988,7 +1001,7 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
     worn.set(f, { batches: wears, hat: null, tints, wardrobe: w });
     f.sex = sex;
     f.look = look;
-    f.baseScale = kind === 'apprentice' ? 0.62 : 1;
+    f.baseScale = kind === 'apprentice' ? APPRENTICE_SCALE : 1;
     f.mBody = new THREE.Matrix4().makeScale(look.build, look.height, look.build);
     const rng = makeRng(hash32(f.id + ':gait'));
     f.gait = rng.range(10.2, 11.8);

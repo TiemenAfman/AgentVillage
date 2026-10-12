@@ -7,11 +7,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
+import * as THREE from 'three';
 
 register('./support/shared-loader.mjs', import.meta.url);
 const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
-const { walkCadence, walkSwing } = await import('../web/js/settler-figures.js');
+const { walkCadence, walkSwing, createFigures, settlerLook, eyeHeight } = await import('../web/js/settler-figures.js');
 const { residentRig, JOINT } = await import('../web/js/resident-skin.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
@@ -48,4 +49,29 @@ test('a resident walks at a person\'s cadence, not at a clock of its own', () =>
     // An apprentice is smaller and takes quicker steps at the same speed.
     assert.ok(walkCadence({ sex, speed: 0.48, look: { height: 1 }, baseScale: 0.62 }) > walk);
   }
+});
+
+// "Maak alle inwoners ook ongeveer even groot" (the keeper, 12 October 2026): the skinned body is drawn
+// with a few percent of the look's height (settler-figures.js drawnLook - the look itself, and so the
+// stride on the sea, stays), and an apprentice a little smaller rather than a child. Held on enrolled
+// figures, through the reading the conversation camera uses (eyeHeight), so it stays a resident's eye.
+test('every resident stands about as tall as every other', () => {
+  const view = createFigures(new THREE.Scene(), new THREE.MeshBasicMaterial(), { skinned: true });
+  const eyes = { male: [], female: [] };
+  const kinds = ['adult', 'adult', 'sailor', 'apprentice'];
+  for (let i = 0; i < 240; i++) {
+    const id = `height:${i}`, kind = kinds[i % 4];
+    const presentation = Math.floor(i / 4) % 2 ? 'woman' : 'man';      // every kind of either
+    const f = { id, visible: true, pos: [0, 0], y: 0, yaw: 0, anim: 'still', mode: 'idle', speed: 0 };
+    assert.ok(view.enrol(f, { ...settlerLook(id, 'sonnet', kind), presentation, outfit: 'trousers' }, kind));
+    eyes[f.sex].push(eyeHeight(f));
+  }
+  for (const [sex, list] of Object.entries(eyes)) {
+    const mid = list.reduce((a, b) => a + b, 0) / list.length;
+    const spread = (Math.max(...list) - Math.min(...list)) / mid;
+    assert.ok(spread < 0.12, `${sex}: eyes from ${Math.min(...list).toFixed(3)} to ${Math.max(...list).toFixed(3)}, ${(spread * 100).toFixed(1)}% apart`);
+  }
+  // A man and a woman may differ, but not by much.
+  const mean = (l) => l.reduce((a, b) => a + b, 0) / l.length;
+  assert.ok(Math.abs(mean(eyes.male) - mean(eyes.female)) / mean(eyes.male) < 0.05);
 });
