@@ -240,7 +240,9 @@ export function checkAll(sets) {
 // RESIDENT_BUDGETS is longest prefix first, by the part's id; a piece matching none is refused.
 export const RESIDENT_FIGURE = 3000;
 export const RESIDENT_BUDGETS = [
-  ['skin:', 200], ['skin', 900], ['hair:', 320], ['hat:', 150],
+  // The skin is 1000 since it keeps a band of body inside every collar, cuff and hem (COVER_BAND in
+  // build-residents.py): cut to the cloth's edge, every opening showed the sky through the body.
+  ['skin:', 200], ['skin', 1000], ['hair:', 320], ['hat:', 150],
   ['shirt', 500], ['dress', 800], ['trousers', 350], ['skirt', 300], ['shoes', 150], ['clogs', 150],
   ['vest', 160], ['apron', 120], ['scarf', 100], ['straps', 120],
 ];
