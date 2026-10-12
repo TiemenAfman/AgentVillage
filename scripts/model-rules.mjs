@@ -243,7 +243,7 @@ export const RESIDENT_BUDGETS = [
   // The skin is 1000 since it keeps a band of body inside every collar, cuff and hem (COVER_BAND in
   // build-residents.py): cut to the cloth's edge, every opening showed the sky through the body.
   ['skin:', 200], ['skin', 1000], ['hair:', 320], ['hat:', 150],
-  ['shirt', 500], ['dress', 800], ['trousers', 350], ['skirt', 300], ['shoes', 150], ['clogs', 150],
+  ['shirt', 560], ['dress', 900], ['trousers', 350], ['skirt', 300], ['shoes', 200], ['clogs', 150],
   ['vest', 160], ['apron', 120], ['scarf', 100], ['straps', 120],
 ];
 // What one figure can wear at once: one of each row (null = nothing from it). A dress is a top and a
@@ -279,6 +279,8 @@ export function checkResidents(data) {
       }
       if (!p.joints.every((j) => Number.isInteger(j) && j >= 0 && j < joints)) bad.push(`${where}: a joint index outside the ${joints} joints`);
       if (!p.weights.every((w) => w >= 0 && w <= 1)) bad.push(`${where}: a weight outside 0..1`);
+      // A garment's trim (drawn in its own colour, not dyed): optional, one 0..1 a corner.
+      if (p.trim && (p.trim.length !== corners || !p.trim.every((t) => t >= 0 && t <= 1))) bad.push(`${where}: trim is not one 0..1 a corner`);
       const budget = residentBudgetOf(p.id);
       if (budget === null) bad.push(`${where}: no budget for a piece called that`);
       else if (n(p) > budget) bad.push(`${where}: ${n(p)} triangles over a budget of ${budget}`);

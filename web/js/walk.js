@@ -3,7 +3,6 @@
 // come close to something you can interact with.
 import { quayKade } from 'shared/quay-basin.mjs';
 import * as THREE from 'three';
-import { figureGeometry } from './settlers.js';
 import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
@@ -150,28 +149,6 @@ const PROBE = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.cos(a) * SWIM_REACH, Math.sin(a) * SWIM_REACH];
 });
-
-// Everyone else walking the island is a settler with a satchel and a wide hat, built
-// from this so you can pick them out of a crowd: the visitors and neighbours (see
-// peers.js) are made of the same kit as the settlers, and the hat and satchel are what
-// say "this one is somebody". The one you steer is the exception - it is composed by
-// hand in avatar.js - but it still wears the satchel this puts on.
-export function playerGeometry(style = 'sonnet') {
-  // The old body: the hat and satchel below are placed on its head and hip.
-  const base = figureGeometry(style, { skinned: false });
-  base.deleteAttribute('normal');   // the kit parts carry none; normals come after the merge
-  const parts = [
-    base,
-    box(0.16, 0.13, 0.07, 0x8a5a34, { x: 0.11, y: 0.14, z: -0.03, ry: 0.3 }),   // satchel
-    cylinder(0.008, 0.008, 0.24, 4, 0x5a3c28, { x: 0.04, y: 0.1, z: -0.02, rz: 0.5 }),
-    cylinder(0.17, 0.17, 0.018, 10, 0xc9a75c, { y: 0.4 }),                       // hat brim
-    sphere(0.075, 0xc9a75c, { y: 0.415 }),
-  ];
-  const g = mergeGeometries(parts, false);
-  g.computeVertexNormals();
-  g.scale(1.12, 1.12, 1.12);
-  return g;
-}
 
 // A striped towel and a parasol, for when the settler has had enough of the island.
 // Sized off the figure, which is 0.55 tall and 0.4 across: lying down it is 0.55 long,

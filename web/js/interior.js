@@ -569,7 +569,11 @@ export function createInterior({ room = 'tavern', camera, material, dom, onLeave
   // A figure faces +z unless its `yaw` says otherwise, and a barman walks along x - the
   // tavern's bar runs east to west - unless his bar runs along z, like the castle's.
   const figures = def.figures.map((f) => {
-    const mesh = new THREE.Mesh(figureGeometry(f.style, f.look ? { look: f.look } : undefined), material);
+    // Each dressed from its own wardrobe stream, hashed off where it stands: with no id every figure
+    // of a style drew the stream of 'figure:<style>' and Finn, Meg and the rave's barman and bouncer
+    // wore the same clothes.
+    const id = f.id || `room:${f.style}:${f.at.join(',')}`;
+    const mesh = new THREE.Mesh(figureGeometry(f.style, f.look ? { look: f.look, id } : { id }), material);
     mesh.position.set(...f.at);
     mesh.scale.setScalar(f.scale || 1);
     scene.add(mesh);

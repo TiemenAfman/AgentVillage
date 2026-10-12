@@ -93,8 +93,8 @@ def joint_of(bone):
 
 
 # Triangles each piece is decimated to; the ceilings these must stay under are model-rules.mjs's.
-TARGET = {'face': 560, 'arms': 230, 'torso': 120, 'bare': 200, 'shirt': 440, 'trousers': 290, 'shoes': 140,
-          'straps': 100, 'vest': 140, 'hair': 260}
+TARGET = {'face': 560, 'arms': 230, 'torso': 120, 'bare': 200, 'shirt': 520, 'trousers': 330, 'shoes': 190,
+          'straps': 100, 'vest': 140, 'hair': 300}
 # The two choices that decide which skin shows: what is worn on the legs and on the feet.
 BOTTOMS = ['trousers', 'skirt']
 FEET = ['shoes', 'clogs']
@@ -107,6 +107,14 @@ TUCK = .008
 TUCK_SIDE = .015
 # How far round a point close-fitting cloth is looked for (source metres): a thigh's width.
 ENCLOSE = .2
+# The corner colour the texture is read into before decimating (bake_colours), and how far a garment's
+# light and dark may go either side of its median (texture_colour).
+KIT = 'kit'
+CLOTH_DARK, CLOTH_LIGHT = .22, 1.35
+# A corner is trim (cloth_colour) when its saturation lies this far from the garment's median colour's
+# (a brown corset on a white blouse; a grey sleeve on a cream shirt is only lighter and stays cloth), or
+# its lightness is under this share of the median's.
+TRIM_APART, TRIM_DARK = .1, .5
 # Two kit vertices this close (source metres) are one, split only by a UV seam (weld).
 WELD = 1e-5
 # Cloth stood off what it is worn over, in source metres.
@@ -221,14 +229,17 @@ def median(xs):
     return xs[len(xs) // 2] if xs else 1
 
 
-def emit(obj, colour, invert=False):
+def emit(obj, colour, trim=None, invert=False):
     """The object's triangles as the bake's arrays: positions, normals, colours, joints, weights.
-    `colour(tri, corner_loop, vertex)` -> [r, g, b]; `invert` flips the winding (an inner shell)."""
+    `colour(tri, corner_loop, vertex)` -> [r, g, b]; `trim` the same -> 0 or 1, a corner drawn in its own
+    colour rather than dyed (cloth_colour); `invert` flips the winding (an inner shell)."""
     mesh = obj.data
     mesh.calc_loop_triangles()
     m3 = obj.matrix_world.to_3x3()
     w = joint_weights(obj)
     out = dict(positions=[], normals=[], colors=[], joints=[], weights=[])
+    if trim:
+        out['trim'] = []
     for t in mesh.loop_triangles:
         corners = list(zip(t.vertices, t.loops))
         if invert:
@@ -246,6 +257,8 @@ def emit(obj, colour, invert=False):
             out['colors'] += [round(x, 3) for x in colour(t, l, vi)]
             out['joints'] += [top[0][0], top[1][0]]
             out['weights'].append(round(top[0][1] / s, 3))
+            if trim:
+                out['trim'].append(trim(t, l, vi))
     return out
 
 
@@ -254,34 +267,92 @@ def concat(*arrs):
     for a in arrs:
         for k in out:
             out[k] += a[k]
+    if any('trim' in a for a in arrs):
+        out['trim'] = [x for a in arrs for x in a.get('trim', [0] * len(a['weights']))]
     return out
 
 
-def texture_colour(obj, mode):
-    """Corner colours from the object's texture: 'tint' keeps the hue over the mean (skin, hair),
-    'cloth' keeps only light and dark over the median (a garment is dyed whole)."""
-    img = B['base_image'](obj)
-    at = B['sampler'](img)
+def bake_colours(obj):
+    """The texture under every corner, read off the full kit mesh into a corner colour (`KIT`) that
+    the decimation then carries. Read after the collapse, as it was, a corner's UV had been dragged
+    across the texture's islands and sampled whatever lay there: the cream shirt's brown trim, the
+    corset, the undersleeves and the belt all came out one muddy grey-beige - the first gap a blind
+    critic named against the Wanderer. Each face is read from its own material's image (a joined
+    garment or hairstyle has several)."""
     mesh = obj.data
     uv = mesh.uv_layers.active.data if mesh.uv_layers.active else None
+    images = {}
+    attr = mesh.color_attributes.new(KIT, 'FLOAT_COLOR', 'CORNER')
+    for f in mesh.polygons:
+        if not uv:
+            for l in f.loop_indices:
+                attr.data[l].color = (1, 1, 1, 1)
+            continue
+        mi = f.material_index
+        if mi not in images:
+            mat = obj.material_slots[mi].material if mi < len(obj.material_slots) else None
+            img = None
+            if mat and mat.node_tree:
+                node = next((n for n in mat.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image), None)
+                if node:
+                    img = dict(w=node.image.size[0], h=node.image.size[1], px=list(node.image.pixels[:]))
+            images[mi] = B['sampler'](img)
+        at = images[mi]
+        us = [Vector(uv[l].uv) for l in f.loop_indices]
+        mid = sum(us, Vector((0, 0))) / len(us)
+        for l, u in zip(f.loop_indices, us):
+            c = at(u + (mid - u) * SAMPLE_IN)
+            attr.data[l].color = (c[0], c[1], c[2], 1)
+
+
+def texture_colour(obj, mode):
+    """Corner colours from the texture baked into `KIT` (bake_colours): 'tint' keeps the hue over the
+    mean (skin, hair), 'cloth' keeps only light and dark over the median (a garment is dyed whole),
+    over a range wide enough that a trim, a corset or a belt still reads darker than the cloth."""
+    mesh = obj.data
+    attr = mesh.color_attributes.get(KIT)
     mesh.calc_loop_triangles()
     raw = {}
     for t in mesh.loop_triangles:
-        if not uv:
-            for l in t.loops:
-                raw[l] = [1, 1, 1]
-            continue
-        us = [Vector(uv[l].uv) for l in t.loops]
-        mid = sum(us, Vector((0, 0))) / 3
-        for l, u in zip(t.loops, us):
-            raw[l] = at(u + (mid - u) * SAMPLE_IN)
+        for l in t.loops:
+            raw[l] = list(attr.data[l].color[:3]) if attr else [1, 1, 1]
     if mode == 'tint':
         mean = [max(1e-4, sum(c[k] for c in raw.values()) / max(1, len(raw))) for k in range(3)]
         fix = {l: [min(1.6, c[k] / mean[k]) for k in range(3)] for l, c in raw.items()}
     else:
         mid = max(1e-4, median([B['lum'](c) for c in raw.values()]))
-        fix = {l: [max(.3, min(1.25, B['lum'](c) / mid))] * 3 for l, c in raw.items()}
+        fix = {l: [max(CLOTH_DARK, min(CLOTH_LIGHT, B['lum'](c) / mid))] * 3 for l, c in raw.items()}
     return lambda t, l, vi: fix[l]
+
+
+def cloth_colour(obj):
+    """A garment's corners as (colour, trim): the cloth itself is light and dark over its median, to be
+    dyed (texture_colour 'cloth'); what the kit painted another colour than the cloth - a belt, a trim,
+    a corset, the toggles, a boot's laces and turnover - keeps the kit's own colour and a trim weight of
+    1, which the island's shader draws undyed (resident-skin.js `residentTrim`). Dyed whole, every garment
+    was one colour, and a blind critic put that first among what told a resident from the Wanderer."""
+    shade = texture_colour(obj, 'cloth')
+    mesh = obj.data
+    attr = mesh.color_attributes.get(KIT)
+    if not attr:
+        return shade, lambda t, l, vi: 0
+    mesh.calc_loop_triangles()
+    raw = {l: list(attr.data[l].color[:3]) for t in mesh.loop_triangles for l in t.loops}
+    main = [median([c[k] for c in raw.values()]) for k in range(3)]
+    lum0, sat0 = max(1e-4, B['lum'](main)), B['sat'](main)
+
+    def trimmed(c):
+        return abs(B['sat'](c) - sat0) > TRIM_APART or B['lum'](c) / lum0 < TRIM_DARK
+
+    # A triangle is trim or cloth whole: corners of one triangle split between the two blended a
+    # dyed colour into the kit's across it.
+    trim = {}
+    for t in mesh.loop_triangles:
+        votes = sum(trimmed(raw[l]) for l in t.loops)
+        for l in t.loops:
+            trim[l] = 1 if votes >= 2 else 0
+    print('Residents: trim', round(sum(trim.values()) / max(1, len(trim)), 2), 'of', obj.name)
+    return (lambda t, l, vi: raw[l] if trim[l] else shade(t, l, vi)), (lambda t, l, vi: trim[l])
 
 
 def plain(v=1.0):
@@ -501,6 +572,7 @@ def build(sex, spec):
         o.data.transform(o.matrix_world)
         o.matrix_world = Matrix.Identity(4)
         weld(o)
+        bake_colours(o)
 
     # Cloth: no bare hands (the kit paints the woman's into her sleeves) and no Regular forearms.
     for slot, o in garments.items():
@@ -832,11 +904,11 @@ def build(sex, spec):
     for slot in ('shirt', 'trousers', 'shoes', 'straps'):
         o = garments[slot]
         decimate(o, TARGET[slot])
-        part(slot, 'garment', 'cloth', emit(o, texture_colour(o, 'cloth')))
+        part(slot, 'garment', 'cloth', emit(o, *cloth_colour(o)))
     decimate(own['vest'], TARGET['vest'])
     part('vest', 'garment', 'cloth', emit(own['vest'], plain(.92)))
     decimate(dress_top, TARGET['shirt'])
-    part('dress', 'garment', 'cloth', concat(emit(dress_top, texture_colour(dress_top, 'cloth')),
+    part('dress', 'garment', 'cloth', concat(emit(dress_top, *cloth_colour(dress_top)),
                                              emit(long_skirt, plain(1))))
     for slot in ('skirt', 'apron', 'scarf', 'clogs'):
         part(slot, 'garment', 'cloth', emit(own[slot], plain(1)))
@@ -922,7 +994,8 @@ def part_object(part, colour=None, pose=None, offset=(0, 0, 0), collection=None)
     tint = colour or (1, 1, 1)
     for li, loop in enumerate(obj.data.loops):
         c = part['colors'][loop.vertex_index * 3:loop.vertex_index * 3 + 3]
-        col.data[li].color = (c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1)
+        keep = part['trim'][loop.vertex_index] if part.get('trim') else 0     # undyed (resident-skin.js residentTrim)
+        col.data[li].color = tuple(c[k] * (tint[k] + (1 - tint[k]) * keep) for k in range(3)) + (1,)
     if not pose:
         for jname in JOINTS:
             obj.vertex_groups.new(name=jname)

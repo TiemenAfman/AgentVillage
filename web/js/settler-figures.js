@@ -263,9 +263,11 @@ function skinnedFigureGeometry(look, id, kind) {
           const vb = joints[rowB] * x + joints[rowB + 1] * y + joints[rowB + 2] * z + joints[rowB + 3];
           pos[i * 3 + k] = va * wa + vb * (1 - wa);
         }
-        col[i * 3] = p.colors[i * 3] * dye.r;
-        col[i * 3 + 1] = p.colors[i * 3 + 1] * dye.g;
-        col[i * 3 + 2] = p.colors[i * 3 + 2] * dye.b;
+        // A trim corner (resident-skin.js residentTrim) is the kit's own colour, not dyed.
+        const keep = p.trim ? p.trim[i] : 0;
+        col[i * 3] = p.colors[i * 3] * (dye.r + (1 - dye.r) * keep);
+        col[i * 3 + 1] = p.colors[i * 3 + 1] * (dye.g + (1 - dye.g) * keep);
+        col[i * 3 + 2] = p.colors[i * 3 + 2] * (dye.b + (1 - dye.b) * keep);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
