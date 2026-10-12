@@ -130,6 +130,19 @@ export function drinkArm(t) {
 // then the other. All of it on the drawn matrix and none of it on `f.pos` - the sea is where
 // they are, this is only how they stand there.
 const SWAY_ROLL = 0.15, SWAY_NOD = 0.05, SWAY_SIDE = 0.045;
+// The skinned body's walk (draw()): the rise and fall of a step, highest as the legs pass (a body is
+// lowest with its feet apart - the old bob, |sin|, had it the other way round, and at 0.035 it was
+// three times a person's), the hips' roll, and how far a thigh swings each way at a walk and a run.
+const WALK_BOB = 0.012, WALK_ROLL = 0.012, WALK_SWING = 0.5, RUN_SWING = 0.72;
+export function walkSwing(f) { return f.speed > 0.8 ? RUN_SWING : WALK_SWING; }
+// Radians of the stride a second: a cycle is two steps, and a step is as long as the swing makes it
+// (the foot WALK_SWING out either side of the hip), so the feet keep pace with the ground.
+export function walkCadence(f) {
+  const rig = residentRig(f.sex || 'male');
+  const leg = (rig.points[JOINT.leftHip][1] - rig.points[JOINT.leftAnkle][1]) * (f.look?.height ?? 1) * (f.baseScale ?? 1);
+  const step = 2 * leg * Math.sin(walkSwing(f));
+  return Math.PI * Math.max(0.2, f.speed || 0) / step;
+}
 // And on the move a zigzag round the route the sea walks them along rather than a wobble on
 // it - "he still follows his route neatly", said about the first version - with the nose
 // swinging after each lurch, and now and then a stumble: a pitch forward and a stagger
@@ -263,9 +276,11 @@ function skinnedFigureGeometry(look, id, kind) {
           const vb = joints[rowB] * x + joints[rowB + 1] * y + joints[rowB + 2] * z + joints[rowB + 3];
           pos[i * 3 + k] = va * wa + vb * (1 - wa);
         }
-        col[i * 3] = p.colors[i * 3] * dye.r;
-        col[i * 3 + 1] = p.colors[i * 3 + 1] * dye.g;
-        col[i * 3 + 2] = p.colors[i * 3 + 2] * dye.b;
+        // A trim corner (resident-skin.js residentTrim) is the kit's own colour, not dyed.
+        const keep = p.trim ? p.trim[i] : 0;
+        col[i * 3] = p.colors[i * 3] * (dye.r + (1 - dye.r) * keep);
+        col[i * 3 + 1] = p.colors[i * 3 + 1] * (dye.g + (1 - dye.g) * keep);
+        col[i * 3 + 2] = p.colors[i * 3 + 2] * (dye.b + (1 - dye.b) * keep);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -1127,7 +1142,14 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
       const work = workPose(loading ? 'gather' : f.anim, time + f.phase);
       const dance = f.anim === 'dance' ? dancePose(f.move || 0, f.beat || 0, f.hype || 0) : null;
       const sit = f.anim === 'sit' ? sitPose(f, time) : null;
-      const bob = sit ? 0 : f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
+      // The skinned body's walk is its own stride (walkStride): the step as long as the leg makes
+      // it and the cadence from how fast the body really goes, so a foot stays where it is put. The
+      // old one ran off a clock of its own (10-12 rad/s, 'step' a fixed 9) whatever the speed: three
+      // and a half steps a second, feet sliding a third ahead of the ground.
+      const strideOn = skinned && walking;
+      if (strideOn) f.gaitAt = (f.gaitAt ?? f.phase) + dt * walkCadence(f);
+      const bob = sit ? 0 : strideOn ? Math.abs(Math.cos(f.gaitAt)) * WALK_BOB
+        : f.anim === 'walk' || hauling || pushing ? Math.abs(Math.sin(time * f.gait + f.phase)) * 0.035
         : f.anim === 'hammer' ? Math.abs(Math.sin(time * 8 + f.phase)) * 0.02
           : f.anim === 'step' ? Math.abs(Math.sin(time * 9 + f.phase)) * 0.03
             : dance ? dance.bob
@@ -1161,9 +1183,13 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
       // One transform for the person, then the parts hang off it: torso and limbs take
       // the build, the head rides at the top of whatever body this is.
       tmpObj.position.set(sx, f.y + (sit ? sit.bob : bob * f.baseScale), sz);
-      const gaitPhase = time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
+      const gaitPhase = strideOn ? f.gaitAt : time * (f.mode === 'walk' ? f.gait : 9) + f.phase;
+      // The whole figure rocked 0.045 rad about its feet each step, which on the taller skinned body
+      // is the head swinging two centimetres side to side - the wobble. That body sways at the hips
+      // and barely: WALK_ROLL.
+      const roll = skinned ? (walking ? WALK_ROLL : 0) : (walking ? 0.045 : 0.01);
       tmpObj.rotation.set((sit ? sit.lean : work ? work.lean : dance ? dance.lean : 0) - FLINCH_LEAN * flinchK + swayNod, drawnYaw,
-        (sit ? 0 : dance ? dance.roll : Math.sin(gaitPhase) * (walking ? 0.045 : 0.01)) + swayRoll);
+        (sit ? 0 : dance ? dance.roll : Math.sin(gaitPhase) * roll) + swayRoll);
       tmpObj.scale.setScalar(f.baseScale);
       tmpObj.updateMatrix();
       bodyMat.multiplyMatrices(tmpObj.matrix, f.mBody);
@@ -1173,7 +1199,7 @@ export function createFigures(scene, material, { armed = false, bounds = null, s
         trim.setMatrixAt(f.slot, bodyMat);
         skinCore.setMatrixAt(f.slot, bodyMat);
       }
-      const stride = walking ? Math.sin(gaitPhase) * (f.speed > 0.8 ? 0.72 : 0.48) : 0;
+      const stride = walking ? Math.sin(gaitPhase) * (strideOn ? walkSwing(f) : f.speed > 0.8 ? 0.72 : 0.48) : 0;
       const idle = walking || hammering || work || dance || sit ? 0 : Math.sin(time * 1.8 + f.phase) * 0.035;
       const swing = armed ? 0.45 : 0.9;
       // Hauling, the right hand is up on the bundle and only the left arm swings. Behind a
