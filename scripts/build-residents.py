@@ -799,6 +799,10 @@ def build(sex, spec):
         # hanging hand was "near an opening" and came out through the breeches.
         worn = ('shirt', *combo.split('/'))
         under = [any(hit[g][i] for g in worn) for i in range(len(body_pts))]
+        # In boots the foot is in the boot, whatever a ray says: the heel's normal points down and back
+        # past the decimated boot's heel, and a pink heel showed under every booted resident.
+        if 'shoes' in worn:
+            under = [u or foot[i] for i, u in enumerate(under)]
         dist = [0.0 if not u else math.inf for u in under]
         queue = [(0.0, i) for i, u in enumerate(under) if not u]
         heapq.heapify(queue)
@@ -813,6 +817,8 @@ def build(sex, spec):
                     heapq.heappush(queue, (nd, k))
         return [u and dist[i] > COVER_BAND for i, u in enumerate(under)]
 
+    ankles = {J['leftAnkle'], J['rightAnkle']}
+    foot = [bool(w) and max(w, key=w.get) in ankles for w in joint_weights(skin)]
     hidden = {c: deep(c) for c in COMBOS}
     # What fits the body close enough to need skin tucked in behind it (`tuck`), for a piece that shows
     # under `shows`: only cloth every one of those outfits wears - a shin shown with clogs tucked behind

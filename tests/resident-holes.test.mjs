@@ -1,9 +1,9 @@
-// The residents are closed (Plans/inwoners-in-avonturierstijl.md, "Gaten"): every outfit the wardrobe can
+// The residents are closed (Plans/inwoners-in-avonturierstijl.md, "Gaten, biezen en de loop"): every outfit the wardrobe can
 // put together, in every pose a resident spends the day in, seen from all round, shows next to nothing of
 // a garment's inside (a hole: skin cut where no cloth covers it, a seam that parted in the decimation) and
 // next to no skin come through cloth (a poke). tests/support/resident-holes.mjs draws them the way the
-// island's front-sided crowd material does. Measured on the bake of 12 October 2026: holes 0.4-0.8% of a
-// figure, pokes 0.07-0.21%; the bake before it was 1.5-2.3% and 0.26-0.41%. The ceilings below sit a
+// island's front-sided crowd material does. Measured on the bake of 12 October 2026: holes 0.32-0.68% of a
+// figure, pokes 0.05-0.19%; the bake before it was 1.5-2.3% and 0.26-0.41%. The ceilings below sit a
 // little over today's, so a bake that opens a seam again fails here and not in front of the keeper.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -756,9 +756,22 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   the people stay under ~40 calls a pass (the keeper's limit). Held tools hang off the wrist at
   `HELD_SCALE`. `eyeHeight` knows the new body (a figure with `sex`, set by `enrolSkinned`), so the
   conversation camera (facetoface.js) looks a resident in the eye and not on the chin; `figureGeometry`
-  builds the rooms' and the model sheet's figures from the same pieces, except walk.js `playerGeometry`,
-  whose hat and satchel sit on the old head. The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
+  builds the rooms' and the model sheet's figures from the same pieces (each room figure its own
+  wardrobe, `room:<style>:<at>`). The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
   `villager-mesh.js` and the old path stay. `/residents.html` is the workbench: every pose, new before old.
+  **A resident is closed** (12 Oct 2026, the keeper's "vol met gaten"): the kit's glTF comes in cut along
+  every UV seam and is `weld`ed before decimating (unwelded, the seams parted into slits); skin under cloth is
+  kept a `COVER_BAND` deep inside every opening (measured over the skin, per outfit), tucked behind fitted
+  cloth (`tuck`), and a foot in boots is hidden; no corner leans on both thighs (`fix_crotch`), the breeches
+  take the skin's weights. `tests/resident-holes.test.mjs` (`tests/support/resident-holes.mjs`, a software
+  rasteriser drawing front faces only, as the island does) holds every outfit in every pose to a ceiling of
+  seen-into (holes) and skin-through-cloth (pokes). **Trim**: what the kit painted another colour than the cloth
+  (belt, corset, collar, laces) keeps the kit's colour and is not dyed - a bit carried in `aWeight` as +2
+  (`residentTrim()` in the shader), because one more attribute broke WebGL's sixteen. **The walk** is the
+  stride's own (`walkCadence`, `walkSwing` in settler-figures.js, `tests/resident-walk.test.mjs`): cadence from
+  the real speed so a planted foot stays put, the bob highest as the legs pass, a light hip roll - the old
+  clock-driven walk wobbled. The bar it was judged against is the Wanderer itself:
+  `scripts/render-resident-bar.py` renders the two blind, A/B shuffled, same clothes, light and camera.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
