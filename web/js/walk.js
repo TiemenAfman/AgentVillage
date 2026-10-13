@@ -2437,7 +2437,7 @@ export function createWalkMode({
     state.yaw = Math.atan2(v[0], v[2]);
     state.camYaw = state.yaw;
     place(camBack * 1.6);
-    // Off her for good, as over her rail (letRun): the sails struck, her way run out by this page. Left
+    // Off her for good, as over her rail (letRun): under sail she sails on, else her way runs out, stepped by this page. Left
     // standing, nobody stepped her and she froze with her speed in `v` - the log read 75.8 kn over a
     // ship lying still, and the next swimmer up her ladder set her going at it (stepClimb).
     if (b) letRun(b);
@@ -2465,7 +2465,7 @@ export function createWalkMode({
     if (mode.mode === 'none' || (mode.mode === 'zip' && (from === 'a') !== (mode.low === 1))) return false;
     if (state.gun) leaveGun();
     const b = deckBoat;
-    // Off her deck onto the line is off her, as over her rail: sails struck, her way run out (letRun) - left
+    // Off her deck onto the line is off her, as over her rail: she sails on under sail or runs out (letRun) - left
     // standing, nobody stepped her and she lay frozen at her speed (see launchSelf).
     if (state.deck) { offDeck(); if (b) letRun(b); if (b && state.onLeftDeck) state.onLeftDeck(b); }
     cancelDig('reset');
