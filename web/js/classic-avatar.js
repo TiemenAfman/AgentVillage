@@ -226,6 +226,8 @@ export function settleReach(r, top) {
 // stand where the step put them on the way down as on the way up.
 export function ladderStep(ladder) {
   if (!ladder) return null;
+  // Up out of the water onto planks (walk.js climbOut, `out` 0..1 through Freehang Climb To Standing).
+  if (ladder.out != null) return GAIT_CLIPS.climbOut ? { clip: 'climbOut', u: Math.max(0, Math.min(1, ladder.out)) } : null;
   if (ladder.top != null && GAIT_CLIPS.climbTop) return { clip: 'climbTop', u: Math.max(0, Math.min(1, ladder.top)) };
   const on = ladder.floor && Number.isFinite(ladder.at) ? stepWay('climbOn') : null;
   if (!on) return null;
@@ -1380,7 +1382,9 @@ function buildRig(spec, material) {
       const step = ladderStep(ladder);
       const p = step ? sampleOnce(GAIT_CLIPS[step.clip], step.u, poseClimb) : sampleClip(GAIT_CLIPS.climb, climbU, poseClimb);
       applyClip(p, clipMix, { arms: true, drop: true });
-      // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs
+      // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs - not
+      // out of the water, where there are no rungs: the hands are on the planks' edge
+      if (step && step.clip === 'climbOut') return;
       for (const side of ['leftArm', 'rightArm']) {
         if (busy[side]) continue;
         liftQ.setFromAxisAngle(liftAxis, -CLIMB_CLIP_LIFT[side] * clipMix);
@@ -1591,7 +1595,7 @@ function buildRig(spec, material) {
     else climbU = 0;
     // The Traveller has no clip for the step over the top: he lets go of the climb's reach as he comes
     // up over it, by how far over he is, and stands.
-    const reach = ladder && climbKind(G) === 'reach' ? settleReach(climbReach(climbU), ladder.top) : null;
+    const reach = ladder && climbKind(G) === 'reach' ? settleReach(climbReach(climbU), ladder.top ?? ladder.out) : null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {

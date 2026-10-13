@@ -200,7 +200,17 @@ test('a swimmer beside the pier pulls themselves up onto it with Space, and unde
   // Space at the edge: up onto the boards, at once and with the body's room up there.
   let rose = 0, last = walk.state.pos.y;
   key(' ', true);
-  for (let i = 0; i < 30; i++) { walk.update(FRAME); rose = Math.max(rose, walk.state.pos.y - last); last = walk.state.pos.y; }
+  let outs = 0, back = 0;
+  for (let i = 0; i < 240; i++) {
+    walk.update(FRAME);
+    rose = Math.max(rose, walk.state.pos.y - last); last = walk.state.pos.y;
+    if (walk.state.climbing && walk.state.climbing.out != null) outs++;
+    if (i === 0) key(' ', false);
+  }
+  // the clip (Mixamo's Freehang Climb To Standing) is played while the feet go up, a step a frame
+  assert.ok(outs > 60, `climbed out in ${outs} frames`);
+  assert.ok(rose < 0.05, `rose ${rose.toFixed(3)} in one frame`);
+  assert.equal(walk.state.climbing, null, 'still climbing out');
   key(' ', false);
   assert.equal(walk.state.swimming, false, `still swimming at x ${walk.state.pos.x.toFixed(2)}`);
   assert.ok(Math.abs(walk.state.pos.y - QUAY_DECK) < 1e-9, `at ${walk.state.pos.y}`);
@@ -363,7 +373,7 @@ test('a swimmer at the face of the wall pulls themselves up onto the quay with S
   stride(swim, 'w', 4);
   assert.equal(swim.state.swimming, true);
   key(' ', true);
-  for (let i = 0; i < 10; i++) swim.update(FRAME);
+  for (let i = 0; i < 240; i++) swim.update(FRAME);
   key(' ', false);
   assert.equal(swim.state.swimming, false, `still in the harbour at ${swim.state.pos.toArray().map((v) => v.toFixed(2))} yaw ${swim.state.yaw.toFixed(2)} face ${face}`);
   assert.ok(swim.state.pos.x > face, `not on the quay: x ${swim.state.pos.x.toFixed(2)}`);

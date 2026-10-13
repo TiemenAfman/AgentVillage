@@ -7,7 +7,7 @@ import { box, cylinder, cone, sphere, WALK_BODY_R as BODY_R, WALK_CLEARANCE } fr
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp } from 'shared/rng.mjs';
 import { loadAvatar, PLAYER_EYE } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, horsebackOf, SEAT_FLESH, stepWay } from './classic-avatar.js';
 import { stepBoat, hullOver, shipsOver, DECK_Y, hullPointOf, hullTiltOf, cargoMesh, setSail, strikeSail, stepUnderSail, sailStep, heavyHull } from './boat.js';
 import { cameraFloor, applyCeiling } from './camera-floor.js';
 import { cameraFixed } from './camera-prefs.js';
@@ -17,7 +17,7 @@ import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
-import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
+import { climbWay, climbWayDown, climbAlong, onWay, topNear, hoistAt, HOIST_PACE, HANG_GAP } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
@@ -453,8 +453,10 @@ export function createWalkMode({
   // way you face, its top no more than CLIMB_OUT over the surface, room to stand on it - and never
   // from under it, which is what keeps a swimmer under a pier or a finger where they are. Not with
   // the statue in the arms (both hands are full, as for a jump), nor for a diver (Space swims them up).
-  // The feet are put up there at once; the drawn body is eased up over STEP_OFF_S and the camera
-  // after it (pulledUp, afterMove), as a ladder's foot is.
+  // The way up is Mixamo's Freehang Climb To Standing (stepHoist): the rig plays it as a ladder's step
+  // (`state.climbing.out`, classic-avatar.js ladderStep), the Traveller lets his climb's reach go as he
+  // comes up. With no clip baked the feet are put up there at once and the drawn body and the camera
+  // eased after them (pulledUp, afterMove).
   const CLIMB_OUT = 0.6;
   const CLIMB_REACH = 0.5;
   let pulledUp = 0;
@@ -474,17 +476,56 @@ export function createWalkMode({
       const y = groundAt(lx, lz, top);
       if (Math.abs(y - top) > STEP_DOWN || blocked(lx, lz, y, true, false)) return false;
       if (ceilingAt(lx, lz, y) - y < HEAD) return false;
-      pulledUp = y - state.pos.y;
-      state.pos.set(lx, y, lz);
-      state.floor = y;
+      drift = null;
       state.vy = 0;
       state.grounded = true;
       state.swimming = false;
-      drift = null;
+      state.moving = false;
+      const step = stepWay('climbOut');
+      if (step) {
+        // Mixamo's Freehang Climb To Standing (gait-clips.js climbOut): stepHoist carries the feet along
+        // its way and the rig plays it at the moment they are at.
+        state.yaw = Math.atan2(fx, fz);
+        // hung against the edge, `d` ahead, drawn in to it from where Space was pressed
+        const hang = Math.max(0, d - HANG_GAP);
+        hoist = { from: { x: x + fx * hang, y: state.pos.y, z: z + fz * hang }, start: { x, z }, to: { x: lx, y, z: lz }, u: 0, step };
+        state.climbing = { rise: 0, out: 0 };
+        return true;
+      }
+      // A checkout that never baked it: up at once, the drawn body and the camera eased after.
+      pulledUp = y - state.pos.y;
+      state.pos.set(lx, y, lz);
+      state.floor = y;
       easeFromDrawn();
       return true;
     }
     return false;
+  }
+  // Up out of the water by the clip, along its way (ladder-way.js hoistAt, which the motion workbench
+  // plays too). Nothing steers it; Escape out of walk mode lands it at once (exit).
+  let hoist = null;
+  const hoistPos = { x: 0, y: 0, z: 0 };
+  function stepHoist(dt) {
+    const h = hoist;
+    h.u = Math.min(1, h.u + dt * HOIST_PACE / h.step.seconds);
+    const p = hoistAt(h.step, h.from, h.to, h.u, hoistPos, h.start);
+    state.pos.set(p.x, p.y, p.z);
+    state.climbing = { rise: 0, out: h.u };
+    state.moving = false;
+    state.running = false;
+    state.swimming = false;
+    state.grounded = true;
+    state.vy = 0;
+    if (h.u >= 1) landHoist();
+    return afterMove(dt);
+  }
+  function landHoist() {
+    if (!hoist) return;
+    const { to } = hoist;
+    hoist = null;
+    state.climbing = null;
+    state.pos.set(to.x, to.y, to.z);
+    state.floor = to.y;
   }
   function crouchToggle() {
     if (state.digging) { cancelDig('crouch'); return; }
@@ -1714,8 +1755,8 @@ export function createWalkMode({
     stepOffQ.copy(drawnQ);
   }
   function stepOffEase(dt) {
-    if (!!climb !== onRope) {
-      onRope = !!climb;
+    if ((!!climb || !!hoist) !== onRope) {
+      onRope = !!climb || !!hoist;
       easeFromDrawn();
     }
     if (stepOff > 0) {
@@ -2790,6 +2831,7 @@ export function createWalkMode({
     onBoarded, onLeftDeck, onGunFire, onGunEvent }) {
     takeBlockers(blockers);
     climb = null;
+    hoist = null;
     drift = null;
     state.onBoarded = onBoarded || null;
     state.onLeftDeck = onLeftDeck || null;
@@ -2836,6 +2878,7 @@ export function createWalkMode({
   }
 
   function exit() {
+    landHoist();
     revive();
     setFirstPerson(false);
     // The camera is somebody else's from here (the sky's, a room's): its near plane as it was made.
@@ -3100,7 +3143,7 @@ export function createWalkMode({
   const RIDE_LOOK = 0.8;           // and it looks further along the line, or it weaves along it
   const RIDE_CORNER = 0.55;        // radians off the next point: slow to the corner pace
   const RIDE_CORNER_V = 1.2;       // the corner pace: at MOUNT_TURN a turn this fast is 0.46 round, inside RIDE_NEAR
-  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/sÂ²)
+  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/s²)
   const RIDE_GALLOP_RUN = 2.5;     // units of straight way ahead before a gallop is worth it
   const BIKE_CRUISE = 3.5;         // a bicycle on a route keeps to this, well under BIKE_TOP
   function rideInput(dt) {
@@ -3156,6 +3199,7 @@ export function createWalkMode({
     // What the arms carry stays behind where the body goes down - before any answer, since a body
     // that cannot play a death is still taken home.
     if (state.carry) letGo('die');
+    landHoist();
     if (!state.active || state.parked || state.vehicle || rides() || state.deck || climb || state.sitting) return 0;
     cancelDig('hit');
     state.dancing = false;
@@ -3259,6 +3303,7 @@ export function createWalkMode({
     }
 
     plane = null;
+    if (hoist) return stepHoist(dt);
     if (pull) return stepPull(dt);
     if (onLine) return stepRope(dt, iz);
     if (climb) return stepClimb(dt, ix, iz);
@@ -3776,12 +3821,12 @@ export function createWalkMode({
       dancing: dancingNow(),
       dying: state.dying,
       // Sliding down a harpoon's line the body hangs from it by its hands, as on a ladder's rungs.
-      climbing: climb ? state.climbing : state.rope === 'zip' ? { rise: 0 } : null,
+      climbing: climb || hoist ? state.climbing : state.rope === 'zip' ? { rise: 0 } : null,
       // On a harpoon's line: arms out walking it, hanging from it sliding down (classic-avatar.js).
       roping: state.rope,
       // on a ladder's way at all - its reach, its rungs, its step over the top - which the rig eases
       // its pose across the ends of (classic-avatar.js LADDER_FADE)
-      onLadder: !!climb,
+      onLadder: !!climb || !!hoist,
     }, dt);
     // What the hands carry, for the pose: a shield is armour on the sea (net.js).
     state.shields.left = shieldIn('leftArm');

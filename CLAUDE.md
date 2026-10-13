@@ -2089,7 +2089,12 @@ the Kraken's gangway, the quay's fingers and top, the resort) is at `QUAY_DECK` 
 while swimming pulls the body onto a floor within `CLIMB_REACH` ahead whose top is at most `CLIMB_OUT` over the
 surface, if it fits there - never from under the planks (judged a body's width *behind* the middle, since the
 quay's coping overhangs its face), never with the statue in the arms or diving. Pushing alone still swims under a
-pier; the drawn body and the camera ease up (`easeFromDrawn`, `pulledUp`). `tests/walk-planks.test.mjs`.
+pier. The way up is Mixamo's Freehang Climb To Standing (`climbOut` in gait-clips.js, a `STEPS` clip with its
+`way`): `stepHoist` carries the feet along `hoistAt` (web/js/ladder-way.js, the one copy, which the motion
+workbench's *Uitklimmen* plays too) at `HOIST_PACE` - drawn in to `HANG_GAP` off the edge first, its rise fitted
+to the edge's height - and says `state.climbing = { out }`, which classic-avatar.js `ladderStep` plays as a
+ladder's step (fades included); the Traveller lets his climb's reach go. Peers see a body rise, not the clip (no
+bit crosses). `tests/climb-out.test.mjs` holds both bodies to a frame step of 0.06 (1.2 failed it, hence 1.1).
 **A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
 `STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
 stairs, slopes and kerbs stay a walk.

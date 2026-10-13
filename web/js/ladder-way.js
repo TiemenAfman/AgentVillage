@@ -138,3 +138,33 @@ export function onWay(w, d) {
   if (top !== null) return { top };
   return d >= w.rungs[0] && d <= w.rungs[1] ? { top: null } : null;
 }
+
+// Up out of the water onto planks (walk.js climbOut, the keeper's 13 Oct 2026): Mixamo's Freehang Climb
+// To Standing (gait-clips.js `climbOut`), by its time at HOIST_PACE of its own - 3.8 s at 1, a man worn
+// out by a swim; 1.2 with the draw-in to the edge heaved the neck 0.063 in a frame, past
+// tests/climb-out.test.mjs's 0.06 - along the
+// way it measured the feet going (`way`, forward and up from where it starts). Its rise is fitted to the
+// edge's height and whatever of the way forward it does not cover is shared out as it rises, so it ends
+// exactly on `to`, the landing walk mode found. Where the feet are at `u` (0..1), from `from`: the clip
+// hangs against the wall, so `from` is HANG_GAP short of the edge, and a swimmer who pressed Space further
+// out (`start`) is drawn in to it over the first HOIST_REACH of the climb - or, measured, the body knelt
+// on the air beside the planks, at their height, for a second.
+export const HOIST_PACE = 1.1;
+export const HANG_GAP = 0.08;
+const HOIST_REACH = 0.25;
+export function hoistAt(step, from, to, u, out = { x: 0, y: 0, z: 0 }, start = from) {
+  const way = step.way, n = way.length - 1;
+  const x = Math.max(0, Math.min(1, u)) * n, k = Math.min(n - 1, Math.floor(x)), t = x - k;
+  const f = way[k][0] + (way[k + 1][0] - way[k][0]) * t, up = way[k][1] + (way[k + 1][1] - way[k][1]) * t;
+  const [lastF, lastU] = way[n];
+  const rise = to.y - from.y, s = lastU > 0 ? Math.max(0, Math.min(1, up / lastU)) : u;
+  const dx = to.x - from.x, dz = to.z - from.z, run = Math.hypot(dx, dz) || 1;
+  const along = f + (run - lastF) * s;
+  out.x = from.x + dx / run * along;
+  out.y = from.y + (lastU > 0 ? up * rise / lastU : rise * u);
+  out.z = from.z + dz / run * along;
+  const r = Math.max(0, Math.min(1, u / HOIST_REACH)), left = 1 - r * r * (3 - 2 * r);
+  out.x += (start.x - from.x) * left;
+  out.z += (start.z - from.z) * left;
+  return out;
+}
