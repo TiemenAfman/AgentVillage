@@ -2191,6 +2191,13 @@ carry `lid`, which `ceilingAt` reads (a room's floors do not); a boat's ground (
 surface out. A building may hand floors over too (the Salty Kraken's stair, `surfacesOf`), and main.js
 `handSurfaces` joins the two lists, since `setSurfaces` replaces the whole set. The sea keeps to cell `levels`. A new plank drawn over water gets its floor from the same
 module that draws it, and `tests/walk-planks.test.mjs` compares the triangles with what the feet stand on.
+**Out of the water onto planks is Space at the edge** (`climbOut` in walk.js, the keeper's choice of 13 Oct
+2026): a swimmer floats at -0.07 and steps up only to 0.38, and every plank over the water (a pier and its head,
+the Kraken's gangway, the quay's fingers and top, the resort) is at `QUAY_DECK` 0.44 - a lid you swim under. Space
+while swimming pulls the body onto a floor within `CLIMB_REACH` ahead whose top is at most `CLIMB_OUT` over the
+surface, if it fits there - never from under the planks (judged a body's width *behind* the middle, since the
+quay's coping overhangs its face), never with the statue in the arms or diving. Pushing alone still swims under a
+pier; the drawn body and the camera ease up (`easeFromDrawn`, `pulledUp`). `tests/walk-planks.test.mjs`.
 **A ledge is fallen off, never stepped down in one frame**: a grounded body whose floor drops more than
 `STEP_DOWN` (0.35) goes airborne with `vy = 0` and falls on `GRAVITY`; within it the feet follow the floor, so
 stairs, slopes and kerbs stay a walk.
