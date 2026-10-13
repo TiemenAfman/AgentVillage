@@ -262,12 +262,13 @@ test('her side is a wall to a swimmer and a bank to a boat', () => {
   assert.equal(benchy.aground, true, 'and she stopped it');
   assert.ok(benchy.z - (mid.z + mid.hz) < BOW + 0.4, 'against her side, not short of it');
 
-  // The galleon, at her bow: its probes find her before its middle is anywhere near.
+  // The ship, at her bow: its probes find her before its middle is anywhere near (the sloop's bow probe
+  // is 4.3 out at the water, shared/craft-galleon.mjs `probes`).
   const bowOf = hulls.reduce((a, b) => (b.x > a.x ? b : a));
   const galleon = { x: bowOf.x + bowOf.hx + 9, z: bowOf.z, yaw: -Math.PI / 2, v: 0, craft: { spec: CRAFTS.galleon } };
   for (let i = 0; i < 600; i++) stepBoat(galleon, { throttle: 1 }, 1 / 30, sea);
   assert.equal(galleon.aground, true);
-  assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
+  assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 3.5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
 
   // And walk.js hands every one of its hulls - at the helm, walking a deck, climbing her ladder
   // and running her out after you have jumped, climbing her mast and sitting in her crow's nest

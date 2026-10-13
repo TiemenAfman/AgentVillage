@@ -87,7 +87,7 @@ test('the body\'s gravity in a flight out of the gun is walk mode\'s own', () =>
 test('the old guns are out of the galleon, and her own stand on her deck, cannons before harpoons', () => {
   // The source's guns stood out of her ports to 2.63 from the middle; nothing does any more below
   // the bulwark's height, between the ladders and the quarterdeck stairs. Measured on the old bake
-  // only: the sloop (Plans/nieuwe-sloep.md) has her own open ports and this says nothing about her.
+  // only: the sloop (Plans/DONE/nieuwe-sloep.md) has her own open ports and this says nothing about her.
   const hull = PIRATESHIP.parts['pirateship hull'];
   if (hull && !PIRATESHIP.anchors.waterline) {
     const p = hull.positions;
@@ -133,10 +133,12 @@ test('a laid barrel turns about its trunnions, and the muzzle a ball leaves from
       assert.ok(Math.abs(heading - (spec.yaw + yaw)) < 1e-6);
     }
   }
-  // Square out of her starboard side at rest: the muzzle over the bulwark, on the deck's height.
+  // Square out of her starboard side at rest, through her gun port (the sloop's, scripts/build-sloop.py):
+  // the muzzle at her side, between the port's sill and the cap rail over it.
   const m = muzzleOf(spec, restLay());
-  assert.ok(m.at[0] > 1.7 && m.at[0] < 2.1, `muzzle x ${m.at[0]}`);
-  assert.ok(m.at[1] - DECK_Y - spec.y > 0.2, 'the bore stands over the bulwark');
+  assert.ok(m.at[0] > 1.45 && m.at[0] < 1.8, `muzzle x ${m.at[0]}`);
+  const over = m.at[1] - DECK_Y - spec.y;
+  assert.ok(over > 0.06 && over < 0.3, `the bore ${over.toFixed(3)} over the deck: in the port`);
 });
 
 test('the guns are welded into the hull\'s one geometry and laying one moves only its own corners', () => {

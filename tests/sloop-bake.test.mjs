@@ -1,4 +1,4 @@
-// The sloop's bake (scripts/build-sloop.py, Plans/nieuwe-sloep.md chip 3) held to what she is for: decks
+// The sloop's bake (scripts/build-sloop.py, Plans/DONE/nieuwe-sloep.md chip 3) held to what she is for: decks
 // at the heights her anchors say, stairs a body can climb, every deck reached on foot from the waist and
 // none of it leading off her, entry ports open to the deck, pins up the mast cut to the climb, a hole in
 // the top to come up through, guns that see out of their ports, a harpoon on her middle line, a free
@@ -64,10 +64,14 @@ test('every deck rectangle is planking at its anchor\'s height, the cabin\'s und
   }
 });
 
+// A stair's anchors are a ramp through its treads' middles, half a riser over its foot and its head; the
+// walk climbs the treads themselves, from the floor at its foot to the floor at its head.
 test('every stair rises step by step, never more than a step at once', () => {
   for (const [name, { lo, hi }] of Object.entries(stairs)) {
     const x = (lo[0] + hi[0]) / 2;
-    let y = cy(lo);
+    let y = surface.floorIn(x, lo[2] + Math.sign(lo[2] - hi[2]) * 0.03, cy(lo), 0.05);
+    assert.ok(y !== null && cy(lo) - y < 0.08, `stair.${name}: no floor at its foot`);
+    const top = surface.floorIn(x, hi[2] + Math.sign(hi[2] - lo[2]) * 0.03, cy(hi), 0.05);
     const n = Math.ceil(Math.abs(hi[2] - lo[2]) / 0.02);
     for (let i = 0; i <= n; i++) {
       const z = lo[2] + (hi[2] - lo[2]) * (i / n);
@@ -76,7 +80,7 @@ test('every stair rises step by step, never more than a step at once', () => {
       assert.ok(f >= y - Q && f - y <= STEP_UP, `stair.${name}: from ${y.toFixed(3)} to ${f.toFixed(3)} at z ${z.toFixed(2)}`);
       y = f;
     }
-    assert.ok(Math.abs(y - cy(hi)) <= Q, `stair.${name} ends at ${y.toFixed(3)}, not ${cy(hi).toFixed(3)}`);
+    assert.ok(Math.abs(y - top) <= Q, `stair.${name} ends at ${y.toFixed(3)}, not on the floor at its head, ${top}`);
   }
 });
 
@@ -148,7 +152,7 @@ test('the entry ports are open from the deck up, wide enough for a body, with a 
   }
 });
 
-test('the pins up the mast lie every RUNG_STEP from the deck, RUNG_FROM before whoever climbs them', () => {
+test('the pins up the mast lie every RUNG_STEP from the deck, as rope ladders\' rungs do, RUNG_FROM before whoever climbs them', () => {
   const { lo } = climbs.mast;
   const pinZ = lo[2] + RUNG_FROM;
   // A pin is a rod across the mast's after face: its ends are corners at its half-length either side.
@@ -157,14 +161,14 @@ test('the pins up the mast lie every RUNG_STEP from the deck, RUNG_FROM before w
   for (let i = 0; i < pos.length; i += 3) {
     if (Math.abs(pos[i] - half) < 1e-5 && Math.abs(pos[i + 2] - pinZ) < 0.02) ys.push(pos[i + 1]);
   }
-  const centres = [...new Set(ys.map((y) => Math.round((y - lo[1] - RUNG_R) / RUNG_STEP)))].sort((a, b) => a - b);
+  const centres = [...new Set(ys.map((y) => Math.round((y - lo[1]) / RUNG_STEP)))].sort((a, b) => a - b);
   assert.ok(centres.length > 50, `only ${centres.length} pins`);
   assert.equal(centres[0], 1);
   assert.equal(centres.at(-1), centres[0] + centres.length - 1, 'a pin is missing');
   for (const k of centres) {
-    const at = ys.filter((y) => Math.round((y - lo[1] - RUNG_R) / RUNG_STEP) === k);
+    const at = ys.filter((y) => Math.round((y - lo[1]) / RUNG_STEP) === k);
     const mid = (Math.min(...at) + Math.max(...at)) / 2;
-    assert.ok(Math.abs(mid - (lo[1] + k * RUNG_STEP + RUNG_R)) < 1e-4, `pin ${k} at ${mid}`);
+    assert.ok(Math.abs(mid - (lo[1] + k * RUNG_STEP)) < 1e-4, `pin ${k} at ${mid}`);
   }
   assert.ok(lo[1] + centres.at(-1) * RUNG_STEP + RUNG_R <= A['deck.nest.lo'][1] - 0.06 + 1e-9, 'the top pin is in the nest\'s floor');
 });

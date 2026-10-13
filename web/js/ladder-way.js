@@ -82,7 +82,23 @@ export function climbWay(rope, from = null) {
   const b = a + pathLength([foot, base]);
   const at = [b];
   for (let k = 1; k < over.length; k++) at.push(at[k - 1] + pathLength([over[k - 1], over[k]]));
-  return { path, len: pathLength(path), rungs: [a, b], top: { from: b, to: at[at.length - 1], at, seconds: step.seconds, points: over } };
+  return { path, len: pathLength(path), rungs: [a, b], top: { from: b, to: at[at.length - 1], at, seconds: step.seconds, points: over, dir: [ix, iz] } };
+}
+
+// Which way a climber faces at `d` on a way whose step over the top goes another way than they faced the
+// rungs (`face`, a unit vector in the way's frame): up a mast's pins and out of a lubber's hole
+// (shared/deck.mjs aloftPath with `hole`) the step is aside, since the mast is ahead. They turn towards it
+// over the first TURN_ON_TOP of the step, so the clip steps the way the feet go; before it and on a way
+// whose step goes the way they face, `face` itself.
+const TURN_ON_TOP = 0.4;
+export function facingOnWay(w, d, face) {
+  const t = w && w.top;
+  if (!t || !t.dir || d <= t.from) return face;
+  const u = d >= t.to ? 1 : topAt(w, d);
+  const k = Math.min(1, u / TURN_ON_TOP), s = k * k * (3 - 2 * k);
+  const x = face[0] * (1 - s) + t.dir[0] * s, z = face[1] * (1 - s) + t.dir[1] * s;
+  const l = Math.hypot(x, z) || 1;
+  return [x / l, z / l];
 }
 
 // How far through the step over the top (0..1) somebody standing at `q` is, read off where they are

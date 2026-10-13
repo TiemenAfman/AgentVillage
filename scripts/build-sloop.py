@@ -7,7 +7,7 @@ The second form also renders previews into <dir>, one PNG per view (side, quarte
 deck, cabin, port, nest, iso, pair beside the Batavia, and lines, under and keel without the sea; side,
 quarter, top and pair when none are named), with settler-sized stand-ins on her decks; `nobake` among the
 views renders without saving the .blend or baking the module, `nocavity` without the workbench's edge
-shading. Plans/nieuwe-sloep.md has the why and the decisions; assets/pirateship/README.md what she bakes as.
+shading. Plans/DONE/nieuwe-sloep.md has the why and the decisions; assets/pirateship/README.md what she bakes as.
 
 She replaces the galleon that was a decimated Sketchfab download (scripts/build-pirateship.py, gone):
 its gun ports were holes through the hull, its rail one yellow beam, and the rope ladder ended on top
@@ -362,7 +362,7 @@ WALE_LO = [(1.2, 1.3), (1.9, 2.0)]
 SILL = DECK + 0.06
 ROWS = [0.0, .32, .44, .56, .68, W, .95, 1.08, 1.2, 1.3, 1.45, 1.6, 1.75, 1.9, 2.0, DECK, SILL, 2.18, 2.34, 2.52, 2.7, 2.95]
 
-# The openings in the waist's bulwark, a pair of each (Plans/nieuwe-sloep.md, Besluiten): the entry port by
+# The openings in the waist's bulwark, a pair of each (Plans/DONE/nieuwe-sloep.md, Besluiten): the entry port by
 # the mast, abaft the gun, cut down to the deck so a rope ladder ends on the planks and not on a rail; and
 # the gun port, cut from a hand over the deck up to the cap rail, which runs on over it. Their jambs are
 # columns of COLUMNS, so they stand plumb.
@@ -580,7 +580,12 @@ for sign in (1.0, -1.0):
     planked([(sign * inner_x(a, DECK), a), (sign * side_x(a, DECK), a), (sign * side_x(b, DECK), b), (sign * inner_x(b, DECK), b)], DECK)
     run = cols_of(CABIN_FORE, COMPANION[1])
     planked([(sign * WALK_X, c) for c in run] + [(sign * inner_x(c, DECK), c) for c in reversed(run)], DECK)
-planked(outline(['aft'] + cols_of(-4.0, CABIN_FORE), FLOOR), FLOOR)
+# The sunk floor in two, the cabin's and the stern well's, with only the door's threshold between them: the
+# walk map is cut with vertical lines (scripts/build-shipwalk.mjs) and a plumb wall has no face such a line
+# meets, so what keeps a body out of a wall here is that there is no floor under it.
+planked(outline(['aft'] + cols_of(-4.0, -3.06), FLOOR), FLOOR)
+planked(outline(cols_of(-3.04, CABIN_FORE), FLOOR), FLOOR)
+planked([(-DOOR_X, BACK_Z[0] - 0.005), (DOOR_X, BACK_Z[0] - 0.005), (DOOR_X, BACK_Z[1] + 0.005), (-DOOR_X, BACK_Z[1] + 0.005)], FLOOR)
 planked([(-WALK_X, CABIN_FORE), (WALK_X, CABIN_FORE), (WALK_X, COMPANION[0]), (-WALK_X, COMPANION[0])], FLOOR)
 QD = outline(cols_of(-3.04, CABIN_FORE), QUARTER)
 planked(QD, QUARTER)
@@ -741,7 +746,10 @@ def rod(a, b, t, paint, label):
         face(q, paint, sum(q, Vector()) / 4 - (a + b) / 2, label)
 
 
-RAIL_H = 0.3            # a balustrade's top over the deck it guards: as high as the waist's bulwark
+# A balustrade's rail over the deck it guards. 0.4, over the waist's bulwark: the walk map counts what is
+# over a step's reach and a hand (shared/hullwalk.mjs, 0.33) and under a head as in the way, and its posts
+# are plumb - the cut never sees them - so the rail is what has to be in that band.
+RAIL_H = 0.4
 RAILS = []              # (floor, a, b) of each run, for the anchors
 
 
@@ -795,8 +803,11 @@ NEST_FLOOR = 8.523                      # the top of the nest's planking
 # The reference's top is 0.62 across the half; a body here needs its footprint (shared/hullwalk.mjs FOOT_R)
 # held up between the mast, the hole and the rim, and at 0.62 there was one place to stand, on the seat.
 NEST_R = 0.78
-NEST_RIM = 0.3                          # its rim over the floor
+NEST_RIM = 0.36                         # its rim over the floor: over the walk map's step and a hand (0.33), under a jump (0.38)
 YARD_Y, YARD_Z, YARD_HALF = 7.475, 0.712, 2.61
+# The partners round her foot, a hand over the waist's bulwark: the mast itself is plumb, which the walk
+# map's vertical cut never meets, and its collar is what a body walks into.
+tube([(0, DECK, MAST_Z), (0, DECK + 0.42, MAST_Z)], [0.16, 0.14], 'fittings', 'mast', sides=10)
 tube([(0, DECK, MAST_Z), (0, NEST_FLOOR, MAST_Z), (0, 10.4, MAST_Z), (0, TRUCK - 0.05, MAST_Z)],
      [MAST_R, 0.082, 0.05, 0.03], 'spar', 'mast')
 box((0, TRUCK - 0.025, MAST_Z), (0.09, 0.05, 0.09), 'spar', 'mast')
@@ -857,9 +868,11 @@ box((0, NEST_FLOOR - 0.12, MAST_Z + 0.25), (0.9, 0.05, 0.06), 'fittings', 'nest'
 SEAT = (0, NEST_FLOOR + 0.12, MAST_Z + 0.27)
 box((0, NEST_FLOOR + 0.06, MAST_Z + 0.27), (0.36, 0.12, 0.16), 'fittings', 'nest', skip=(2,))
 
-# The pins up the mast's after face (Plans/nieuwe-sloep.md: no rope ladder aloft): rods across it every
+# The pins up the mast's after face (Plans/DONE/nieuwe-sloep.md: no rope ladder aloft): rods across it every
 # RUNG_STEP from the planks to under the nest's floor, cut to the climb as every ladder is
-# (shared/deck.mjs), with whoever climbs RUNG_FROM behind the line they hold.
+# (shared/deck.mjs), with whoever climbs RUNG_FROM behind the line they hold. A pin's middle is where a
+# rope ladder's rung's is (web/js/boat.js ladderBoxes): k RUNG_STEP over the foot, a hand round it and a
+# foot's ball on its top.
 _DECK_SRC = (ROOT / 'shared/deck.mjs').read_text(encoding='utf8')
 
 
@@ -874,7 +887,7 @@ PIN_HALF = 0.15
 PINS = []
 k = 1
 while DECK + k * RUNG_STEP + RUNG_R <= NEST_FLOOR - 0.06:
-    y = DECK + k * RUNG_STEP + RUNG_R
+    y = DECK + k * RUNG_STEP
     PINS.append(y)
     rod((-PIN_HALF, y, PIN_Z), (PIN_HALF, y, PIN_Z), 2 * RUNG_R, 'fittings', 'pins')
     k += 1
@@ -913,11 +926,11 @@ rod(Vector((0, TRUCK - 0.3, MAST_Z - 0.03)), Vector((0, 2.95 + CAP_T, transom_z(
 
 # ---- on deck: capstan, hatch, the wheel, lanterns, the cabin's furniture -----------------------
 CAPSTAN_Z = 2.15
-tube([(0, DECK, CAPSTAN_Z), (0, DECK + 0.22, CAPSTAN_Z), (0, DECK + 0.3, CAPSTAN_Z)], [0.12, 0.09, 0.12], 'fittings', 'deckgear', sides=10)
+tube([(0, DECK, CAPSTAN_Z), (0, DECK + 0.32, CAPSTAN_Z), (0, DECK + 0.42, CAPSTAN_Z)], [0.12, 0.09, 0.12], 'fittings', 'deckgear', sides=10)
 for a in range(4):
     ang = a * math.pi / 4
     d = Vector((math.cos(ang), 0, math.sin(ang))) * 0.26
-    rod(Vector((0, DECK + 0.27, CAPSTAN_Z)) - d, Vector((0, DECK + 0.27, CAPSTAN_Z)) + d, 0.03, 'fittings', 'deckgear')
+    rod(Vector((0, DECK + 0.38, CAPSTAN_Z)) - d, Vector((0, DECK + 0.38, CAPSTAN_Z)) + d, 0.03, 'fittings', 'deckgear')
 HATCH = (-0.35, 0.35, 2.6, 2.98)
 box((0, DECK + 0.025, sum(HATCH[2:]) / 2), (HATCH[1] - HATCH[0], 0.05, HATCH[3] - HATCH[2]), 'fittings', 'deckgear', skip=(2,))
 for k in range(1, 5):
@@ -1060,7 +1073,7 @@ def narrowest(y, z0, z1, k=12):
 
 # The planking, as rectangles a body can stand on (scripts/build-craft.mjs reads them into the craft; a
 # walk map is cut from the triangles themselves). A ramp is its foot's corner and its head's opposite one.
-for name, z0, z1 in (('waist', STAIR_FOOT + 0.02, 2.4), ('fore', 2.4, 3.4), ('bow', 3.4, 4.0)):
+for name, z0, z1 in (('waist', STAIR_FOOT, 2.4), ('fore', 2.4, 3.4), ('bow', 3.4, 4.0)):
     w = narrowest(DECK, z0, z1)
     pair('deck', name, (-w, DECK, z0), (w, DECK, z1))
 # the break, beside the foot of the quarterdeck's stair
@@ -1075,8 +1088,12 @@ pair('deck', 'well', (-w, FLOOR, WELL_AFT), (w, FLOOR, BACK_Z[0]))
 w = narrowest(QUARTER, BACK_Z[1], CABIN_FORE)
 pair('deck', 'quarter', (-w, QUARTER, BACK_Z[1]), (w, QUARTER, CABIN_FORE))
 pair('deck', 'stairhead', (STAIR_X[0], QUARTER, CABIN_FORE), (STAIR_X[1], QUARTER, STAIR_HEAD))
-pair('stair', 'companion', (-(WALK_X - 0.02), FLOOR, COMPANION[0]), (WALK_X - 0.02, DECK, COMPANION[1]))
-pair('stair', 'quarter', (STAIR_X[1], DECK, STAIR_FOOT), (STAIR_X[0], QUARTER, STAIR_HEAD))
+# A stair's ramp through the middles of its treads: from where its first tread starts to where its last ends,
+# but half a riser up, since the craft stands a body on the line (shared/deck.mjs deckAt) and through the
+# treads' edges it was a whole riser out at every tread's other end. The rectangles still meet the decks
+# at either end, and the half riser is under what the craft's heights are held to (tests/deck-bake.test.mjs).
+pair('stair', 'companion', (-(WALK_X - 0.02), FLOOR + RISE_C / 2, COMPANION[0]), (WALK_X - 0.02, DECK + RISE_C / 2, COMPANION[1]))
+pair('stair', 'quarter', (STAIR_X[1], DECK + RISE_Q / 2, STAIR_FOOT), (STAIR_X[0], QUARTER + RISE_Q / 2, STAIR_HEAD))
 
 # The bulwarks as runs of rail on the floor they stand on: her side curves, and a run is a straight line,
 # so a run is cut wherever her inner face has moved a hand off where it started (and at every opening
@@ -1128,7 +1145,9 @@ for sign, side in ((1.0, 'starboard'), (-1.0, 'port')):
 # the bow on her middle line, pointing over the stem.
 GUN_Z = sum(GUNPORT) / 2
 for sign, side in ((1.0, 's'), (-1.0, 'p')):
-    pair('mount', f'cannon-{side}', (sign * 0.5, DECK, GUN_Z), (sign * (inner_x(GUN_Z, DECK) - 0.35), DECK, GUN_Z))
+    # the carriage close in under the port, so the muzzle stands in it, and the gunner a pace behind
+    gun = inner_x(GUN_Z, DECK) - 0.12
+    pair('mount', f'cannon-{side}', (sign * (gun - 0.6), DECK, GUN_Z), (sign * gun, DECK, GUN_Z))
 pair('mount', 'harpoon', (0, DECK, 3.25), (0, DECK, 3.7))
 anchor('helm', HELM_STAND)
 anchor('cargo', (0, DECK, 1.0))

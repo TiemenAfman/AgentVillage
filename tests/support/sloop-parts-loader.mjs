@@ -1,5 +1,5 @@
 // A loader hook that gives the pirate ship's bake the two moving parts the sloop is to have
-// (Plans/nieuwe-sloep.md chip 3: `pirateship sail`, a regular grid hung from its yard with the
+// (Plans/DONE/nieuwe-sloep.md chip 3: `pirateship sail`, a regular grid hung from its yard with the
 // part's origin on the yard's middle and every corner at or under it, and `pirateship flag`, its
 // origin at the staff) - so tests/ship-sail-weld.test.mjs can weld and move them through the real
 // web/js/boat.js before any bake carries them. Registered beside shared-loader.mjs, in a process of

@@ -50,13 +50,15 @@ function surfaces(x, z) {
 }
 
 const galleon = CRAFTS.galleon;
-// The waist and the quarterdeck, as the craft has them (read off the bake's anchors): the two floors
-// the aft flights run between.
-const WAIST = deckAt(galleon, 0, 0);
-const QUARTERDECK = deckAt(galleon, 0, -3.45);
-// A hair over what a tread's edge is from a straight line through its treads, and well under a
-// riser (0.08): a settler on a stair is on it, not in it, and not floating over it.
-const TOLERANCE = 0.05;
+// The sloop's three floors, as the craft has them (read off the bake's anchors): the main deck, the
+// cabin's sunk under it, the quarterdeck over the cabin.
+const WAIST = deckAt(galleon, 0, 1.5);
+// (deckAt is the highest planking over a point, so the cabin is asked for in the stern well behind it)
+const CABIN = deckAt(galleon, 0, -3.6);
+const QUARTERDECK = deckAt(galleon, 0.5, -2.2);
+// A hair over half a riser of her steepest stair (the companion's 0.113): what a tread's edge is from a
+// straight line through its treads. A settler on a stair is on it, not in it, and not floating over it.
+const TOLERANCE = 0.06;
 
 test('wherever the galleon says there is planking, the bake has a surface at that height', () => {
   const bad = [];
@@ -78,19 +80,20 @@ test('wherever the galleon says there is planking, the bake has a surface at tha
   assert.equal(bad.length, 0, `${bad.length} of ${n} points stand in the model or float over it:\n  ${bad.slice(0, 25).join('\n  ')}`);
 });
 
-test('the stairs are ramps: every tread of the aft flights is stood on', () => {
-  // The quarterdeck stairs, on both sides, sampled at the treads' own depth: from the waist's
-  // 1.108 up to the quarterdeck's 1.738 in a straight climb, with no 0.6 step at a wall.
-  assert.ok(QUARTERDECK - WAIST > 0.5, `the quarterdeck ${QUARTERDECK} is a flight above the waist ${WAIST}`);
-  for (const s of [1, -1]) {
-    let last = deckAt(galleon, s * 1.45, -1.3);
-    assert.equal(last, WAIST, 'the waist below the stairs');
-    for (let z = -1.3; z >= -2.4; z -= 0.05) {
-      const y = deckAt(galleon, s * 1.45, z);
+test("the stairs are ramps: every tread of the companion and of the quarterdeck's stair is stood on", () => {
+  // Down the companion from the main deck to the cabin's floor, and up the port walkway to the
+  // quarterdeck: a straight climb either way, with no wall's step in it.
+  assert.ok(WAIST - CABIN > 0.6, `the cabin ${CABIN} is a flight under the waist ${WAIST}`);
+  assert.ok(QUARTERDECK - WAIST > 0.5, `the quarterdeck ${QUARTERDECK} is a flight over the waist ${WAIST}`);
+  for (const [x, z0, z1, from, to] of [[0, -0.31, -1.12, WAIST, CABIN], [-0.96, 0.31, -0.95, WAIST, QUARTERDECK]]) {
+    let last = deckAt(galleon, x, z0);
+    assert.ok(Math.abs(last - from) < TOLERANCE, `the stair at x ${x} starts at ${last}, not ${from}`);
+    for (let z = z0; z >= z1; z -= 0.05) {
+      const y = deckAt(galleon, x, z);
       assert.notEqual(y, null, `no planking at z ${z.toFixed(2)}`);
-      assert.ok(y - last < 0.12, `a step of ${(y - last).toFixed(2)} at z ${z.toFixed(2)}: that is a wall, not a stair`);
+      assert.ok(Math.abs(y - last) < 0.12, `a step of ${(y - last).toFixed(2)} at z ${z.toFixed(2)}: that is a wall, not a stair`);
       last = y;
     }
-    assert.equal(last, QUARTERDECK, 'the quarterdeck at the top');
+    assert.ok(Math.abs(last - to) < TOLERANCE + 0.01, `the stair at x ${x} ends at ${last}, not ${to}`);
   }
 });

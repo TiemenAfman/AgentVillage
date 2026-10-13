@@ -93,7 +93,7 @@ export const CRAFTS = Object.freeze({
     ladders: Object.freeze([]),
   }),
   // The pirate ship (scripts/build-sloop.py; the numbers quoted here are the old galleon's, 13 long, until
-  // chip 4 of Plans/nieuwe-sloep.md derives the sloop's craft and measures them again). Every number but the ones named above
+  // chip 4 of Plans/DONE/nieuwe-sloep.md derives the sloop's craft and measures them again). Every number but the ones named above
   // is the bake's (shared/craft-galleon.mjs): the planking as rectangles with their heights - the
   // waist 1.108 above DECK_Y, the forecastle 1.318, the quarterdeck 1.738 and the poop 1.948, the
   // stairs between them as ramps - the bulwarks as rails, where her masts stand, the rope ladders
@@ -136,14 +136,14 @@ export const CRAFTS = Object.freeze({
     // everybody else halfway through it (tests/boat-inertia.test.mjs holds the two together).
     // `probes` are the points of the hull tested against the ground - bow and shoulders, in her
     // frame, mirrored astern - because a bow point alone lets a hull seven wide lie with half of it
-    // in the dunes. They are still the hand-picked ones here, not GALLEON.probes (the bake's, cut
-    // from her side at the water): shared/quay.mjs lays her berth out from them, so changing them
-    // moves every island's galleon, which is the QUAY_VERSION bump of Plans/nieuwe-sloep.md's chip 4
-    // and ships with the sloop, not before.
+    // in the dunes. They are the bake's, GALLEON.probes (cut from her side at the water): shared/quay.mjs
+    // lays her berth out from them, so they moved every island's ship when the sloop came, which is
+    // QUAY_VERSION 4 in lib/layout.mjs (Plans/DONE/nieuwe-sloep.md chip 4; the galleon's hand-picked ones were
+    // [[0, 6.3], [1.9, 4.2], [-1.9, 4.2], [2.2, 1.5], [-2.2, 1.5]]).
     sail: {
       top: 13, accel: 2.2, turn: 0.7, turnMin: 0.12,
       drag: 0.1, creep: 0.15, bite: 0.1, astern: 1.2, yawLag: 1.0, runOut: 60,
-      probes: [[0, 6.3], [1.9, 4.2], [-1.9, 4.2], [2.2, 1.5], [-2.2, 1.5]],
+      probes: GALLEON.probes,
     },
     // How she rides the swell (web/js/boat.js `swellOf`; the page's alone, the sea never reads it).
     // She had the rowing boat's numbers - 0.03 up, 0.04 pitch, 0.03 roll, on periods of 3 to 5 s - and
@@ -164,7 +164,7 @@ export const CRAFTS = Object.freeze({
 // The outline a ball can hit the galleon by, in her own frame (+z forward, y above the sea's surface):
 // her hull from under the waterline to the top of her bulwarks, the length of her from stern to the
 // root of the bowsprit. Coarse on purpose - the sea flies the same ball (shared/cannon.mjs inHull) and
-// has no model. Here beside the rest of what she is, so a new hull (Plans/nieuwe-sloep.md) changes
+// has no model. Here beside the rest of what she is, so a new hull (Plans/DONE/nieuwe-sloep.md) changes
 // one file; cannon.mjs reads it from here and carries it on under its old name.
 export const HULL_BOX = Object.freeze({ hx: 2.0, hz: 6.2, y0: -1.2, y1: 2.0 });
 

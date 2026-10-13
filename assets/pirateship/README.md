@@ -5,7 +5,7 @@ parts keep the galleon's names (`pirateship`, `pirateship hull`), because web/js
 and the generators find her by them and a name on the wire is never renamed for a new model.
 
 **Built here, from nothing.** `scripts/build-sloop.py` writes `pirateship.blend` and bakes
-`web/js/pirateship-mesh.js` in one run ([Plans/nieuwe-sloep.md](../../Plans/nieuwe-sloep.md), chip 3):
+`web/js/pirateship-mesh.js` in one run ([Plans/DONE/nieuwe-sloep.md](../../Plans/DONE/nieuwe-sloep.md), chip 3):
 
 ```bash
 node scripts/blender.mjs --background --python scripts/build-sloop.py

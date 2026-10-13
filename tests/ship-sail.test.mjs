@@ -1,5 +1,5 @@
 // The galleon's sail and flag as moving parts of her one geometry (web/js/ship-motion.js, boat.js
-// `isShipMoving`/`sails`, Plans/nieuwe-sloep.md chip 2c): the sums are pure and run under Node on a
+// `isShipMoving`/`sails`, Plans/DONE/nieuwe-sloep.md chip 2c): the sums are pure and run under Node on a
 // synthetic cloth - a sail furls up to its yard and sets again, ripples only when set, and the yard's row
 // never leaves the yard; a flag flies from its luff and the luff stays on the staff - and on a bake with
 // no such part (the galleon as she is) nothing is welded and nothing moves: the hull's geometry stays
@@ -44,7 +44,7 @@ test('what moves on her is her sail and her flag, by name, and nothing of the Kr
   }
 });
 
-// A square sail as the bake is to make it (Plans/nieuwe-sloep.md chip 3): a regular grid hung from its
+// A square sail as the bake is to make it (Plans/DONE/nieuwe-sloep.md chip 3): a regular grid hung from its
 // yard, here 10 across by 14 down, 3 wide and 2.8 tall, the yard at y 6 along x, bellied a little aft
 // (-z) towards the foot so the cloth is not a plane. Positions in the hull's frame, as `measureSail`
 // takes them.
@@ -179,9 +179,10 @@ test('on a bake with no moving part nothing is welded and nothing moves; the sha
   assert.ok(boat.walk, 'the pirate ship must be baked for this');
   assert.equal(scene.children.filter((o) => o.isMesh).length, 1, 'one mesh, one draw call');
   assert.equal(boat.sailParts, moving.length);
-  // The geometry is the hull, her ladders, her guns and the moving parts, and no more: counted.
+  // The geometry is the hull, her glass, her ladders, her guns and the moving parts, and no more: counted.
   const geometry = boat.object.geometry;
   let expect = PIRATESHIP.parts['pirateship hull'].positions.length / 3;
+  if (PIRATESHIP.parts['pirateship glow']) expect += PIRATESHIP.parts['pirateship glow'].positions.length / 3;
   for (const b of ladderBoxes(CRAFTS.galleon)) { expect += b.attributes.position.count; b.dispose(); }
   if (cannonShape()) {
     const guns = CRAFTS.galleon.mounts.filter((m) => m.kind === 'cannon').length;

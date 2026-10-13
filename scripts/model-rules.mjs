@@ -46,7 +46,7 @@ export const ANCHORS = ['smoke', 'flag', 'door', 'sign', 'waterline', 'muzzle', 
 // corner at its foot on the floor it starts from and `hi` the opposite corner at its head
 // on the floor it reaches; `mast.<name>`, where a mast stands; and `port.<n>.lo|hi`, opposite
 // corners of an opening in her bulwark down to the deck - a gun port with its lid up, or the gap a
-// rope ladder is boarded through (Plans/nieuwe-sloep.md) - `lo` and `hi` on the deck at either end
+// rope ladder is boarded through (Plans/DONE/nieuwe-sloep.md) - `lo` and `hi` on the deck at either end
 // of it, so a ladder whose foot hangs beside one is boarded through it rather than over the rail.
 // Corners come in pairs - checkSet refuses half of one - because a rectangle is the thing being
 // carried, and an empty can only carry a point.
@@ -126,7 +126,7 @@ export const BUDGETS = [
 export const HERO_BUDGET = 4000;
 // Heroes allowed more. The pirate ship is the sloop a settler walks, climbs and fights from, one draw
 // call, and a handful of them in the world at most: modelled from nothing in scripts/build-sloop.py
-// (Plans/nieuwe-sloep.md), hull, decks, cabin, rig, sail and flag come to about 11k, meant to stay under
+// (Plans/DONE/nieuwe-sloep.md), hull, decks, cabin, rig, sail and flag come to about 11k, meant to stay under
 // 16k, so the ceiling is 20k - it was 30k for the decimated download she replaced. The Batavia is the ship the village earns, up to
 // three of her on the roads (civic:ship, :2, :3), modelled from nothing in
 // scripts/build-batavia.py rather than decimated from a download, so she needs far less than

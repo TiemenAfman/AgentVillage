@@ -47,11 +47,6 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Open
 
-- 🚧 [nieuwe-sloep.md](nieuwe-sloep.md) — plan van 9 oktober 2026: het galjoen opnieuw als sloep (romp 9, SoT-verhoudingen,
-  gekocht model alleen als maatlat), een eigen Blender-bake met ingangen in het boord bij de ladders, dichte
-  geschutspoorten met luiken, één kanon per boord en één harpoen op de boeg, een inloopbare open achterhut, een zeil
-  dat de zeilstand volgt en pennen op de mast naar het kraaiennest; alles gemeten als anchors waaruit het craft wordt
-  gegenereerd. Nieuwe ligplaats, dus een minor.
 - 🚧 [harpoen.md](harpoen.md) — harpoenkanonnen op het galjoen zoals in Sea of Thieves: richten, schieten,
   automatisch inspoelen; het schatbeeld en spelers naar je toe, je schip naar land of een ander schip
   ("chase"); over het strakke touw balanceren of ziplinen naar gelang de helling. Bemannen gedeeld met de kanonnen.

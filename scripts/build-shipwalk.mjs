@@ -22,7 +22,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const { PIRATESHIP } = await import(pathToFileURL(`${root}web/js/pirateship-mesh.js`).href);
 const positions = PIRATESHIP.parts['pirateship hull'].positions;
 
-// The two grids are worked out from the bake (Plans/nieuwe-sloep.md chip 3), not typed: the deck's
+// The two grids are worked out from the bake (Plans/DONE/nieuwe-sloep.md chip 3), not typed: the deck's
 // over her plan wherever the hull has anything between a hand under her lowest deck and a body's
 // height over her highest, the band of heights the same; the crow's nest's as a layer of its own round
 // `mast.main` at `deck.nest`'s height - a byte holds 128 heights, and 2 cm steps from the deck to the

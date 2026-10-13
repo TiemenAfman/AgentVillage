@@ -1,4 +1,4 @@
-// The galleon's sail and flag in motion (Plans/nieuwe-sloep.md, chip 2c): the sail follows the setting
+// The galleon's sail and flag in motion (Plans/DONE/nieuwe-sloep.md, chip 2c): the sail follows the setting
 // she is under (`b.underSail`, web/js/boat.js SAIL_STEPS) - furled up against its yard at 0, set and
 // breathing at 1, and anywhere between while it is being taken in or let out - and the flag flies.
 //
@@ -62,7 +62,7 @@ function axisOf(p, pick = () => true) {
 }
 
 // The sail: its yard is its highest row (the bake's origin is the yard's middle and the cloth hangs
-// below it, Plans/nieuwe-sloep.md chip 3 - measured here off the corners all the same, so a sail baked
+// below it, Plans/DONE/nieuwe-sloep.md chip 3 - measured here off the corners all the same, so a sail baked
 // otherwise still hangs from its top), its foot its lowest. `along` is the yard's own direction on the
 // plane, read off the corners within YARD_BAND of the top (a yard braced round is not square to the
 // ship), `normal` the way the cloth breathes, `half` how far the cloth reaches along the yard from its
@@ -90,7 +90,7 @@ export function measureSail(p) {
 }
 
 // The flag: its luff is the edge at the staff, which is the part's origin `at` (the Batavia's flags
-// are baked so, build-batavia.py, and the sloop's is to be: Plans/nieuwe-sloep.md chip 3). The fly runs
+// are baked so, build-batavia.py, and the sloop's is to be: Plans/DONE/nieuwe-sloep.md chip 3). The fly runs
 // away from it along the cloth's long axis; `dir` is that way on the plane, `side` the way the fly end
 // swings, `len` how far the cloth reaches from the luff. A flag whose `at` is nowhere near either end
 // (an older bake) flies from whichever end is nearer it, so it always flies from an edge.
