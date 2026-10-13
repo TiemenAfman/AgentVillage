@@ -7,6 +7,7 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - 🚧 [speeltest-quests.md](speeltest-quests.md) — een agent speelde de schattenjacht met de roeiboot uit en de goudmijn tot verdieping 5: vier bugs gerepareerd (de goudsmid als piraat, de mijnladder, de tent-melding van het beeld, de onbereikbare toog), bevindingen (roeiboot door het galjoen, herladen zet je op het plein, de mijn betaalt zijn drankjes niet) en de besluiten van de keeper, gebouwd (graafplekken onzichtbaar, camera van boven; 7 x 7 en de ruimte blijven).
 - 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
 - 🚧 [sneller-op-igpu.md](sneller-op-igpu.md) — de GPU-vlag van het venster deed niets (streepjes in plaats van underscores, nu gerepareerd), en een profiel per onderdeel op de Intel Arc: de schaduwpas, de bewoners en de gebouwen kosten het meest; welke lichter mogen kiest de keeper.
+- 🚧 [cpu-van-boven.md](cpu-van-boven.md) — waar de ~40 ms CPU per frame van boven in zit (Hoogezand, CPU-profiel + A/B): three's kosten per draw call, 520-575 naambordgezichten (~6,5 ms), de schaduwpas (~7 ms), het poseren van de inwoners; drie voorstellen, de keeper kiest.
 
 ## Besluiten die nog niet in een eigen plan zitten
 
