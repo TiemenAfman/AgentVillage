@@ -15,7 +15,8 @@ export const HULL_BAR_RANGE = 90;
 const BACK = 0x14100c, FILL = 0xe0a127, LOW = 0xd8281c;
 // A galleon's bar over her deck, a rowing boat's over its thwart: width, height, gap between
 // squares, and how high over the water.
-const LOOK = { ship: { w: 2.6, h: 0.22, top: 4.2 }, boat: { w: 0.7, h: 0.12, top: 1.0 } };
+// The ship's over her quarterdeck as the galleon's was over her poop (1.72 + 2.25: the sloop's deck is lower).
+const LOOK = { ship: { w: 2.6, h: 0.22, top: 4.0 }, boat: { w: 0.7, h: 0.12, top: 1.0 } };
 const GAP = 0.08, BORDER = 0.04;
 
 // The segments a hull's bar is drawn in: a hull that dies in a few hits shows each as a square

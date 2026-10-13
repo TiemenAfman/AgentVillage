@@ -162,7 +162,7 @@ export function createSurface(map) {
   }
   const solidIn = (x, z, y, above) => layers.some((l) => l.solidIn(x, z, y, above));
   // The lowest lid over (x, z) above `y` in any layer, or null: what the follow camera in a cabin
-  // under the poop stays under (walk.js hullForCamera, solidPoint; Plans/nieuwe-sloep.md).
+  // under the poop stays under (walk.js hullForCamera, solidPoint; Plans/DONE/nieuwe-sloep.md).
   function ceilingIn(x, z, y) {
     let best = null;
     for (const l of layers) {

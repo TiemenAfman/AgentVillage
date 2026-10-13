@@ -12,9 +12,10 @@ import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
 import { DECK_Y } from 'shared/hull.mjs';
-import { createBoat, SHIP_SURFACE, ladderBoxes } from './boat.js';
-import { climbWay, climbWayDown, climbAlong, onWay, ladderLanding } from './ladder-way.js';
-import { pathAt, ladderPath, deckAt } from 'shared/deck.mjs';
+import { createBoat, SHIP_SURFACE } from './boat.js';
+import { climbWay, climbWayDown, climbAlong, onWay, ladderLanding, facingOnWay } from './ladder-way.js';
+import { pathAt, ladderPath, deckAt, aloftPath } from 'shared/deck.mjs';
+import { nearestStand } from 'shared/hullwalk.mjs';
 import { ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
 import { createMixamoCatalogue } from './mixamo-catalogue.js';
 
@@ -203,16 +204,14 @@ function wayTick(st,up,down,dt){
   return {w,moving:st.d!==was};
 }
 const stepTick=dt=>wayTick(stepState,stepUp,stepDown,dt);
-// Or in through a port in the bulwark (Poortladder, Plans/nieuwe-sloep.md chip 2b): the galleon's own hull
-// with a rope ladder given a `port` hung at her waist, to her deck's level - the sloop's entrances, before
-// her bake exists. The body climbs it from the floor (the ladder's foot, rung 0, as the crow's nest's) and
-// steps straight in over the sill along web/js/ladder-way.js's way, whose end is where walk.js lands
-// (ladderLanding, asked of her walk map), and down again; so this is the climb the island will draw there.
-// Her bulwark still stands where the port will be cut - the body goes through it, which is the bake's to
-// fix and not the climb's - and her own ladder hangs further forward for the difference.
+// Or in through a port in the bulwark (Poortladder, Plans/DONE/nieuwe-sloep.md): the sloop's own starboard entry
+// port and its rope ladder, as boat.js hangs it on her hull. The body climbs it from the floor (the
+// ladder's foot, rung 0) and steps straight in over the sill along web/js/ladder-way.js's way, whose end is
+// where walk.js lands (ladderLanding, asked of her walk map), and down again; so this is the climb the
+// island draws there.
 let onPort=false, port=null;
-const PORT_LADDER=(()=>{const l=CRAFTS.galleon.ladders.find(q=>q.x>0), x=1.7, z=-.3;return {...l,z,land:[x,z],top:deckAt(CRAFTS.galleon,x,z),port:.3};})();
-const PORT_SPEC={...CRAFTS.galleon,ladders:[PORT_LADDER]};
+const PORT_LADDER=CRAFTS.galleon.ladders.find(q=>q.x>0);
+const PORT_SPEC=CRAFTS.galleon;
 const portRope=ladderPath(PORT_SPEC,PORT_LADDER,PORT_LADDER.foot);
 portRope[portRope.length-1]=ladderLanding(SHIP_SURFACE,PORT_SPEC,PORT_LADDER);
 const portUp=climbWay(portRope,{x:portRope[0].x+STEP_FROM,y:portRope[0].y,z:portRope[0].z}), portDown=climbWayDown(portRope,portRope[portRope.length-1]);
@@ -222,13 +221,33 @@ const portTick=dt=>wayTick(portState,portUp,portDown,dt);
 // body's -z, the way every ladder here is faced. A turn of yaw sends (x, z) to (x cos + z sin, -x sin + z cos).
 const PORT_YAW=-Math.PI/2;
 const portTurn=(x,z)=>[x*Math.cos(PORT_YAW)+z*Math.sin(PORT_YAW),-x*Math.sin(PORT_YAW)+z*Math.cos(PORT_YAW)];
+const shipMaterial=()=>new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true});
 function showPort(){
   if(port)return;
-  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true});
-  port=createBoat({scene,material:mat,kind:'ship'}).object;
+  // her ladders are welded into her hull by boat.js, from the same numbers the climb follows
+  port=createBoat({scene,material:shipMaterial(),kind:'ship'}).object;
   port.visible=false;port.receiveShadow=true;port.rotation.y=PORT_YAW;
-  // the port ladder's ropes and rungs, from the same numbers the climb follows (boat.js ladderBoxes)
-  for(const g of ladderBoxes({ladders:[PORT_LADDER]})){const m=new THREE.Mesh(g,mat);m.castShadow=m.receiveShadow=true;port.add(m);}
+}
+// Or up the sloop's mast through the lubber's hole (Lubbergat, Plans/DONE/nieuwe-sloep.md): her pins, baked
+// into her hull, from the deck up through the hole in the top's floor and a step aside onto it beside the
+// hole - the step over the top played by Mixamo's Climbing Up A Ladder To Standing as on every ladder,
+// the body turning to it (ladder-way.js facingOnWay) since the mast is ahead - and back down. The way and
+// its end are walk.js's: aloftPath, and her walk map's nearest place to stand where it lands.
+let onHole=false, holeShip=null;
+const HOLE=CRAFTS.galleon.aloft[0];
+const holeRope=aloftPath(HOLE);
+{const end=holeRope[holeRope.length-1], at=nearestStand(SHIP_SURFACE,end.x,end.z,end.y+.05);if(at)holeRope[holeRope.length-1]={x:at.x,y:at.y,z:at.z};}
+const holeFrom={x:holeRope[0].x+HOLE.out[0]*.12,y:holeRope[0].y,z:holeRope[0].z+HOLE.out[1]*.12};
+const holeUp=climbWay(holeRope,holeFrom), holeDown=climbWayDown(holeRope,holeRope[holeRope.length-1]);
+const holeState={dir:1,d:0,rest:STEP_REST};
+const holeTick=dt=>wayTick(holeState,holeUp,holeDown,dt);
+// Her frame onto the workbench: the way the climber faces the pins (-out) is the body's -z.
+const HOLE_YAW=Math.atan2(HOLE.out[0],-HOLE.out[1]);
+const holeTurn=(x,z)=>[x*Math.cos(HOLE_YAW)+z*Math.sin(HOLE_YAW),-x*Math.sin(HOLE_YAW)+z*Math.cos(HOLE_YAW)];
+function showHole(){
+  if(holeShip)return;
+  holeShip=createBoat({scene,material:shipMaterial(),kind:'ship'}).object;
+  holeShip.visible=false;holeShip.receiveShadow=true;holeShip.rotation.y=HOLE_YAW;
 }
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
@@ -236,9 +255,11 @@ for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
 };
 for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
-  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';onPort=button.dataset.ladder==='port';climbY=0;
+  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';onPort=button.dataset.ladder==='port';onHole=button.dataset.ladder==='hole';climbY=0;
   Object.assign(stepState,{dir:1,d:0,rest:STEP_REST});
   Object.assign(portState,{dir:1,d:0,rest:STEP_REST});
+  Object.assign(holeState,{dir:1,d:0,rest:STEP_REST});
+  if(onHole)showHole();
   if(onMast)showMast();
   if(onNest)showNest();
   if(onPort)showPort();
@@ -301,17 +322,19 @@ function tick(dt){
   const trial=catalogue.frame(dt);
   trialAt=trial?trialTick(trial,dt):null;
   if(trial)return;
-  const masted=mode==='climb'&&(onMast||onNest||onPort), climber=close<0?0:close;
+  const masted=mode==='climb'&&(onMast||onNest||onPort||onHole), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
-  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&!onPort&&(close<0||i===climber);
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&!onPort&&!onHole&&(close<0||i===climber);
   for(const [i,g] of stepRigs.entries())g.visible=mode==='climb'&&onStep&&(close<0||i===climber);
   const stepped=mode==='climb'&&onStep?stepTick(dt):null;
   const ported=mode==='climb'&&onPort?portTick(dt):null;
+  const holed=mode==='climb'&&onHole?holeTick(dt):null;
   if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted&&onMast;
   if(nest)nest.visible=masted&&onNest;
   if(port)port.visible=masted&&onPort;
+  if(holeShip)holeShip.visible=masted&&onHole;
   for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
@@ -401,6 +424,20 @@ function tick(dt){
         climbing:on?{rise,at:p.y-PORT_LADDER.foot,top:on.top,floor:true}:null},dt);
       continue;
     }
+    if(holed&&f===figures[climber]){
+      // where the way has the feet, in her frame, turned onto this body's track: the pins' foot on the
+      // floor under the body's own spot; facing the mast, and turning to the step aside out of the hole
+      const p=pathAt(holed.w.path,holeState.d,{x:0,y:0,z:0}), on=onWay(holed.w,holeState.d);
+      const [fx,fz]=holeTurn(holeRope[0].x,holeRope[0].z), [px,pz]=holeTurn(p.x,p.z);
+      holeShip.position.set(f.x-fx,-(DECK_Y+HOLE.foot),f.distance-fz);
+      const face=facingOnWay(holed.w,holeState.d,[-HOLE.out[0],-HOLE.out[1]]), [wx,wz]=holeTurn(face[0],face[1]);
+      f.stand.rotation.set(0,Math.atan2(wx,wz),0);f.stand.position.set(holeShip.position.x+px,p.y-HOLE.foot,holeShip.position.z+pz);
+      const rise=p.y-(f.stepY??p.y), step=Math.hypot(p.x-(f.stepAt?.x??p.x),p.z-(f.stepAt?.z??p.z));
+      f.stepY=p.y;f.stepAt={x:p.x,z:p.z};
+      f.rig.update({moving:holed.moving&&!on,grounded:true,distance:on?0:step,onLadder:holeState.rest<=0||!!on,
+        climbing:on?{rise,at:p.y-HOLE.foot,top:on.top,floor:true}:null},dt);
+      continue;
+    }
     if(stepped){
       // where the way has the feet, from this body's own spot; facing the ladder (-z) all along
       const p=pathAt(stepped.w.path,stepState.d,{x:0,y:0,z:0}), on=onWay(stepped.w,stepState.d);
@@ -451,6 +488,7 @@ function trialTick(trial,dt){
   if(mast)mast.visible=false;
   if(nest)nest.visible=false;
   if(port)port.visible=false;
+  if(holeShip)holeShip.visible=false;
   if(horse)horse.visible=false;
   showHorsePool(false,0);
   document.querySelector('#motion-climb').hidden=true;
@@ -494,7 +532,7 @@ function render(){
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
+window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,holeState,holeUp,holeDown,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
   // held: true stops the clock, so a check can step to one moment and look at it.
   held:false,
   advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};

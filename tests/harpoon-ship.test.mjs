@@ -3,7 +3,7 @@
 // the hull's object so the swell carries them, aimed through the same craft handle a cannon is laid
 // through, and a muzzle that is where the drawn barrel's mouth is and points where it points. Written
 // for however many she carries - two on the forecastle today, one on the bow of the sloop to come
-// (Plans/nieuwe-sloep.md) - so a new bake changes no line here.
+// (Plans/DONE/nieuwe-sloep.md) - so a new bake changes no line here.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';

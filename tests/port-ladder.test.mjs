@@ -1,5 +1,5 @@
 // A rope ladder at a port in the bulwark, and the follow camera in a cabin under the poop
-// (Plans/nieuwe-sloep.md, chip 2b): what the sloop's two entrances and her open stern cabin need of
+// (Plans/DONE/nieuwe-sloep.md, chip 2b): what the sloop's two entrances and her open stern cabin need of
 // the climb, the landing and the camera before her bake exists, held on a synthetic craft - the
 // galleon's own hull and walk map with a ladder given a `port`, and a walk map of two plates for the
 // cabin - so that chip 4 can measure the real ship against the same rules.
@@ -57,13 +57,13 @@ const FRAME = 1 / 60;
 const G = CRAFTS.galleon;
 const SEA = (-0.07) - DECK_Y;     // where a swimmer's feet are, as walk.js hands ladderPath (WATER_Y - SWIM_SINK)
 
-// The galleon's starboard ladder hung at a port instead: to the deck's level, landing just inside the
-// sill, at the edge of her deck's rectangle (a port's `land` is the step-off point of its climb anchor,
-// chip 2a; the galleon's own lies a unit in, clear of her rail, which a port has no need of).
-const OLD = G.ladders.find((q) => q.x > 0);
-const LAND = Object.freeze([1.7, OLD.z]);
-const PORT = Object.freeze({ ...OLD, land: LAND, top: deckAt(G, LAND[0], LAND[1]), port: 0.3 });
-const SHIP_PORT = Object.freeze({ ...G, ladders: Object.freeze([PORT, G.ladders.find((q) => q.x < 0)]) });
+// The sloop's starboard ladder, at her entry port (scripts/build-sloop.py: the bulwark cut down to the
+// deck, the ladder's `port` its half breadth). And for the way of old, the same ladder hung over a
+// bulwark instead: no port, its top a bulwark's height over the deck, landing further in.
+const PORT = G.ladders.find((q) => q.x > 0);
+assert.ok(PORT.port, 'the sloop boards through her entry ports');
+const OLD = Object.freeze({ ...PORT, port: undefined, top: PORT.top + 0.33, land: Object.freeze([PORT.land[0] - 0.3, PORT.land[1]]) });
+const SHIP_PORT = G;
 
 test('ladderPath: with a port three points straight in at deck level, without one the way of old', () => {
   const p = ladderPath(SHIP_PORT, PORT, SEA);
@@ -74,7 +74,7 @@ test('ladderPath: with a port three points straight in at deck level, without on
   assert.deepEqual(p[2], { x: PORT.land[0], z: PORT.land[1], y: PORT.top });
   assert.equal(p[1].y, p[2].y, 'the step over the sill is level: in at the deck, not over a rail');
   // and without a port, the four points the galleon has always been climbed by
-  const q = ladderPath(G, OLD, SEA);
+  const q = ladderPath({ ...G, ladders: [OLD] }, OLD, SEA);
   assert.deepEqual(q, [
     { x: out, z: OLD.z, y: SEA },
     { x: out, z: OLD.z, y: OLD.top },
@@ -107,7 +107,7 @@ test('ladderBoxes: at a port the ropes end at the deck, the belay lies flat insi
 });
 
 // Walk mode in open water beside a ship lying at the origin, bow north.
-function afloat(ship, look = { ...DEFAULT_AVATAR, character: 'adventurer' }, at = [3.2, 1.85]) {
+function afloat(ship, look = { ...DEFAULT_AVATAR, character: 'adventurer' }, at = [PORT.x + 1.1, PORT.z]) {
   handlers.keydown.length = 0;
   handlers.keyup.length = 0;
   const camera = new THREE.PerspectiveCamera();
@@ -182,9 +182,9 @@ test('a craft\'s `near` is how far from her middle a ladder is looked for', () =
   const { walk } = afloat(shipOf(far));
   const on = ladderPath(far, PORT, SEA);
   const mid = { x: on[0].x, z: on[0].z, y: (on[0].y + on[1].y) / 2 + DECK_Y };
-  assert.equal(walk.ladderAt(mid.x, mid.y, mid.z), null, 'a ladder 2.6 from her middle is not looked for within 1');
+  assert.equal(walk.ladderAt(mid.x, mid.y, mid.z), null, 'a ladder 1.5 from her middle is not looked for within 1');
   const { walk: near } = afloat(shipOf(SHIP_PORT));
-  assert.ok(near.ladderAt(mid.x, mid.y, mid.z), 'within the default 7 it is');
+  assert.ok(near.ladderAt(mid.x, mid.y, mid.z), "within her own `near` it is");
 });
 
 // ---- the camera in a cabin under the poop ------------------------------------------------------

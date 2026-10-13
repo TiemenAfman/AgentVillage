@@ -172,7 +172,7 @@ test('an anchor nothing reads is a typo, and two sets cannot share a part name',
   complains(checkAll({ a: one({}), b: one({}) }), /already baked a part with that name/);
 });
 
-// A sailed ship's anchors (scripts/build-pirateship.py, read by scripts/build-craft.mjs): the points
+// A sailed ship's anchors (scripts/build-sloop.py, read by scripts/build-craft.mjs): the points
 // helm, nest and cargo; deck, stair, mast and port names with hyphens; walked rails, solids and climbs;
 // and a mount as a pair whose bearing is its yaw. Half a pair is refused, and so is a kind of mount
 // nobody can draw.
@@ -404,8 +404,8 @@ test('the register spans every set and answers by part name alone', () => {
     'harpoon',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     'lighthouse',
-    // The pirate ship, a hero like the Benchy: Greggory_Fisher's galleon (CC-BY-4.0) reduced
-    // to one painted mesh by scripts/build-pirateship.py.
+    // The pirate ship, a hero like the Benchy: the sloop, modelled from nothing and painted per
+    // corner by scripts/build-sloop.py.
     'pirateship',
     // The Salty Kraken's hanging sign, a hero because its carved kraken is most of it
     // (scripts/build-piratesign.py); the board and the lantern swing inside the one asset.

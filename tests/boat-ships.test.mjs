@@ -68,12 +68,14 @@ test('her side is cut from her model as it is now, and is as wide as she is at t
   assert.ok(SHIPWALK.side, 'shipwalk-map.js has no side - run: node scripts/build-shipwalk.mjs');
   assert.deepEqual(SHIPWALK.side, sideCut(positions), 'the script cuts a different side than the one committed');
   assert.equal(SHIP_SIDE(0, 0), true, 'her middle');
-  assert.equal(SHIP_SIDE(2.1, 0), true, 'amidships she is 4.4 wide at the water');
-  assert.equal(SHIP_SIDE(-2.1, 1.85), true);
-  assert.equal(SHIP_SIDE(0, 4.4), true, 'her stem');
-  assert.equal(SHIP_SIDE(1.2, 4.4), false, 'which is pointed, not a box');
-  assert.equal(SHIP_SIDE(0, -5.5), true, 'her stern');
-  assert.equal(SHIP_SIDE(0, 6), false, 'past her stem the bowsprit is over the water, not in it');
+  // The sloop (scripts/build-sloop.py): some 2.4 wide at the water amidships, 9 long, a transom aft.
+  assert.equal(SHIP_SIDE(1.1, 0), true, 'amidships she is 2.4 wide at the water');
+  assert.equal(SHIP_SIDE(-1.1, 1.45), true);
+  assert.equal(SHIP_SIDE(1.6, 0), false, 'and no wider');
+  assert.equal(SHIP_SIDE(0, 3.9), true, 'her stem');
+  assert.equal(SHIP_SIDE(1.0, 3.9), false, 'which is pointed, not a box');
+  assert.equal(SHIP_SIDE(0, -4.0), true, 'her stern');
+  assert.equal(SHIP_SIDE(0, 5), false, 'past her stem the bowsprit is over the water, not in it');
   for (const l of CRAFTS.galleon.ladders) {
     assert.equal(SHIP_SIDE(l.x, l.z), false, 'a ladder hangs outside her side');
   }
@@ -184,5 +186,5 @@ test('in walk mode, a rowing boat rowed at a galleon stops at her side', () => {
   }
   key('w', false);
   assert.ok(row.z > 4, `it rowed (${row.z.toFixed(2)})`);
-  assert.ok(row.z < 12 - 2.2 - BOW + 0.1, `and stopped at her side (${row.z.toFixed(2)})`);
+  assert.ok(row.z < 12 - 1.2 - BOW + 0.1, `and stopped at her side (${row.z.toFixed(2)})`);
 });

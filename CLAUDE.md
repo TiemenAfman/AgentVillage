@@ -494,7 +494,11 @@ a ring, `guest` = lots < population), and `p.quay` is not set on a commons lodge
 as `settle.lane` (settleRing's `seed`), so it is written on the step as ordinary `lane` - no new step field,
 no WATER_VERSION bump, bit for bit the hash a field of its own gave (55c22da7 on Hoogezand's r 180 ring).
 `growCanvas` shifts the record; the planner refuses `move`/`parcel` of the quay once it has a resort
-(`onResort`). **QUAY_VERSION 3**: `migrateQuay` from 2 only asks `moveToResort` again (the move itself is
+(`onResort`). **QUAY_VERSION 4** is the sloop (Plans/DONE/nieuwe-sloep.md): her berth is laid by her own probes, so she
+lies elsewhere (nearer her mooring), and `clearSloopRoom` lifts any ship of the rede that her turning room
+(`GALLEON_ROOM`, 6.3 for her 11.6) now sweeps, for the ship loop to anchor again; scan.mjs keeps
+`layout.before-sloop-<ts>.json`. Measured on a copy of Hoogezand: nothing lifted, only `quayV` changed, and the
+scan after byte-identical. **QUAY_VERSION 3**: `migrateQuay` from 2 only asks `moveToResort` again (the move itself is
 `planResort`'s, so a new island and Hoogezand take one road), and **the pick-the-planks branch is `=== 1`,
 not `>= 1`** - a v2 layout through it would re-pick the planks, and `pickPier` answers (163,264) today on
 Hoogezand where they stand at (154,284). Older code on a v3 layout does take that branch (it only knows 2):
@@ -905,8 +909,8 @@ An unattended boat does not stay marooned either: after five quiet minutes the s
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
 
-**The galleon's craft is read off her bake, never typed** ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md), chip 2a).
-`scripts/build-pirateship.py` sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
+**The galleon's craft is read off her bake, never typed** ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md), chip 2a).
+`scripts/build-sloop.py` (the sloop; it replaced build-pirateship.py, chip 3) sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
 `rail.<n>.a|b` (a run of bulwark on its floor), `solid`, `mast`, `port.<n>.lo|hi` (an opening in the bulwark down
 to the deck), `climb.side-*`/`climb.mast` (lo = the climber's stand, `CLIMB_OUT` outside the ropes; hi = where
 they step off), `mount.<cannon|harpoon>[-name].lo|hi` (**lo = where the gunner stands, hi = the carriage on the
@@ -919,16 +923,24 @@ models -- pirateship` *before* the walk map, since build-shipwalk cuts at `SHIP_
 the two heights a rope ladder ends against (the bulwark beside a side ladder - the outermost thing on the
 planking, or a bucket by the landing is read as the rail - and the nest's rim). `shared/crafts.mjs` spreads
 `GALLEON` into `CRAFTS.galleon` and keeps only what is tuned by hand: `crew`, `BULWARK` (a rail's `top` =
-its floor + BULWARK), `LADDER_HW`, `NEST_REACH`, `sail`, `swell` - and, until chip 4, the hand-picked
-`sail.probes`: `shared/quay.mjs` lays every island's galleon berth from them, so taking `GALLEON.probes`
-is the QUAY_VERSION bump. `deck.nest` is no deck of the hull (the sea's clamp never reaches it; it goes to
-`aloft`/`nest`). The craft's rectangles come in no order of their own: find the waist by place, never as
-`deck[0]`. `tests/craft-old-numbers.test.mjs` holds the derived craft to the old hand-typed one (1e-3;
-the two measured tops 1e-2; the harpooners' stands moved 4 cm onto their bearing) and goes with the sloop.
-boat.js reads `HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
+its floor + BULWARK), `LADDER_HW`, `NEST_REACH`, `sail`, `swell`. `sail.probes` is `GALLEON.probes`:
+`shared/quay.mjs` lays every island's ship berth from them, which is why taking them was QUAY_VERSION 4.
+`deck.nest` is no deck of the hull (the sea's clamp never reaches it; it goes to `aloft`/`nest`). The craft's
+rectangles come in no order of their own: find the waist by place, never as `deck[0]`. A stair's anchors are a
+ramp through its treads' middles (half a riser over its foot and its head), or the craft is a riser out at every
+tread's end. `beam` is her breadth up to a body's height over her highest deck, not her yard's arms. boat.js reads
+`HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
+**She is the sloop now** (`scripts/build-sloop.py`, Plans/DONE/nieuwe-sloep.md, 9 long, crew 5): a main deck at 1.15
+over DECK_Y, a cabin's floor sunk 0.68 under it with the stern well behind, a quarterdeck at 1.72 over the cabin,
+two entry ports cut to the deck (her ladders' `port`) and two gun ports, two cannons and one harpoon on her
+middle line over the bow (mounts `[cannon-s, cannon-p, harpoon]`). **The walk map's vertical cut never meets a
+plumb face** (a vertical triangle has no area in plan): what keeps a body out of a wall of hers is a face in the
+band over a step and a hand and under a head (0.33 to 0.55: a rail at 0.4, the mast's partners, the top's rim
+at 0.36, a bulwark's cap at 0.335) or no floor under it (the cabin's and the well's floors are cut at the back
+wall but for the door's threshold). A plumb wall with floor on both sides is walked through.
 
 **The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
-eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
+eight guns were dropped from the download (the sloop of `scripts/build-sloop.py` never had any of her own); the
 keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
 `cannon carriage`, `cannon barrel` with its origin on the trunnion axis, `anchor.muzzle`). Where they stand is
 `CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
@@ -953,7 +965,7 @@ untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` an
 shared/crafts.mjs (cannon.mjs re-exports it; crafts imports nothing from cannon). **Nothing counts her
 mounts**: every reader goes by index and by `kind` (`mounts.findIndex(kind === 'harpoon')`, never 2), the sea
 checks only `i < 8`, and the tests about them hold "every cannon before every harpoon, each on a deck" -
-the sloop ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md)) mounts `[cannon, cannon, harpoon]`.
+the sloop ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md)) mounts `[cannon, cannon, harpoon]`.
 **Her sail and flag are moving parts of her one geometry** (chip 2c of that plan): `isShipMoving` in boat.js
 (`pirateship sail|flag`, her own predicate beside `isKrakenMoving`) keeps them out of the hull part and
 `shipMotionParts` welds them in as the last runs after the guns, measured once (`web/js/ship-motion.js`
@@ -1079,8 +1091,8 @@ the wheel or you are on her again; she is `runningHull()` there, whose position 
 And `ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
 ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
 none from a dock): she is boarded by walking into the foot of one of her two rope ladders
-(`craft.ladders`, at z 1.85 because the gun ports stand out to 2.63 everywhere else along the
-waist; `ladderUp`, and `ladderDown` from the deck, in `shared/deck.mjs`), which you climb along a
+(`craft.ladders`, at her entry ports, z 0.55, through which the climber steps straight onto the deck;
+`ladderUp`, and `ladderDown` from the deck, in `shared/deck.mjs`), which you climb along a
 path in the hull's frame (`stepClimb`: pushing at the hull is up, away is down, no push hangs
 you where you are, a jump lets go) and which tells the sea at the top (`boardBoat`, so you are crew)
 and at the foot or on letting go (`leaveBoat`); and she is left by
@@ -1104,18 +1116,24 @@ least and most x of the hull from 0.1 under the water to a rowing boat's gunwale
 hull walk.js steps (`boatGround(b)` leaves `b` out), so a rowing boat stops at her side and still reaches her
 ladders' feet (`tests/boat-ships.test.mjs`). A galleon does not yet shove a rowing boat out of her way.
 **Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
-bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
-DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds
-128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The rope ladder
-to it is `craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs, its rungs
-the climb's, drawn by boat.js `ladderBoxes`): both ends are on her, so a mast climb keeps `state.deck` on the
+bake's own top round her mast (floor 7.64 above DECK_Y, rim 0.36 over it) is a second layer of the walk map
+(`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs `gridsOf`, from `deck.nest` and `mast.main` - a byte holds
+128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The way to it is
+`craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs): on the sloop **pins baked up
+her mast's after face and a lubber's hole in the top's floor** (`hole: true`, written by build-craft.mjs when the
+ropes' line is inside the top; `top` is then the floor): up through the hole and a step aside onto the floor
+beside it (`land`), the body turning to the step (ladder-way.js `facingOnWay`, `/avatar-motion.html` Lubbergat),
+and down by standing at `land` and pushing back towards the hole. A ladder without `hole` hangs outside the rim
+and is climbed over it, every sum as it was; boat.js draws no rope or rungs for `aloft` any more (the pins are the
+bake's). Both ends are on her, so a mast climb keeps `state.deck` on the
 rope's point and the sea hears it as an ordinary `on` + `d` - which is why lib/players.mjs `DECK_HEIGHT` is 10,
 not 4 (an older sea holds a climber halfway up the mast). E in the nest is `craft.nest`'s seat
 (`walk.sitOnDeck`: a seat in her frame, the SITTING bit). `stepHull` lands only on a floor the feet passed
 this frame - it used to land on any floor under them, eight units down from the nest in one frame - and a
 body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
 Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
-`nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
+`nearestStand`, never a coordinate. The pilot stands on her quarterdeck behind the wheel (`SHIP_HELM`, the
+model's floor at `helm`).
 **A hull's swell is the craft's** (`swell` in shared/crafts.mjs, `swellOf` in boat.js, on the sea's clock:
 main.js `frameSeconds`): the rowing boat bobs as sailIn always did, the galleon only stirs lying still and rocks
 more with the way she makes, which `bob` works out from where she was placed between two clocks
@@ -2001,7 +2019,7 @@ pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`
 changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
 under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
 `tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
-**A ladder at a port lands on the deck, and where any ship's ladder lands is one sum** ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md), chip 2b).
+**A ladder at a port lands on the deck, and where any ship's ladder lands is one sum** ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md), chip 2b).
 A ladder in `CRAFTS.*.ladders` may carry `port` (half the width of the opening in the bulwark); its `top` is then
 the deck's level at `land`, and `ladderPath` (shared/deck.mjs) is three points - foot, deck level outside the skin,
 `land` - straight in over the sill, so Climbing Up A Ladder To Standing ends on the planks and never astride a
@@ -2925,6 +2943,11 @@ change to the yard too - tests/shipyard.test.mjs says so.
   hedge, which are not drawn with the building material.
 - Triangle budgets follow the name prefix: `flora_` 60, `prop_` 120, `addon_` 150, `roof_`
   300, `house_` 600, `civic_` 1500, hero 4000.
+- A part may carry **colour zones** (opt-in, the sloop's, `scripts/build-sloop.py`): an INT face attribute
+  `zone` plus `obj['zone_names']` (JSON `[[name, '#rrggbb'], ...]`) makes `scripts/export-models.py` write
+  `zones` (an index a triangle) and `zoneNames` on the part, so a page can repaint a zone (new colour / base
+  colour, times the corner's) without the bake knowing who paints it. A part without the attribute bakes
+  byte for byte as before.
 - A set that stands over water is modelled in **one frame**, with its piles' feet at y = 0
   and everything else measured from there, so the island can drop the whole set by one
   number (`QUAY_DECK - DOCK_DECK` in `buildings.js`) and get a deck with no step in it.

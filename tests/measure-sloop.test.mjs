@@ -1,4 +1,4 @@
-// The sloop's ruler (scripts/measure-sloop.py, Plans/nieuwe-sloep.md chip 1): the shape of
+// The sloop's ruler (scripts/measure-sloop.py, Plans/DONE/nieuwe-sloep.md chip 1): the shape of
 // refs/sloop/measure.json, which scripts/build-sloop.py will read its numbers from. The bought model
 // is never in git, so this runs only on a machine that has measured it and skips everywhere else -
 // it holds the frame the script promises, not the model.

@@ -1,5 +1,5 @@
 // The galleon's craft is read off her bake (scripts/build-craft.mjs -> shared/craft-galleon.mjs,
-// Plans/nieuwe-sloep.md chip 2a): these hold the committed module to the bake and to the generator as
+// Plans/DONE/nieuwe-sloep.md chip 2a): these hold the committed module to the bake and to the generator as
 // they are now, and the generator to the anchor grammar it reads.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,10 +49,10 @@ test('the frame: an anchor less the waterline and DECK_Y is a height above the d
   assert.equal(SHIP_DRAUGHT, GALLEON.draught);
   assert.ok(Math.abs(GALLEON.tall - (PIRATESHIP.height - GALLEON.draught)) < 1e-4, 'her masthead over the water');
   const waist = PIRATESHIP.anchors['deck.waist.lo'];
-  const r = GALLEON.deck.find((d) => d.hx > 1.7 && d.hz > 2 && !d.slope);
+  const r = GALLEON.deck.find((d) => d.hx > 1 && d.hz > 0.8 && !d.slope && Math.abs(d.z - (waist[2] + PIRATESHIP.anchors['deck.waist.hi'][2]) / 2) < 1e-4);
   assert.ok(Math.abs(r.y - (waist[1] - lift)) < 1e-4, `the waist at ${r.y}, the anchor ${waist[1] - lift} over the datum`);
   // A ramp: the middle of its foot and head, and its rise per unit of z, from the two corners.
-  const lo = PIRATESHIP.anchors['stair.forecastle.lo'], hi = PIRATESHIP.anchors['stair.forecastle.hi'];
+  const lo = PIRATESHIP.anchors['stair.companion.lo'], hi = PIRATESHIP.anchors['stair.companion.hi'];
   const ramp = GALLEON.deck.find((d) => d.slope && Math.abs(d.z - (lo[2] + hi[2]) / 2) < 1e-6);
   assert.ok(Math.abs(ramp.y - (lo[1] + hi[1]) / 2 + lift) < 1e-4);
   assert.ok(Math.abs(ramp.slope - (hi[1] - lo[1]) / (hi[2] - lo[2])) < 1e-4);
@@ -64,8 +64,8 @@ test('the frame: an anchor less the waterline and DECK_Y is a height above the d
 });
 
 test('a mount is a pair: lo where the gunner stands, hi the carriage, and the bearing between them is the yaw', () => {
-  assert.equal(GALLEON.mounts.length, 4);
-  assert.deepEqual(GALLEON.mounts.map((m) => m.kind), ['cannon', 'cannon', 'harpoon', 'harpoon'], 'cannons first, starboard before port, then the harpoons');
+  assert.equal(GALLEON.mounts.length, 3);
+  assert.deepEqual(GALLEON.mounts.map((m) => m.kind), ['cannon', 'cannon', 'harpoon'], 'cannons first, starboard before port, then the harpoon on the bow');
   const [sb, port] = GALLEON.mounts;
   assert.ok(sb.x > 0 && port.x < 0, 'the starboard gun is mount 0, as it has always been on the wire');
   for (const m of GALLEON.mounts) {
@@ -79,7 +79,7 @@ test('a mount is a pair: lo where the gunner stands, hi the carriage, and the be
   // A kind nothing can draw is refused by the grammar before the generator sees it.
   assert.ok(checkSet('pirateship', bakeWith((a) => { a['mount.swivel.lo'] = [0, 3, 0]; a['mount.swivel.hi'] = [0, 3, 1]; })).some((m) => /anchor\.mount\.swivel\.lo is not one of/.test(m)));
   // And so is half a pair.
-  assert.ok(checkSet('pirateship', bakeWith((a) => { delete a['mount.harpoon-p.hi']; })).some((m) => /mount\.harpoon-p\.lo is one corner of mount\.harpoon-p/.test(m)));
+  assert.ok(checkSet('pirateship', bakeWith((a) => { delete a['mount.harpoon.hi']; })).some((m) => /mount\.harpoon\.lo is one corner of mount\.harpoon/.test(m)));
 });
 
 test('a rope ladder over the side: ropes CLIMB_OUT inside the climber\'s stand, top the bulwark it is climbed over, or the deck through a port', () => {
@@ -89,18 +89,15 @@ test('a rope ladder over the side: ropes CLIMB_OUT inside the climber\'s stand, 
   assert.ok(Math.abs(sb.x - (lo[0] - CLIMB_OUT)) < 1e-4 && sb.z === lo[2]);
   assert.ok(Math.abs(sb.foot - (lo[1] - lift)) < 1e-4);
   assert.deepEqual(sb.land, [hi[0], hi[2]]);
-  assert.equal(sb.port, undefined, 'the galleon has no ports: her ladders go over the bulwark');
-  const waist = GALLEON.deck.find((d) => d.hx > 1.7 && d.hz > 2 && !d.slope).y;
-  assert.ok(sb.top > waist + 0.1 && sb.top < waist + 0.3, `the bulwark's top, read off the hull: ${sb.top} over a waist of ${waist}`);
-  assert.ok(Math.abs(sb.top - GALLEON.ladders[1].top) < 0.01, 'the same bulwark either side (the port side has a bucket by the landing that must not count)');
-  // Through a port beside the ladder the climber steps straight onto the deck.
-  const withPort = derive(bakeWith((a) => {
-    a['port.1.lo'] = [lo[0] - 0.2, hi[1], lo[2] - 0.3];
-    a['port.1.hi'] = [lo[0] - 0.2, hi[1], lo[2] + 0.3];
-  }));
-  assert.equal(withPort.ladders[0].top, waist);
-  assert.equal(withPort.ladders[0].port, 0.3);
-  assert.equal(withPort.ladders[1].port, undefined, 'the port is on one side only');
+  // The sloop's ladders hang at her entry ports (`port.1|2`): the climber steps straight onto the deck.
+  const waist = PIRATESHIP.anchors['deck.waist.lo'][1] - lift;
+  const p1 = PIRATESHIP.anchors['port.1.lo'], p2 = PIRATESHIP.anchors['port.1.hi'];
+  assert.ok(Math.abs(sb.top - waist) < 1e-4, `the deck at the port: ${sb.top} on a waist of ${waist}`);
+  assert.ok(Math.abs(sb.port - Math.abs(p2[2] - p1[2]) / 2) < 1e-4, `half the port: ${sb.port}`);
+  assert.equal(GALLEON.ladders[1].port, sb.port, 'a port on either side');
+  // Her bulwark is cut down to the deck there, so a ladder with no port anchored beside it finds no rail
+  // to go over: the bake and its anchors have to say the same thing.
+  assert.throws(() => derive(bakeWith((a) => { for (const k of Object.keys(a)) if (/^port\./.test(k)) delete a[k]; })), /no bulwark/);
   // Ropes inside the hull's side at the water are a ladder through the planking.
   assert.throws(() => derive(bakeWith((a) => { a['climb.side-starboard.lo'][0] = 1.0; })), /inside the hull's side/);
   // And one up the mast: the ropes back from the climber towards the mast, the rim read off the nest.
@@ -108,13 +105,16 @@ test('a rope ladder over the side: ropes CLIMB_OUT inside the climber\'s stand, 
   const mlo = PIRATESHIP.anchors['climb.mast.lo'];
   assert.ok(Math.abs(Math.hypot(up.out[0], up.out[1]) - 1) < 1e-3, 'out is a unit vector');
   assert.ok(Math.abs(up.x + up.out[0] * CLIMB_OUT - mlo[0]) < 1e-4 && Math.abs(up.z + up.out[1] * CLIMB_OUT - mlo[2]) < 1e-4);
-  assert.ok(up.top > up.floor && up.top < up.floor + 0.5, `the rim ${up.top} over the landing's ${up.floor}`);
-  assert.equal(GALLEON.nest.floor, PIRATESHIP.anchors['deck.nest.lo'][1] - lift);
+  // The sloop's goes up her mast's pins through a hole in the top: no rim, its top is the floor it comes
+  // up through. A ladder outside the rim (the galleon's) had the rim read off the nest instead.
+  if (up.hole) assert.equal(up.top, up.floor, 'through a hole, the top is the floor');
+  else assert.ok(up.top > up.floor && up.top < up.floor + 0.5, `the rim ${up.top} over the landing's ${up.floor}`);
+  assert.ok(Math.abs(GALLEON.nest.floor - (PIRATESHIP.anchors['deck.nest.lo'][1] - lift)) < 1e-4);
   assert.ok(!GALLEON.deck.some((d) => d.y > 5), 'the nest is no deck of the hull');
 });
 
 test('what is cut from the hull: her length at the water, the probes she sails by, her outline', () => {
-  assert.ok(GALLEON.length > 9 && GALLEON.length < GALLEON.overall, `${GALLEON.length} at the water, ${GALLEON.overall} overall`);
+  assert.ok(GALLEON.length >= 8.5 && GALLEON.length < GALLEON.overall, `${GALLEON.length} at the water, ${GALLEON.overall} overall`);
   assert.equal(GALLEON.near, Math.ceil(GALLEON.length / 2 + 1.5));
   assert.equal(GALLEON.probes.length, 5);
   assert.equal(GALLEON.probes[0][0], 0, 'the bow on the centreline');

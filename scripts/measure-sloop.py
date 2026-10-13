@@ -1,4 +1,4 @@
-"""Measure the bought Sea of Thieves sloop - the ruler for scripts/build-sloop.py (Plans/nieuwe-sloep.md, chip 1).
+"""Measure the bought Sea of Thieves sloop - the ruler for scripts/build-sloop.py (Plans/DONE/nieuwe-sloep.md, chip 1).
 
     node scripts/blender.mjs --background --python scripts/measure-sloop.py -- <path to .gltf> [refs/sloop]
 
@@ -52,7 +52,7 @@ SOURCE = Path(args[0]) if args else Path.home() / 'Downloads/Sea_of_Thieves_-_Sl
 OUT = Path(args[1]) if len(args) > 1 else ROOT / 'refs/sloop'
 RENDERS = OUT / 'renders'
 
-LENGTH = 9.0          # the hull stem to transom at cap-rail height, the keeper's choice (Plans/nieuwe-sloep.md)
+LENGTH = 9.0          # the hull stem to transom at cap-rail height, the keeper's choice (Plans/DONE/nieuwe-sloep.md)
 STEP = 0.25           # a station every quarter cell, the stem and the transom besides
 H_STEP = 0.05         # half-widths per this much height
 X_STEP = 0.02         # the deck profile's rays across
@@ -98,7 +98,7 @@ if not parts:
 node_matrices = []
 for o in parts:
     node_matrices.append(o.matrix_world.copy())
-    # The node's transform into the vertices (build-pirateship.py does the same): the pieces hang under
+    # The node's transform into the vertices (the galleon's build-pirateship.py did the same): the pieces hang under
     # a turned root, and every ray and every number below wants world coordinates.
     o.data.transform(o.matrix_world)
     o.data.update()

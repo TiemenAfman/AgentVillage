@@ -490,7 +490,7 @@ export function swellOf(swell, t, way = 0, out = [0, 0, 0]) {
   }
   return out;
 }
-// The pirate ship (scripts/build-pirateship.py, Greggory_Fisher's model, CC-BY-4.0): baked keel
+// The pirate ship - the sloop since Plans/DONE/nieuwe-sloep.md (scripts/build-sloop.py, modelled here): baked keel
 // on y = 0 like the Benchy, its waterline the bake's own `anchor.waterline` (shared/craft-galleon.mjs
 // `draught`, SHIP_DRAUGHT). Every island's first boat is one (shared/crafts.mjs kindOf), laid in deep
 // water off its berth (main.js shipBerth).
@@ -498,7 +498,7 @@ const SHIP = 'pirateship hull';
 const SHIP_SET = 'pirateship';
 // SHIP_DRAUGHT is shared/crafts.mjs's, because the walk map is cut from the hull where she floats and
 // has to agree.
-// What moves on her (Plans/nieuwe-sloep.md, chip 2c): her sail and her flag, baked as parts of their own
+// What moves on her (Plans/DONE/nieuwe-sloep.md, chip 2c): her sail and her flag, baked as parts of their own
 // (`pirateship sail`, `pirateship flag`, with or without a suffix) and welded into the hull's geometry as
 // its last runs (`shipMotionParts`), where web/js/ship-motion.js moves their corners every frame. Her own
 // predicate, apart from buildings.js's `isKrakenMoving`: the Kraken is a building, read by name through its
@@ -551,22 +551,9 @@ export function ladderBoxes(spec) {
       out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { x, y: foot + k * RUNG_STEP - RUNG_R, z: l.z }));
     }
   }
-  // Up the mast (craft.aloft): the same ropes and rungs, from the deck to the rim of the top, turned to
-  // whichever face of it the ladder hangs from - `out` is the way from the mast to the climber, and a
-  // box's own x is turned onto it - and over the rim to inside, where they are made fast.
-  for (const l of spec.aloft || []) {
-    const [ox, oz] = l.out;
-    const ry = Math.atan2(-oz, ox);
-    const foot = DECK_Y + l.foot, top = DECK_Y + l.top;
-    const at = (d, t) => ({ x: l.x + ox * d - oz * t, z: l.z + oz * d + ox * t, ry });
-    for (const side of [-1, 1]) {
-      out.push(box(ROPE_W, top - foot, ROPE_W, ROPE, { ...at(RUNG_OUT, side * l.hw), y: foot }));
-      out.push(box(0.2, ROPE_W, ROPE_W, ROPE, { ...at(RUNG_OUT - 0.1, side * l.hw), y: top }));
-    }
-    for (let k = 1; foot + k * RUNG_STEP < top - 0.06; k++) {
-      out.push(box(2 * RUNG_R, 2 * RUNG_R, 2 * l.hw + ROPE_W, RUNG, { ...at(RUNG_OUT, 0), y: foot + k * RUNG_STEP - RUNG_R }));
-    }
-  }
+  // Up the mast (craft.aloft) there is no rope: the sloop's pins are in her bake (scripts/build-sloop.py),
+  // cut to the same climb - a rung's middle k RUNG_STEP over the foot, RUNG_OUT out from the ropes' line
+  // (tests/sloop-bake.test.mjs, tests/crows-nest.test.mjs) - so nothing is drawn for it here.
   return out;
 }
 
@@ -604,7 +591,7 @@ function gunRuns(spec) {
   return { parts, guns };
 }
 
-// Her sail and flag as runs of the hull's geometry, after the guns (Plans/nieuwe-sloep.md chip 2c): each
+// Her sail and flag as runs of the hull's geometry, after the guns (Plans/DONE/nieuwe-sloep.md chip 2c): each
 // moving part placed where the bake had it and sunk by the draught like the hull, measured once
 // (ship-motion.js: the sail's yard, foot and the yard's direction; the flag's luff and the way it flies)
 // and its baked corners kept beside it, so `bob` can write where they are now. Each part is made the same
@@ -627,6 +614,15 @@ function shipMotionParts(hull) {
     movers.push({ kind, name, base, count: g.attributes.position.count, [kind]: measure, seed: (hash32(`ship:${name}`) % 1000) / 1000 * TAU });
   }
   return { parts, movers };
+}
+
+// Her glass, in the hull's attribute layout (the same reason as her sail's, below): null for a bake without it.
+export const SHIP_GLOW = 'pirateship glow';
+function glowPart(hull) {
+  if (!models.has(SHIP_GLOW)) return null;
+  const g = mesh(SHIP_GLOW, 0xffffff, { y: -SHIP_DRAUGHT });
+  for (const a of Object.keys(g.attributes)) if (!hull.attributes[a]) g.deleteAttribute(a);
+  return g;
 }
 
 // Her harpoon guns (Plans/harpoen.md): not welded into the hull like the cannons, because the one the
@@ -805,9 +801,12 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
   const rowing = !ship && models.hasAsset(ROWBOAT) ? rowboatGeometry() : null;
   const armed = ship ? gunRuns(CRAFTS.galleon) : { parts: [], guns: [] };
   const hull = ship ? mesh(SHIP, 0xffffff, { y: -SHIP_DRAUGHT }) : null;
+  // Her window glass and lantern lights (`pirateship glow`, lit after dark), welded in like the ladders -
+  // before the guns and the moving parts, whose runs are counted back from the end.
+  const glow = ship ? glowPart(hull) : null;
   // Her sail and flag, welded after the guns: the very last runs.
   const moving = ship ? shipMotionParts(hull) : { parts: [], movers: [] };
-  const geometry = ship ? withLadders(hull, CRAFTS.galleon, [...armed.parts, ...moving.parts])
+  const geometry = ship ? withLadders(hull, CRAFTS.galleon, [...(glow ? [glow] : []), ...armed.parts, ...moving.parts])
     : rowing ? rowing.geometry : buildBoatGeometry();
   // Where each gun's runs start: counted back from the end, since they were merged last - past the
   // moving parts, which come after them.
@@ -825,7 +824,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     const arr = geometry.attributes.position.array;
     for (const m of movers) m.out = arr.subarray(m.from * 3, (m.from + m.count) * 3);
   }
-  // The sail she is drawn under (Plans/nieuwe-sloep.md chip 2c): `sailWant` is what this page reads of
+  // The sail she is drawn under (Plans/DONE/nieuwe-sloep.md chip 2c): `sailWant` is what this page reads of
   // her (main.js sailShareOf: her own `underSail`, or the step nearest her speed for a hull somebody else
   // sails), `sailDrawn` follows it at SAIL_EASE a second in `bob`, so setting or striking sail is seen
   // happening. Before her first `bob` a setting is taken as it is: a ship that comes into view under
@@ -944,7 +943,7 @@ export function createBoat({ scene, material, kind = 'rowboat' }) {
     walk: ship ? SHIP_SURFACE : null,
     // Her side at the waterline, where another boat meets her (shipsOver); a rowing boat is in nobody's way.
     side: ship ? SHIP_SIDE : null,
-    camScale: ship ? 10 : 2.2,
+    camScale: ship ? 7 : 2.2,      // the sloop is 9 to the galleon's 13: her camera came in with her
     beam: ship ? CRAFTS.galleon.beam : 0.3,
     // The oars, for whoever pulls them: the stroke now (0..1, see STROKE) and where a hand holds
     // each, in the hull's frame (`y` above DECK_Y, like a craft's deck). Null on a ship.

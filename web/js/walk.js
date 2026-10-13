@@ -17,7 +17,7 @@ import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
-import { climbWay, climbWayDown, climbAlong, onWay, topNear, ladderLanding } from './ladder-way.js';
+import { climbWay, climbWayDown, climbAlong, onWay, topNear, ladderLanding, facingOnWay } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
@@ -2013,7 +2013,9 @@ export function createWalkMode({
     state.climbing = climbingAt(c, p.y - was, p.y - l.foot);
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
-    const [fx, fz] = dirToWorld(frame, -l.out[0], -l.out[1]);
+    // Facing the mast; out of a lubber's hole (`hole`), turning to the step aside onto the top's floor.
+    const face = l.hole ? facingOnWay(c.way, c.d, [-l.out[0], -l.out[1]]) : [-l.out[0], -l.out[1]];
+    const [fx, fz] = dirToWorld(frame, face[0], face[1]);
     state.yaw = Math.atan2(fx, fz);
     state.moving = wish !== 0;
     state.running = false;
@@ -3887,7 +3889,7 @@ export function createWalkMode({
   // the deck under the camera: no higher than half a unit over the point looked at, or the roof of
   // her castle - or her yards - would be floors to a camera on the waist - and never up to a lid
   // over that point (`ceilingIn`, kept as `lid`): in a cabin under the poop the poop deck is no floor
-  // to lift a camera down there onto, it is the lid it stays under (Plans/nieuwe-sloep.md). On a
+  // to lift a camera down there onto, it is the lid it stays under (Plans/DONE/nieuwe-sloep.md). On a
   // hull with no lid over the body - the galleon as she is - the reach is what it was.
   let camHull = null;
   const hullLocal = [0, 0];

@@ -1204,7 +1204,7 @@ function poseHull(b) {
   if (b.craft.sails) b.craft.sails(sailShareOf(b));
   b.craft.bob(frameSeconds);
 }
-// The sail a hull is drawn under (boat.js `sails`, Plans/nieuwe-sloep.md chip 2c): what this page knows
+// The sail a hull is drawn under (boat.js `sails`, Plans/DONE/nieuwe-sloep.md chip 2c): what this page knows
 // of her. Her own setting where there is one - ours at the wheel or on her deck (`underSail`), and a
 // followed hull whose setting came with the hand-over (onBoatFromServer writes it) - else, for a hull
 // somebody else sails and said nothing of, the step nearest the way she is making off her track

@@ -1,5 +1,5 @@
 // The sail and the flag welded into the galleon's one geometry and moved there (web/js/boat.js
-// `shipMotionParts`, `sails`, `bob`; Plans/nieuwe-sloep.md chip 2c), on a bake that has them: the one
+// `shipMotionParts`, `sails`, `bob`; Plans/DONE/nieuwe-sloep.md chip 2c), on a bake that has them: the one
 // the loader hook tests/support/sloop-parts-loader.mjs gives her, since no committed bake does yet. The
 // ship stays one mesh; the sail's and the flag's corners are the last runs and the only ones `bob`
 // moves; the sail follows the share of sail it is given, furled against its yard at 0 and in its baked

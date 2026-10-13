@@ -1,4 +1,20 @@
-# 🚧 Een nieuwe sloep in plaats van het galjoen
+# Een nieuwe sloep in plaats van het galjoen
+
+**✅ Status: gebouwd op 13 oktober 2026** (chips 1 t/m 4; release als minor 0.11.0). Wat er anders werd dan
+hieronder staat, met de keeper afgestemd:
+- **De hut is verzonken** (checkpoint A), niet het achterdek omhoog: hutvloer 1,354, achterdek 2,604.
+- **De kampanjetrap** loopt van z -1,05 tot -0,3 (6 treden van 0,113), niet vanaf -0,9: zo steil viel de voetafdruk
+  van de loopkaart tussen de treden.
+- **Het kraaiennest** is 0,78 in de straal (gemeten 0,62: daar was alleen op het zitblok plek), de rand 0,36 hoog.
+- **De pennen** liggen met hun hart op dek + k·RUNG_STEP, zoals de sporten van elke touwladder (niet + RUNG_R).
+- **De klim door het lubbergat** is een eigen variant (`hole` in het craft, shared/deck.mjs `aloftPath`/`aloftDown`,
+  ladder-way.js `facingOnWay`): omhoog door het gat, bovenaan opzij uitstappen, het lijf draait mee met de afstap.
+  Keeper-keuze van 13 oktober; ladders zonder `hole` blijven precies zoals ze waren.
+- **Loodrechte wanden** ziet de loopkaart niet: wat een lijf tegenhoudt is een vlak tussen 0,33 en 0,55 boven de
+  vloer (balustrades op 0,4, een kraag om de mastvoet, de nestrand) of geen vloer (de hutvloer is bij het schot
+  onderbroken, op een drempel in de deur na).
+- **Kleurzones** per vlak (`zones`/`zoneNames` in de bake) voor latere kleuren per speler; die zelf zijn niet gebouwd.
+
 
 Plan van 9 oktober 2026, met de keeper in een Fable-sessie opgezet; de bouw gaat in chips (Opus).
 De opdracht, letterlijk: *"beter idee: hele boot opnieuw maken"* — *"maar ik wil het model alleen als
@@ -14,7 +30,7 @@ deugt niet meer, gezien in het spel op 9 oktober:
 - het boord is één gele balk;
 - bovenaan de touwladder moet het lijf over de bulwark heen, waar Mixamo's *Climbing Up A Ladder To
   Standing* niet voor gemaakt is: het zit half op de reling, één hand in de lucht, en schuift daarna over
-  het dek ([Plans/DONE/ladder-op-en-af.md](DONE/ladder-op-en-af.md)).
+  het dek ([Plans/DONE/ladder-op-en-af.md](ladder-op-en-af.md)).
 
 De keeper kocht een Sea of Thieves-sloep (`C:\Users\Martijn\Downloads\Sea_of_Thieves_-_Sloop\*.gltf`,
 378k driehoeken, één massieve STL-achtige mesh in vier stukken, geen texturen, geen binnenkant, één
@@ -23,7 +39,7 @@ materiaal). Die is **alleen maatlat**: nooit eindresultaat, nooit in git (`refs/
 ## Besluiten (keeper, 9 oktober)
 
 - **Route**: een eigen parametrisch Blender-bouwscript in de huisstijl, zoals de Batavia
-  ([DONE/batavia.md](DONE/batavia.md)) en de Kraken-romp: de maten van het gekochte model één keer gemeten
+  ([DONE/batavia.md](batavia.md)) en de Kraken-romp: de maten van het gekochte model één keer gemeten
   en als letterlijke getallen in het script.
 - **Maat**: romp 9 lang van steven tot spiegel, de boegspriet erbij (~11 totaal); lage vrijboord; crew 5.
 - **Bewapening**: 1 kanon per boord in de waist, in een open geschutspoort met opgeklapt luik; 1 harpoen

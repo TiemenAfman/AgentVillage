@@ -130,10 +130,10 @@ test('hauled in by a ship\'s harpoon the body lands over her rail on her deck, a
   const { DECK_Y } = await import('../shared/hull.mjs');
   const walk = make();
   run(walk, 0.2);
-  // Her starboard harpoon (the second of the two after the cannons), her bow to +z, lying at x 8 in
+  // Her harpoon (on her bow after the cannons, Plans/DONE/nieuwe-sloep.md), her bow to +z, lying at x 8 in
   // the deep water off the shore - the swimmer is on the beach at x 20.
   const spec = CRAFTS.galleon;
-  const mount = spec.mounts.findIndex((g) => g.kind === 'harpoon' && g.x > 0);
+  const mount = spec.mounts.findIndex((g) => g.kind === 'harpoon');
   const g = spec.mounts[mount];
   const ship = { id: 'boat:abcd1234', x: 8, z: 0, yaw: 0, v: 0, craft: { spec, object: null, walk: createSurface(SHIPWALK) } };
   const boarded = [], ends = [];

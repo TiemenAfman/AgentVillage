@@ -5,7 +5,7 @@
 //
 // shared/crafts.mjs used to type every one of these numbers by hand - deck rectangles measured by rays
 // in Blender, a ladder's rope line, where a gun stands - against a bake that could change under them.
-// Now the bake carries them as anchors (scripts/build-pirateship.py, the grammar in scripts/model-rules.mjs:
+// Now the bake carries them as anchors (scripts/build-sloop.py, the grammar in scripts/model-rules.mjs:
 // deck/stair/rail/solid/mast/port/climb/mount pairs, helm/nest/cargo points, the waterline) and this turns
 // those into the craft: a record of literals that the sea reads as it reads any other shared module
 // (Dockerfile.sea copies shared/ whole). The generator may do arithmetic - a bearing from two points, a
@@ -57,6 +57,8 @@ const NEST = 'nest';
 const TOP_REACH = 1.0;
 const TOP_STEP = 0.025;
 const TOP_SPAN = 0.1;
+// How far over her highest deck her breadth is measured (`beam`): a body's height and a bulwark.
+const BEAM_OVER = 0.8;
 // How thick a bulwark may be, cap rail and all, from its outside in.
 const BULWARK_W = 0.3;
 // How far from the hull's middle the shoulder probes stand, as a share of the way to the bow.
@@ -124,9 +126,8 @@ export function derive(bake) {
   const heights = (x, z) => heightsAt(pos, x, z, lift);
 
   // Her size: overall from her triangles, at the water from her side.
-  let xMax = 0, zMin = Infinity, zMax = -Infinity;
+  let zMin = Infinity, zMax = -Infinity;
   for (let i = 0; i < pos.length; i += 3) {
-    xMax = Math.max(xMax, Math.abs(pos[i]));
     zMin = Math.min(zMin, pos[i + 2]);
     zMax = Math.max(zMax, pos[i + 2]);
   }
@@ -154,6 +155,12 @@ export function derive(bake) {
     if (Math.abs(s.hi.z - s.lo.z) < 1e-6) throw new Error(`stair.${s.name} runs across, not fore and aft`);
     deck.push({ ...rect(s.lo, s.hi), y: rd((raw(s.lo) + raw(s.hi)) / 2), slope: rd((raw(s.hi) - raw(s.lo)) / (s.hi.z - s.lo.z)) });
   }
+
+  // Half her breadth where a body goes over her side (main.js stepAshore, boat.js `beam`): her hull up to
+  // a body's height over her highest deck - not her yard, whose arms are twice as far out as her side.
+  const deckTop = Math.max(...deck.map((r) => r.y + (r.slope ? Math.abs(r.slope) * r.hz : 0))) + BEAM_OVER;
+  let xMax = 0;
+  for (let i = 0; i < pos.length; i += 3) if (raw({ y: pos[i + 1] }) <= deckTop) xMax = Math.max(xMax, Math.abs(pos[i]));
 
   // What cannot be walked through: a rail (with the floor under it, for crafts.mjs to put the bulwark's
   // top on), a solid box (no top: a wall), a mast.
@@ -224,12 +231,19 @@ export function derive(bake) {
       }
     }
     if (!Number.isFinite(top)) throw new Error(`climb.${c.name}: no rim over the nest's floor`);
+    // A ladder whose ropes hang inside the top's rectangle is not climbed over its rim but up through a
+    // hole in its floor (the sloop's pins and lubber's hole, scripts/build-sloop.py): `hole`, and its top
+    // is the floor it comes up through (shared/deck.mjs aloftPath). One outside the rim keeps the record
+    // it always had, with no `hole` in it.
+    const rx = c.lo.x - out[0] * CLIMB_OUT, rz = c.lo.z - out[1] * CLIMB_OUT;
+    const hole = Math.abs(rx - nestRect.x) < nestRect.hx && Math.hypot(rx - mast[0], rz - mast[2]) < nestRect.hx;
     // `out` is written unrounded: shared/deck.mjs walks CLIMB_OUT along it and back, and a unit vector
     // rounded to four decimals is 2e-5 short of one, which is a climber 3 um off the line the rungs
     // are hung on (tests/ladder-rungs.test.mjs holds that to 1e-9).
     aloft.push({
-      x: rd(c.lo.x - out[0] * CLIMB_OUT), z: rd(c.lo.z - out[1] * CLIMB_OUT), out: [out[0], out[1]],
-      foot: cy(c.lo), top: rd(top), land: [rd(c.hi.x), rd(c.hi.z)], floor,
+      x: rd(rx), z: rd(rz), out: [out[0], out[1]],
+      foot: cy(c.lo), top: rd(hole ? floor : top), land: [rd(c.hi.x), rd(c.hi.z)], floor,
+      ...(hole ? { hole: true } : {}),
     });
   }
 

@@ -11,7 +11,7 @@
 //
 // Heights are in the hull's own frame, above DECK_Y, exactly as shared/crafts.mjs has them: the bake
 // dropped by her draught (SHIP_DRAUGHT) and by DECK_Y. Only what a body on her can meet is kept: from
-// 0.3 under the lowest deck to 2.6 (the poop is at 1.95, and a body on it is 0.55 tall), in steps of 2 cm.
+// 0.3 under the lowest deck to a body's height and a hand over the highest, in steps of 2 cm (gridsOf).
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SHIP_DRAUGHT } from '../shared/crafts.mjs';
@@ -22,13 +22,46 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const { PIRATESHIP } = await import(pathToFileURL(`${root}web/js/pirateship-mesh.js`).href);
 const positions = PIRATESHIP.parts['pirateship hull'].positions;
 
-export const GRID = { cell: 0.05, x0: -2.6, z0: -6.4, nx: 104, nz: 256, y0: 0.7, q: 0.02, top: 2.6 };
-// And the crow's nest at the head of the mainmast (shared/crafts.mjs `aloft`), as a layer of its own:
-// a byte holds 128 heights, and 2 cm steps from the deck to the nest are 450 of them, so the one grid
-// cannot reach it - nor should it, since everything in between (the yards, the sails, the stays) is
-// cloth and rope a body falls through. A box round the mast from under the nest's floor (8.62, and its
-// tiers 8.82 / 8.95 / 9.07 / 9.19 round the topmast) to a body's height over its rim (9.24).
-export const ALOFT = { cell: 0.05, x0: -0.9, z0: -0.9, nx: 36, nz: 36, y0: 8.3, q: 0.02, top: 9.9 };
+// The two grids are worked out from the bake (Plans/DONE/nieuwe-sloep.md chip 3), not typed: the deck's
+// over her plan wherever the hull has anything between a hand under her lowest deck and a body's
+// height over her highest, the band of heights the same; the crow's nest's as a layer of its own round
+// `mast.main` at `deck.nest`'s height - a byte holds 128 heights, and 2 cm steps from the deck to the
+// nest are hundreds of them, so the one grid cannot reach it, nor should it, since everything in
+// between (the yard, the sail, the stays) is cloth and rope a body falls through. A deck rectangle
+// outside the grid it is cut on throws: a map that ends short of a deck is a ship with a hole in it.
+const CELL = 0.05, Q = 0.02;
+// Whole cells and steps, rounded to the micron so a grid prints as the numbers it is (0.35, not 0.35000000000000003).
+const tidy = (v) => Math.round(v * 1e6) / 1e6;
+const snap = (v) => tidy(Math.round(v / CELL) * CELL);
+export function gridsOf(bake, lift = bake.anchors.waterline[1] + DECK_Y) {
+  const A = bake.anchors;
+  const decks = Object.entries(A).filter(([k]) => /^(deck|stair)\./.test(k) && !/^deck\.nest\./.test(k)).map(([, p]) => p);
+  if (!decks.length) throw new Error('the bake has no deck.* or stair.* anchors to walk');
+  const low = Math.min(...decks.map((p) => p[1])) - lift, high = Math.max(...decks.map((p) => p[1])) - lift;
+  const y0 = tidy(Math.floor((low - 0.3) / Q) * Q), top = tidy(Math.ceil((high + 0.55 + 0.35) / Q) * Q);
+  const pos = bake.parts['pirateship hull'].positions;
+  let xm = 0, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const y = pos[i + 1] - lift;
+    if (y < y0 || y > top) continue;
+    xm = Math.max(xm, Math.abs(pos[i]));
+    z0 = Math.min(z0, pos[i + 2]);
+    z1 = Math.max(z1, pos[i + 2]);
+  }
+  const x0 = -snap(xm + 2 * CELL), zs = snap(z0 - 2 * CELL);
+  const grid = { cell: CELL, x0, z0: zs, nx: Math.round(-2 * x0 / CELL), nz: Math.round((snap(z1 + 2 * CELL) - zs) / CELL), y0, q: Q, top };
+  for (const p of decks) {
+    if (p[0] < grid.x0 || p[0] > -grid.x0 || p[2] < grid.z0 || p[2] > grid.z0 + grid.nz * CELL) {
+      throw new Error(`a deck corner at (${p[0]}, ${p[2]}) lies outside the walk map's grid`);
+    }
+  }
+  const mast = A['mast.main'], nest = A['deck.nest.lo'];
+  const floor = nest ? nest[1] - lift : null;
+  const aloft = mast && nest ? { cell: CELL, x0: snap(mast[0] - 0.9), z0: snap(mast[2] - 0.9), nx: 36, nz: 36,
+    y0: tidy(Math.floor((floor - 0.3) / Q) * Q), q: Q, top: tidy(Math.ceil((floor + 1.4) / Q) * Q) } : null;
+  return { grid, aloft };
+}
+export const { grid: GRID, aloft: ALOFT } = gridsOf(PIRATESHIP);
 // Steeper than this is a wall, whichever way it faces: cos of 70 degrees, as the surface normal's y. The
 // bow's ramp starts with a stretch of 63 degrees, which is a way up all the same.
 const WALKABLE = 0.35;
@@ -36,8 +69,7 @@ const WALKABLE = 0.35;
 // What the map was cut from, so that a re-baked ship that has not been cut again is caught.
 export { sourceOf };
 
-export function cut(pos, g = GRID) {
-  const lift = SHIP_DRAUGHT + DECK_Y;
+export function cut(pos, g = GRID, lift = SHIP_DRAUGHT + DECK_Y) {
   const tris = [];
   for (let t = 0; t < pos.length; t += 9) {
     const ax = pos[t], ay = pos[t + 1] - lift, az = pos[t + 2];
@@ -95,8 +127,8 @@ export function cut(pos, g = GRID) {
 const b64 = (u8) => Buffer.from(u8).toString('base64');
 
 // One grid's cut, as the map keeps it.
-export function layer(pos, g) {
-  const { ends, hits } = cut(pos, g);
+export function layer(pos, g, lift) {
+  const { ends, hits } = cut(pos, g, lift);
   return { cell: g.cell, x0: g.x0, z0: g.z0, nx: g.nx, nz: g.nz, y0: g.y0, q: g.q, off: b64(new Uint8Array(ends.buffer)), hits: b64(hits) };
 }
 
@@ -107,6 +139,11 @@ export { SIDE };
 export const sideCut = (pos, s = SIDE) => cutSide(pos, SHIP_DRAUGHT, s);
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  // Cut where she floats: her bake's waterline, which the craft has to say too (scripts/build-craft.mjs
+  // runs first) - a map cut at one draught and sailed at another puts every deck in the wrong place.
+  if (Math.abs(PIRATESHIP.anchors.waterline[1] - SHIP_DRAUGHT) > 1e-9) {
+    throw new Error(`the bake floats at ${PIRATESHIP.anchors.waterline[1]} and the craft at ${SHIP_DRAUGHT}: run node scripts/build-craft.mjs first`);
+  }
   const { hits } = cut(positions);
   const map = { source: sourceOf(positions), ...layer(positions, GRID), aloft: layer(positions, ALOFT), side: sideCut(positions) };
   const out = `// Generated by scripts/build-shipwalk.mjs from web/js/pirateship-mesh.js. Never hand-edit.
