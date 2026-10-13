@@ -277,6 +277,15 @@ def measure(clip, path):
         out['rise'] = round(rise / leg, 4)
     if clip in STEPS:
         out['way'] = way
+    if clip in ALONG:
+        # How far along its stride the hips are at each row (0 at the first, 1 a whole cycle on), held
+        # never to go back: the rig turns a distance walked into the moment of the clip through it, so a
+        # clip that dawdles in one stretch and hurries in another still keeps its planted foot still.
+        far, along = 0, []
+        for a in ahead:
+            far = max(far, a - ahead[0])
+            along.append(round(far / max(travel.length, 1e-6), 4))
+        out['along'] = along
     if not timed:
         out.update(stride=round(travel.length / leg, 4), speed=round(travel.length / seconds / leg, 4))
     return out
@@ -285,6 +294,10 @@ def measure(clip, path):
 # Played by time, not by distance. `die` and `drown` play once, from the moment the sea sends the
 # body home (classic-avatar.js dyingPose, Plans/vallen-en-verdrinken.md).
 TIMED = ('idle', 'jump', 'standingJump', 'swim', 'tread', 'dig', 'die', 'drown', 'hang')
+# Played by distance, but through how far along the stride the hips are at each row (`along`), not
+# evenly: Mixamo's Careful Walk (`ropeWalk`, over a harpoon's line, Plans/harpoen.md) swings one leg
+# in a second and the other in two, and played evenly its planted foot slid.
+ALONG = ('ropeWalk',)
 # Played by height: a ladder's rungs (`rise`, leg lengths a cycle, in place of a gait's stride).
 # They face the way their hips face, like a timed clip, since what they travel is up.
 CLIMBS = ('climb',)

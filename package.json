@@ -24,6 +24,7 @@
     "tauri": "tauri",
     "models": "node scripts/models.mjs",
     "models:preview": "node scripts/models.mjs --preview",
+    "models:craft": "node scripts/build-craft.mjs",
     "models:walk": "node scripts/build-shipwalk.mjs",
     "vendor": "node scripts/vendor.mjs",
     "postinstall": "node scripts/vendor.mjs"

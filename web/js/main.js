@@ -56,7 +56,7 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName, isModestGpu } from './graphics-settings.js';
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
@@ -347,9 +347,6 @@ function gpuName() {
   } catch { return 'unknown'; }
 }
 
-// An integrated GPU driving a full-screen scene with a big shadow map is the most
-// likely thing to fall over, so ask it for less.
-const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
 canvas.addEventListener('webglcontextrestored', () => {
   recoverCanvas(new Error('The island needs to rebuild its 3D canvas.'));
 });
@@ -398,9 +395,9 @@ async function openBoardWithoutIsland() {
 }
 
 // A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
-// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
-// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
+// isModestGpu (graphics-settings.js) knows desktop names, and no Adreno, Mali or PowerVR is
+// among them, so every phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || isModestGpu(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 // The best this screen is drawn at; the quality governor below only ever takes from it.
 // A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
@@ -438,7 +435,7 @@ setStatsShown(params.has('stats') || loadStatsShown());
 // Why this page took itself for the tier it is, for Settings -> Graphics' quality line.
 const tierReason = HANDHELD ? (modest ? 'light' : 'full quality')
   : params.has('modest') ? '?modest'
-  : MODEST_GPU.test(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
+  : isModestGpu(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
   : gpuShortName(graphicsGpu);
 // Frames counted for that line's fps: one increment a frame, read only while Settings is open.
 let framesDrawn = 0;
@@ -1199,7 +1196,20 @@ const seatPoint = new THREE.Vector3();
 const seatTilt = new THREE.Quaternion();
 function poseHull(b) {
   b.craft.place(b.x, b.z, b.yaw);
+  if (b.craft.sails) b.craft.sails(sailShareOf(b));
   b.craft.bob(frameSeconds);
+}
+// The sail a hull is drawn under (boat.js `sails`, Plans/nieuwe-sloep.md chip 2c): what this page knows
+// of her. Her own setting where there is one - ours at the wheel or on her deck (`underSail`), and a
+// followed hull whose setting came with the hand-over (onBoatFromServer writes it) - else, for a hull
+// somebody else sails and said nothing of, the step nearest the way she is making off her track
+// (hullSpeed / her top), so a ship seen crossing the bay carries sail and one lying still does not.
+// Nothing of it is on the wire: a page from before this draws her as she was.
+function sailShareOf(b) {
+  if (Number.isFinite(b.underSail)) return b.underSail;
+  if (!hullFollowed(b)) return sailOf(b);
+  const sail = b.craft && b.craft.spec && b.craft.spec.sail;
+  return sail && sail.top > 0 ? nearestSail(hullSpeed(b) / sail.top) : 0;
 }
 
 // A ship, as opposed to a boat: room for a crew, so it is boarded by her rope ladders (walk.js)
@@ -2448,7 +2458,7 @@ function fireHarpoonHere({ boat, i }) {
   return null;
 }
 // A harpoon on the sea (net.js `harpoon`, Plans/harpoen.md fase B): somebody's line to draw, or our own
-// body hooked by one - drawn to that ship's harpoon by walk mode until it is at the rail, or let go of.
+// body hooked by one - drawn to that ship's harpoon by walk mode and over her rail onto her deck, or let go of.
 function onHarpoonMessage(m) {
   if (!state.harpoons) return;
   if (m.a === 'line') { state.harpoons.onLine(m); return; }
@@ -2463,7 +2473,7 @@ function onHarpoonMessage(m) {
       ship.craft.object.updateMatrixWorld();
       return ship.craft.object.localToWorld(mouth.set(mz.at[0], mz.at[1], mz.at[2]));
     };
-    if (state.walk.pullTo(at)) {
+    if (state.walk.pullTo(at, { ship, mount: m.i })) {
       const who = state.peers ? state.peers.nameOf(m.by) : 'Somebody';
       state.ui.toast(`${who} has you on a harpoon line! <b>Space</b> to struggle free.`);
     }
@@ -8512,8 +8522,7 @@ function frame(nowMs) {
     // Deciding here whether it was worth sending is what made this sixty messages a second
     // and took the socket down under the pilot - see `hull` in net.js.
     if ((b === mine || b === running) && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
-    b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(frameSeconds);
+    poseHull(b);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
   }
   // While you are sailing, whether there is anywhere to step out changes with every metre,
@@ -9145,6 +9154,7 @@ Everything is copied and checked first; the island then starts again there. The 
       tier: graphicsTier({ modest, phone: HANDHELD }), reason: tierReason,
       rung: quality.rung().name, auto: quality.auto(), fps: framesPerSecond(),
     }),
+    gpuName: () => gpuShortName(graphicsGpu),
     statsShown: () => !!statsReadout,
     onStatsShown: (on) => { saveStatsShown(on); setStatsShown(on); },
   });

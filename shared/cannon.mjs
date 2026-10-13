@@ -8,6 +8,7 @@
 // Where a gun stands on the ship is shared/crafts.mjs's (`CRAFTS.galleon.cannons`); the angles that
 // turn a gun into a direction need sin and cos, and are the page's (web/js/cannon.js muzzleOf), which
 // hands the sea a velocity, never an angle.
+import { HULL_BOX } from './crafts.mjs';
 
 // How far a gun turns either side of square out of her side (radians, 35 degrees), and the bore's
 // elevation above level it may be laid between (absolute, -7 to +24 degrees). The model's barrel
@@ -55,8 +56,10 @@ export const HUMAN_G = 12.5;
 
 // The outline a ball can hit a ship by, in her own frame (+z forward, y above the sea's surface):
 // her hull from under the waterline to the top of her bulwarks, the length of her from stern to
-// the root of the bowsprit. Coarse on purpose - the sea flies the same ball and has no model.
-export const HULL_BOX = Object.freeze({ hx: 2.0, hz: 6.2, y0: -1.2, y1: 2.0 });
+// the root of the bowsprit. Coarse on purpose - the sea flies the same ball and has no model. The
+// numbers are the galleon's and live with her (shared/crafts.mjs HULL_BOX); kept under this name for
+// everybody who reads it here. crafts.mjs imports nothing from this file, so there is no circle.
+export { HULL_BOX };
 // And a rowing boat's, which can be hit now that a hit can sink it (the keeper, 8 October 2026).
 export const ROWBOAT_BOX = Object.freeze({ hx: 0.4, hz: 0.8, y0: -0.4, y1: 0.6 });
 // How many balls a hull takes before she goes down (the keeper: a galleon has hull points, a rowing

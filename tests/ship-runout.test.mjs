@@ -201,7 +201,7 @@ test('the camera takes only a share of the swell of the ship it is on', () => {
   // A hull pitched 0.2 rad (far more than her swell) with her wheel where the ship's is.
   const object = new THREE.Object3D();
   object.rotation.x = 0.2;
-  ship.craft = { spec: CRAFTS.galleon, object, camScale: 10, helm: { x: 0, y: 2, z: -3.2 } };
+  ship.craft = { spec: CRAFTS.galleon, object, camScale: 10, helm: { x: CRAFTS.galleon.helm[0], y: 2, z: CRAFTS.galleon.helm[1] } };
   ship.v = 8;
   walk.board(ship);
   walk.update(FRAME);

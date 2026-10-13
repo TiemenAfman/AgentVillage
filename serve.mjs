@@ -6,6 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { spawn } from 'node:child_process';
+import { mixamoDirOf, listClips, clipPath } from './lib/mixamo.mjs';
 import { ROOT, HOME, DATA, WEB, SHARED, CLAUDE_HOME, WORKTREE, OPEN_SEA, isOpenSea, loadConfig, fillConfig, islandNameOf, seaNameOf, setFounder, addFounders, setDisplay, setMaxGridSize, islandCap, MAX_GRID_CHOICES, setSea, forgetSea, nameplatesVisibleTo, readJson, HOME_MISSING, missingHome, SHARED_HOME, POINTER_FILE, APPDATA, hdDirOf, setHdDir } from './lib/paths.mjs';
 import { moveHome } from './lib/home-move.mjs';
 import { readBuildInfo } from './lib/buildinfo.mjs';
@@ -1515,6 +1516,24 @@ if (req.url === '/api/command' && req.method === 'POST') {
   }
   const localModel = /^\/api\/local-model\/([a-z0-9_-]+\.glb)$/i.exec(p);
   if (localModel) return sendFile(req, res, path.join(HOME, 'models', localModel[1]), { cache: 'no-cache' });
+
+  // ---- the keeper's Mixamo library (the motion workbench's catalogue) -------------------------
+  // Every clip on Y Bot that scripts/mixamo-fetch.mjs fetched, to browse and try on our own bodies
+  // in /avatar-motion.html before one is baked (lib/mixamo.mjs). Adobe's files: keeper-only by not
+  // being on PUBLIC_API, never in a bundle, a release or the sea; only a bare `<word>.fbx` in
+  // anims/y-bot/ is served, never the token beside it.
+  if (p === '/api/mixamo') {
+    const { clips, missing } = listClips(mixamoDirOf(config));
+    return json(res, 200, { clips, missing });
+  }
+  const mixamoClip = /^\/api\/mixamo\/([^/]+)$/.exec(p);
+  if (mixamoClip) {
+    let name;
+    try { name = decodeURIComponent(mixamoClip[1]); } catch { name = null; }
+    const file = clipPath(mixamoDirOf(config), name);
+    if (!file) return json(res, 404, { error: 'no such clip' });
+    return sendFile(req, res, file, { cache: 'private, max-age=86400' });
+  }
 
   // ---- the HD pack (Plans/piratenkroeg.md, "The HD pack") ----------------------------
   // HOME/hd/ holds textured models that stand in for a room's kit pieces (web/js/hd-pieces.js):

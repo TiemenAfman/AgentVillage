@@ -264,6 +264,99 @@ for yy in [i * 0.5 for i in range(-13, 14)]:
         h = tree.ray_cast(Vector((xx, yy, DECK_CEIL)), Vector((0, 0, -1)))
         hits.append(round(h[0].z, 3) if h[0] else None)
     print('deck y', yy, hits, flush=True)
+
+# ---- what she measures of herself ---------------------------------------------------------
+# Anchors in the grammar of scripts/model-rules.mjs, read by scripts/build-craft.mjs into
+# shared/craft-galleon.mjs (Plans/nieuwe-sloep.md, chip 2a). The numbers are the ones shared/crafts.mjs
+# carried by hand until then - measured on this very bake by its own rays and by level rays across it -
+# written here in the craft's frame (y above DECK_Y on the waterline, +z the bow) and lifted into the
+# bake's by WATERLINE + DECK_Y. So the craft the generator derives is the craft the island already
+# sails, to the rounding of a float (tests/craft-old-numbers.test.mjs holds it there until the sloop
+# replaces her, scripts/build-sloop.py, which measures its anchors off its own geometry instead).
+#   deck.<name>.lo|hi    opposite corners of level planking;  stair.<name>.lo|hi  a ramp, foot to head
+#   rail.<n>.a|b         the ends of a run of bulwark on the floor under it (crafts.mjs puts its top on)
+#   solid.<name>.lo|hi   a box nobody walks through (the stringers of the quarterdeck stairs)
+#   mast.<name>          where a mast stands;  port.<n>.lo|hi  an opening in the bulwark (none here)
+#   climb.side-*.lo|hi   a rope ladder: lo the climber's stand at its foot (CLIMB_OUT outside the
+#                        ropes), hi where they step onto the deck;  climb.mast  the one up to the nest
+#   mount.<kind>-<n>     lo where the gunner stands, hi the carriage: the bearing lo -> hi is its rest
+#   helm / nest / cargo  points on the planking; waterline  her draught, as the Batavia's
+import re as _re
+def _js_const(path, name):
+    src = (ROOT / path).read_text(encoding='utf8')
+    return eval(_re.search(r'export const %s = ([0-9.\s*/+-]+);' % name, src).group(1))
+DECK_Y = _js_const('shared/hull.mjs', 'DECK_Y')          # 0.0555: the deck datum over the water
+CLIMB_OUT = _js_const('shared/deck.mjs', 'CLIMB_OUT')    # 0.16: a climber's feet outside the ropes
+WATERLINE = 12.29 * 7 / 58.56                            # the old SHIP_DRAUGHT, 7 of 58.56 up the source
+LIFT = WATERLINE + DECK_Y
+SQ = 0.7071067811865476                                  # sqrt(1/2): the nest's ladder at 315 degrees
+
+def craft_anchor(name, x, y, z):
+    """An empty at a craft-frame point: game (x, y + LIFT, z) is Blender (x, -z, y + LIFT)."""
+    e = bpy.data.objects.new(f'anchor.{name}', None)
+    e.location = Vector((x, -z, y + LIFT))
+    scene.collection.objects.link(e)
+
+def pair(kind, name, lo, hi):
+    craft_anchor(f'{kind}.{name}.lo', *lo)
+    craft_anchor(f'{kind}.{name}.hi', *hi)
+
+# The planking (crafts.mjs's rectangles: a ramp's corners are at its foot and its head, so that
+# the middle and the slope come out as they were typed).
+pair('deck', 'waist', (-1.75, 1.108, -2.3), (1.75, 1.108, 2.3))
+pair('stair', 'forecastle', (-1.75, 1.11125, 2.2), (1.75, 1.31275, 2.85))          # 1.212, slope 0.31
+pair('deck', 'forecastle', (-1.35, 1.318, 2.85), (1.35, 1.318, 3.4))
+pair('deck', 'forecastle-mid', (-1.0, 1.318, 3.4), (1.0, 1.318, 3.9))
+pair('deck', 'forecastle-fore', (-0.6, 1.318, 3.9), (0.6, 1.318, 4.6))
+pair('stair', 'bow', (-0.45, 1.52, 4.6), (0.45, 2.02, 5.85))                        # 1.77, slope 0.4
+pair('deck', 'quarterdeck', (-1.8, 1.738, -4.6), (1.8, 1.738, -2.3))
+for s, side in ((1, 's'), (-1, 'p')):
+    pair('stair', f'quarterdeck-{side}', (s * 1.15, 1.10975, -1.4), (s * 1.85, 1.74025, -2.05))  # 1.425, -0.97
+    pair('deck', f'landing-{side}', (s * 1.15, 1.738, -2.3), (s * 1.85, 1.738, -2.05))
+pair('deck', 'poop', (-1.8, 1.948, -6.1), (1.8, 1.948, -4.6))
+# The crow's nest, a deck of its own layer (the walk map's ALOFT): its floor, and the box the rim is read in.
+pair('deck', 'nest', (-0.75, 8.6, -0.75), (0.75, 8.6, 0.75))
+
+# The rails: each run of bulwark on the planking it stands on.
+n = 0
+def run(a, b):
+    global n
+    n += 1
+    craft_anchor(f'rail.{n}.a', *a)
+    craft_anchor(f'rail.{n}.b', *b)
+for s in (1, -1):
+    run((s * 1.9, 1.108, -2.3), (s * 1.9, 1.108, 2.3))        # the waist
+    run((s * 1.55, 1.318, 2.3), (s * 1.55, 1.318, 3.4))       # the forecastle's rim, stepping in
+    run((s * 1.2, 1.318, 3.4), (s * 1.2, 1.318, 3.9))
+    run((s * 0.8, 1.318, 3.9), (s * 0.8, 1.318, 4.6))
+    run((s * 0.6, 1.5, 4.6), (s * 0.6, 1.5, 5.2))             # the foot of the bow's climb
+    run((s * 1.95, 1.738, -4.6), (s * 1.95, 1.738, -2.3))     # the quarterdeck
+    run((s * 1.95, 1.948, -6.1), (s * 1.95, 1.948, -4.6))     # the poop
+    # The inside of each flight of the quarterdeck stairs: a stringer, a wall from the waist.
+    pair('solid', f'stringer-{"s" if s > 0 else "p"}', (s * 0.91, 1.108, -2.1), (s * 0.99, 1.738, -1.4))
+run((-1.95, 1.948, -6.15), (1.95, 1.948, -6.15))              # the taffrail
+run((-1.1, 1.738, -2.36), (1.1, 1.738, -2.24))                # the quarterdeck's front balustrade
+run((-0.5, 1.89, 5.85), (0.5, 1.89, 5.85))                    # the end of the bowsprit's deck
+craft_anchor('mast.fore', 0, 1.318, 3.15)
+craft_anchor('mast.main', 0, 1.108, 0)
+craft_anchor('mast.mizzen', 0, 1.948, -5.4)
+
+# The rope ladders over the waist (ropes at 2.42, foot under the water, landing 1.35 in) and up the
+# mainmast to the nest (ropes 0.8 out at 315 degrees, foot on the waist, landing on the dais).
+for s, side in ((1, 'starboard'), (-1, 'port')):
+    pair('climb', f'side-{side}', (s * (2.42 + CLIMB_OUT), -0.65, 1.85), (s * 1.35, 1.108, 1.85))
+pair('climb', 'mast', ((0.8 + CLIMB_OUT) * SQ, 1.12, -(0.8 + CLIMB_OUT) * SQ), (0.297, 8.96, -0.297))
+craft_anchor('nest', 0, 9.2, 0.17)
+
+# The guns in the waist, square out over the bulwark, and the harpoon guns on the forecastle, 57
+# degrees off the bow (yaw 1.0): the gunner's stand is laid back along that bearing from the carriage.
+for s, side in ((1, 's'), (-1, 'p')):
+    pair('mount', f'cannon-{side}', (s * 0.85, 1.108, -1.0), (s * 1.5, 1.108, -1.0))
+    pair('mount', f'harpoon-{side}', (s * 0.7476858359030154, 1.318, 3.02378167674425), (s * 1.1, 1.318, 3.25))
+craft_anchor('helm', 0, 1.738, -3.2)
+craft_anchor('cargo', 0, 1.108, 1.5)
+craft_anchor('waterline', 0, -DECK_Y, 0)                     # (0, WATERLINE, 0) in the bake's frame
+
 TARGET.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=str(TARGET))
 import runpy

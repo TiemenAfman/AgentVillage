@@ -20,7 +20,7 @@
 // shadow box free to grow to world.js's widest (SHADOW_SPAN[1], a half-width of 190).
 //
 // `modest` is what main.js already calls a machine it runs lighter on - integrated graphics
-// (MODEST_GPU) or `?modest` - and `phone` the app. The number that makes them playable is
+// (isModestGpu) or `?modest` - and `phone` the app. The number that makes them playable is
 // Object Distance: the haze closes no further out than it (main.js setFogRange), so the
 // houses of a neighbour, their mills and their people are past the fog and out of the
 // render list rather than drawn and hidden, and they come out of the mist as you sail in.
@@ -80,7 +80,7 @@ export const GRAPHICS_CHOICES = Object.freeze({
 // Whether this page draws the HD pack's models where it has them. 'sd' never, 'hd' always (on a
 // `modest` machine too: whoever forces it has asked), 'auto' on a `full` machine that does not
 // say it has under 8 GB. WebGL has no honest figure for video memory; the renderer string is
-// already the tier (main.js MODEST_GPU), and `navigator.deviceMemory` (Chrome only, capped at 8)
+// already the tier (main.js, isModestGpu), and `navigator.deviceMemory` (Chrome only, capped at 8)
 // is the one more thing a page can ask. Whether there is a pack at all is the caller's question.
 export function hdWanted(detail, tier = 'full', { deviceMemory = null } = {}) {
   if (detail === 'sd') return false;
@@ -252,6 +252,15 @@ export function gpuShortName(renderer = '') {
   }
   return s.replace(/\s*\(0x[0-9a-f]+\)/ig, '').replace(/\s+(Direct3D|OpenGL|Vulkan|Metal).*$/i, '')
     .replace(/\((R|TM)\)/g, '').replace(/\s+/g, ' ').trim();
+}
+// An integrated GPU driving a full-screen scene with a big shadow map is the most likely thing to
+// fall over, so main.js asks it for less (the `modest` tier). Matched on the WebGL renderer string:
+// every Intel (UHD, Iris, the Arc in a Core Ultra laptop - which drew the island at 50-70 ms a
+// frame, Plans/sneller-op-igpu.md), AMD's APUs ("Radeon(TM) Graphics", Vega, the 610M/660M) -
+// never an NVIDIA or a discrete Radeon RX. A desktop Arc A770 is caught too, which errs light.
+const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
+export function isModestGpu(renderer = '') {
+  return MODEST_GPU.test(String(renderer || ''));
 }
 export function qualityLine({ tier = 'full', reason = '', rung = 'full', auto = true, fps = null } = {}) {
   const machine = (TIER_NAMES[tier] || TIER_NAMES.full) + (reason ? ` (${reason})` : '');
