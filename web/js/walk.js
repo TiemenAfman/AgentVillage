@@ -15,7 +15,7 @@ import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segm
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
-import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
+import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, driftRate, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
 import { climbWay, climbWayDown, climbAlong, onWay, topNear, ladderLanding, facingOnWay, hoistAt, HOIST_PACE, HANG_GAP } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
@@ -1782,11 +1782,38 @@ export function createWalkMode({
   const STEP_OFF_S = 0.5;
   let onRope = false, stepOff = 0;
   const drawnAt = new THREE.Vector3(), drawnQ = new THREE.Quaternion(), stepOffAt = new THREE.Vector3(), stepOffQ = new THREE.Quaternion(), stepOffTo = new THREE.Quaternion();
+  // The hull a step on or off her ladder is eased over, and where she was a frame ago: the place the
+  // body is eased from is a place on HER, carried along as she moves. Eased in the world's frame, a
+  // ship under way left the body behind by her speed times the ease and slid it back along her side -
+  // 1.5 m on the keeper's recording of 13 Oct 2026, where she made 9.75 a second (see stepClimb).
+  // `drawnOn` is the hull the body was drawn on a frame ago and where she was then: arriving on her deck
+  // off her ladder, the place eased from was drawn a frame ago, and she has moved since.
+  let easeHull = null;
+  const easeWas = { x: 0, z: 0, yaw: 0 }, drawnOn = { b: null, x: 0, z: 0, yaw: 0 };
+  const hullUnder = () => (climb && climb.boat) || deckBoat || null;
+  const easeTurn = new THREE.Quaternion(), easeUp = new THREE.Vector3(0, 1, 0);
   // Out of the water by Space (climbOut): drawn from where it was, eased onto the planks.
   function easeFromDrawn() {
     stepOff = 1;
     stepOffAt.copy(drawnAt);
     stepOffQ.copy(drawnQ);
+    easeHull = hullUnder();
+    const was = easeHull && drawnOn.b === easeHull ? drawnOn : easeHull;
+    if (was) { easeWas.x = was.x; easeWas.z = was.z; easeWas.yaw = was.yaw || 0; }
+  }
+  // Carry the place eased from along with the hull since last frame: turned about her middle by the way
+  // she turned, and moved by the way she went. Pure arithmetic on her x, z and yaw, as frameOf reads them.
+  function carryEase() {
+    const b = easeHull;
+    if (!b) return;
+    const turn = (b.yaw || 0) - easeWas.yaw;
+    const ox = stepOffAt.x - easeWas.x, oz = stepOffAt.z - easeWas.z;
+    const c = Math.cos(turn), sn = Math.sin(turn);
+    // three's yaw: a turn by `turn` about +y takes (x, z) to (x cos + z sin, -x sin + z cos)
+    stepOffAt.x = b.x + ox * c + oz * sn;
+    stepOffAt.z = b.z - ox * sn + oz * c;
+    if (turn) stepOffQ.premultiply(easeTurn.setFromAxisAngle(easeUp, turn));
+    easeWas.x = b.x; easeWas.z = b.z; easeWas.yaw = b.yaw || 0;
   }
   function stepOffEase(dt) {
     if ((!!climb || !!hoist) !== onRope) {
@@ -1794,6 +1821,7 @@ export function createWalkMode({
       easeFromDrawn();
     }
     if (stepOff > 0) {
+      carryEase();
       stepOff = Math.max(0, stepOff - dt / STEP_OFF_S);
       const k = 1 - stepOff, t = k * k * (3 - 2 * k);
       avatar.position.lerpVectors(stepOffAt, avatar.position, t);
@@ -1801,6 +1829,9 @@ export function createWalkMode({
     }
     drawnAt.copy(avatar.position);
     drawnQ.copy(avatar.quaternion);
+    const b = hullUnder();
+    drawnOn.b = b;
+    if (b) { drawnOn.x = b.x; drawnOn.z = b.z; drawnOn.yaw = b.yaw || 0; }
   }
   const CLIMB_DEAD = 0.3;
   const climbAt = { x: 0, z: 0, y: 0 }, climbWas = { x: 0, z: 0, y: 0 };
@@ -2020,7 +2051,12 @@ export function createWalkMode({
     if (climb.aloft) return stepMastClimb(dt, ix, iz);
     const c = climb, b = c.boat;
     const frame = frameOf(b);
-    if (!isFollowing(b)) stepUnderSail(b, dt, boatGround(b));
+    // Her way is ours to step only if she is: come down her side from her deck (crew), or the ship we let
+    // run and are running out (`loose`, which runOut leaves to us while we hang on her). From the water
+    // onto a ship nobody sails, she lies as she lies: stepped from here, a ship left with her sails
+    // standing (the gun's launchSelf did, until 13 Oct 2026) got under way the moment a swimmer took
+    // her ladder, at 9.75 a second under three quarters - the 75.8 kn the keeper saw.
+    if (!isFollowing(b) && (c.crew || loose === b)) stepUnderSail(b, dt, boatGround(b));
     stepPool(state.stamina.body, false, dt);
     stepPool(state.stamina.boat, false, dt);
     state.turbo = false;
@@ -2395,6 +2431,10 @@ export function createWalkMode({
     state.yaw = Math.atan2(v[0], v[2]);
     state.camYaw = state.yaw;
     place(camBack * 1.6);
+    // Off her for good, as over her rail (letRun): the sails struck, her way run out by this page. Left
+    // standing, nobody stepped her and she froze with her speed in `v` - the log read 75.8 kn over a
+    // ship lying still, and the next swimmer up her ladder set her going at it (stepClimb).
+    if (b) letRun(b);
     if (b && state.onLeftDeck) state.onLeftDeck(b);
     return true;
   }
@@ -2419,7 +2459,9 @@ export function createWalkMode({
     if (mode.mode === 'none' || (mode.mode === 'zip' && (from === 'a') !== (mode.low === 1))) return false;
     if (state.gun) leaveGun();
     const b = deckBoat;
-    if (state.deck) { offDeck(); if (b && state.onLeftDeck) state.onLeftDeck(b); }
+    // Off her deck onto the line is off her, as over her rail: sails struck, her way run out (letRun) - left
+    // standing, nobody stepped her and she lay frozen at her speed (see launchSelf).
+    if (state.deck) { offDeck(); if (b) letRun(b); if (b && state.onLeftDeck) state.onLeftDeck(b); }
     cancelDig('reset');
     state.crouching = state.lying = state.dancing = false;
     onLine = { line, t: from === 'a' ? 0 : len, v: 0, jump: false };
@@ -3678,7 +3720,7 @@ export function createWalkMode({
         else {
           state.pos.x = dx; state.pos.z = dz;
           if (state.swimming) {
-            const k = Math.exp(-(state.dive ? DIVE_DRIFT : 3) * dt);
+            const k = Math.exp(-driftRate(Math.hypot(drift.x, drift.z), state.dive) * dt);
             drift.x *= k; drift.z *= k;
             if (Math.abs(drift.x) + Math.abs(drift.z) < 0.05) drift = null;
           }

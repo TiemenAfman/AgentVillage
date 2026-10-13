@@ -1083,6 +1083,11 @@ run-out from full turbo or she freezes for everybody else while her own page sti
 at her wheel W/S step `b.underSail` through `SAIL_STEPS` (-1 astern .. 1 full, boat.js `sailStep`; Shift is turbo
 only under full sail) and the setting stands with no key held, at the wheel and after `leaveHelm` alike - every
 step of her in walk.js is `stepUnderSail`, so a crew of one can man a gun; struck aground and by `letRun`.
+**Every way off her is `letRun`** - over the rail, off her ladder, out of a gun (`launchSelf`), onto a harpoon line
+(`takeRope`): left standing, nobody stepped her and she lay frozen with her speed in `v` (the log's 75.8 kn is real:
+`top` 13 x 3/4). And a swimmer up her ladder steps her only if she is ours to (`c.crew` or `loose`), never a ship
+nobody sails - stepped from the rope, that frozen ship got under way at 9.75 the moment her ladder was taken
+(`tests/ladder-moving-hull.test.mjs`).
 lib/boats.mjs `moved` takes the position of whoever let go (`coast.by`) for as long as they are crew
 (`holdsSail`); when they leave or close their tab with crew still aboard, `handOn` names the next (`coast` and
 `sail` ride the boat state only while nobody has the wheel, `sail` rides the `letgo`: optional fields, a patch)
@@ -2033,7 +2038,9 @@ from the water). Never a coordinate where a ladder lands that differs from its w
 arrival. Whatever still changes owner at an edge is faded: the rig keeps last frame's joints and eases the new
 pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`, the rungs and the clip
 changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
-under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
+under his feet) - and on a hull it is eased in **her** frame (`carryEase`, `drawnOn`: the place eased from is
+carried with her x, z and yaw since it was drawn), or a ship under way left the body behind by her speed and slid it
+back along her side (the keeper's 1.5 m, 13 Oct 2026). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
 `tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
 **A ladder at a port lands on the deck, and where any ship's ladder lands is one sum** ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md), chip 2b).
 A ladder in `CRAFTS.*.ladders` may carry `port` (half the width of the opening in the bulwark); its `top` is then
@@ -2405,7 +2412,9 @@ lands in water): faster than `PLUNGE_MIN` 3.6 - a hop off level ground is ~3, a 
 the body dives with 0.7 of its speed instead of having it zeroed at the surface, and below a stroke's own
 `DIVE_DOWN` `stepDive` coasts at `DIVE_COAST` rather than `DIVE_RATE`, so it is a metre or two down and then
 hangs like any diver (no automatic float up: Space swims you back). A jump off a moving hull keeps her way
-(`drift`) shooting on under water too, decaying at `DIVE_DRIFT` 1/s instead of the surface's 3/s. `reach()` offers nothing
+(`drift`) shooting on under water too, decaying at `DIVE_DRIFT` 1/s instead of the surface's 3/s - plus `DRIFT_DRAG`
+per unit a second past `DRIFT_FREE` (`driftRate` in diving.js): a boat's way is what it was, a body out of a gun (12 to
+21 a second) is braked within a few units instead of a ship's length. `reach()` offers nothing
 to a body that is `dive`-ing: the distances are flat, and E would board the dock's boat from two
 units down. The phone shows B in the water through `walk.inWater()` (`touchpad.js setHands`).
 `?dive` starts walk mode in open water off the home island's east side. Others see a diver
