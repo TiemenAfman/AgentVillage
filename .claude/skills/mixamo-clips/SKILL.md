@@ -60,7 +60,8 @@ into `assets/mixamo/` as below.
      Download it **without** In Place: the bake reads `rise` (leg lengths a cycle) off how far the
      hips go up, takes that steady rise out of the hips' `drop`, and measures the drop from where
      the lower foot is on average (its rung). The rig plays it per height gained (`climbStep`).
-   - **as a step that carries the body** (onto a ladder, `climbOn`, and over its top, `climbTop`):
+   - **as a step that carries the body** (onto a ladder, `climbOn`, over its top, `climbTop`, and out of
+     the water onto planks, `climbOut` - Freehang Climb To Standing, saved as freehang-climb.fbx):
      add the name to `STEPS`, and to `WINDOWS` (first and last frame) when only a stretch of the clip
      is the step. Download it without In Place: the bake writes `way` per row (how far forward and up
      the feet are, leg lengths), which web/js/ladder-way.js lays the walk's path out by, and measures

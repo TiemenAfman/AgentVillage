@@ -14,5 +14,6 @@
   "climbOn": "start-climbing-ladder.fbx",
   "climbTop": "climbing-to-top.fbx",
   "hang": "hanging-swaying.fbx",
-  "ropeWalk": "careful-walk.fbx"
+  "ropeWalk": "careful-walk.fbx",
+  "climbOut": "freehang-climb.fbx"
 }

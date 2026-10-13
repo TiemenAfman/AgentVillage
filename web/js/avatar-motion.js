@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { normalizeAvatar, loadAvatar, CHARACTERS, bodyKey } from './avatar.js';
-import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED, horsebackOf } from './classic-avatar.js';
+import { createClassicAvatar, DROWN_SINK, DEATH_REST, CLIMB_SPEED, horsebackOf, stepWay } from './classic-avatar.js';
 import { createAvatarStudio } from './studio.js';
 import { loadWanderers } from './player-bodies.js';
 import { swimPose, TREAD_SINK } from './diving.js';
@@ -13,7 +13,7 @@ import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
 import { DECK_Y } from 'shared/hull.mjs';
 import { createBoat, SHIP_SURFACE } from './boat.js';
-import { climbWay, climbWayDown, climbAlong, onWay, ladderLanding, facingOnWay } from './ladder-way.js';
+import { climbWay, climbWayDown, climbAlong, onWay, ladderLanding, facingOnWay, hoistAt, HOIST_PACE, HANG_GAP } from './ladder-way.js';
 import { pathAt, ladderPath, deckAt, aloftPath } from 'shared/deck.mjs';
 import { nearestStand } from 'shared/hullwalk.mjs';
 import { ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
@@ -249,6 +249,44 @@ function showHole(){
   holeShip=createBoat({scene,material:shipMaterial(),kind:'ship'}).object;
   holeShip.visible=false;holeShip.receiveShadow=true;holeShip.rotation.y=HOLE_YAW;
 }
+// Out of the water onto planks (Uitklimmen, walk.js climbOut): each body treading water at the edge of
+// a jetty, Space, and up onto it by Mixamo's Freehang Climb To Standing along ladder-way.js hoistAt -
+// walk.js's own way, at its HOIST_PACE - a rest standing on the planks, and back in the water. The
+// planks are QUAY_DECK over the sea, OUT_H over a swimmer's feet (0.44 + walk.js's SWIM_SINK 0.07),
+// their edge OUT_EDGE ahead and the landing where walk.js would put it.
+// The workbench's floor is solid, and a swimmer treading water hangs TREAD_SINK under the feet: so the
+// sea, the jetty and the climb all stand OUT_BASE up.
+const OUT_H=.51, OUT_EDGE=.3, OUT_LAND=.3+.12+.05+.1, OUT_TREAD=1.2, OUT_STAND=1, OUT_EASE=.5, OUT_BASE=TREAD_SINK+.08;
+const outRigs=figures.map(()=>{
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({color:0x7a5a3a,roughness:1}), dark=new THREE.MeshStandardMaterial({color:0x4f3823,roughness:1});
+  // a jetty as the island draws one: boards across on two stringers, on piles down into the sea
+  const W=1, L=1.6;
+  for(let k=0;k*.11<L;k++){const board=new THREE.Mesh(new THREE.BoxGeometry(W,.035,.1),wood);board.position.set(0,OUT_H-.0175,-OUT_EDGE-.05-k*.11);board.castShadow=board.receiveShadow=true;g.add(board);}
+  for(const x of [-W/2+.08,W/2-.08]){const s=new THREE.Mesh(new THREE.BoxGeometry(.06,.07,L),dark);s.position.set(x,OUT_H-.07,-OUT_EDGE-L/2);g.add(s);}
+  for(const x of [-W/2+.08,W/2-.08])for(const z of [-OUT_EDGE-.04,-OUT_EDGE-L+.06]){const pile=new THREE.Mesh(new THREE.CylinderGeometry(.035,.04,OUT_H+OUT_BASE,10),dark);pile.position.set(x,(OUT_H-OUT_BASE)/2,z);pile.castShadow=true;g.add(pile);}
+  // and the sea round it, down to the studio's floor: its surface where a swimmer floats (SWIM_SINK)
+  const water=new THREE.Mesh(new THREE.BoxGeometry(3,OUT_BASE+.07,3.4),new THREE.MeshStandardMaterial({color:0x2f6f8f,transparent:true,opacity:.5,roughness:.2,depthWrite:false}));
+  water.position.set(0,(.07-OUT_BASE)/2,-.4);g.add(water);
+  g.visible=false;scene.add(g);return g;
+});
+function outTick(f,dt){
+  const step=stepWay('climbOut'), climb=step?step.seconds/HOIST_PACE:1.5, loop=OUT_TREAD+climb+OUT_STAND, t=(time-deathAt)%loop;
+  outRigs[figures.indexOf(f)].position.set(f.stand.position.x,OUT_BASE,f.distance);
+  f.stand.rotation.set(0,Math.PI,0);
+  const tread=swimPose(0,f.rig.strokes?0:bob), treadY=OUT_BASE+tread.dy;
+  if(t<OUT_TREAD){
+    f.stand.position.set(f.x,treadY,f.distance);
+    f.rig.update({moving:false,grounded:true,swimming:true,treading:1,distance:0},dt);
+    return;
+  }
+  const u=Math.min(1,(t-OUT_TREAD)/climb);
+  const p=step?hoistAt(step,{x:0,y:0,z:HANG_GAP-OUT_EDGE},{x:0,y:OUT_H,z:-OUT_LAND},u,undefined,{x:0,z:0}):{x:0,y:OUT_H*u,z:-OUT_LAND*u};
+  // walk.js eases the drawn body up from where the swimmer was drawn (stepOffEase): so here
+  const e=Math.min(1,(t-OUT_TREAD)/OUT_EASE), k=e*e*(3-2*e);
+  f.stand.position.set(f.x,treadY+(OUT_BASE+p.y-treadY)*k,f.distance+p.z);
+  f.rig.update(u<1?{moving:false,grounded:true,distance:0,onLadder:true,climbing:{rise:0,out:u}}:{moving:false,grounded:true,distance:0},dt);
+}
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
   climbDir=Number(button.dataset.climb);
@@ -299,7 +337,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':mode==='rope'?'Touwlopen · over een strakke harpoenlijn: voet voor voet, armen opzij (Mixamo Careful Walk op afstand; de Reiziger procedureel)':mode==='zip'?'Zipline · aan een steile harpoenlijn naar beneden glijden, hangend aan de handen (Mixamo Hanging By Hands Gently Swaying)':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':mode==='rope'?'Touwlopen · over een strakke harpoenlijn: voet voor voet, armen opzij (Mixamo Careful Walk op afstand; de Reiziger procedureel)':mode==='out'?'Uitklimmen · uit het water op een steiger (Spatie aan de rand): de Avonturier met Freehang Climb To Standing (Mixamo), de Reiziger met zijn klimgreep':mode==='zip'?'Zipline · aan een steile harpoenlijn naar beneden glijden, hangend aan de handen (Mixamo Hanging By Hands Gently Swaying)':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 const syncHorseControls=()=>{
   document.querySelector('[data-gait="horse"]').textContent='Paard · '+HORSE_GAITS[horseGait][0];
@@ -327,6 +365,7 @@ function tick(dt){
   // stands in front of it.
   for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&!onPort&&!onHole&&(close<0||i===climber);
   for(const [i,g] of stepRigs.entries())g.visible=mode==='climb'&&onStep&&(close<0||i===climber);
+  for(const [i,g] of outRigs.entries())g.visible=mode==='out'&&(close<0||i===climber);
   const stepped=mode==='climb'&&onStep?stepTick(dt):null;
   const ported=mode==='climb'&&onPort?portTick(dt):null;
   const holed=mode==='climb'&&onHole?holeTick(dt):null;
@@ -335,7 +374,7 @@ function tick(dt){
   if(nest)nest.visible=masted&&onNest;
   if(port)port.visible=masted&&onPort;
   if(holeShip)holeShip.visible=masted&&onHole;
-  for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
+  for(const [i,f] of figures.entries())f.stand.visible=(mode==='climb'||mode==='out')&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
   const climbWas=climbY, top=onMast?MAST_TOP:onNest?NEST_TOP:CLIMB_TOP;
@@ -411,6 +450,7 @@ function tick(dt){
       f.rig.update({crouching:true,grounded:false,distance:0},dt);
       continue;
     }
+    if(mode==='out'){outTick(f,dt);continue;}
     if(ported&&f===figures[climber]){
       // where the way has the feet, in her frame, turned onto this body's track: her ladder's foot on the
       // floor under the body's own spot; facing her (-z) all along, as walk.js faces the hull
@@ -480,6 +520,24 @@ function tick(dt){
   if(jumpAt!==null&&time-jumpAt>2*JUMP_V/GRAVITY)jumpAt=null;
   distance=riding?rider.distance:close<0?figures.reduce((a,f)=>a+f.distance,0)/figures.length:figures[close].distance;
 }
+// An orbit over whatever framing the mode chose: drag on the picture to turn round the body, the
+// wheel to come closer or stand back, a double click to go back to the mode's own view.
+const orbit={yaw:0,pitch:0,zoom:1};
+const orbitOffset=new THREE.Vector3(), orbitSph=new THREE.Spherical();
+{
+  const canvas=renderer.domElement;
+  let dragging=null;
+  canvas.addEventListener('pointerdown',e=>{dragging={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    orbit.yaw-=(e.clientX-dragging.x)*.008;orbit.pitch+=(e.clientY-dragging.y)*.006;
+    dragging={x:e.clientX,y:e.clientY};
+  });
+  canvas.addEventListener('pointerup',()=>{dragging=null;});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.zoom=Math.max(.2,Math.min(6,orbit.zoom*Math.exp(e.deltaY*.0012)));},{passive:false});
+  canvas.addEventListener('dblclick',()=>{orbit.yaw=0;orbit.pitch=0;orbit.zoom=1;});
+}
+const controlsPanel=document.querySelector('.motion-controls');
 // One step of a clip under trial: everything else put away, the chosen body alone on the track.
 function trialTick(trial,dt){
   for(const l of ladders)l.visible=false;
@@ -511,7 +569,7 @@ function render(){
   floor.position.z=track.position.z;
   // A rider on a horse stands twice as high and twice as long: the camera stands back and up.
   const riding=mode==='horse'&&!!horse;
-  const x=riding||close<0?0:figures[close].stand.position.x, near=(close<0?1:mode==='climb'?.95:.72)*(riding?1.9:1);
+  const x=riding||close<0?0:figures[close].stand.position.x, near=(mode==='out'?.8:close<0?1:mode==='climb'?.95:.72)*(riding?1.9:1);
   // Close up, the camera rises with a jump so the leap stays in the frame.
   if(trialAt){
     const at=trialAt;
@@ -523,16 +581,29 @@ function render(){
     renderer.render(scene,camera);
     return;
   }
-  const lift=riding?.3:mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
-  const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
-  camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
-  camera.setViewOffset(innerWidth,innerHeight,close<0?-innerWidth*.13:-innerWidth*.2,0,innerWidth,innerHeight);
+  // out of the water the camera stays by the jetty's height, rising half as far as the body: the climb is
+  // judged against the planks
+  const lift=riding?.3:mode==='out'?OUT_BASE+.2+Math.max(0,figures[close<0?0:close].stand.position.y-OUT_BASE)*.5:mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
+  // out of the water the climb goes forward onto the planks: look at the edge, not at the swimmer
+  const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance-(mode==='out'?.25:0));
+  camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,target.z+(side?.03:1.45)*near);
+  // and the orbit on top of that framing: dragged round the target, scrolled in and out
+  orbitOffset.subVectors(camera.position,target);
+  orbitSph.setFromVector3(orbitOffset);
+  orbitSph.theta+=orbit.yaw;
+  orbitSph.phi=Math.max(.08,Math.min(Math.PI-.08,orbitSph.phi-orbit.pitch));
+  orbitSph.radius*=orbit.zoom;
+  camera.position.copy(target).add(orbitOffset.setFromSpherical(orbitSph));
+  camera.lookAt(target);
+  // shifted off the controls panel, while it is shown
+  const panelShown=controlsPanel.style.display!=='none';
+  camera.setViewOffset(innerWidth,innerHeight,!panelShown?0:close<0?-innerWidth*.13:-innerWidth*.2,0,innerWidth,innerHeight);
   sun.position.set(-2,4,distance+3);sun.target.position.copy(target);sun.target.updateMatrixWorld();
   renderer.render(scene,camera);
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,holeState,holeUp,holeDown,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
+window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,orbit,holeState,holeUp,holeDown,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
   // held: true stops the clock, so a check can step to one moment and look at it.
   held:false,
   advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};

@@ -306,11 +306,14 @@ CLIMBS = ('climb',)
 # what it leads to (`climbTop`, Climbing Up A Ladder To Standing), each backwards on the way down. Each
 # row carries how far forward and up the feet are then (`way`, leg lengths from where it starts), which
 # walk.js lays the ladder's way out by (Plans/DONE/ladder-op-en-af.md).
-STEPS = ('climbOn', 'climbTop')
+# And out of the water onto planks (`climbOut`, Mixamo's Freehang Climb To Standing: hanging by the hands
+# from an edge with the feet free, up and over onto it - walk.js climbOut, a swimmer at a pier's edge).
+STEPS = ('climbOn', 'climbTop', 'climbOut')
 # The stretch of a clip that is the step: Start Climbing Ladder stands with its back to the ladder,
 # sidesteps and turns round to it first; only its last second is the step up onto the rungs. Climbing
 # Up A Ladder To Standing stands still for its last second, which walk.js would wait out.
-WINDOWS = {'climbOn': (37, 61), 'climbTop': (1, 96)}
+# Freehang Climb To Standing is stood up by frame 116.
+WINDOWS = {'climbOn': (37, 61), 'climbTop': (1, 96), 'climbOut': (1, 116)}
 out = {name: measure(name, path) for name, path in clips.items()}
 out.update(kept)
 out = dict(sorted(out.items()))
