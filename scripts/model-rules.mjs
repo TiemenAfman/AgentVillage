@@ -143,7 +143,11 @@ export const HERO_BUDGET = 4000;
 // and all its dressing, drawn only while somebody is inside and with nobody's island in the scene.
 // The keeper's call was that indoors the triangle count must not limit the design; this is a ceiling
 // against a runaway bake, not a budget.
-export const HERO_BUDGETS = { pirateship: 20000, batavia: 8000, piratetavern: 95000, piratetavern_room: 400000 };
+// The mermaid (scripts/build-mermaid.py, Plans/schip-vaart-door.md) comes up beside a swimmer who lost
+// their ship: one of her at a time, on that page alone, seen from the water a few lengths off. A civic's
+// 1500 is about right for that; she came out at about 1460 with a face and hair that has an inside, and
+// 2000 leaves room for a second lock of hair, not for a second figure.
+export const HERO_BUDGETS = { pirateship: 20000, batavia: 8000, piratetavern: 95000, piratetavern_room: 400000, mermaid: 2000 };
 
 const GROUND = 0.002;      // how far off the ground an origin may sit before it is wrong
 const CENTRED = 0.2;       // and how far off centre a prop or a plant may stand
