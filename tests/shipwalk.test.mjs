@@ -55,11 +55,11 @@ test('the map is cut from the model as it is now: re-bake the ship, and cut it a
 // floor sunk under it with the stern well, the quarterdeck over the cabin.
 const MAIN = 1.148, FLOOR = 0.469, QUARTER = 1.719;
 
-test('the whole deck is one place: from the waist you reach the walkway, the companion, the cabin, the stern well, the quarterdeck, the wheel and the bow', () => {
+test('the whole deck is one place: from the waist you reach the walkway, the companion, the cabin to the transom, the quarterdeck, the wheel and the bow', () => {
   const r = reach([0.3, 1.0, MAIN]);
   const where = {
     'the waist': [-0.6, 1.4, MAIN], 'the break': [1.0, 0.0, MAIN], 'the walkway': [0.9, -0.8, MAIN],
-    'the foot of the companion': [0, -1.2, FLOOR], 'the cabin': [0.5, -2.2, FLOOR], 'the stern well': [0, -3.6, FLOOR],
+    'the foot of the companion': [0, -1.2, FLOOR], 'the cabin': [0.5, -2.2, FLOOR], 'the cabin by the transom': [0, -3.6, FLOOR],
     'the quarterdeck': [0.5, -2.2, QUARTER], 'the head of its stair': [-0.96, -1.1, QUARTER], 'the wheel': [0, -2.8, QUARTER],
     'the fore deck': [0.6, 2.9, MAIN], 'the bow': [0.3, 3.65, MAIN],
   };
@@ -69,8 +69,8 @@ test('the whole deck is one place: from the waist you reach the walkway, the com
     const seen = r.has(x, z) && near(r.height(x, z)) || reach([x, z, y]).has(0.3, 1.0);
     assert.ok(seen, `${name} (${x}, ${z}) cannot be walked to`);
   }
-  // What is solid is not: the mast, the capstan, the cabin's back wall beside its door.
-  for (const [name, x, z] of [['the mast', 0, 0.545], ['the capstan', 0, 2.15], ["the cabin's back wall", 0.6, -3.04]]) {
+  // What is solid is not: the mast, the capstan.
+  for (const [name, x, z] of [['the mast', 0, 0.545], ['the capstan', 0, 2.15]]) {
     assert.ok(!r.has(x, z) || !Number.isFinite(r.height(x, z)) || surface.blockedAt(x, z, r.height(x, z)), `${name} can be walked into`);
   }
   // Enough of it to be a deck: a body's footprint held up and clear, one floor a cell (the cabin under the

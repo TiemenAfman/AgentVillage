@@ -36,8 +36,15 @@ export const HULL_PART = 'pirateship hull';
 // How far a mount may be laid off its rest, by kind: a gun traverses a little and is laid between
 // level and a hand up (shared/cannon.mjs GUN_TRAVERSE, GUN_PITCH_MIN/MAX); a harpoon gun is aimed, not
 // laid - wider, and down at the water, since what it catches floats (Plans/harpoen.md). Radians.
+// `scale` is how much larger than the baked `cannon` set the gun on her is drawn and laid (web/js/cannon.js
+// layPoint): the keeper's choice for the sloop (13 Oct 2026), the barrel over her cap rail instead of out of
+// a port in her bulwark - "maak de kanonnen maar groter, dan komen ze over de rand heen". At 1.8 the
+// barrel clears the waist's cap rail (0.355 over the deck by the gun, where her sheer rises) at every
+// laying (tests/cannon.test.mjs lays it) as long as it is not laid below level: the lowest is 0 now, not
+// -0.12, at which the muzzle went into the cap. 2.0 would have kept some depression, but a gun taller
+// than a settler (0.56 to 0.43).
 export const MOUNT_LIMITS = {
-  cannon: { yawLim: 0.61, pitchLim: [-0.12, 0.42] },
+  cannon: { yawLim: 0.61, pitchLim: [0, 0.42], scale: 1.8 },
   harpoon: { yawLim: 0.95, pitchLim: [-0.45, 0.6] },
 };
 // The mounts' order is their number on the wire ({t:'cannon', i}): starboard gun first, as it has always
@@ -265,6 +272,7 @@ export function derive(bake) {
     mounts.push({
       name: m.name, kind, x: rd(m.hi.x), z: rd(m.hi.z), y: cy(m.hi), yaw: Math.atan2(dx, dz), stand: [rd(m.lo.x), rd(m.lo.z)],
       yawLim: MOUNT_LIMITS[kind].yawLim, pitchLim: [...MOUNT_LIMITS[kind].pitchLim],
+      ...(MOUNT_LIMITS[kind].scale ? { scale: MOUNT_LIMITS[kind].scale } : {}),
     });
   }
   const rank = (n) => (MOUNT_ORDER.includes(n) ? MOUNT_ORDER.indexOf(n) : MOUNT_ORDER.length);

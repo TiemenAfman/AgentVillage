@@ -336,15 +336,17 @@ def transom_z(y):
     return POST_Z if y < TRANSOM_FOOT else -4.02 - 0.371 * (y - 0.709)
 
 
-# Where her side ends at the top, stern to stem: the stern well's low bulwark (2.0), the cabin's walls
-# up to the quarterdeck's rail (2.95, the break at -3.05 square), down along the stair to the waist, the
-# waist's bulwark 0.30 over the main deck (CAP below), and the bow rising to its head.
+# Where her side ends at the top, stern to stem: the quarterdeck's bulwark (2.95) from the transom to the
+# break, down along the stair to the waist, the waist's bulwark 0.30 over the main deck (CAP below), and the
+# bow rising to its head. There was a low open stern well abaft the cabin, under a bulwark of 2.0, with the
+# quarterdeck a box over the cabin before it; the keeper took it out (13 Oct 2026: a sloop like the
+# reference has one raised deck aft, to the transom, with the cabin under it).
 DECK = 2.034            # the main deck (measure.json decks.main)
 QUARTER = 2.604         # the quarterdeck over the cabin
-FLOOR = 1.354           # the cabin's floor and the stern well's: sunk 0.68 under the main deck
+FLOOR = 1.354           # the cabin's floor, to the transom: sunk 0.68 under the main deck
 CABIN_AFT, CABIN_FORE = -3.05, -1.37
 CAP = DECK + 0.30       # the waist's bulwark: over STEP_UP (0.25), under a jump (0.38)
-SHEER = [(-4.6, 2.12), (-4.0, 2.02), (-3.06, 2.0), (-3.04, 2.95), (CABIN_FORE, 2.95), (-0.4, CAP),
+SHEER = [(-4.6, 2.97), (-4.0, 2.96), (-3.04, 2.95), (CABIN_FORE, 2.95), (-0.4, CAP),
          (1.5, CAP + .02), (3.25, CAP + .08), (3.75, 2.52), (4.2, 2.58), (4.6, 2.66)]
 
 
@@ -362,10 +364,12 @@ WALE_LO = [(1.2, 1.3), (1.9, 2.0)]
 SILL = DECK + 0.06
 ROWS = [0.0, .32, .44, .56, .68, W, .95, 1.08, 1.2, 1.3, 1.45, 1.6, 1.75, 1.9, 2.0, DECK, SILL, 2.18, 2.34, 2.52, 2.7, 2.95]
 
-# The openings in the waist's bulwark, a pair of each (Plans/DONE/nieuwe-sloep.md, Besluiten): the entry port by
-# the mast, abaft the gun, cut down to the deck so a rope ladder ends on the planks and not on a rail; and
-# the gun port, cut from a hand over the deck up to the cap rail, which runs on over it. Their jambs are
-# columns of COLUMNS, so they stand plumb.
+# The opening in the waist's bulwark, one a side (Plans/DONE/nieuwe-sloep.md, Besluiten): the entry port by
+# the mast, abaft the gun, cut down to the deck so a rope ladder ends on the planks and not on a rail. Its
+# jambs are columns of COLUMNS, so they stand plumb. The gun stands at GUNPORT behind a closed port: it
+# was an open port with a lid swung up over it, and the barrel went through the lid and passed over the
+# opening; the keeper had the guns made larger instead, to fire over the cap rail (13 Oct 2026,
+# scripts/build-craft.mjs MOUNT_LIMITS `scale`).
 ENTRY = (0.3, 0.8)
 GUNPORT = (1.15, 1.75)
 
@@ -374,8 +378,6 @@ def opening(c0, c1):
     """The foot of the opening between two columns (the bulwark is open above it), or None."""
     if (c0, c1) == ENTRY:
         return DECK
-    if (c0, c1) == GUNPORT:
-        return SILL
     return None
 
 
@@ -474,7 +476,7 @@ box((0, 0.36, POST_Z - 0.07), (2 * SP, 0.72, 0.14), 'spine', 'spine', skip=(2,))
 box((0, 0.02, -4.08), (2 * SP, 0.04, 0.14), 'spine', 'spine', skip=(3,))
 
 # The rudder, hung on the post and the transom: a blade a hand thick, its leading edge on the rake, iron
-# straps where it hinges, its head under the stern well's floor.
+# straps where it hinges, its head under the cabin's floor.
 RUDDER_EDGE = [(0.04, -4.14), (TRANSOM_FOOT, -4.14), (1.0, transom_z(1.0) - .03), (1.62, transom_z(1.62) - .03)]
 RUDDER_AFT = [(0.04, -4.62), (0.9, -4.66), (1.3, -4.6), (1.62, transom_z(1.62) - .22)]
 for (y0, z0), (y1, z1), (ya0, za0), (ya1, za1) in zip(RUDDER_EDGE, RUDDER_EDGE[1:], RUDDER_AFT, RUDDER_AFT[1:]):
@@ -491,8 +493,8 @@ for y in (0.3, 0.75, 1.25):
 
 # ---- the decks ------------------------------------------------------------------------------
 # Three levels: the main deck (DECK) from the break to the bow; the cabin's floor (FLOOR), sunk 0.68
-# under it, one plane from the foot of the companion to the transom - the cabin under the quarterdeck and
-# the open stern well behind it; and the quarterdeck (QUARTER) over the cabin. Between the break (-0.3)
+# under it, one plane from the foot of the companion to the transom; and the quarterdeck (QUARTER) over
+# the cabin, from its front to the transom. Between the break (-0.3)
 # and the cabin (-1.37) the companion goes down in the middle, between two walkways at the main deck's
 # height that run aft to the cabin's front; the stair to the quarterdeck climbs the port one.
 # Plank tops are at the deck's own height, their caulking a hair under it, so whatever stands on a deck
@@ -507,8 +509,6 @@ WALK_X = 0.6            # the walkways' inner edge, either side of the companion
 COMPANION = (-1.05, -0.3)
 STAIR_X = (-1.30, -0.62)
 STAIR_FOOT, STAIR_HEAD = 0.29, -0.88
-DOOR_X, DOOR_H = 0.28, 0.8
-BACK_Z = (-3.06, -3.02)         # the cabin's back wall, between it and the stern well
 CALK = 0.004
 
 
@@ -580,21 +580,17 @@ for sign in (1.0, -1.0):
     planked([(sign * inner_x(a, DECK), a), (sign * side_x(a, DECK), a), (sign * side_x(b, DECK), b), (sign * inner_x(b, DECK), b)], DECK)
     run = cols_of(CABIN_FORE, COMPANION[1])
     planked([(sign * WALK_X, c) for c in run] + [(sign * inner_x(c, DECK), c) for c in reversed(run)], DECK)
-# The sunk floor in two, the cabin's and the stern well's, with only the door's threshold between them: the
-# walk map is cut with vertical lines (scripts/build-shipwalk.mjs) and a plumb wall has no face such a line
-# meets, so what keeps a body out of a wall here is that there is no floor under it.
-planked(outline(['aft'] + cols_of(-4.0, -3.06), FLOOR), FLOOR)
-planked(outline(cols_of(-3.04, CABIN_FORE), FLOOR), FLOOR)
-planked([(-DOOR_X, BACK_Z[0] - 0.005), (DOOR_X, BACK_Z[0] - 0.005), (DOOR_X, BACK_Z[1] + 0.005), (-DOOR_X, BACK_Z[1] + 0.005)], FLOOR)
+# The cabin's floor, to the transom, and the companion's foot before it.
+planked(outline(['aft'] + cols_of(-4.0, CABIN_FORE), FLOOR), FLOOR)
 planked([(-WALK_X, CABIN_FORE), (WALK_X, CABIN_FORE), (WALK_X, COMPANION[0]), (-WALK_X, COMPANION[0])], FLOOR)
-QD = outline(cols_of(-3.04, CABIN_FORE), QUARTER)
+QD = outline(['aft'] + cols_of(-4.0, CABIN_FORE), QUARTER)
 planked(QD, QUARTER)
 # Under the quarterdeck, seen from the cabin: its underside and the beams that carry it - the lowest a
 # hand under 1.15 over the floor, so nobody's head is in them.
 face([Vector((x, QUARTER - 0.04, z)) for x, z in QD], 'fittings', (0, -1, 0), 'quarterdeck')
 qf = inner_x(CABIN_FORE, QUARTER)
 quad((-qf, QUARTER - 0.04, CABIN_FORE), (qf, QUARTER - 0.04, CABIN_FORE), (qf, QUARTER, CABIN_FORE), (-qf, QUARTER, CABIN_FORE), 'fittings', (0, 0, 1), 'quarterdeck')
-for z in (-2.82, -2.42, -2.02, -1.62):
+for z in (-4.02, -3.62, -3.22, -2.82, -2.42, -2.02, -1.62):
     w = inner_x(z, QUARTER - 0.07)
     box((0, QUARTER - 0.07, z), (2 * w, 0.06, 0.07), 'fittings', 'quarterdeck', skip=(3,))
 
@@ -643,7 +639,7 @@ for sign in (1.0, -1.0):
         box((x, (DECK + top) / 2, z), (0.06, top - DECK, 0.06), 'cap', 'entry', skip=(2,))
         box((x, top + 0.03, z), (0.08, 0.06, 0.08), 'cap', 'entry', skip=(2,))
 
-# The transom from inside the stern well, and the cap across its head.
+# The transom from inside the cabin, and the cap across its head.
 ys = [FLOOR] + [r for r in ROWS if r > FLOOR + 1e-9]
 for y0, y1 in zip(ys, ys[1:]):
     a, b = inner_point('aft', y0, 1), inner_point('aft', y1, 1)
@@ -657,17 +653,9 @@ quad((-o.x - CAP_OVER, t, o.z - CAP_OVER), (o.x + CAP_OVER, t, o.z - CAP_OVER), 
 quad((-o.x - CAP_OVER, o.y, o.z - CAP_OVER), (o.x + CAP_OVER, o.y, o.z - CAP_OVER), (o.x + CAP_OVER, t, o.z - CAP_OVER),
      (-o.x - CAP_OVER, t, o.z - CAP_OVER), 'cap', (0, 0, -1), 'cap')
 
-# The gun ports' lids, hinged at the cap and swung up and out 55 degrees; and two closed ports a side,
-# lids shut flush in a dark frame.
-LID_OPEN = math.radians(55)
-CLOSED_PORTS = ((-0.95, -0.55), (2.5, 2.9))
+# Closed ports, three a side, lids shut flush in a dark frame: one under each gun, which fires over the cap.
+CLOSED_PORTS = ((-0.95, -0.55), (GUNPORT[0] + 0.1, GUNPORT[1] - 0.1), (2.5, 2.9))
 for sign in (1.0, -1.0):
-    zc = sum(GUNPORT) / 2
-    hinge = skin_point(zc, TOP, sign) + Vector((sign * 0.02, 0, 0))
-    h = hinge.y - SILL
-    down = Vector((sign * math.sin(LID_OPEN), -math.cos(LID_OPEN), 0))
-    centre = hinge + down * (h / 2) + Vector((sign * math.cos(LID_OPEN), math.sin(LID_OPEN), 0)) * 0.015
-    box(centre, (0.03, h, GUNPORT[1] - GUNPORT[0] - 0.02), ('planks', 0.85), 'ports', rz=sign * LID_OPEN)
     for z0, z1 in CLOSED_PORTS:
         frame = [skin_point(z, y, sign) + Vector((sign * 0.014, 0, 0)) for z, y in ((z0, SILL), (z1, SILL), (z1, CAP - 0.02), (z0, CAP - 0.02))]
         face(frame, 'wales', (sign, 0, 0), 'ports')
@@ -716,22 +704,6 @@ for k in range(1, 6):
     box((SX, (DECK + top) / 2, (za + zb) / 2), (STAIR_X[1] - STAIR_X[0], top - DECK, zb - za), ('fittings', 1.12 if k % 2 else 1.0), 'stairs', skip=(2,))
 box((SX, (DECK + QUARTER) / 2, (CABIN_FORE + STAIR_HEAD) / 2), (STAIR_X[1] - STAIR_X[0], QUARTER - DECK, STAIR_HEAD - CABIN_FORE), 'fittings', 'stairs', skip=(2,))
 
-# The cabin's back wall, between it and the stern well, with a door.
-wb = lambda y: inner_x(-3.04, y)
-for z, d in ((BACK_Z[0], -1), (BACK_Z[1], 1)):
-    for s in (1, -1):
-        edge = wall_edge(-3.04, FLOOR, QUARTER)
-        face([(s * DOOR_X, FLOOR, z)] + [(s * x, y, z) for x, y in edge] + [(s * DOOR_X, QUARTER, z)], 'fittings', (0, 0, d), 'cabin')
-    quad((-DOOR_X, FLOOR + DOOR_H, z), (DOOR_X, FLOOR + DOOR_H, z), (DOOR_X, QUARTER, z), (-DOOR_X, QUARTER, z), 'fittings', (0, 0, d), 'cabin')
-for s in (1, -1):
-    quad((s * DOOR_X, FLOOR, BACK_Z[0]), (s * DOOR_X, FLOOR, BACK_Z[1]), (s * DOOR_X, FLOOR + DOOR_H, BACK_Z[1]), (s * DOOR_X, FLOOR + DOOR_H, BACK_Z[0]),
-         'fittings', (-s, 0, 0), 'cabin')
-quad((-DOOR_X, FLOOR + DOOR_H, BACK_Z[0]), (DOOR_X, FLOOR + DOOR_H, BACK_Z[0]), (DOOR_X, FLOOR + DOOR_H, BACK_Z[1]), (-DOOR_X, FLOOR + DOOR_H, BACK_Z[1]),
-     'fittings', (0, -1, 0), 'cabin')
-quad((-wb(QUARTER), QUARTER, BACK_Z[0]), (wb(QUARTER), QUARTER, BACK_Z[0]), (wb(QUARTER), QUARTER, BACK_Z[1]), (-wb(QUARTER), QUARTER, BACK_Z[1]),
-     'fittings', (0, 1, 0), 'cabin')
-
-
 # ---- rails where a deck ends in a drop ----------------------------------------------------------
 def rod(a, b, t, paint, label):
     """A square rod from a to b, t thick, no ends: rails and posts."""
@@ -765,7 +737,6 @@ def balustrade(a, b, floor):
 
 
 balustrade((STAIR_X[1], CABIN_FORE), (inner_x(CABIN_FORE, QUARTER), CABIN_FORE), QUARTER)          # the quarterdeck's front
-balustrade((-inner_x(-3.04, QUARTER), BACK_Z[1]), (inner_x(-3.04, QUARTER), BACK_Z[1]), QUARTER)   # its back
 balustrade((STAIR_X[1], STAIR_HEAD), (STAIR_X[1], CABIN_FORE), QUARTER)                             # the landing's edge
 balustrade((WALK_X, COMPANION[1]), (WALK_X, CABIN_FORE), DECK)                                      # the starboard walkway
 # the stair's own rail, rising with it from its foot to the landing
@@ -912,7 +883,7 @@ for sign in (1.0, -1.0):
         t = 0.08 + n * 0.1
         pts = [f.lerp(h, t) for f, h in zip(feet, heads)]
         rod(pts[0], pts[-1], ROPE_T * 0.7, 'rope', 'rigging')
-    rod(Vector((sign * YARD_HALF * 0.95, YARD_Y, YARD_Z)), Vector((sign * 0.9, QUARTER + RAIL_H, BACK_Z[1] + 0.05)), ROPE_T * 0.8, 'rope', 'rigging')
+    rod(Vector((sign * YARD_HALF * 0.95, YARD_Y, YARD_Z)), Vector((sign * inner_x(-3.5, 2.95), 2.95 + CAP_T, -3.5)), ROPE_T * 0.8, 'rope', 'rigging')
 
 BOWSPRIT = (Vector((0, 2.32, 4.02)), Vector((0, 3.37, 6.91)))
 tube([BOWSPRIT[0], BOWSPRIT[1]], [0.085, 0.05], 'spar', 'bowsprit', sides=8)
@@ -1024,7 +995,7 @@ for r in range(FLAG_ROWS):
 
 # ---- the lights: the transom's and the cabin's windows ------------------------------------------
 # Glass is its own part (`pirateship glow`, lit after dark) laid a hair proud of the planking, in a frame
-# of ochre trim a hair under it. Two lights in the transom over the stern well's floor, two a side in the
+# of ochre trim a hair under it. Two lights in the transom over the cabin's floor, two a side in the
 # cabin's walls, as high as the reference has them.
 def light(corners, normal):
     """A window: `corners` on the planking (four points, anticlockwise seen from outside) and the way out."""
@@ -1042,7 +1013,7 @@ def transom_point(x, y):
 
 TRANSOM_N = Vector((0, 0.371, -1)).normalized()     # square to the raked transom, aft and a little up
 for cx in (-0.34, 0.34):
-    y0, y1 = 1.48, 1.74
+    y0, y1 = 1.98, 2.26
     light([transom_point(cx - .12, y0), transom_point(cx + .12, y0), transom_point(cx + .12, y1), transom_point(cx - .12, y1)], TRANSOM_N)
 for sign in (1.0, -1.0):
     for z0, z1 in ((-2.72, -2.42), (-2.08, -1.78)):
@@ -1080,13 +1051,19 @@ for name, z0, z1 in (('waist', STAIR_FOOT, 2.4), ('fore', 2.4, 3.4), ('bow', 3.4
 pair('deck', 'break', (STAIR_X[1] + 0.02, DECK, COMPANION[1]), (narrowest(DECK, COMPANION[1], STAIR_FOOT), DECK, STAIR_FOOT))
 pair('deck', 'walkway', (WALK_X + 0.02, DECK, CABIN_FORE), (narrowest(DECK, CABIN_FORE, COMPANION[1]), DECK, COMPANION[1]))
 pair('deck', 'companion', (-(WALK_X - 0.02), FLOOR, CABIN_FORE), (WALK_X - 0.02, FLOOR, COMPANION[0]))
-w = narrowest(FLOOR, BACK_Z[1], CABIN_FORE)
-pair('deck', 'cabin', (-w, FLOOR, BACK_Z[1]), (w, FLOOR, CABIN_FORE))
-WELL_AFT = transom_z(FLOOR) + TH + 0.03
-w = narrowest(FLOOR, WELL_AFT, BACK_Z[0])
-pair('deck', 'well', (-w, FLOOR, WELL_AFT), (w, FLOOR, BACK_Z[0]))
-w = narrowest(QUARTER, BACK_Z[1], CABIN_FORE)
-pair('deck', 'quarter', (-w, QUARTER, BACK_Z[1]), (w, QUARTER, CABIN_FORE))
+# The cabin and the quarterdeck over it run to the transom, where she narrows: each in two, so the after
+# piece's narrowness does not take the width of the rest (the sea holds a body to these rectangles).
+STERN_SPLIT = -3.25
+CABIN_AFT_Z = transom_z(FLOOR) + TH + 0.03
+w = narrowest(FLOOR, STERN_SPLIT, CABIN_FORE)
+pair('deck', 'cabin', (-w, FLOOR, STERN_SPLIT), (w, FLOOR, CABIN_FORE))
+w = narrowest(FLOOR, CABIN_AFT_Z, STERN_SPLIT)
+pair('deck', 'cabin-aft', (-w, FLOOR, CABIN_AFT_Z), (w, FLOOR, STERN_SPLIT))
+QUARTER_AFT_Z = transom_z(QUARTER) + TH + 0.03
+w = narrowest(QUARTER, STERN_SPLIT, CABIN_FORE)
+pair('deck', 'quarter', (-w, QUARTER, STERN_SPLIT), (w, QUARTER, CABIN_FORE))
+w = narrowest(QUARTER, QUARTER_AFT_Z, STERN_SPLIT)
+pair('deck', 'quarter-aft', (-w, QUARTER, QUARTER_AFT_Z), (w, QUARTER, STERN_SPLIT))
 pair('deck', 'stairhead', (STAIR_X[0], QUARTER, CABIN_FORE), (STAIR_X[1], QUARTER, STAIR_HEAD))
 # A stair's ramp through the middles of its treads: from where its first tread starts to where its last ends,
 # but half a riser up, since the craft stands a body on the line (shared/deck.mjs deckAt) and through the
@@ -1108,7 +1085,7 @@ def rail(floor, a, b):
     anchor(f'rail.{rail_n}.b', (b[0], floor, b[1]))
 
 
-BULWARK_RUNS = [(FLOOR, ['aft'] + cols_of(-4.0, -3.06)), (FLOOR, cols_of(-3.04, CABIN_FORE)), (QUARTER, cols_of(-3.04, CABIN_FORE)),
+BULWARK_RUNS = [(FLOOR, ['aft'] + cols_of(-4.0, CABIN_FORE)), (QUARTER, ['aft'] + cols_of(-4.0, CABIN_FORE)),
                 (DECK, cols_of(CABIN_FORE, ENTRY[0])), (DECK, cols_of(ENTRY[1], 4.0))]
 for sign in (1.0, -1.0):
     for floor, cols in BULWARK_RUNS:
@@ -1125,6 +1102,9 @@ for sign in (1.0, -1.0):
             run = [c]
 for floor, a, b in RAILS:
     rail(floor, a, b)
+# Across the transom on the quarterdeck, which now runs to it.
+xt = inner_x('aft', QUARTER)
+rail(QUARTER, (-xt, QUARTER_AFT_Z - 0.03), (xt, QUARTER_AFT_Z - 0.03))
 
 # The mast, its top and the way up the pins: `lo` the climber's stand on the planks, RUNG_FROM behind the
 # pins, `hi` where they step off on the top's floor beside the hole; the seat before the mast.
@@ -1141,13 +1121,16 @@ for sign, side in ((1.0, 'starboard'), (-1.0, 'port')):
     ropes = side_x(LADDER_Z, DECK) + 0.04
     pair('climb', f'side-{side}', (sign * (ropes + CLIMB_OUT), W - 0.6, LADDER_Z), (sign * (inner_x(LADDER_Z, DECK) - 0.35), DECK, LADDER_Z))
 
-# What is manned: the guns square out of their ports, the gunner inboard of the carriage; the harpoon on
+# What is manned: the guns square out over the cap rail, the gunner inboard of the carriage; the harpoon on
 # the bow on her middle line, pointing over the stem.
 GUN_Z = sum(GUNPORT) / 2
+# The gun as drawn on her: scripts/build-craft.mjs MOUNT_LIMITS (cannon `scale`), read here so the carriage
+# is set in by its own size. Its rear and front ends from the `cannon` bake (carriage z -0.27..0.138).
+GUN_SCALE = float(re.search(r"cannon: \{[^}]*scale: ([\d.]+)", (ROOT / 'scripts/build-craft.mjs').read_text(encoding='utf8')).group(1))
 for sign, side in ((1.0, 's'), (-1.0, 'p')):
-    # the carriage close in under the port, so the muzzle stands in it, and the gunner a pace behind
-    gun = inner_x(GUN_Z, DECK) - 0.12
-    pair('mount', f'cannon-{side}', (sign * (gun - 0.6), DECK, GUN_Z), (sign * gun, DECK, GUN_Z))
+    # the carriage's front a hand inside the bulwark, and the gunner a pace behind its rear
+    gun = inner_x(GUN_Z, DECK) - 0.14 * GUN_SCALE - 0.02
+    pair('mount', f'cannon-{side}', (sign * (gun - 0.27 * GUN_SCALE - 0.25), DECK, GUN_Z), (sign * gun, DECK, GUN_Z))
 pair('mount', 'harpoon', (0, DECK, 3.25), (0, DECK, 3.7))
 anchor('helm', HELM_STAND)
 anchor('cargo', (0, DECK, 1.0))

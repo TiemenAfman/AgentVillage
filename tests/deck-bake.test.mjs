@@ -53,8 +53,9 @@ const galleon = CRAFTS.galleon;
 // The sloop's three floors, as the craft has them (read off the bake's anchors): the main deck, the
 // cabin's sunk under it, the quarterdeck over the cabin.
 const WAIST = deckAt(galleon, 0, 1.5);
-// (deckAt is the highest planking over a point, so the cabin is asked for in the stern well behind it)
-const CABIN = deckAt(galleon, 0, -3.6);
+// (deckAt is the highest planking over a point, so the cabin is asked for at the companion's foot, the one
+// place of it with no quarterdeck over it since that runs to the transom)
+const CABIN = deckAt(galleon, 0, -1.21);
 const QUARTERDECK = deckAt(galleon, 0.5, -2.2);
 // A hair over half a riser of her steepest stair (the companion's 0.113): what a tread's edge is from a
 // straight line through its treads. A settler on a stair is on it, not in it, and not floating over it.
