@@ -2313,11 +2313,14 @@ function walkCallbacks() {
     // `boarded`, as a rowing boat walked into with her is (takeBoat).
     onBoarded: (b, { stowed = false } = {}) => {
       if (state.net) { state.net.boardBoat(b.id); state.net.setRoom(null, state.walk); }
+      // The ship a mermaid takes us back to (Plans/schip-vaart-door.md): the last we were crew of.
+      if (isShip(b)) state.lastShip = b.id;
       if (stowed && state.hunt) state.hunt.boardedWith(false);
       state.walk.setInteractables(interactables());
     },
     onLeftDeck: (b) => {
-      if (state.net) { state.net.leaveBoat(b.id); state.net.setRoom(null, state.walk); }
+      // With the sails she sails on under (walk.js letRun): the sea keeps us as the one sailing her.
+      if (state.net) { state.net.leaveBoat(b.id, b.underSail || 0); state.net.setRoom(null, state.walk); }
       state.walk.setInteractables(interactables());
     },
     onPlant: () => sowHere(),
@@ -4660,6 +4663,16 @@ function wrapEye() {
   if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
   if (w.mount) { w.mount.x += dx; w.mount.z += dz; }
   state.ui.toast('Round the world - the far side of the chart');
+}
+
+// A ship sailing on with nobody aboard (Plans/schip-vaart-door.md) goes round the world as a body does:
+// this page steps her, so this page moves her the whole width back once she is past the edge, and every
+// other page starts her track again on a jump of over half the world (timeline.js pushSample).
+function wrapHull(b) {
+  const home = state.homeOrigin;
+  if (!b || !home) return;
+  b.x += wrapShift(b.x + home[0]);
+  b.z += wrapShift(b.z + home[1]);
 }
 
 // Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
@@ -8355,7 +8368,7 @@ function frame(nowMs) {
   const live = state.chronicle.t == null;
   // Before the peers and the fleet loop, which read where she is: a ship nobody is aboard is stepped
   // here and nowhere else (walk.js runOut), in every mode.
-  if (state.walk) state.walk.runOut(dt);
+  if (state.walk) wrapHull(state.walk.runOut(dt));
   glideBoats();
   // Balls in flight and what they come down on (Plans/kanonnen.md): after the boats are where they
   // are drawn this frame, so a ball meets a hull where it is seen.

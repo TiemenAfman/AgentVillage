@@ -1617,21 +1617,27 @@ export function createWalkMode({
   // Somebody else sails her on now (lib/boats.mjs handOn): she is not ours to run out any more.
   function stopRunning(b) { if (loose === b) loose = null; }
   const heavy = (b) => { const s = specOf(b); return !!(s && s.sail && s.sail.runOut); };
-  // Off her for good: the sails are struck (boat.js setSail - they stood only while somebody who let
-  // go of her wheel stayed aboard), and from here she runs out on the water's drag.
-  function letRun(b) { strikeSail(b); loose = b && heavy(b) && Math.abs(b.v || 0) > RUNNING ? b : null; }
+  // Off her for good (Plans/schip-vaart-door.md): under sail she sails on - the wind does not care who
+  // is aboard - stepped by this page with her rudder where `leaveHelm` left it, midships, until the
+  // ground strikes her sails (stepUnderSail), somebody else sails her or we are on her again. Backed or
+  // with no sail set she runs out on the water's drag, as before.
+  const sailing = (b) => !!b && heavy(b) && (b.underSail || 0) > 0;
+  function letRun(b) {
+    if (!sailing(b)) strikeSail(b);
+    loose = b && heavy(b) && (sailing(b) || Math.abs(b.v || 0) > RUNNING) ? b : null;
+  }
   const onHull = (b) => b === deckBoat || b === state.vehicle || !!(climb && climb.boat === b);
   // The hull we are running out, or null: she is not once she has stopped, once somebody else has
   // the wheel, or while we are on her again.
   function runningOut() {
     const b = loose;
     if (!b) return null;
-    if (Math.abs(b.v || 0) <= RUNNING || isFollowing(b)) { loose = null; return null; }
+    if ((Math.abs(b.v || 0) <= RUNNING && !sailing(b)) || isFollowing(b)) { loose = null; return null; }
     return onHull(b) ? null : b;
   }
   function runOut(dt) {
     const b = runningOut();
-    if (b) stepBoat(b, {}, dt, boatGround(b));
+    if (b) stepUnderSail(b, dt, boatGround(b));
     return b;
   }
   // A hull is a reference plane (boat.js hullPointOf): where you stand on it is a point of its own
