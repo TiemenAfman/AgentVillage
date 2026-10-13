@@ -47,10 +47,13 @@ export const BALL_HIT = 50;
 export const BODY_R = 0.45;
 
 // A body fired out of a gun (the keeper's "je moet ook jezelf kunnen afvuren"): slower than a ball,
-// on a body's own gravity (walk.js GRAVITY, held equal by tests/cannon.test.mjs), so it flies about
-// 30 units at the highest and comes down where walk mode's own landing - or its plunge into deep
-// water - takes over.
-export const HUMAN_SPEED = 21;
+// on a body's own gravity (walk.js GRAVITY, held equal by tests/cannon.test.mjs), and comes down
+// where walk mode's own landing - or its plunge into deep water - takes over. The range goes with
+// v^2: at 21 it was about 30 units at the galleon's highest (pitch 0.42, from her deck 2.5 up), and
+// the keeper wanted twice that, so 30 - measured 59 units there (54 over level ground), 6 up at the
+// top of the arc and coming down at 14.6 (the plunge's PLUNGE_MAX holds that under water). Still
+// below BALL_SPEED, which is the cap parseShot holds a `self` shot to on the sea.
+export const HUMAN_SPEED = 30;
 export const HUMAN_G = 12.5;
 
 // The outline a ball can hit a ship by, in her own frame (+z forward, y above the sea's surface):

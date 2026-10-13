@@ -15,7 +15,7 @@ import { insideSolid, depthInSolid, surfaceHeight, topOf, createSolidIndex, segm
 import { stepHull, nearestStand } from 'shared/hullwalk.mjs';
 import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
-import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
+import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, shotDrift, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
 import { climbWay, climbWayDown, climbAlong, onWay, topNear } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
@@ -3559,6 +3559,8 @@ export function createWalkMode({
         const plunge = inWater ? plungeSpeed(state.vy, bedUnder(state.pos.x, state.pos.z), WATER_Y) : 0;
         if (plunge) { state.dive = true; state.vy = plunge; }
         else { state.pos.y = underfoot; state.vy = 0; }
+        // Out of a gun into the water: a cannon's way is not carried on under it (diving.js SHOT_DRIFT).
+        if (state.launched && inWater) drift = shotDrift(drift);
         state.grounded = true;
         state.launched = false;
         // Down from too high with her in the arms: she is thrown out of them where you land - and in

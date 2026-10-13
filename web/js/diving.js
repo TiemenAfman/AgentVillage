@@ -89,6 +89,15 @@ export const DIVE_COAST = 2.2;
 // surface at 3/s - about a second - but a body that has gone under carries on: at 1/s it shoots
 // on for the best part of a boat's speed in units, and only then is a diver again.
 export const DIVE_DRIFT = 1;
+// Out of a gun the way is a cannon's (shared/cannon.mjs HUMAN_SPEED: 27 units/s across), which at
+// DIVE_DRIFT would carry a body 27 units on under water, or 9 skimming the surface at 3/s. Going in,
+// it keeps at most SHOT_DRIFT of it - a boat's way - so the water stops a shot body as it should.
+export const SHOT_DRIFT = 4;
+export function shotDrift(drift) {
+  if (!drift) return drift;
+  const n = Math.hypot(drift.x, drift.z);
+  return n > SHOT_DRIFT ? { x: drift.x * SHOT_DRIFT / n, z: drift.z * SHOT_DRIFT / n } : drift;
+}
 export function plungeSpeed(vy, bed, surface = 0) {
   if (vy > -PLUNGE_MIN || !canDive(bed, surface)) return 0;
   return -Math.min(PLUNGE_MAX, -vy * PLUNGE_KEEP);

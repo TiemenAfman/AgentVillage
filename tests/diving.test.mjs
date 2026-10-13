@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  stepDive, plungeSpeed, PLUNGE_MAX, DIVE_DRIFT, canDive, headUnder, divePitch, lookRise, SWIM_PITCH,
+  stepDive, plungeSpeed, shotDrift, SHOT_DRIFT, PLUNGE_MAX, DIVE_DRIFT, canDive, headUnder, divePitch, lookRise, SWIM_PITCH,
   swimPose, stepLie, TREAD_PITCH, TREAD_SINK,
   LOOK_LEVEL, LOOK_DEAD, LOOK_SPAN, LOOK_LEVEL_FP, LOOK_DEAD_FP, LOOK_SPAN_FP,
   DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED, DIVE_DOWN, DIVE_UP, DIVE_HEAD, DIVE_MIN_WATER, BED_CLEAR, SHALLOW,
@@ -318,4 +318,18 @@ test('a swimmer going nowhere treads water upright, and lies down in the stroke 
   assert.ok(lie < 0.02, `after a second and a half the swimmer is upright (lie ${lie})`);
   for (let i = 0; i < 90; i++) lie = stepLie(lie, true, FRAME);
   assert.ok(lie > 0.98, 'and swimming off lays it back in the stroke');
+});
+
+test('a body out of a gun keeps no more than a boat\'s way going into the water', async () => {
+  const { HUMAN_SPEED } = await import('../shared/cannon.mjs');
+  const way = shotDrift({ x: HUMAN_SPEED * 0.9, z: HUMAN_SPEED * 0.1 });
+  assert.ok(Math.abs(Math.hypot(way.x, way.z) - SHOT_DRIFT) < 1e-9);
+  assert.ok(way.x > 0 && way.z > 0, 'the way keeps its heading');
+  // Coasting at DIVE_DRIFT that is SHOT_DRIFT units on under water, not the shot's own way.
+  assert.ok(SHOT_DRIFT / DIVE_DRIFT <= 5);
+  const slow = { x: 1, z: 2 };
+  assert.equal(shotDrift(slow), slow);
+  assert.equal(shotDrift(null), null);
+  const walk = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
+  assert.match(walk, /state\.launched && inWater\) drift = shotDrift\(drift\)/);
 });
