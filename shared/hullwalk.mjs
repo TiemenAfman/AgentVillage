@@ -40,6 +40,13 @@ export const BODY_R = 0.16;
 export const FOOT_R = 0.24;
 // How far a body that lands astride something is moved to where it can stand: under a body's width.
 const NUDGE = 0.3;
+// How far under the feet a surface still counts as the one they stand on (the map's heights are whole
+// steps of its `q`, 0.02): at or below that, a surface with no air above it ends the search for a floor.
+const SOLE = 0.03;
+// The inner ring of a body, as a share of its radius: an obstacle thinner than the gap between two
+// points of the outer ring (0.12 at BODY_R) - the sloop's binnacle, 0.16 square - could otherwise stand
+// inside the body untouched by any of them.
+const CORE = 0.5;
 
 // The eight points of a ring, unit radius; and the cells a body of a given radius touches are these
 // scaled, plus its middle.
@@ -75,6 +82,12 @@ function readLayer(map) {
 
   // The highest surface in a cell that a body whose feet are at `y` can step onto, with the air of a
   // body above it - or null. `reach` is how far above its feet it may be.
+  // A surface at or under the feet that has no air above it is where the search ends: the feet cannot
+  // go through it to whatever is clear further down. Looked past, the planks of the sloop's quarterdeck
+  // under her binnacle gave the cabin's floor a deck lower as this cell's floor, and a body put down
+  // there (a pace forward of the wheel) or coming down on it from a jump fell through the deck into the
+  // cabin (13 Oct 2026). Above the feet, within a step, a surface with no air over it is still passed
+  // over: it is something in the way of the body, which blockedAt judges, not the ground.
   function floorIn(x, z, y, reach) {
     const c = cellOf(x, z);
     if (c < 0) return null;
@@ -93,8 +106,22 @@ function readLayer(map) {
         if (g > h + 0.05 && g < h + HEAD) { clear = false; break; }
       }
       if (clear) { best = h; break; }
+      if (h <= y + SOLE) break;
     }
     return best;
+  }
+
+  // The highest surface of any kind in the cell between `lo` and `hi`, or null: what a falling body's
+  // feet went through this frame, whether or not it is a floor to stand on.
+  function hitIn(x, z, lo, hi) {
+    const c = cellOf(x, z);
+    if (c < 0) return null;
+    const a = c === 0 ? 0 : end(c - 1), b = end(c);
+    for (let i = b - 1; i >= a; i--) {
+      const h = heightOf(hits[i]);
+      if (h <= hi + 1e-9 && h >= lo - 1e-9) return h;
+    }
+    return null;
   }
 
   // Whether anything solid stands in the height of a body with feet at `y` in a cell: over a step's
@@ -142,7 +169,7 @@ function readLayer(map) {
     }
     return [lo, hi];
   }
-  return { floorIn, solidIn, ceilingIn, spanIn, has: (x, z) => cellOf(x, z) >= 0 };
+  return { floorIn, solidIn, ceilingIn, spanIn, hitIn, has: (x, z) => cellOf(x, z) >= 0 };
 }
 
 // A surface out of the baked map: every layer of it read as one. A floor is the highest any layer has
@@ -161,6 +188,14 @@ export function createSurface(map) {
     return best;
   }
   const solidIn = (x, z, y, above) => layers.some((l) => l.solidIn(x, z, y, above));
+  function hitIn(x, z, lo, hi) {
+    let best = null;
+    for (const l of layers) {
+      const h = l.hitIn(x, z, lo, hi);
+      if (h !== null && (best === null || h > best)) best = h;
+    }
+    return best;
+  }
   // The lowest lid over (x, z) above `y` in any layer, or null: what the follow camera in a cabin
   // under the poop stays under (walk.js hullForCamera, solidPoint; Plans/DONE/nieuwe-sloep.md).
   function ceilingIn(x, z, y) {
@@ -174,9 +209,16 @@ export function createSurface(map) {
 
   // The body of radius `r` standing at (x, z) with its feet at `y`: an obstacle anywhere in its
   // ring. `above` is what it steps over - a step's reach on the ground, a hair in the air.
-  function blockedAt(x, z, y, r = BODY_R, above = STEP_UP + RING_SLACK) {
+  // `core` asks the inner ring too: on the ground, where it keeps a body out of what is thinner than the
+  // gaps of the outer one. Not in the air: a jump over the crow's nest's rim clears its top by a hair,
+  // and the inner ring caught the rim on the way over where the outer one never had (the running jump
+  // off the top, tests/crows-nest.test.mjs) - what a jump comes down on is judged by landAt and hitIn.
+  function blockedAt(x, z, y, r = BODY_R, above = STEP_UP + RING_SLACK, core = true) {
     if (solidIn(x, z, y, above)) return true;
     for (const [dx, dz] of RING) if (solidIn(x + dx * r, z + dz * r, y, above)) return true;
+    if (!core) return false;
+    const k = r * CORE;
+    for (const [dx, dz] of RING) if (solidIn(x + dx * k, z + dz * k, y, above)) return true;
     return false;
   }
 
@@ -210,7 +252,7 @@ export function createSurface(map) {
   // nothing: the hull's envelope there, which the follow camera keeps out of (walk.js,
   // Plans/camera-botsing.md). The deck's alone: a nest eight units up is not the hull's envelope.
   const spanAt = (x, z) => deck.spanIn(x, z);
-  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(x, z, y, reach), ceilingIn, blockedAt, standAt, landAt, inMap, spanAt, map };
+  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(x, z, y, reach), ceilingIn, hitIn, blockedAt, standAt, landAt, inMap, spanAt, map };
 }
 
 // The nearest place to (x, z) where a body can stand and is not inside anything: for putting somebody
@@ -265,7 +307,7 @@ export function stepHull(s, input, surface, dt, move) {
     else if (f === null) { s.grounded = false; s.vy = 0; }    // the ground went: falling
     else { s.y = f; s.vy = 0; return s; }
   } else {
-    const free = (x, z) => !surface.blockedAt(x, z, s.y, r, 0.02);
+    const free = (x, z) => !surface.blockedAt(x, z, s.y, r, 0.02, false);
     if (free(nx, nz)) { s.x = nx; s.z = nz; }
     else if (free(nx, s.z)) s.x = nx;
     else if (free(s.x, nz)) s.z = nz;
@@ -284,8 +326,11 @@ export function stepHull(s, input, surface, dt, move) {
     if (f !== null && f >= s.y - 0.05) { s.y = f; s.vy = 0; s.grounded = true; return s; }
     // Came down through a floor that cannot hold the whole footprint - astride the nest's rim, or a
     // bulwark's top: onto the nearest place near it that can, a nudge, and not on through the planks.
-    const g = surface.floorIn(s.x, s.z, s.y, fell);
-    const at = g !== null && g >= s.y - 0.05 ? nearestStand(surface, s.x, s.z, g + 0.05, NUDGE, STEP_DOWN + 0.05) : null;
+    // And the same for anything solid the feet went through - the top of the binnacle, planks with a
+    // thing standing on them - which is no floor to land on but is not air either: never on through it.
+    const g = surface.floorIn(s.x, s.z, s.y, fell) ?? surface.hitIn(s.x, s.z, s.y - 0.05, s.y + fell);
+    const at = g !== null && g >= s.y - 0.05 ? (nearestStand(surface, s.x, s.z, g + 0.05, NUDGE, STEP_DOWN + 0.05)
+      ?? nearestStand(surface, s.x, s.z, g + 0.05, 2 * NUDGE + BODY_R, HEAD)) : null;
     if (at) { s.x = at.x; s.z = at.z; s.y = at.y; s.vy = 0; s.grounded = true; return s; }
     // Nothing to come down on, and lower than any deck of hers: over the side and gone.
     if (s.y < surface.map.y0 - 0.1) s.off = true;

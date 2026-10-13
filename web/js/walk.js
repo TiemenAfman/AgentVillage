@@ -1600,11 +1600,14 @@ export function createWalkMode({
     state.bob += dt * 1.2;
     return afterMove(dt);
   }
-  // From the helm onto the deck, a pace forward of the wheel.
+  // From the helm onto the deck, where the pilot stood. It was a pace forward of the wheel, which on the
+  // galleon was clear deck and on the sloop is her binnacle (build-sloop.py: the stand aft of the wheel,
+  // the binnacle 0.42 before it): the body was put down inside it, on the cabin floor a deck below
+  // (13 Oct 2026). The stand is the bake's `anchor.helm`, measured clear (tests/sloop-bake.test.mjs).
   function leaveHelm() {
     const b = state.vehicle, spec = specOf(b);
     if (!b || !spec || spec.crew < 2) return false;
-    let x = spec.helm[0], z = spec.helm[1] + 0.6;
+    let x = spec.helm[0], z = spec.helm[1];
     let y = deckAt(spec, x, z);
     if (y === null) return false;
     // A pace forward of the wheel, wherever the model has room for one: the plinth the wheel stands

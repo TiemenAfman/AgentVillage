@@ -4651,6 +4651,12 @@ function wrapEye() {
   if (!dx && !dz) return;
   w.pos.x += dx; w.pos.z += dz;
   if (w.vehicle) { w.vehicle.x += dx; w.vehicle.z += dz; }
+  // And the hull we stand on, climb or hang on without having her wheel: on a deck the body is a point
+  // of her frame, so a body moved without her was put straight back beside her by walk mode, still
+  // past the edge, and this ran again every frame - a toast a frame, and a body drawn a world away for
+  // the frame between (the sloop at speed, 13 Oct 2026).
+  const hull = state.walk.onDeck();
+  if (hull && hull !== w.vehicle) { hull.x += dx; hull.z += dz; }
   if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
   if (w.mount) { w.mount.x += dx; w.mount.z += dz; }
   state.ui.toast('Round the world - the far side of the chart');
