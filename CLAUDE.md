@@ -580,7 +580,16 @@ and night glow is a per-vertex emissive mask - and every building body on an isl
 instance in that island's `BatchedMesh` (`web/js/record-batch.js`: `homeBatch` in main.js in
 `scene`, one per guest inside its offset group), so all of them are one draw call a pass. The
 yard signs' frames are instances in the same batch (`createNameplate({ batch })`, two shared
-shapes); their lettered faces are still a mesh each. **The record keeps its scene graph and the
+shapes); their lettered faces are still a mesh each - and so a call each, which is why **a face is
+drawn only where it can be read** ([Plans/DONE/naambord-gezichten-op-afstand.md](Plans/DONE/naambord-gezichten-op-afstand.md)):
+`fadeSignFaces()`, first thing in `cullRecords()`, works out each yard sign's face width in screen
+pixels (`web/js/sign-faces.js`, pure: full from 24 px, gone under 16, `faceMat.opacity` between) and
+writes `face.visible` / the opacity only on a change - never the sign's group (the planner's) nor
+`rec.group.visible`. What is left from far off is a cream patch of the face's size in the frame's
+shared shape (`PATCH_GLOW` on `aEmissive`, so it neither dims at night nor glares by day): from
+above on Hoogezand 969 -> 471 colour calls, 4-5 ms a frame. Hamlet gateways keep their faces.
+Any other per-object mesh that is unreadable from above can follow the same pattern: a pure size-on-
+screen sum, a stand-in in the batch's shape, and the mesh's own `visible`. **The record keeps its scene graph and the
 batch mirrors it:** `rec.mesh` is an empty Object3D stand-in, and in the batch's own
 `onBeforeRender`, once per `render()` (after `updateMatrixWorld`, before the shadow pass), the
 batch copies each stand-in's visibility (every parent up to the batch's parent `visible`, and
@@ -761,9 +770,26 @@ handlers; it was handed to `createNet` once and every slider moved its label and
   the people stay under ~40 calls a pass (the keeper's limit). Held tools hang off the wrist at
   `HELD_SCALE`. `eyeHeight` knows the new body (a figure with `sex`, set by `enrolSkinned`), so the
   conversation camera (facetoface.js) looks a resident in the eye and not on the chin; `figureGeometry`
-  builds the rooms' and the model sheet's figures from the same pieces, except walk.js `playerGeometry`,
-  whose hat and satchel sit on the old head. The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
+  builds the rooms' and the model sheet's figures from the same pieces (each room figure its own
+  wardrobe, `room:<style>:<at>`). The volcano's crowd (Codex settlers, guards) stays on the old body on purpose, so
   `villager-mesh.js` and the old path stay. `/residents.html` is the workbench: every pose, new before old.
+  **A resident is closed** (12 Oct 2026, the keeper's "vol met gaten"): the kit's glTF comes in cut along
+  every UV seam and is `weld`ed before decimating (unwelded, the seams parted into slits); skin under cloth is
+  kept a `COVER_BAND` deep inside every opening (measured over the skin, per outfit), tucked behind fitted
+  cloth (`tuck`), and a foot in boots is hidden; no corner leans on both thighs (`fix_crotch`), the breeches
+  take the skin's weights. `tests/resident-holes.test.mjs` (`tests/support/resident-holes.mjs`, a software
+  rasteriser drawing front faces only, as the island does) holds every outfit in every pose to a ceiling of
+  seen-into (holes) and skin-through-cloth (pokes). **Trim**: what the kit painted another colour than the cloth
+  (belt, corset, collar, laces) keeps the kit's colour and is not dyed - a bit carried in `aWeight` as +2
+  (`residentTrim()` in the shader), because one more attribute broke WebGL's sixteen. **The walk** is the
+  stride's own (`walkCadence`, `walkSwing` in settler-figures.js, `tests/resident-walk.test.mjs`): cadence from
+  the real speed so a planted foot stays put, the bob highest as the legs pass, a light hip roll - the old
+  clock-driven walk wobbled. **Everybody about as tall** (the keeper's ask): the body is drawn with
+  `drawnLook` - a share of the look's height, build and head spread (`DRAWN_SPREAD`), an apprentice at
+  `APPRENTICE_SCALE` 0.94, not a 0.62 child - while the look itself, which sets the stride on the sea, is
+  untouched; `f.look`/`f.baseScale` hold the drawn values, so `eyeHeight`, sitting and the barrow follow.
+  The bar it was judged against is the Wanderer itself:
+  `scripts/render-resident-bar.py` renders the two blind, A/B shuffled, same clothes, light and camera.
 
 **Nothing in the browser reaches the network without naming which machine it means.**
 Every call goes through `web/js/api.js`: `mine()` for this island's own server (the garden,
@@ -2951,7 +2977,8 @@ them); `Plans/piratenkroeg.md` has the prompts and the state of every piece.
   that draws several pieces (loop, helper called twice) not all changed alike. A line
   in a helper two models share (`noticeBoard`) changes both.
 
-Debug query params: `?hunt` (`__state`/`__camera` on window without the dive: walk with
+Debug query params: `?stats` (also puts `__state`/`__camera` on window at boot, for measuring:
+`__state.signFacesAll = true` draws every sign face as before, the A/B of fadeSignFaces), `?hunt` (`__state`/`__camera` on window without the dive: walk with
 `document.getElementById('walk-btn').click()`, teleport with `__state.walk.state.pos.set(x, y, z)`, read
 `__state.hunt.sites()`; the browser pane runs no frames between screenshots, so take one to let time pass),
 `?quest=<id>[:<step>]` (the quest book jumps to that quest of shared/quests.mjs with the story before

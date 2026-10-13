@@ -60,6 +60,7 @@ import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, 
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
+import { showFace, faceOpacity, screenWidth } from './sign-faces.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
@@ -604,6 +605,10 @@ const state = {
   // full pit, the same as an island that has never had a reading.
   gold: null,
 };
+// `?stats` is for measuring, and a measurement wants the page's own handles without walking
+// first (`?hunt` only sets them on entering walk mode): `__state.signFacesAll = true` is the
+// A/B of the sign faces (fadeSignFaces), flipped in one page.
+if (params.has('stats')) { window.__state = state; window.__camera = camera; }
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
 // machine stay shut. The server refuses them regardless; this is so the refusal arrives
@@ -4479,7 +4484,29 @@ const cullEye = new THREE.Vector3();
 // of more than the pad in one frame (a tween, a fast zoom) could draw a record a frame late
 // or cut one a frame early inside the fog band. The animations read `rec.cull` from the
 // frame before, which only ever decides whether a mill in full fog turns.
+// A yard sign's lettered face only where it can be read (web/js/sign-faces.js): each face is a
+// call of its own, and from above they were over half the colour pass. Here, beside the cut,
+// because it measures from where the camera is drawn from. Only the face's `visible` and its
+// material's opacity are written, and only on a change - never the sign's group, which the
+// planner owns, nor `rec.group.visible`. A record already cut (`rec.cull`) has its face masked
+// with it and is skipped. `matrixWorld` is last frame's, which a fade over eight pixels never shows.
+function fadeSignFaces() {
+  const fov = camera.fov, viewH = innerHeight;
+  const ex = camera.position.x, ey = camera.position.y, ez = camera.position.z;
+  for (const rec of state.byId.values()) {
+    const plate = rec.nameplate;
+    if (!plate || rec.cull) continue;
+    const m = plate.face.matrixWorld.elements;
+    const dist = Math.hypot(m[12] - ex, m[13] - ey, m[14] - ez);
+    const width = plate.faceWidth * Math.hypot(m[0], m[1], m[2]);
+    // `signFacesAll` (set from the console, `?hunt`'s __state) draws every face as before: the
+    // A/B the plan's numbers were measured with, flipped in one page.
+    showFace(plate.face, plate.faceMat, state.signFacesAll ? 1 : faceOpacity(screenWidth(width, dist, fov, viewH)));
+  }
+}
+
 function cullRecords() {
+  fadeSignFaces();
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
   // Object Distance and nothing else: the haze no longer waits for it (fogCeiling), so a cut

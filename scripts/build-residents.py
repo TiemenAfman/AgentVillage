@@ -45,6 +45,7 @@ colours, `joints` (two indices a corner) and `weights` (the first one's weight a
 """
 import bpy
 import bmesh
+import heapq
 import json
 import math
 import re
@@ -92,13 +93,30 @@ def joint_of(bone):
 
 
 # Triangles each piece is decimated to; the ceilings these must stay under are model-rules.mjs's.
-TARGET = {'face': 560, 'arms': 230, 'bare': 200, 'shirt': 440, 'trousers': 290, 'shoes': 140,
-          'straps': 100, 'vest': 140, 'hair': 260}
+TARGET = {'face': 560, 'arms': 230, 'torso': 120, 'bare': 200, 'shirt': 520, 'trousers': 330, 'shoes': 190,
+          'straps': 100, 'vest': 140, 'hair': 300}
 # The two choices that decide which skin shows: what is worn on the legs and on the feet.
 BOTTOMS = ['trousers', 'skirt']
 FEET = ['shoes', 'clogs']
 COMBOS = [f'{b}/{f}' for b in BOTTOMS for f in FEET]
 COVER_IN, COVER_OUT = B['COVER_IN'], B['COVER_OUT']
+# How far in from an opening the skin under cloth is kept, in source metres: about a collar's depth.
+COVER_BAND = .05
+# How far behind fitted cloth decimated skin is pushed, in source metres (tuck).
+TUCK = .008
+TUCK_SIDE = .015
+# How far round a point close-fitting cloth is looked for (source metres): a thigh's width.
+ENCLOSE = .2
+# The corner colour the texture is read into before decimating (bake_colours), and how far a garment's
+# light and dark may go either side of its median (texture_colour).
+KIT = 'kit'
+CLOTH_DARK, CLOTH_LIGHT = .22, 1.35
+# A corner is trim (cloth_colour) when its saturation lies this far from the garment's median colour's
+# (a brown corset on a white blouse; a grey sleeve on a cream shirt is only lighter and stays cloth), or
+# its lightness is under this share of the median's.
+TRIM_APART, TRIM_DARK = .1, .5
+# Two kit vertices this close (source metres) are one, split only by a UV seam (weld).
+WELD = 1e-5
 # Cloth stood off what it is worn over, in source metres.
 # The vest is decimated after it is stood off, and a collapse pulls a surface in: at 1 cm half of it
 # sank back into the shirt and only its hem and lapels showed.
@@ -162,6 +180,24 @@ def keep_faces(obj, keep, name):
     return new
 
 
+def weld(obj):
+    """The glTF importer splits a vertex wherever the texture's UVs do, so every kit mesh comes in cut
+    along its UV seams: the breeches' inner leg from cuff to crotch, the shirt round its lacing, the
+    boots down their shafts. Whole, a seam's two sides lie on each other; decimated, each side
+    collapses on its own and they part - the slits that ran down every resident. Welded first, the
+    corners keep their own UVs (a UV is a loop's, not a vertex's), so the colour is sampled as before.
+    Returns how many vertices were merged."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    n = len(bm.verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=WELD)
+    merged = n - len(bm.verts)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return merged
+
+
 def decimate(obj, target):
     """Collapse to at most `target` triangles, symmetric about x, vertex groups and UVs carried."""
     for _ in range(6):
@@ -193,14 +229,17 @@ def median(xs):
     return xs[len(xs) // 2] if xs else 1
 
 
-def emit(obj, colour, invert=False):
+def emit(obj, colour, trim=None, invert=False):
     """The object's triangles as the bake's arrays: positions, normals, colours, joints, weights.
-    `colour(tri, corner_loop, vertex)` -> [r, g, b]; `invert` flips the winding (an inner shell)."""
+    `colour(tri, corner_loop, vertex)` -> [r, g, b]; `trim` the same -> 0 or 1, a corner drawn in its own
+    colour rather than dyed (cloth_colour); `invert` flips the winding (an inner shell)."""
     mesh = obj.data
     mesh.calc_loop_triangles()
     m3 = obj.matrix_world.to_3x3()
     w = joint_weights(obj)
     out = dict(positions=[], normals=[], colors=[], joints=[], weights=[])
+    if trim:
+        out['trim'] = []
     for t in mesh.loop_triangles:
         corners = list(zip(t.vertices, t.loops))
         if invert:
@@ -218,6 +257,8 @@ def emit(obj, colour, invert=False):
             out['colors'] += [round(x, 3) for x in colour(t, l, vi)]
             out['joints'] += [top[0][0], top[1][0]]
             out['weights'].append(round(top[0][1] / s, 3))
+            if trim:
+                out['trim'].append(trim(t, l, vi))
     return out
 
 
@@ -226,34 +267,92 @@ def concat(*arrs):
     for a in arrs:
         for k in out:
             out[k] += a[k]
+    if any('trim' in a for a in arrs):
+        out['trim'] = [x for a in arrs for x in a.get('trim', [0] * len(a['weights']))]
     return out
 
 
-def texture_colour(obj, mode):
-    """Corner colours from the object's texture: 'tint' keeps the hue over the mean (skin, hair),
-    'cloth' keeps only light and dark over the median (a garment is dyed whole)."""
-    img = B['base_image'](obj)
-    at = B['sampler'](img)
+def bake_colours(obj):
+    """The texture under every corner, read off the full kit mesh into a corner colour (`KIT`) that
+    the decimation then carries. Read after the collapse, as it was, a corner's UV had been dragged
+    across the texture's islands and sampled whatever lay there: the cream shirt's brown trim, the
+    corset, the undersleeves and the belt all came out one muddy grey-beige - the first gap a blind
+    critic named against the Wanderer. Each face is read from its own material's image (a joined
+    garment or hairstyle has several)."""
     mesh = obj.data
     uv = mesh.uv_layers.active.data if mesh.uv_layers.active else None
+    images = {}
+    attr = mesh.color_attributes.new(KIT, 'FLOAT_COLOR', 'CORNER')
+    for f in mesh.polygons:
+        if not uv:
+            for l in f.loop_indices:
+                attr.data[l].color = (1, 1, 1, 1)
+            continue
+        mi = f.material_index
+        if mi not in images:
+            mat = obj.material_slots[mi].material if mi < len(obj.material_slots) else None
+            img = None
+            if mat and mat.node_tree:
+                node = next((n for n in mat.node_tree.nodes if n.type == 'TEX_IMAGE' and n.image), None)
+                if node:
+                    img = dict(w=node.image.size[0], h=node.image.size[1], px=list(node.image.pixels[:]))
+            images[mi] = B['sampler'](img)
+        at = images[mi]
+        us = [Vector(uv[l].uv) for l in f.loop_indices]
+        mid = sum(us, Vector((0, 0))) / len(us)
+        for l, u in zip(f.loop_indices, us):
+            c = at(u + (mid - u) * SAMPLE_IN)
+            attr.data[l].color = (c[0], c[1], c[2], 1)
+
+
+def texture_colour(obj, mode):
+    """Corner colours from the texture baked into `KIT` (bake_colours): 'tint' keeps the hue over the
+    mean (skin, hair), 'cloth' keeps only light and dark over the median (a garment is dyed whole),
+    over a range wide enough that a trim, a corset or a belt still reads darker than the cloth."""
+    mesh = obj.data
+    attr = mesh.color_attributes.get(KIT)
     mesh.calc_loop_triangles()
     raw = {}
     for t in mesh.loop_triangles:
-        if not uv:
-            for l in t.loops:
-                raw[l] = [1, 1, 1]
-            continue
-        us = [Vector(uv[l].uv) for l in t.loops]
-        mid = sum(us, Vector((0, 0))) / 3
-        for l, u in zip(t.loops, us):
-            raw[l] = at(u + (mid - u) * SAMPLE_IN)
+        for l in t.loops:
+            raw[l] = list(attr.data[l].color[:3]) if attr else [1, 1, 1]
     if mode == 'tint':
         mean = [max(1e-4, sum(c[k] for c in raw.values()) / max(1, len(raw))) for k in range(3)]
         fix = {l: [min(1.6, c[k] / mean[k]) for k in range(3)] for l, c in raw.items()}
     else:
         mid = max(1e-4, median([B['lum'](c) for c in raw.values()]))
-        fix = {l: [max(.3, min(1.25, B['lum'](c) / mid))] * 3 for l, c in raw.items()}
+        fix = {l: [max(CLOTH_DARK, min(CLOTH_LIGHT, B['lum'](c) / mid))] * 3 for l, c in raw.items()}
     return lambda t, l, vi: fix[l]
+
+
+def cloth_colour(obj):
+    """A garment's corners as (colour, trim): the cloth itself is light and dark over its median, to be
+    dyed (texture_colour 'cloth'); what the kit painted another colour than the cloth - a belt, a trim,
+    a corset, the toggles, a boot's laces and turnover - keeps the kit's own colour and a trim weight of
+    1, which the island's shader draws undyed (resident-skin.js `residentTrim`). Dyed whole, every garment
+    was one colour, and a blind critic put that first among what told a resident from the Wanderer."""
+    shade = texture_colour(obj, 'cloth')
+    mesh = obj.data
+    attr = mesh.color_attributes.get(KIT)
+    if not attr:
+        return shade, lambda t, l, vi: 0
+    mesh.calc_loop_triangles()
+    raw = {l: list(attr.data[l].color[:3]) for t in mesh.loop_triangles for l in t.loops}
+    main = [median([c[k] for c in raw.values()]) for k in range(3)]
+    lum0, sat0 = max(1e-4, B['lum'](main)), B['sat'](main)
+
+    def trimmed(c):
+        return abs(B['sat'](c) - sat0) > TRIM_APART or B['lum'](c) / lum0 < TRIM_DARK
+
+    # A triangle is trim or cloth whole: corners of one triangle split between the two blended a
+    # dyed colour into the kit's across it.
+    trim = {}
+    for t in mesh.loop_triangles:
+        votes = sum(trimmed(raw[l]) for l in t.loops)
+        for l in t.loops:
+            trim[l] = 1 if votes >= 2 else 0
+    print('Residents: trim', round(sum(trim.values()) / max(1, len(trim)), 2), 'of', obj.name)
+    return (lambda t, l, vi: raw[l] if trim[l] else shade(t, l, vi)), (lambda t, l, vi: trim[l])
 
 
 def plain(v=1.0):
@@ -325,7 +424,67 @@ def skirt_weights(obj, z_top, z_hem, x_hip, thigh_most=.9):
     return w
 
 
-def nearest_weights(obj, source):
+def fix_crotch(obj, x_hip):
+    """A corner weighted to both thighs is torn in two by a stride: with two influences it is drawn
+    halfway between where the two legs took it, and the kit's crotch - weighted that way - opened into
+    a slit at every step (skin and the breeches' inside showing between the legs). What both thighs
+    held goes to the hips and to the thigh of the side the corner is on, the more so the further it
+    is from the middle: the skirt's rule (skirt_weights), which never tore."""
+    lh, rh, hips = J['leftHip'], J['rightHip'], J['hips']
+    w = joint_weights(obj)
+    changed = 0
+    for v, d in zip(obj.data.vertices, w):
+        a, b = d.get(lh, 0), d.get(rh, 0)
+        if min(a, b) < .02:
+            continue
+        x = (obj.matrix_world @ v.co).x
+        side = min(1, abs(x) / (.5 * x_hip))
+        d.pop(lh, None)
+        d.pop(rh, None)
+        d[lh if x < 0 else rh] = (a + b) * side
+        d[hips] = d.get(hips, 0) + (a + b) * (1 - side)
+        changed += 1
+    to_joints(obj, w)
+    return changed
+
+
+def tuck(obj, trees, gap):
+    """Skin under cloth pushed in until it lies at least `gap` behind it. The kit's body sits a few
+    millimetres inside its clothes, but decimated to a crowd's budget a skin's flat facets cut
+    straight through them - patches of skin on the seat of the breeches, at the crotch, at the
+    small of the back under the shirt's hem. Each corner looks out along its normal for the cloth
+    and steps back by what it lacks. Returns how many corners moved."""
+    # A normal that points down the gap between the legs misses the breeches' crotch altogether, so
+    # each corner is also held to the nearest cloth, but only where that cloth lies squarely over it
+    # (its offset along the cloth is under TUCK_SIDE): a wrist just past a cuff is not pushed into it.
+    mesh = obj.data
+    mesh.update()
+    moved = 0
+    for v in mesh.vertices:
+        p, n = obj.matrix_world @ v.co, v.normal.normalized()
+        step = Vector()
+        for tree in trees:
+            hit = tree.ray_cast(p - n * COVER_IN, n, COVER_IN + COVER_OUT)
+            if hit[0] is not None:
+                d = hit[3] - COVER_IN          # how far out along the normal the cloth lies
+                if d < gap and (gap - d) > step.length:
+                    step = -n * (gap - d)
+            near = tree.find_nearest(p, COVER_OUT)
+            # Facing the skin's way: the inside of a doubled hem faces the body and would push it out.
+            if near[0] is not None and near[1].dot(n) > .3:
+                off = p - near[0]
+                out = off.dot(near[1])         # positive: the skin is outside the cloth
+                side = (off - near[1] * out).length
+                if side < TUCK_SIDE and out > -gap and (out + gap) > step.length:
+                    step = -near[1] * (out + gap)
+        if step.length:
+            v.co += step
+            moved += 1
+    mesh.update()
+    return moved
+
+
+def nearest_weights(obj, source, k=3):
     """Weights for a garment of our own: those of the nearest vertex of what it is worn over."""
     sw = joint_weights(source)
     pts = [source.matrix_world @ v.co for v in source.data.vertices]
@@ -336,7 +495,7 @@ def nearest_weights(obj, source):
     out = []
     for v in obj.data.vertices:
         acc = {}
-        for _, i, d in kd.find_n(obj.matrix_world @ v.co, 3):
+        for _, i, d in kd.find_n(obj.matrix_world @ v.co, k):
             for j, x in sw[i].items():
                 acc[j] = acc.get(j, 0) + x / (d + 1e-3)
         s = sum(acc.values()) or 1
@@ -412,6 +571,8 @@ def build(sex, spec):
     for o in every:
         o.data.transform(o.matrix_world)
         o.matrix_world = Matrix.Identity(4)
+        weld(o)
+        bake_colours(o)
 
     # Cloth: no bare hands (the kit paints the woman's into her sleeves) and no Regular forearms.
     for slot, o in garments.items():
@@ -440,6 +601,22 @@ def build(sex, spec):
     knee_z = (knee_l.z + knee_r.z) / 2
     hip_x = abs(joints['leftHip'].x)
     cx, cy = 0.0, pelvis.y
+    for o in [skin, *garments.values()]:
+        print('Residents: crotch weights moved on', fix_crotch(o, hip_x), 'corners of', o.name)
+    # The breeches bend exactly as the legs in them: each corner takes the weights of the skin nearest
+    # it. The kit's own weights put the front of the woman's thighs more on the hips than her skin's,
+    # and a stride brought the thigh out through the cloth.
+    to_joints(garments['trousers'], nearest_weights(garments['trousers'], skin, 1))
+
+    # Which skin a garment hides is judged on the full cloth (its collapse has gaps - the lacing slot -
+    # that would keep patches of chest); everything after that, the vest included, is made from the
+    # cloth as it will be drawn, decimated.
+    full = {}
+    for slot in ('shirt', 'trousers', 'shoes'):
+        o = garments[slot]
+        o.data.calc_loop_triangles()
+        full[slot] = BVHTree.FromPolygons(world_points(o), [list(t.vertices) for t in o.data.loop_triangles])
+        decimate(o, TARGET[slot])
 
     # ---- our own garments ------------------------------------------------------------------
     BINS = 16
@@ -465,7 +642,9 @@ def build(sex, spec):
     own['skirt'] = skirt('Skirt', waist, knee_z - .08, 5)
     long_skirt = skirt('Dress skirt', waist, (knee_z + ankle.z) / 2 + .02, 6)
 
-    # The vest: the shirt's torso (not its sleeves), stood off it, with a V cut down the front.
+    # The vest: the shirt's torso (not its sleeves), stood off it, with a V cut down the front. Cut from
+    # the shirt as drawn: cut from the full one and decimated on its own, its facets and the shirt's
+    # crossed, and the shirt came through the vest in rags.
     shirt = garments['shirt']
     sw = joint_weights(shirt)
     chest_z = joints['chest'].z
@@ -520,6 +699,14 @@ def build(sex, spec):
         a = (rows - 1) * cols + k
         faces.append((a, n + a, n + a + 1, a + 1))
     apron = mesh_object('Apron', verts, faces)
+    # The faces above are wound with the front sheet facing the body and the back sheet facing out:
+    # turned round, the sheet the island draws (front faces only) is the outer one, not the one
+    # 5 mm nearer the skirt.
+    bm = bmesh.new()
+    bm.from_mesh(apron.data)
+    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
+    bm.to_mesh(apron.data)
+    bm.free()
     # And its tie, a band round the waist.
     r = ring_radii(body_pts, cx, cy, a_top, 10)
     tie = lathe('Apron tie', cx, cy, [(a_top + .012, [x + .012 for x in r]), (a_top - .012, [x + .012 for x in r])], 10, inner=False)
@@ -527,7 +714,9 @@ def build(sex, spec):
     tie.select_set(True)
     bpy.ops.object.join()
     apron = bpy.context.view_layer.objects.active
-    to_joints(apron, skirt_weights(apron, a_top, a_bot, hip_x, .8))
+    # Weighted as the skirt it is mostly worn over, measured on the skirt's own length: weighted on
+    # its own (a shorter drop, a lighter thigh) the skirt under it swung further and came through it.
+    to_joints(apron, skirt_weights(apron, waist, knee_z - .08, hip_x))
     own['apron'] = apron
 
     # The scarf: a ring at the base of the neck over the collar, and a tail hanging in front.
@@ -563,11 +752,18 @@ def build(sex, spec):
     own['clogs'] = bpy.context.view_layer.objects.active
 
     # ---- which skin shows -----------------------------------------------------------------
-    cloth = {}
-    for name, o in (('shirt', shirt), ('trousers', garments['trousers']), ('shoes', garments['shoes']),
-                    ('skirt', own['skirt']), ('clogs', own['clogs'])):
+    cloth = dict(full)
+    for name in ('skirt', 'clogs'):
+        o = own[name]
         o.data.calc_loop_triangles()
         cloth[name] = BVHTree.FromPolygons(world_points(o), [list(t.vertices) for t in o.data.loop_triangles])
+    # Skin is tucked (`tuck`) behind the cloth as it will be drawn, decimated: the full-resolution kit
+    # cloth lies millimetres further out than its collapse.
+    drawn = {}
+    for name in ('shirt', 'trousers', 'shoes'):
+        o = garments[name]
+        o.data.calc_loop_triangles()
+        drawn[name] = BVHTree.FromPolygons(world_points(o), [list(t.vertices) for t in o.data.loop_triangles])
     mesh = skin.data
     body_pts = all_pts
     normals = [v.normal.normalized() for v in mesh.vertices]
@@ -577,25 +773,67 @@ def build(sex, spec):
         adj[a].add(b)
         adj[b].add(a)
 
-    def covered(tree):
-        hit = [tree.ray_cast(p - n * COVER_IN, n, COVER_IN + COVER_OUT)[0] is not None
-               for p, n in zip(body_pts, normals)]
-        # Eroded by a ring: a vertex counts as under the cloth only if its neighbours are too.
-        return [h and all(hit[k] for k in adj[i]) for i, h in enumerate(hit)]
+    # Under a garment: the cloth found out along the skin's normal - or, for what is worn close, the
+    # skin closed in by it on all four sides. A normal down the gap between the legs misses the
+    # breeches' crotch, and the crotch was left in every outfit, with a band of thigh round it. Never
+    # for a skirt: a leg inside its bell is seen as it strides and sits.
+    AROUND = [Vector(d) for d in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))]
 
-    cov = {name: covered(t) for name, t in cloth.items()}
+    def under(t, p, n, enclose):
+        if t.ray_cast(p - n * COVER_IN, n, COVER_IN + COVER_OUT)[0] is not None:
+            return True
+        return enclose and all(t.ray_cast(p, d, ENCLOSE)[0] is not None for d in AROUND)
+
+    hit = {name: [under(t, p, n, name != 'skirt') for p, n in zip(body_pts, normals)]
+           for name, t in cloth.items()}
+
+    def deep(combo):
+        """Per vertex, whether an outfit hides it for good: under its cloth, its neighbours too, and
+        further than COVER_BAND from any skin that outfit shows. The band keeps the body in a collar, a
+        cuff, a hem or a boot's top: cut to the cloth's edge, the island (whose crowd material draws
+        front faces only) showed the sky through every opening - down a collar, up a sleeve, under a
+        hem when somebody sat, into a boot from above. It is measured from what this outfit shows, not
+        from what one garment leaves out: from each garment's own edge, the shirt's hem band and the
+        breeches' waist band together left a ring of skin round the hips that came through both."""
+        # The distance is over the skin, not through the air: through the air the thigh beside a
+        # hanging hand was "near an opening" and came out through the breeches.
+        worn = ('shirt', *combo.split('/'))
+        under = [any(hit[g][i] for g in worn) for i in range(len(body_pts))]
+        # In boots the foot is in the boot, whatever a ray says: the heel's normal points down and back
+        # past the decimated boot's heel, and a pink heel showed under every booted resident.
+        if 'shoes' in worn:
+            under = [u or foot[i] for i, u in enumerate(under)]
+        dist = [0.0 if not u else math.inf for u in under]
+        queue = [(0.0, i) for i, u in enumerate(under) if not u]
+        heapq.heapify(queue)
+        while queue:
+            d, i = heapq.heappop(queue)
+            if d > dist[i] or d > COVER_BAND:
+                continue
+            for k in adj[i]:
+                nd = d + (body_pts[i] - body_pts[k]).length
+                if nd < dist[k]:
+                    dist[k] = nd
+                    heapq.heappush(queue, (nd, k))
+        return [u and dist[i] > COVER_BAND for i, u in enumerate(under)]
+
+    ankles = {J['leftAnkle'], J['rightAnkle']}
+    foot = [bool(w) and max(w, key=w.get) in ankles for w in joint_weights(skin)]
+    hidden = {c: deep(c) for c in COMBOS}
+    # What fits the body close enough to need skin tucked in behind it (`tuck`), for a piece that shows
+    # under `shows`: only cloth every one of those outfits wears - a shin shown with clogs tucked behind
+    # a boot nobody wears there was a crease. A skirt and a clog stand off the body anyway.
+    def fitted(shows):
+        return [drawn['shirt']] + [drawn[name] for name in ('trousers', 'shoes')
+                                   if all(name in c.split('/') for c in shows)]
     sig = {}
     for f in mesh.polygons:
-        vs = f.vertices
-        under = lambda name: all(cov[name][v] for v in vs)
-        if under('shirt'):
-            continue
-        shows = tuple(c for c in COMBOS if not (under(c.split('/')[0]) or under(c.split('/')[1])))
+        shows = tuple(c for c in COMBOS if not all(hidden[c][v] for v in f.vertices))
         if shows:
             sig.setdefault(shows, set()).add(f.index)
 
     sw = joint_weights(skin)
-    face_j = {J['head'], J['neck'], J['chest'], J['spine'], J['hips']}
+    face_j = {J['head'], J['neck']}
     pieces = []
     always = tuple(COMBOS)
     for shows, faces_ in sorted(sig.items(), key=lambda kv: (-len(kv[0]), kv[0])):
@@ -607,8 +845,10 @@ def build(sex, spec):
                     for j, x in sw[v].items():
                         acc[j] = acc.get(j, 0) + x
                 return max(acc, key=acc.get) if acc else J['head']
+            # The torso - the bands kept inside the openings (COVER_BAND) - least of all.
             head = {fi for fi in faces_ if heavy(fi) in face_j}
-            for key, group in (('face', head), ('arms', faces_ - head)):
+            limbs = {fi for fi in faces_ - head if heavy(fi) in arm_joints}
+            for key, group in (('face', head), ('arms', limbs), ('torso', faces_ - head - limbs)):
                 if group:
                     pieces.append((shows, key, keep_faces(skin, group, f'Skin {key}')))
         else:
@@ -637,6 +877,7 @@ def build(sex, spec):
         goal = TARGET[key] if key != 'bare' else max(12, round(TARGET['bare'] * n / bare_total))
         # The texture is sampled by the corner's UV, which the collapse carries along.
         decimate(obj, goal)
+        print('Residents: tucked', tuck(obj, fitted(shows), TUCK), 'corners of', obj.name)
         arr = emit(obj, texture_colour(obj, 'tint'))
         if shows == always:
             face.append(arr)
@@ -669,11 +910,11 @@ def build(sex, spec):
     for slot in ('shirt', 'trousers', 'shoes', 'straps'):
         o = garments[slot]
         decimate(o, TARGET[slot])
-        part(slot, 'garment', 'cloth', emit(o, texture_colour(o, 'cloth')))
+        part(slot, 'garment', 'cloth', emit(o, *cloth_colour(o)))
     decimate(own['vest'], TARGET['vest'])
     part('vest', 'garment', 'cloth', emit(own['vest'], plain(.92)))
     decimate(dress_top, TARGET['shirt'])
-    part('dress', 'garment', 'cloth', concat(emit(dress_top, texture_colour(dress_top, 'cloth')),
+    part('dress', 'garment', 'cloth', concat(emit(dress_top, *cloth_colour(dress_top)),
                                              emit(long_skirt, plain(1))))
     for slot in ('skirt', 'apron', 'scarf', 'clogs'):
         part(slot, 'garment', 'cloth', emit(own[slot], plain(1)))
@@ -759,7 +1000,8 @@ def part_object(part, colour=None, pose=None, offset=(0, 0, 0), collection=None)
     tint = colour or (1, 1, 1)
     for li, loop in enumerate(obj.data.loops):
         c = part['colors'][loop.vertex_index * 3:loop.vertex_index * 3 + 3]
-        col.data[li].color = (c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1)
+        keep = part['trim'][loop.vertex_index] if part.get('trim') else 0     # undyed (resident-skin.js residentTrim)
+        col.data[li].color = tuple(c[k] * (tint[k] + (1 - tint[k]) * keep) for k in range(3)) + (1,)
     if not pose:
         for jname in JOINTS:
             obj.vertex_groups.new(name=jname)

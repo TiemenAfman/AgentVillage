@@ -162,3 +162,15 @@ test('a polder the ring leaves at the water keeps its whole wall', () => {
   assert.equal(layout.grow, null);
   assert.equal(layout.terrainHash, T.hash);
 });
+
+test('a mill earned before the island has a polder waits, and is no building left over', () => {
+  // The live island on 12 October 2026: 150 settlers, the mill's rung, but 288 of a 384 grid -
+  // and the ladder digs no polder while the island can still grow (`reclaim`). The mill used to
+  // land in `unplaced` there, which reads as an island short of room (tests/layout-measure.test.mjs).
+  const layout = emptyLayout(SEED, SIZE);
+  const first = placeAll(layout, withQuay(170), { seed: SEED, size: SIZE, cap: CAP });
+  const again = placeAll(layout, withQuay(170), { seed: SEED, size: layout.size, cap: CAP });
+  assert.equal(layout.polders.length, 0, 'an island that can still grow digs no polder');
+  assert.equal(layout.plots['civic:poldermill'], undefined);
+  for (const r of [first, again]) assert.ok(!r.unplaced.includes('civic:poldermill'), 'a mill waiting is not a building left over');
+});

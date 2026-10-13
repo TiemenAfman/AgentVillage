@@ -281,6 +281,56 @@ echte Chrome gemeten (alleen draw calls, driehoeken en de CPU van `draw()` onder
 - Draw calls: houd het onder ~40 per pass; liever minder losse kledingvarianten.
 - Codex-bewoners: blijven zoals ze zijn. Het oude tekenpad blijft dus bestaan voor hen (fase 5).
 
+### Gaten, biezen en de loop (12 oktober 2026)
+
+De keeper: "De inwoners zitten vol met gaten en zien er niet zo mooi uit." Gemeten met
+`tests/support/resident-holes.mjs`: elke outfit (48) in acht houdingen, van 24 kanten, getekend zoals
+het eiland (alleen voorkanten), geteld wat een **gat** is (je ziet de binnenkant van iets en daarachter
+niets binnen 2 cm) en een **doorsteek** (huid net vóór stof).
+
+| | gaten (gem. per houding) | doorsteken |
+|---|---|---|
+| vóór | 1,5-2,3% van het silhouet | 0,26-0,41% |
+| na | 0,32-0,68% | 0,05-0,19% |
+
+Wat het was, in volgorde van gewicht:
+- **De kit kwam uit glTF losgeknipt op elke UV-naad**, en decimeren trok de naden uit elkaar: de spleten
+  in hemd, broek (binnennaad tot het kruis) en laarzen. Nu eerst gelast (`weld`). Dit alleen haalde de
+  gaten van ~2% naar ~0,5%.
+- Huid onder kleding was tot de rand weggesneden: door elke kraag, mouw, zoom en laarsrand keek je door
+  het lijf. Nu blijft een band van 5 cm (`COVER_BAND`), over de huid gemeten en per outfit (door de lucht
+  gemeten telde de dij naast een hangende hand als "bij een opening"; per kledingstuk gemeten lieten
+  hemdzoom en broekband samen een ring huid om de heupen staan).
+- Gedecimeerde huid stak door de stof (`tuck`), het kruis scheurde (`fix_crotch`), de broek boog anders
+  dan de dij erin (krijgt nu de gewichten van de huid), het vest kwam rafelig door het hemd (nu uit het
+  gedecimeerde hemd gesneden), het schort volgde de rok niet, de hiel stak uit de laars.
+- **Biezen**: een kledingstuk had één verfkleur, en riem, kraag, korset en mouwen verdwenen in één
+  modderige tint. Wat de kit duidelijk donkerder of anders verzadigd schilderde, houdt nu zijn eigen
+  kleur (`cloth_colour`, een bit in `aWeight`: een eigen attribuut ging over WebGL's zestien).
+- **De loop wiebelde**: de pas liep op een eigen klok (3,5 stappen/s, voeten gleden een derde vooruit),
+  de bob stond hoog met de benen uit elkaar en was drie keer te groot, en het hele lijf kantelde per pas
+  om de voeten. Nu volgt de kadans de snelheid (`walkCadence`), de bob valt goed en het kantelen is een
+  lichte heupzwaai. De vulkaan houdt de oude loop.
+
+**De lat** (keuze van de keeper): de Wanderer zelf. `scripts/render-resident-bar.py` rendert een inwoner
+en de Wanderer blind (A/B geschud) in dezelfde kleren, kleuren, licht en camera. Drie blinde critics: ronde
+1 won de Wanderer 8 van 8 en was op dorpsafstand "nauwelijks" te onderscheiden; na de biezen (rondes 2 en
+3) was hij op dorpsafstand **niet meer te onderscheiden**. Van dichtbij wint de Wanderer nog op facetten en
+fijne details (knoopjes, veters) - met een tiende van zijn driehoeken. Meer driehoeken voor hemd (520),
+broek (330), laarzen (190) en haar (300); de zwaarste figuur blijft onder 3.000.
+
+**Even groot** (de keeper: "maak alle inwoners ook ongeveer even groot"): de lengte uit `settlerLook`
+(0,9-1,1) zet ook de pas op zee, dus die blijft; alleen het tekenen neemt er een deel van
+(`drawnLook`: 30% van de lengte-, 40% van de breedte- en 30% van de hoofdspreiding) en een leerling is
+0,94 in plaats van een kind op 0,62 met een volwassen hoofd. Ooghoogte van 240 figuren: van 0,21-0,40
+naar 0,365-0,419 (leerlingen inbegrepen); `tests/resident-walk.test.mjs` houdt het vast. De vulkaan
+houdt de oude maten.
+
+Ook: kamerfiguren (Finn, Meg, de barman en uitsmijter van de rave) trokken allemaal dezelfde garderobe
+(`figure:<style>`), nu elk hun eigen; het dode `playerGeometry` in walk.js is weg. Open: de ambachtslui
+(smid, bakker, slager, visser, mijnwerker, goudsmid, voerman, werfhanden) staan op de speler-rig; de
+keeper koos een eigen chip om ze om te zetten.
+
 ## Besluiten
 
 - GPU-skinning per instance, twee invloeden per vertex, hoeken in een gedeelde DataTexture.

@@ -11,7 +11,7 @@ const previousDocument = globalThis.document;
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
 const { residentWardrobe, settlerLook, keeperLook, KEEPERS, RESIDENT_HAIR } = await import('shared/palette.mjs');
 const skin = await import('../web/js/resident-skin.js');
-const { figureGeometry, skinnedWanted, eyeHeight } = await import('../web/js/settler-figures.js');
+const { figureGeometry, skinnedWanted, eyeHeight, drawnLook } = await import('../web/js/settler-figures.js');
 if (previousDocument === undefined) delete globalThis.document;
 else globalThis.document = previousDocument;
 
@@ -94,18 +94,19 @@ test('the skin is one geometry, and each outfit shows its own bare pieces', () =
   }
 });
 
-test('a room figure is the crowd own pieces, standing at the look height', () => {
+test('a room figure is the crowd own pieces, standing at the height the look is drawn at', () => {
   for (const presentation of ['man', 'woman']) {
     const look = { ...settlerLook('room:1', 'sonnet'), presentation, height: 1.08, hatShape: 'none' };
     const g = figureGeometry('sonnet', { look, skinned: true, id: 'room:1' });
     g.computeBoundingBox();
     const sex = presentation === 'woman' ? 'female' : 'male';
-    const tall = skin.residentRig(sex).height * 1.08;
+    // drawnLook: a few percent of the look's 1.08, as the crowd draws it.
+    const tall = skin.residentRig(sex).height * drawnLook(look).height;
     assert.ok(Math.abs(g.boundingBox.min.y) < 0.01, `the ${presentation} stands ${g.boundingBox.min.y} off the floor`);
     assert.ok(g.boundingBox.max.y > tall * 0.95 && g.boundingBox.max.y < tall + 0.04, `the ${presentation} is ${g.boundingBox.max.y} tall, not about ${tall}`);
     assert.ok(g.attributes.color && g.attributes.aEmissive);
   }
-  // And without the flag it is the old figure, as walk.js's satchel and hat expect.
+  // And without the flag it is the old figure.
   assert.ok(figureGeometry('sonnet', { skinned: false }).attributes.position.count > 0);
 });
 

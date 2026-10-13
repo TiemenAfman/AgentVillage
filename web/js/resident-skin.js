@@ -71,7 +71,13 @@ export function residentGeometry(part, capacity) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(part.colors, 3));
   g.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(n), 1));
   g.setAttribute('aJoints', new THREE.BufferAttribute(Uint8Array.from(part.joints), 2));
-  g.setAttribute('aWeight', new THREE.Float32BufferAttribute(part.weights, 1));
+  // A garment's trim (its belt, laces, corset) is drawn in the kit's own colour and not dyed
+  // (build-residents.py cloth_colour). It rides in aWeight as 2 over the weight (which is never above
+  // 1) rather than in an attribute of its own: the crowd's material is at WebGL's sixteen, and one
+  // more failed to link ('Too many attributes').
+  const weight = Float32Array.from(part.weights);
+  if (part.trim) for (let i = 0; i < n; i++) weight[i] += 2 * (part.trim[i] > 0.5 ? 1 : 0);
+  g.setAttribute('aWeight', new THREE.Float32BufferAttribute(weight, 1));
   g.setAttribute('aFigure', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
   g.computeBoundingSphere();
   return g;
@@ -90,9 +96,11 @@ const SKIN_DECL = [
   '  vec4 c = texelFetch(uPose, ivec2(j * 3 + 2, row), 0);',
   '  return mat4(a.x, b.x, c.x, 0.0, a.y, b.y, c.y, 0.0, a.z, b.z, c.z, 0.0, a.w, b.w, c.w, 1.0);',
   '}',
+  'float residentTrim() { return aWeight > 1.5 ? 1.0 : 0.0; }',
   'mat4 residentSkin() {',
   '  int row = int(aFigure + 0.5);',
-  '  return residentJoint(int(aJoints.x), row) * aWeight + residentJoint(int(aJoints.y), row) * (1.0 - aWeight);',
+  '  float w = aWeight - 2.0 * residentTrim();',
+  '  return residentJoint(int(aJoints.x), row) * w + residentJoint(int(aJoints.y), row) * (1.0 - w);',
   '}',
 ].join('\n');
 
@@ -111,6 +119,11 @@ export function patchSkin(shader, pose) {
       'if (aMask > 0.5 && (int(aMask + 0.5) & int(aShow + 0.5)) == 0) transformed = vec3(0.0);',
       'transformed = (residentSkin() * vec4(transformed, 1.0)).xyz;',
     ].join('\n'));
+  // A trim corner keeps its own colour: the dye (instanceColor) is mixed back out of it.
+  if (shader.vertexShader.includes('#include <color_vertex>')) {
+    shader.vertexShader = shader.vertexShader.replace('#include <color_vertex>',
+      '#include <color_vertex>\n#ifdef USE_COLOR\nvColor.xyz = mix(vColor.xyz, color.xyz, residentTrim());\n#endif');
+  }
   if (shader.vertexShader.includes('#include <beginnormal_vertex>')) {
     shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>',
       '#include <beginnormal_vertex>\nobjectNormal = mat3(residentSkin()) * objectNormal;');
