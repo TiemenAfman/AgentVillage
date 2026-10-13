@@ -402,6 +402,7 @@ export function createWalkMode({
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
     paused: false,   // true while an overlay owns the input
+    lookPaused: false,   // true while something wants the mouse but not the keys (the chart)
   };
 
   // Letting go of C ends a crouch, but not a nap: once the settler is down they stay
@@ -868,7 +869,7 @@ export function createWalkMode({
   // (whose button holds rather than acts - guardUp above).
   // A sip the rig actually took is told to `onDrink`, for everybody else to see it too.
   const act = (side) => { if (!beerIn(side)) fight(side); else if (canDrink() && classicAvatar.drink(side) && onDrink) onDrink(side); };
-  const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
+  const wantLock = () => state.active && !state.paused && !state.working && !state.lookPaused && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
     // Not while Escape is down: a panel closed with Escape asks for the lock inside that very
@@ -934,7 +935,7 @@ export function createWalkMode({
   };
   document.addEventListener('pointerlockchange', onLockChange);
   const onDown = (e) => {
-    if (!state.active) return;
+    if (!state.active || state.lookPaused) return;
     const side = SIDE_OF[e.button];
     if (!side) return;
     // At a gun the right button is its linstock (the keeper: "rechtermuisknop om te vuren"), and so is
@@ -971,6 +972,9 @@ export function createWalkMode({
   // hand swallowed every swing of the other - you could block or fight, never both.
   const BUTTON_BIT = { 0: 1, 1: 4, 2: 2 };
   const onMove = (e) => {
+    // The chart has the mouse (setLookPaused): no looking and no swing, and any drag left
+    // over from before it opened is dropped rather than resumed when it closes.
+    if (state.lookPaused) { dragging = false; return; }
     if (e.button >= 0 && BUTTON_BIT[e.button]) {
       if (e.buttons & BUTTON_BIT[e.button]) onDown(e); else onUp(e);
     }
@@ -1004,7 +1008,7 @@ export function createWalkMode({
     zoomPref = back / base;
   }
   const onWheel = (e) => {
-    if (!state.active || state.paused) return;
+    if (!state.active || state.paused || state.lookPaused) return;
     e.preventDefault();
     // One notch past the nearest stop goes in behind the eyes, and the first notch out
     // comes back to that stop - never both in one notch, or a trackpad flick would flicker.
@@ -3027,6 +3031,17 @@ export function createWalkMode({
     syncLock();
   }
 
+  // The chart (M) is not a panel: it wants the cursor - you drag it about and read what is
+  // on it - but it is not a pause either, because the feet stay yours underneath it. So it
+  // takes the mouse and not the keys: the lock goes (syncLock, so the arrow shows), and
+  // onDown/onMove/onWheel above stop looking while walking carries on. Unlike setPaused it
+  // clears nothing. Releasing it hands the mouse back the same way closing a panel does.
+  function setLookPaused(v) {
+    if (state.lookPaused === !!v) return;   // showMinimap asks every frame
+    state.lookPaused = !!v;
+    syncLock();
+  }
+
   // Step up to a board and work it. Pointer lock is the thing that has to go: while the
   // pointer is locked no DOM element gets a mouse event at all, so a panel in front of
   // you would look alive and answer nothing. The keys are handed over in onKeyDown.
@@ -4164,7 +4179,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut, stopRunning,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setLookPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut, stopRunning,
     // The guns on her deck (Plans/kanonnen.md): which one is within reach, manning and letting go of
     // one, and the three things done at it; `launchSelf` is a body out of a gun's mouth.
     gunNear, manGun, leaveGun, loadGun, fireGun, climbInGun, launchSelf, gun: () => state.gun, discharge,

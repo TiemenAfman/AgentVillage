@@ -1779,6 +1779,15 @@ what is across is behind the fog on both sides. The sea knows none of it and nee
 redeploy for it: a pose on the far side is just a pose. `?edge` starts walk mode 12 units
 short of the east edge.
 
+**On a mouse the chart is a look-pause, not a walk pause.** With it open the cursor is back
+(the pointer lock goes, `walk.js` `setLookPaused`, asked for by `showMinimap` every frame),
+the wheel still zooms and a left-drag pans it (`panMapBy`, the same "keep the point under the
+hand" rule as `zoomMapAt`, caught on the window in the capture phase so neither the orbit
+controls nor the walk's drag-to-look underneath see it). The feet keep working: it is not
+`setPaused`, which would also clear the keys. `setLookPaused` gates only the look
+(`wantLock`, and `onDown`/`onMove`/`onWheel`) and touches a touchscreen not at all - there a
+finger is the touch controls' (one finger looks, two pinch).
+
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
 minutes or so on the sea's own clock and riding out on the welcome and on one broadcast. It

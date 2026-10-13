@@ -640,6 +640,22 @@ export function zoomMapAt(v, base, w, h, mx, my, factor) {
   };
 }
 
+// The magnifier dragged by (dx, dy) screen pixels: the world point under the hand stays
+// under it - the same "keep it under the pointer" rule as zoomMapAt - and the same clamp
+// holds the view inside what the unzoomed sheet shows, so dragging never wanders off the
+// parchment. The wheel owns the zoom, so k is unchanged; with no magnifier (the whole
+// world already on the sheet) there is nothing to drag. Pure, for the test.
+export function panMapBy(v, base, w, h, dx, dy) {
+  if (!v) return v;
+  const s = base.scale * v.k;
+  const keep = (c, mid, span, half) => Math.min(mid + span - half, Math.max(mid - span + half, c));
+  return {
+    k: v.k,
+    cx: keep(v.cx - dx / s, base.midX, w / 2 / base.scale, w / 2 / s),
+    cz: keep(v.cz - dy / s, base.midZ, h / 2 / base.scale, h / 2 / s),
+  };
+}
+
 // Everything worth framing: the grids that have ground under them, plus every mark on the
 // horizon, which has a position but no ground this page has fetched.
 export function mapBounds(regions, far, margin = 12) {
@@ -791,6 +807,38 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
   };
   window.addEventListener('pointerup', lift, { capture: true });
   window.addEventListener('pointercancel', lift, { capture: true });
+  // Dragging the chart moves the chart, not the camera. The panel is `pointer-events: none`
+  // (the walk owns the mouse underneath it, and the hover tip reads the pointer off the
+  // window for the same reason), so the drag is caught on the window in the capture phase,
+  // before the canvas underneath hears it - the orbit controls and the walk's own
+  // drag-to-look both live there. Only for a mouse or a pen: a finger is the touch controls'
+  // business (the pinch above), where one finger still looks about and taps. With no zoom
+  // there is nothing to pan, but the press is swallowed all the same, so a drag over the
+  // open chart never turns the camera - and a press on the sheet's own button is left alone.
+  let pan = null;   // { id, x, y } while a mouse has the chart in hand
+  const inChart = (e) => {
+    if (panel.hidden) return false;
+    const r = panel.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientY >= r.top && e.clientX <= r.right && e.clientY <= r.bottom;
+  };
+  window.addEventListener('pointerdown', (e) => {
+    if (!e.isTrusted || (e.pointerType !== 'mouse' && e.pointerType !== 'pen')) return;
+    if (!inChart(e) || (e.target && e.target.closest && e.target.closest('button'))) return;
+    swallow(e);
+    if (e.button === 0) pan = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  }, { capture: true, passive: false });
+  window.addEventListener('pointermove', (e) => {
+    if (!pan || e.pointerId !== pan.id) return;
+    swallow(e);
+    if (view && lastFit) {
+      view = panMapBy(view, lastFit, W, H, e.clientX - pan.x, e.clientY - pan.y);
+      zoomedAt = performance.now();
+    }
+    pan.x = e.clientX; pan.y = e.clientY;
+  }, { capture: true, passive: false });
+  const dropPan = (e) => { if (pan && e.pointerId === pan.id) { swallow(e); pan = null; } };
+  window.addEventListener('pointerup', dropPan, { capture: true });
+  window.addEventListener('pointercancel', dropPan, { capture: true });
   if (phone) {
     const close = document.createElement('button');
     close.className = 'x worldmap-close';
@@ -858,7 +906,7 @@ export function createWorldMap({ step = 3, phone = false, onClose = null } = {})
     panel.hidden = !on;
     view = null;
     if (on) resize();
-    else { tip.hidden = true; pointer = null; }
+    else { tip.hidden = true; pointer = null; pan = null; }
   }
 
   // Which region's own grid cell a world point falls in, or null.

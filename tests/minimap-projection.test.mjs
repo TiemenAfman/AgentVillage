@@ -185,3 +185,25 @@ test('the wheel zooms the chart round the pointer and never off the sheet', asyn
   for (let i = 0; i < 40 && o; i++) o = zoomMapAt(o, base, W, H, 400, 300, 0.5);
   assert.equal(o, null);
 });
+
+test('dragging the chart moves it under the hand and never off the sheet', async () => {
+  const { fitMap, zoomedFit, zoomMapAt, panMapBy } = await import('../web/js/minimap.js');
+  const W = 800, H = 600;
+  const base = fitMap({ minX: -2016, maxX: 2016, minZ: -2016, maxZ: 2016 }, W, H, 58);
+  // The whole world is already on the sheet: nothing to drag, and it stays that way.
+  assert.equal(panMapBy(null, base, W, H, 40, -20), null);
+  // Zoomed in at the middle, a drag moves the world under the pointer by exactly that much:
+  // the point the hand grabbed comes back out where the hand now is.
+  const v = zoomMapAt(null, base, W, H, W / 2, H / 2, 3);
+  const grabbed = zoomedFit(base, W, H, v).toWorld(W / 2, H / 2);
+  const p = panMapBy(v, base, W, H, 60, -40);
+  assert.equal(p.k, v.k, 'the wheel owns the zoom');
+  const under = zoomedFit(base, W, H, p).toWorld(W / 2 + 60, H / 2 - 40);
+  assert.ok(Math.abs(under[0] - grabbed[0]) < 1e-9 && Math.abs(under[1] - grabbed[1]) < 1e-9);
+  // Dragged far past the edge, the view stops at what the unzoomed sheet showed.
+  let c = v;
+  for (let i = 0; i < 40; i++) c = panMapBy(c, base, W, H, 400, 400);
+  const z = zoomedFit(base, W, H, c);
+  const [zx, zz] = z.toWorld(0, 0), [bx, bz] = base.toWorld(0, 0);
+  assert.ok(zx >= bx - 1e-9 && zz >= bz - 1e-9, 'not past the sheet\'s corner');
+});

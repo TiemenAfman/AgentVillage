@@ -5097,7 +5097,12 @@ function setMinimapMode(mode) {
 }
 function showMinimap(on) {
   state.minimap.setVisible(on && minimapMode === 'radar');
-  state.worldMap.setVisible(on && minimapMode === 'map');
+  const chart = on && minimapMode === 'map';
+  state.worldMap.setVisible(chart);
+  // The chart wants the mouse (the cursor is back, a drag pans it) but not the keys: the
+  // feet keep working underneath it. So it is a look-pause and not a walk pause - see
+  // walk.js setLookPaused. Called every frame with the same `on`, which it treats as a no-op.
+  if (state.walk) state.walk.setLookPaused(chart);
 }
 
 // Every boat an island puts in the water, at the moorings shared/quay.mjs derives - the
@@ -8059,8 +8064,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // And our chronicle house opens the chronicle rather than a dossier: the dossier of a civic
     // building is its name and a date, and the chronicle is that date and every other one. A
     // neighbour's is never in state.byId, so it stays a click on nothing (chronicle-house.js).
-    if (hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
-    if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
+    // Reading a building off the island is the orbit camera's: the click that opens a dossier
+    // belongs to the sky. On foot that button is the hand's (a swing, a drink, a shot - walk.js
+    // `act`) and a house is entered with E, so clicking one must not also open it from across
+    // the island. The `state.inside` skip above is the room's half of the same rule.
+    if (state.mode === 'orbit' && hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
+    if (state.mode === 'orbit' && hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else {
       state.ui.closeDossier();
       // Our own ground, with nothing on it: send the body there (Plans/DONE/karakter-blijft-staan.md).
