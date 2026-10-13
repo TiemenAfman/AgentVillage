@@ -98,7 +98,7 @@ if not parts:
 node_matrices = []
 for o in parts:
     node_matrices.append(o.matrix_world.copy())
-    # The node's transform into the vertices (build-pirateship.py does the same): the pieces hang under
+    # The node's transform into the vertices (the galleon's build-pirateship.py did the same): the pieces hang under
     # a turned root, and every ray and every number below wants world coordinates.
     o.data.transform(o.matrix_world)
     o.data.update()

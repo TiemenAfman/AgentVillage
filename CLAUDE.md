@@ -897,7 +897,7 @@ beat walks it back to its home berth (`lib/boats.mjs`) — before this the one b
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
 
 **The galleon's craft is read off her bake, never typed** ([Plans/nieuwe-sloep.md](Plans/nieuwe-sloep.md), chip 2a).
-`scripts/build-pirateship.py` sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
+`scripts/build-sloop.py` (the sloop; it replaced build-pirateship.py, chip 3) sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
 `rail.<n>.a|b` (a run of bulwark on its floor), `solid`, `mast`, `port.<n>.lo|hi` (an opening in the bulwark down
 to the deck), `climb.side-*`/`climb.mast` (lo = the climber's stand, `CLIMB_OUT` outside the ropes; hi = where
 they step off), `mount.<cannon|harpoon>[-name].lo|hi` (**lo = where the gunner stands, hi = the carriage on the
@@ -919,7 +919,7 @@ the two measured tops 1e-2; the harpooners' stands moved 4 cm onto their bearing
 boat.js reads `HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
 
 **The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
-eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
+eight guns were dropped from the download (the sloop of `scripts/build-sloop.py` never had any of her own); the
 keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
 `cannon carriage`, `cannon barrel` with its origin on the trunnion axis, `anchor.muzzle`). Where they stand is
 `CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
@@ -2907,6 +2907,11 @@ change to the yard too - tests/shipyard.test.mjs says so.
   hedge, which are not drawn with the building material.
 - Triangle budgets follow the name prefix: `flora_` 60, `prop_` 120, `addon_` 150, `roof_`
   300, `house_` 600, `civic_` 1500, hero 4000.
+- A part may carry **colour zones** (opt-in, the sloop's, `scripts/build-sloop.py`): an INT face attribute
+  `zone` plus `obj['zone_names']` (JSON `[[name, '#rrggbb'], ...]`) makes `scripts/export-models.py` write
+  `zones` (an index a triangle) and `zoneNames` on the part, so a page can repaint a zone (new colour / base
+  colour, times the corner's) without the bake knowing who paints it. A part without the attribute bakes
+  byte for byte as before.
 - A set that stands over water is modelled in **one frame**, with its piles' feet at y = 0
   and everything else measured from there, so the island can drop the whole set by one
   number (`QUAY_DECK - DOCK_DECK` in `buildings.js`) and get a deck with no step in it.

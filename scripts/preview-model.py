@@ -58,7 +58,10 @@ def workbench(scene):
     scene.render.engine = 'BLENDER_WORKBENCH'
     shading = scene.display.shading
     shading.light = 'STUDIO'
-    shading.color_type = 'MATERIAL'     # the colour the material carries, not a random hue
+    # The colour the material carries, not a random hue - or, for a set painted per corner (the sloop,
+    # scripts/build-sloop.py: one white material, the colours in a `Paint` attribute), the corners'.
+    painted = any(o.type == 'MESH' and o.data.color_attributes for o in scene.objects)
+    shading.color_type = 'VERTEX' if painted else 'MATERIAL'
     shading.show_shadows = True
     shading.shadow_intensity = 0.28
     # Cavity is what makes a facet visible without a light rig: WORLD darkens real creases,

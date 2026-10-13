@@ -1,47 +1,44 @@
 # pirateship
 
-The pirate ship, a hero set like `benchy`: one painted mesh, `pirateship hull`.
+The sloop every island's first boat is: a hero set, one asset called after the set. The set and its
+parts keep the galleon's names (`pirateship`, `pirateship hull`), because web/js/boat.js, web/js/models.js
+and the generators find her by them and a name on the wire is never renamed for a new model.
 
-**Source and credit.** "Low-Poly Pirate Ship" by
-[Greggory_Fisher](https://sketchfab.com/Greggory_Fisher), from
-<https://sketchfab.com/3d-models/low-poly-pirate-ship-c5e06cf1ba164b749cb47044fe7b86eb>,
-licensed [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). Changed for the island:
-reduced from 73k to 29,798 triangles, cups, bottles and baked shadow decals removed,
-material colours baked into vertex colours, turned, scaled and set on the keel.
-Decks have staggered planks with narrow caulked seams and deterministic colour variation.
-Cannon material sections are welded and oriented together before planar simplification,
-preserving barrel bores, reinforcing rings, carriage wheels and shot. Metal fittings are
-welded and oriented before simplification too. More of the original rigging is retained.
-
-The carriage cheeks in the download are open double skins. Their 40 wooden boundary
-loops are paired and bridged into 20 closed cheeks. The build refuses an unpaired loop
-or any remaining wooden boundary edge. Small metal openings inside the cheeks are
-filled separately; cannon bores are excluded. Close-up renders, including the underside,
-are saved in `renders/carriage-fixed/` for the assembled ship.
-
-`source/pirateship-greggoryfisher.glb` is the download as it came; `scripts/build-pirateship.py`
-turns it into `pirateship.blend` and bakes `web/js/pirateship-mesh.js`:
+**Built here, from nothing.** `scripts/build-sloop.py` writes `pirateship.blend` and bakes
+`web/js/pirateship-mesh.js` in one run ([Plans/nieuwe-sloep.md](../../Plans/nieuwe-sloep.md), chip 3):
 
 ```bash
-blender --background --python scripts/build-pirateship.py -- [preview.png] [side|deck]
+node scripts/blender.mjs --background --python scripts/build-sloop.py
+node scripts/blender.mjs --background --python scripts/build-sloop.py -- refs/sloop-build deck cabin nest nobake
 ```
 
-Its triangle budget is its own (`HERO_BUDGETS` in `scripts/model-rules.mjs`, 30000): a
-galleon you walk the deck of, one draw call, and a few in the world at most.
+The second form renders previews (side, quarter, stern, bow, top, deck, cabin, port, nest, iso, pair beside
+the Batavia, lines and under without the sea) and, with `nobake`, leaves the .blend and the module alone.
+Run it twice: the module must come out the same bytes (the .blend carries Blender's own timestamps).
+`npm run models -- pirateship` re-exports the committed .blend and then derives the craft and cuts the walk
+map from it (scripts/build-craft.mjs, scripts/build-shipwalk.mjs).
 
-The plank deck lies 0.004 above the bake it replaced, and length, height and deck frame are
-unchanged, so `SHIP_TALL` and `SHIP_HELM` in `web/js/boat.js` and the galleon's decks in
-`shared/crafts.mjs` still hold without being measured again. The detail work was done and
-inspected in the Settlers checkout (`codex/galleon-render-controle`,
-[docs/galleon-render-inspection.md](../../docs/galleon-render-inspection.md)).
+**The yardstick is bought and not in git.** Her sizes come from a Sea of Thieves sloop the keeper bought,
+measured once by `scripts/measure-sloop.py` into `refs/sloop/measure.json` (gitignored) and typed into the
+build script as literals. No mesh of it is used, and none of it may ever be committed.
 
-For inspection without changing the model:
+**What she bakes as.** `pirateship hull` (everything that can be touched, one white material
+`plain:pirateship paint`, the colours per corner in `Paint`), `pirateship glow` (window glass and lantern
+lights, emissive), `pirateship sail` (a 10 x 14 grid hung from its yard, origin on the yard's middle, every
+corner at or under it) and `pirateship flag` (hung by its luff at the part's origin, flying aft). The last two
+are moved by web/js/ship-motion.js. Keel on y = 0, origin amidships, `anchor.waterline` at her draught (0.83).
 
-```powershell
-node scripts/blender.mjs --background --python scripts/inspect-model.py -- assets/pirateship/pirateship.blend assets/pirateship/renders/final
-node scripts/blender.mjs --background --python scripts/inspect-model.py -- assets/pirateship/pirateship.blend assets/pirateship/renders/detailed --target 1.3 -1.5 2.7 --span 4
-```
+**Colour zones.** Every face carries a zone (`zones`, one index a triangle, and `zoneNames`, each a name
+and its base colour, written by scripts/export-models.py for a part with an INT face attribute `zone`):
+planks, bottom, boot, wales, trim, spine, transom, rudder, iron, glass, deck, inner, cap, fittings, spar,
+rope, sail, flag, flagmark. A shade inside a zone is in the corner's colour, so repainting a zone is the new
+colour over its base colour, times the corner.
 
-Both commands pair ten views with backface culling on and off. Inspection renders are
-ignored; the build is reproducible from the credited GLB. The original length, height and
-deck frame are preserved; plank faces sit 0.004 units above their supporting surface.
+**Anchors** (scripts/model-rules.mjs, read into `shared/craft-galleon.mjs` by scripts/build-craft.mjs):
+`deck.*` and `stair.*` (the waist, the break, fore and bow, the starboard walkway, the companion's foot, the
+cabin, the stern well, the quarterdeck and the stairhead, the nest), `rail.*` (the bulwark in straight runs
+and the balustrades), `port.1|2` (the entry ports, starboard first), `climb.side-starboard|port` and
+`climb.mast` (up the pins), `mount.cannon-s|p` and `mount.harpoon`, `mast.main`, `helm`, `nest`, `cargo`,
+`waterline`. `tests/sloop-bake.test.mjs` holds the bake to them.
+
+Her triangle budget is her own (`HERO_BUDGETS` in `scripts/model-rules.mjs`, 20000; she is about 11k).

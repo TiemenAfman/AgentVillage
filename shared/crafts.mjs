@@ -50,7 +50,7 @@
 // with the numbers read off its model's anchors, not a change to anything that reads them.
 
 // The galleon's own numbers come off her bake: scripts/build-craft.mjs reads the anchors her build
-// script sets (scripts/build-pirateship.py: deck and stair corners, rails, masts, the rope ladders,
+// script sets (scripts/build-sloop.py: deck and stair corners, rails, masts, the rope ladders,
 // the mounts, helm, nest, cargo, the waterline) and her hull's triangles, and writes
 // shared/craft-galleon.mjs - literals only, like shared/quay.mjs's HEADINGS, so that this stays a module
 // the sea reads as it is (Dockerfile.sea copies shared/ whole). What is tuned by hand rather than
@@ -92,7 +92,8 @@ export const CRAFTS = Object.freeze({
     rails: Object.freeze([]),
     ladders: Object.freeze([]),
   }),
-  // The pirate ship (scripts/build-pirateship.py, 13 long). Every number but the ones named above
+  // The pirate ship (scripts/build-sloop.py; the numbers quoted here are the old galleon's, 13 long, until
+  // chip 4 of Plans/nieuwe-sloep.md derives the sloop's craft and measures them again). Every number but the ones named above
   // is the bake's (shared/craft-galleon.mjs): the planking as rectangles with their heights - the
   // waist 1.108 above DECK_Y, the forecastle 1.318, the quarterdeck 1.738 and the poop 1.948, the
   // stairs between them as ramps - the bulwarks as rails, where her masts stand, the rope ladders

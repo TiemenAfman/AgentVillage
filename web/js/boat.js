@@ -490,7 +490,7 @@ export function swellOf(swell, t, way = 0, out = [0, 0, 0]) {
   }
   return out;
 }
-// The pirate ship (scripts/build-pirateship.py, Greggory_Fisher's model, CC-BY-4.0): baked keel
+// The pirate ship - the sloop since Plans/nieuwe-sloep.md (scripts/build-sloop.py, modelled here): baked keel
 // on y = 0 like the Benchy, its waterline the bake's own `anchor.waterline` (shared/craft-galleon.mjs
 // `draught`, SHIP_DRAUGHT). Every island's first boat is one (shared/crafts.mjs kindOf), laid in deep
 // water off its berth (main.js shipBerth).

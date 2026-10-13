@@ -5,7 +5,7 @@
 //
 // shared/crafts.mjs used to type every one of these numbers by hand - deck rectangles measured by rays
 // in Blender, a ladder's rope line, where a gun stands - against a bake that could change under them.
-// Now the bake carries them as anchors (scripts/build-pirateship.py, the grammar in scripts/model-rules.mjs:
+// Now the bake carries them as anchors (scripts/build-sloop.py, the grammar in scripts/model-rules.mjs:
 // deck/stair/rail/solid/mast/port/climb/mount pairs, helm/nest/cargo points, the waterline) and this turns
 // those into the craft: a record of literals that the sea reads as it reads any other shared module
 // (Dockerfile.sea copies shared/ whole). The generator may do arithmetic - a bearing from two points, a

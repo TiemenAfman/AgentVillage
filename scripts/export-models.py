@@ -107,6 +107,10 @@ def bake(set_name, source):
         # Preserve CORNER/POINT vertex colours painted by hand in Blender when present.
         attr = mesh.color_attributes.active_color
         skin_rig = obj.get('skin_rig')
+        # A colour zone per face (scripts/build-sloop.py): an INT face attribute `zone` and the zones' names
+        # in obj['zone_names'] (JSON), carried as `zones` (one index a triangle) and `zoneNames`, so the
+        # page can repaint a zone without the bake knowing who paints it. Opt-in: no attribute, no field.
+        zone_attr = mesh.attributes.get('zone') if obj.get('zone_names') else None
         group_names = {g.index: g.name for g in obj.vertex_groups} if skin_rig else {}
         for slot, material in enumerate(obj.data.materials):
             if not material:
@@ -117,12 +121,15 @@ def bake(set_name, source):
             positions = []
             colors = []
             normals, skin_indices, skin_weights = [], [], []
+            zones = []
             for tri in mesh.loop_triangles:
                 if tri.material_index != slot:
                     continue
                 points = [Vector(game(obj.matrix_world @ mesh.vertices[i].co - origin)) for i in tri.vertices]
                 if (points[1] - points[0]).cross(points[2] - points[0]).length_squared < 1e-16:
                     continue
+                if zone_attr is not None:
+                    zones.append(int(zone_attr.data[tri.polygon_index].value))
                 for j, p in enumerate(points):
                     positions.extend(round(v, DIGITS) for v in p)
                     color = attr.data[tri.loops[j] if attr.domain == 'CORNER' else tri.vertices[j]].color if attr else material.diffuse_color
@@ -145,6 +152,8 @@ def bake(set_name, source):
                     raise ValueError(f'{set_name}: two parts are called "{name}"')
                 parts[name] = {'positions': positions, 'colors': colors, 'sheet': sheet,
                                'emissive': float(material.get('emissive', 0)), 'at': game(origin)}
+                if zone_attr is not None:
+                    parts[name].update(zones=zones, zoneNames=json.loads(obj['zone_names']))
                 if skin_rig:
                     parts[name].update(rig=skin_rig, normals=normals, skinIndices=skin_indices, skinWeights=skin_weights)
                 if asset is not None:

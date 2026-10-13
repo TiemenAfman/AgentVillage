@@ -152,7 +152,7 @@ smooth normals - and because the island looks the way it looks.
   lowers her by; `deck.<name>.lo|hi` and `stair.<name>.lo|hi`, opposite corners of the
   planking and the ladders a body will walk, at the heights a downward ray found them; and
   `mast.<name>`. Corners come in pairs, and the check refuses half of one.
-- A ship that is *sailed* and walked (the galleon, `assets/pirateship`, `scripts/build-pirateship.py`)
+- A ship that is *sailed* and walked (the sloop, `assets/pirateship`, `scripts/build-sloop.py`)
   measures everything her craft needs the same way, and `scripts/build-craft.mjs` reads it into
   `shared/craft-galleon.mjs` - so nobody types a deck's height into `shared/crafts.mjs` against a
   bake that may change under it. Besides the decks, stairs and masts: `rail.<n>.a|b`, the two ends
