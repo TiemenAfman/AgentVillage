@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { createSurface, stepHull, BODY_R } from '../shared/hullwalk.mjs';
 import { SHIPWALK } from '../web/js/shipwalk-map.js';
 import { CRAFTS } from '../shared/crafts.mjs';
+import { DECK_Y } from '../shared/hull.mjs';
 register('./support/shared-loader.mjs', import.meta.url);
 
 // The real walk mode, headless (tests/ship-runout.test.mjs has the same stubs).
@@ -145,4 +146,30 @@ test('her wheel and her guns are offered only from their own deck, never through
   assert.equal(walk.gunNear(), 0, 'the gun is not offered at its own breech');
   d.y = g.y + 0.57;
   assert.equal(walk.gunNear(), null, 'the gun is offered from a deck above it');
+});
+
+test('in her cabin the camera stays in the cabin, looking round: it never goes out through the bulkhead', () => {
+  const { walk, camera } = onTheSloop();
+  walk.leaveHelm();
+  const d = walk.state.deck;
+  const cabin = Math.min(...DECKS);
+  // Half a unit inside the door, where the keeper stood (frames 61-78: the wall, and the body in its door).
+  let at = null;
+  for (let z = -1.9; z > -2.6 && !at; z -= 0.05) {
+    const f = S.standAt(0, z, cabin + 0.01);
+    if (f !== null && !S.blockedAt(0, z, f) && S.ceilingIn(0, z, f + 0.5) !== null) at = { z, f };
+  }
+  assert.ok(at, 'no place under the quarterdeck to stand in');
+  const out = [];
+  for (let i = 0; i < 360; i += 15) {
+    Object.assign(d, { x: 0, z: at.z, y: at.f, vy: 0, grounded: true });
+    walk.state.camYaw = (i * Math.PI) / 180;
+    walk.state.camPitch = 0.3;
+    for (let k = 0; k < 30; k++) walk.update(1 / 60);
+    // The ship lies at the origin, unturned: the camera's own x, z are her frame's.
+    const y = camera.position.y - DECK_Y;
+    const lid = S.ceilingIn(camera.position.x, camera.position.z, y - 0.3);
+    if (lid === null) out.push(`${i} deg: camera at ${camera.position.x.toFixed(2)},${camera.position.z.toFixed(2)} is out from under the deck`);
+  }
+  assert.deepEqual(out, []);
 });

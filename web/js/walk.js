@@ -3930,7 +3930,15 @@ export function createWalkMode({
     toLocal(frame, state.pos.x, state.pos.z, hullLocal);
     const lid = walkMap.ceilingIn ? walkMap.ceilingIn(hullLocal[0], hullLocal[1], pivotY - base) : null;
     const reach = Math.min(pivotY - base + 0.5, lid == null ? Infinity : lid - 0.05);
-    return { frame, base, walk: walkMap, reach, lid };
+    return { frame, base, walk: walkMap, reach, lid, covered: lid != null && lid - (pivotY - base) < COVER };
+  }
+  // How close over a point a lid of hers has to be for the point to be under cover - in a cabin - and
+  // not merely under a yard or her crow's nest. The sloop's cabin has 1.17 of headroom.
+  const COVER = 1.4;
+  // Whether a point of the scene is under cover of hers (hullLidAt within COVER over it).
+  function hullCovered(h, x, y, z) {
+    const lid = hullLidAt(h, x, y, z);
+    return lid != null && lid - y < COVER;
   }
   function hullDeckAt(h, x, z) {
     toLocal(h.frame, x, z, hullLocal);
@@ -3944,7 +3952,9 @@ export function createWalkMode({
     const c = h.walk.ceilingIn(hullLocal[0], hullLocal[1], y - h.base);
     return c == null ? null : h.base + c;
   }
-  // Whether the point is inside something the boom must stop at, of what is sampled.
+  // Whether the point is inside something the boom must stop at, of what is sampled. `walled` says the
+  // last one was a cabin's wall (see below).
+  let walled = false;
   function solidPoint(x, y, z) {
     const g = camDive > 0 ? Math.max(heightUnder(x, z), bedUnder(x, z)) : heightUnder(x, z);
     if (y < g + CAM_R * 0.5) return true;
@@ -3966,6 +3976,12 @@ export function createWalkMode({
         const lid = hullLidAt(camHull, x, y, z);
         if (lid != null && y > lid - CAM_R) return true;
       }
+      // And the walls of a cabin, which the walk map cannot see (it is cut with vertical lines, and a
+      // bulkhead is vertical): from under cover the boom stops where the cover ends, and from the open
+      // deck where it begins. In the sloop's cabin the boom went out through the bulkhead into the
+      // stairwell, and all the keeper saw was the wall with the body in its door (13 Oct 2026).
+      // armReach keeps the lens's room short of it (`walled`), or it stands in the plane of the wall.
+      if (hullCovered(camHull, x, y, z) !== camHull.covered) { walled = true; return true; }
     }
     return false;
   }
@@ -4002,8 +4018,9 @@ export function createWalkMode({
     const step = Math.max(0.06, best / 80);
     let open = false;
     for (let t = 0; t <= best; t += step) {
+      walled = false;
       if (solidPoint(ax + dx * t, ay + dy * t, az + dz * t)) {
-        if (open) { best = Math.max(0, t - step); break; }
+        if (open) { best = Math.max(0, t - step - (walled ? CAM_R : 0)); break; }
       } else open = true;
     }
     return best;
@@ -4125,8 +4142,11 @@ export function createWalkMode({
     // where the camera ended up, for its lid.
     armDir.copy(camera.position).sub(pivot);
     const want = armDir.length();
-    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all.
-    if (cameraFixed()) armLen = want;
+    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all - except
+    // in a ship's cabin, under her deck (camHull.covered): there is no seeing a body in there from
+    // outside its walls, and with no boom the camera stood in the stairwell looking at the bulkhead
+    // with the body in its door (the sloop, 13 Oct 2026).
+    if (cameraFixed() && !(camHull && camHull.covered)) armLen = want;
     else if (want > 1e-6) {
       armDir.divideScalar(want);
       // How far it may reach this frame, at once: nothing between the camera and the body, ever.
