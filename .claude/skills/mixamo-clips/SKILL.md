@@ -48,10 +48,14 @@ into `assets/mixamo/` as below.
    `clips.json` and the baked `gait-clips.js` are committed; a machine without the FBX downloads
    them again (each listed file is named after its Mixamo clip: Walking, Running, Sprint,
    Standing Idle, Jump, Standing Jump, Swimming, Treading Water, Digging, Climbing Ladder, Falling Forward Death and
-   Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip) before it can re-bake.
+   Floating - "Floating In Air Flailing Arms", which is `drown`: Mixamo has no drowning clip; also Hanging Idle - "Hanging By Hands Gently Swaying", `hang`, saved as hanging-swaying.fbx - and Walking - "Careful Walk", `ropeWalk`, saved as careful-walk.fbx) before it can re-bake.
 2. Decide how it is played and say so in `bake-mixamo-gait.py`:
    - **by distance** (a gait: walk, run, sprint): nothing to add; it needs a travelling clip and
      gets `stride`, `speed` and `contact` (where in the cycle the left foot comes down).
+   - **by distance, unevenly** (a clip whose hips dawdle in one stretch and hurry in another: `ropeWalk`,
+     Mixamo's Careful Walk): add the name to `ALONG` as well. The bake writes `along`, how far along the
+     stride the hips are at each row, and the rig turns the distance walked into a moment through it
+     (classic-avatar.js `alongAt`); played evenly its planted foot slid twice as far.
    - **by height** (a climb: `climb`, Mixamo's Climbing Up A Ladder): add the name to `CLIMBS`.
      Download it **without** In Place: the bake reads `rise` (leg lengths a cycle) off how far the
      hips go up, takes that steady rise out of the hips' `drop`, and measures the drop from where
@@ -142,6 +146,11 @@ by name) after stepping it to the same moment. They should agree to about 0.1.
 
 ## 5. Check and ship
 
+- **Choosing** what to bake: the workbench's *Mixamo-catalogus* plays every clip of the keeper's library
+  (`D:\Mixamonims\y-bot`, fetched with `mixamo-fetch`) on the Adventurer or a Wanderer before anything is
+  baked, and *Exporteer keuze* hands the starred ones over as `clips.json` entries plus name, file and id.
+  It runs the bake's conversion for a timed clip (`web/js/mixamo-preview.js`), so a gait, a climb or the
+  swim looks close but not final there - the bake decides.
 - `/avatar-motion.html` (the motion workbench): Lopen, Rennen, Sprinten, Zwemmen, Graven, Klimmen,
   Springen, Dichtbij, Zijaanzicht. In a hidden browser pane no frames run between screenshots:
   set `travellerPreview.held = true` and step with `travellerPreview.advance(frames)`.

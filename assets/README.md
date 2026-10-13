@@ -152,6 +152,22 @@ smooth normals - and because the island looks the way it looks.
   lowers her by; `deck.<name>.lo|hi` and `stair.<name>.lo|hi`, opposite corners of the
   planking and the ladders a body will walk, at the heights a downward ray found them; and
   `mast.<name>`. Corners come in pairs, and the check refuses half of one.
+- A ship that is *sailed* and walked (the galleon, `assets/pirateship`, `scripts/build-pirateship.py`)
+  measures everything her craft needs the same way, and `scripts/build-craft.mjs` reads it into
+  `shared/craft-galleon.mjs` - so nobody types a deck's height into `shared/crafts.mjs` against a
+  bake that may change under it. Besides the decks, stairs and masts: `rail.<n>.a|b`, the two ends
+  of a run of bulwark on the floor under it; `solid.<name>.lo|hi`, a box nobody walks through;
+  `port.<n>.lo|hi`, an opening in the bulwark down to the deck (a gun port with its lid up, the
+  gap a rope ladder is boarded through); `climb.<name>.lo|hi`, a rope ladder that is climbed - `lo`
+  where the climber stands at its foot (outside the ropes by shared/deck.mjs's `CLIMB_OUT`), `hi`
+  where they step off its head, `climb.side-*` over her side and `climb.mast` up to the crow's
+  nest (`deck.nest`, a deck of its own layer, never walked to); `mount.<kind>[-<name>].lo|hi` for
+  what can be manned, a `cannon` or a `harpoon` - `lo` where whoever mans it stands, `hi` the
+  middle of its carriage on the planking, and **the bearing from `lo` to `hi` is the way it points
+  at rest**, since an empty carries a point and no direction; and three points, `helm`, `nest`
+  (the seat) and `cargo`. Names may carry a hyphen (`climb.side-port`, `mount.cannon-s`): a ship
+  has two of most things. What is not an anchor - her length at the water, the probes she sails
+  by, the height of the bulwark a ladder is climbed over - the generator cuts from her triangles.
 - Variants are `_a`, `_b`, `_c`, so a caller can pick one with the rng; an optional `_lo`
   is the cheap one for the modest GPU mode.
 

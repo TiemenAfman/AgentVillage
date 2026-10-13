@@ -110,6 +110,24 @@ function readLayer(map) {
     return false;
   }
 
+  // The lowest level surface in the cell above `y` - a hair over it, so the surface a point lies in
+  // is never its own lid - or null under the open sky: the underside of a deck over a cabin, a beam
+  // under it. Level surfaces only (`e & 1`, whichever way they face: the cut keeps no winding), because
+  // a rope of the rigging crossing the column is not a lid, and as one it bounded the floors under
+  // the follow camera for nothing (walk.js hullForCamera).
+  function ceilingIn(x, z, y) {
+    const c = cellOf(x, z);
+    if (c < 0) return null;
+    const a = c === 0 ? 0 : end(c - 1), b = end(c);
+    for (let i = a; i < b; i++) {
+      const e = hits[i];
+      if (!(e & 1)) continue;
+      const h = heightOf(e);
+      if (h > y + 0.05) return h;
+    }
+    return null;
+  }
+
   // The lowest and highest surface in the cell, or null where the line meets nothing.
   function spanIn(x, z) {
     const c = cellOf(x, z);
@@ -124,7 +142,7 @@ function readLayer(map) {
     }
     return [lo, hi];
   }
-  return { floorIn, solidIn, spanIn, has: (x, z) => cellOf(x, z) >= 0 };
+  return { floorIn, solidIn, ceilingIn, spanIn, has: (x, z) => cellOf(x, z) >= 0 };
 }
 
 // A surface out of the baked map: every layer of it read as one. A floor is the highest any layer has
@@ -143,6 +161,16 @@ export function createSurface(map) {
     return best;
   }
   const solidIn = (x, z, y, above) => layers.some((l) => l.solidIn(x, z, y, above));
+  // The lowest lid over (x, z) above `y` in any layer, or null: what the follow camera in a cabin
+  // under the poop stays under (walk.js hullForCamera, solidPoint; Plans/nieuwe-sloep.md).
+  function ceilingIn(x, z, y) {
+    let best = null;
+    for (const l of layers) {
+      const c = l.ceilingIn(x, z, y);
+      if (c !== null && (best === null || c < best)) best = c;
+    }
+    return best;
+  }
 
   // The body of radius `r` standing at (x, z) with its feet at `y`: an obstacle anywhere in its
   // ring. `above` is what it steps over - a step's reach on the ground, a hair in the air.
@@ -182,7 +210,7 @@ export function createSurface(map) {
   // nothing: the hull's envelope there, which the follow camera keeps out of (walk.js,
   // Plans/camera-botsing.md). The deck's alone: a nest eight units up is not the hull's envelope.
   const spanAt = (x, z) => deck.spanIn(x, z);
-  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(x, z, y, reach), blockedAt, standAt, landAt, inMap, spanAt, map };
+  return { floorIn: (x, z, y, reach = STEP_UP) => floorIn(x, z, y, reach), ceilingIn, blockedAt, standAt, landAt, inMap, spanAt, map };
 }
 
 // The nearest place to (x, z) where a body can stand and is not inside anything: for putting somebody

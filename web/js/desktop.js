@@ -48,6 +48,50 @@ export function desktopFullscreen(win = globalThis.window) {
   return fs;
 }
 
+// Which graphics card the window draws on (Plans/sneller-op-igpu.md), the keeper's choice in
+// Settings -> Graphics. Chromium picks its adapter once, when the window's GPU process starts,
+// so a choice takes effect only in a new window: Rust keeps it in gpu.json beside window.json and
+// starts the next window on it. Asked through promptholm://gpu/<fast|low|query|restart> (the
+// close's door), answered `window.promptholmGpu({ running, chosen })`. `running` stays null
+// until Rust has answered - a window from before this never does, and then there is no row.
+export const GPU_CHOICES = ['fast', 'low'];
+const gpus = new WeakMap();
+export function desktopGpu(win = globalThis.window) {
+  if (!win || !win.PROMPTHOLM_DESKTOP) return null;
+  let g = gpus.get(win);
+  if (g) return g;
+  let running = null;
+  let chosen = null;
+  const listeners = new Set();
+  const ask = (what) => { win.location.href = `promptholm://gpu/${what}`; };
+  win.promptholmGpu = (said) => {
+    const r = GPU_CHOICES.includes(said?.running) ? said.running : null;
+    const c = GPU_CHOICES.includes(said?.chosen) ? said.chosen : r;
+    if (r === running && c === chosen) return;
+    running = r;
+    chosen = c;
+    for (const fn of listeners) fn({ running, chosen });
+  };
+  g = {
+    get running() { return running; },
+    get chosen() { return chosen; },
+    choose: (v) => { if (GPU_CHOICES.includes(v)) ask(v); },
+    restart: () => ask('restart'),
+    query: () => ask('query'),
+    onChange: (fn) => { listeners.add(fn); },
+  };
+  gpus.set(win, g);
+  return g;
+}
+
+// What Settings says under the two chips. `name` is the card WebGL reports now (gpuShortName).
+export function gpuNote({ running, chosen, name = '' } = {}) {
+  const word = { fast: 'the fast graphics card', low: 'the power-saving graphics card' };
+  const now = `This window draws on ${word[running] || 'its card'}${name ? ` (${name})` : ''}.`;
+  if (!chosen || chosen === running) return `${now} Changing it restarts the window; the island keeps running.`;
+  return `${now} After a restart it draws on ${word[chosen]}.`;
+}
+
 // Handed in by installDesktopGuards: take the mouse look back once a card is answered.
 let resumeLock = () => {};
 let installedOn = null;   // the window the guards were installed on, which F11 acts for
@@ -147,6 +191,9 @@ export function installDesktopGuards(win = globalThis.window, hooks = {}) {
   // A window that starts fullscreen (remembered from last time) or a page that was reloaded in
   // it has not been told yet.
   desktopFullscreen(win).query();
+  // Two navigations in one task: the second replaces the first before either goes out, so the
+  // card is asked a moment later.
+  setTimeout(() => desktopGpu(win).query(), 300);
   win.promptholmConfirmClose = () => {
     if (document.pointerLockElement) document.exitPointerLock();
     ask({

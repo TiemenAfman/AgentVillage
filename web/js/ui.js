@@ -12,6 +12,7 @@ import { cameraFixed, setCameraFixed } from './camera-prefs.js';
 import { NOCLIP_KEY } from './noclip.js';
 import { MIX_LEVELS, MIX_PARTS, MIX_STEP, loadMix } from './sound-mix.js';
 import { createDisplay } from './display.js';
+import { desktopGpu, gpuNote } from './desktop.js';
 
 const TIER_ORDER = ['tent', 'hut', 'cottage', 'house', 'manor', 'keep'];
 const TIER_MIN = { tent: 1, hut: 3, cottage: 9, house: 21, manor: 51, keep: 121 };
@@ -898,6 +899,7 @@ export function createUI(handlers) {
     };
     return '<div><h3 class="sec">Graphics</h3>'
       + qualityRows()
+      + gpuRow()
       + `<p class="muted" style="margin:12px 0 12px">Adjust how far different parts of the island are drawn.</p>`
       + GRAPHICS_ROWS.map(row).join('')
       + detailRow()
@@ -926,6 +928,22 @@ export function createUI(handlers) {
       + `<p class="muted" style="margin:4px 0 0">${stats
         ? 'On: draw calls, triangles and frame times in the bottom left corner, the shadow pass apart.'
         : 'Off. The same readout as <code>?stats</code> in the address.'}</p>`;
+  }
+  // Which graphics card promptholm.exe draws on (desktop.js desktopGpu, Plans/sneller-op-igpu.md):
+  // only in the window, and only once Rust has said which one it started on. The card is picked
+  // when the window starts, so a change offers to restart it; the island itself keeps running.
+  const GPU_LABELS = { fast: 'Fast (discrete)', low: 'Power saving (integrated)' };
+  function gpuRow() {
+    const g = desktopGpu();
+    if (!g || !g.running) return '';
+    const pending = g.chosen && g.chosen !== g.running;
+    const name = handlers.gpuName ? handlers.gpuName() : '';
+    return `<div class="setting-row"><label>Graphics card</label><div class="chips wrap">`
+      + Object.entries(GPU_LABELS).map(([k, t]) => `<button class="chip${g.chosen === k ? ' on' : ''}" data-gpu="${k}" aria-pressed="${g.chosen === k}">${t}</button>`).join('')
+      + '</div>'
+      + `<p class="muted" style="margin:4px 0 0">${esc(gpuNote({ running: g.running, chosen: g.chosen, name }))}</p>`
+      + (pending ? `<div class="chips wrap" style="margin-top:6px"><button class="chip" data-gpu-restart="1">Restart the window now</button></div>` : '')
+      + '</div>';
   }
   let qualityTimer = null;
   function qualityTick(on) {
@@ -1107,6 +1125,14 @@ export function createUI(handlers) {
       if (handlers.onGraphicsReset) handlers.onGraphicsReset();
       if (handlers.graphics) Object.assign(state.graphics, handlers.graphics());
       renderSettings();
+    }));
+    el('settings-body').querySelectorAll('[data-gpu]').forEach((b) => b.addEventListener('click', () => {
+      desktopGpu()?.choose(b.dataset.gpu);   // Rust answers, and onChange draws the row again
+    }));
+    el('settings-body').querySelectorAll('[data-gpu-restart]').forEach((b) => b.addEventListener('click', () => {
+      b.disabled = true;
+      b.textContent = 'Restarting…';
+      desktopGpu()?.restart();
     }));
     el('settings-body').querySelectorAll('[data-quality]').forEach((b) => b.addEventListener('click', () => {
       const v = b.dataset.quality;
@@ -1679,6 +1705,7 @@ export function createUI(handlers) {
   el('plan-btn').addEventListener('click', () => handlers.onTogglePlan && handlers.onTogglePlan());
 
   display.onChange(() => { if (!el('sysmenu').hidden) renderSettings(); });
+  desktopGpu()?.onChange(() => { if (!el('sysmenu').hidden) renderSettings(); });
 
   return {
     state, setVillage, setLive, setClock, setBuilding, showDossier, buildLegend, labels, hamletLabels,

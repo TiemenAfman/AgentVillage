@@ -12,10 +12,11 @@ import { KIT, MAST_LADDER, MAST_FROM } from './kraken-layout.js';
 import { RUNG_STEP, RUNG_R, RUNG_OUT } from 'shared/deck.mjs';
 import { CRAFTS } from 'shared/crafts.mjs';
 import { DECK_Y } from 'shared/hull.mjs';
-import { createBoat } from './boat.js';
-import { climbWay, climbWayDown, climbAlong, onWay } from './ladder-way.js';
-import { pathAt } from 'shared/deck.mjs';
+import { createBoat, SHIP_SURFACE, ladderBoxes } from './boat.js';
+import { climbWay, climbWayDown, climbAlong, onWay, ladderLanding } from './ladder-way.js';
+import { pathAt, ladderPath, deckAt } from 'shared/deck.mjs';
 import { ROPE_WALK, ROPE_HANG } from 'shared/harpoon.mjs';
+import { createMixamoCatalogue } from './mixamo-catalogue.js';
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#motion'), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -71,6 +72,12 @@ function showHorsePool(riding,share){
 const rider=figures.find(f=>f.id===(new URLSearchParams(location.search).get('rider')||'adventurer'))||figures.find(f=>f.id==='adventurer');
 const seatAt=new THREE.Vector3();
 const traveller = figures[0].rig;
+// The Mixamo catalogue (web/js/mixamo-catalogue.js): every clip of the keeper's library, played on one
+// of the bodies that play clips (not the Traveller, whose walk is his own). While a clip plays it owns
+// the stage: that one body, standing where it stands, the clip's hips' travel added when In Place is off.
+const trialBodies=figures.filter(f=>f.id!=='traveller');
+const catalogue=createMixamoCatalogue({bodies:trialBodies.map(f=>({id:f.id,name:CHARACTERS.find(c=>c.id===f.id).name+(f.id.startsWith('wanderer-')?f.id.endsWith('female')?' (vrouw)':' (man)':'')}))});
+let trialAt=null;
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({ color:0x758968, roughness:1 }));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 const track=new THREE.Group();scene.add(track);
 for(let i=-60;i<=60;i++){
@@ -175,7 +182,7 @@ let onStep=false;
 const STEP_H=24*RUNG_STEP, STEP_LAND=.46, STEP_FROM=.3, STEP_REST=.9;
 const stepRope=[{x:0,y:0,z:0},{x:0,y:STEP_H+.06,z:0},{x:0,y:STEP_H,z:-STEP_LAND}];
 const stepUp=climbWay(stepRope,{x:0,y:0,z:STEP_FROM}), stepDown=climbWayDown(stepRope,{x:0,y:STEP_H,z:-STEP_LAND});
-let stepState={dir:1,d:0,rest:STEP_REST};
+const stepState={dir:1,d:0,rest:STEP_REST};
 const stepRigs=figures.map(f=>{
   const g=new THREE.Group();
   for(const x of [-ROPE_HW,ROPE_HW]){const r=new THREE.Mesh(new THREE.BoxGeometry(.012,STEP_H+.08,.012),ropeMat);r.position.set(x,(STEP_H+.08)/2,RUNG_OUT-CLIMB_OUT);g.add(r);}
@@ -186,14 +193,42 @@ const stepRigs=figures.map(f=>{
   g.visible=false;scene.add(g);return g;
 });
 // One step of it, for every body alike: up, a rest on the plank, down, a rest on the floor.
-function stepTick(dt){
-  const w=stepState.dir>0?stepUp:stepDown;
-  if(stepState.rest>0){stepState.rest-=dt;return {w,moving:false};}
-  const was=stepState.d;
-  stepState.d=climbAlong(w,stepState.d,stepState.dir>0?1:-1,dt);
-  if(stepState.dir>0&&stepState.d>=w.len){stepState={dir:-1,d:stepDown.len,rest:STEP_REST};return {w,moving:true};}
-  if(stepState.dir<0&&stepState.d<=0){stepState={dir:1,d:0,rest:STEP_REST};return {w,moving:true};}
-  return {w,moving:stepState.d!==was};
+function wayTick(st,up,down,dt){
+  const w=st.dir>0?up:down;
+  if(st.rest>0){st.rest-=dt;return {w,moving:false};}
+  const was=st.d;
+  st.d=climbAlong(w,st.d,st.dir>0?1:-1,dt);
+  if(st.dir>0&&st.d>=w.len){Object.assign(st,{dir:-1,d:down.len,rest:STEP_REST});return {w,moving:true};}
+  if(st.dir<0&&st.d<=0){Object.assign(st,{dir:1,d:0,rest:STEP_REST});return {w,moving:true};}
+  return {w,moving:st.d!==was};
+}
+const stepTick=dt=>wayTick(stepState,stepUp,stepDown,dt);
+// Or in through a port in the bulwark (Poortladder, Plans/nieuwe-sloep.md chip 2b): the galleon's own hull
+// with a rope ladder given a `port` hung at her waist, to her deck's level - the sloop's entrances, before
+// her bake exists. The body climbs it from the floor (the ladder's foot, rung 0, as the crow's nest's) and
+// steps straight in over the sill along web/js/ladder-way.js's way, whose end is where walk.js lands
+// (ladderLanding, asked of her walk map), and down again; so this is the climb the island will draw there.
+// Her bulwark still stands where the port will be cut - the body goes through it, which is the bake's to
+// fix and not the climb's - and her own ladder hangs further forward for the difference.
+let onPort=false, port=null;
+const PORT_LADDER=(()=>{const l=CRAFTS.galleon.ladders.find(q=>q.x>0), x=1.7, z=-.3;return {...l,z,land:[x,z],top:deckAt(CRAFTS.galleon,x,z),port:.3};})();
+const PORT_SPEC={...CRAFTS.galleon,ladders:[PORT_LADDER]};
+const portRope=ladderPath(PORT_SPEC,PORT_LADDER,PORT_LADDER.foot);
+portRope[portRope.length-1]=ladderLanding(SHIP_SURFACE,PORT_SPEC,PORT_LADDER);
+const portUp=climbWay(portRope,{x:portRope[0].x+STEP_FROM,y:portRope[0].y,z:portRope[0].z}), portDown=climbWayDown(portRope,portRope[portRope.length-1]);
+const portState={dir:1,d:0,rest:STEP_REST};
+const portTick=dt=>wayTick(portState,portUp,portDown,dt);
+// The hull's frame onto the workbench: her starboard side towards the climber, so her -x (into her) is the
+// body's -z, the way every ladder here is faced. A turn of yaw sends (x, z) to (x cos + z sin, -x sin + z cos).
+const PORT_YAW=-Math.PI/2;
+const portTurn=(x,z)=>[x*Math.cos(PORT_YAW)+z*Math.sin(PORT_YAW),-x*Math.sin(PORT_YAW)+z*Math.cos(PORT_YAW)];
+function showPort(){
+  if(port)return;
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9,flatShading:true});
+  port=createBoat({scene,material:mat,kind:'ship'}).object;
+  port.visible=false;port.receiveShadow=true;port.rotation.y=PORT_YAW;
+  // the port ladder's ropes and rungs, from the same numbers the climb follows (boat.js ladderBoxes)
+  for(const g of ladderBoxes({ladders:[PORT_LADDER]})){const m=new THREE.Mesh(g,mat);m.castShadow=m.receiveShadow=true;port.add(m);}
 }
 let jumpAt=null, deathAt=0;
 for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=>{
@@ -201,16 +236,19 @@ for(const button of document.querySelectorAll('[data-climb]'))button.onclick=()=
   for(const b of document.querySelectorAll('[data-climb]'))b.setAttribute('aria-pressed',String(b===button));
 };
 for(const button of document.querySelectorAll('[data-ladder]'))button.onclick=()=>{
-  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';climbY=0;
-  stepState={dir:1,d:0,rest:STEP_REST};
+  onMast=button.dataset.ladder==='mast';onNest=button.dataset.ladder==='nest';onStep=button.dataset.ladder==='step';onPort=button.dataset.ladder==='port';climbY=0;
+  Object.assign(stepState,{dir:1,d:0,rest:STEP_REST});
+  Object.assign(portState,{dir:1,d:0,rest:STEP_REST});
   if(onMast)showMast();
   if(onNest)showNest();
+  if(onPort)showPort();
   for(const b of document.querySelectorAll('[data-ladder]'))b.setAttribute('aria-pressed',String(b===button));
 };
 let mode='walk', side=false, distance=0, last=performance.now(), time=0, bob=0;
 // The inventory dresses whichever body it has chosen; the other keeps what it had on.
 const inventory=createAvatarStudio(document.body,{onApply:spec=>{for(const f of figures)if(f.id===bodyKey(spec))f.rig.set(spec);}});
 document.querySelector('#motion-inventory').onclick=()=>inventory.open();
+document.querySelector('#motion-mixamo').onclick=()=>catalogue.toggle();
 document.querySelector('#motion-holds').onchange=e=>{showHolds=e.target.checked;};
 document.querySelector('#motion-bones').onchange=e=>{helper.visible=e.target.checked;if(horseHelper)horseHelper.visible=e.target.checked;};
 // Close up on one body at a time, to judge how a hat or a strap sits: off, then each in turn.
@@ -240,7 +278,7 @@ for(const button of document.querySelectorAll('[data-gait]'))button.onclick=()=>
   mode=button.dataset.gait;
   deathAt=time;
   for(const b of document.querySelectorAll('[data-gait]'))b.setAttribute('aria-pressed',String(b===button));
-  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':mode==='rope'?'Touwlopen · over een strakke harpoenlijn: voet voor voet, armen opzij':mode==='zip'?'Zipline · aan een steile harpoenlijn naar beneden glijden, hangend aan de handen (Mixamo Hanging Idle)':'Lopen · voeten landen, dragen het gewicht en rollen af';
+  document.querySelector('#motion-note').textContent=mode==='horse'?horseNote():mode==='idle'?'Stilstaan · ontspannen houding':mode==='run'?'Rennen · de draf als de stamina op is':mode==='sprint'?'Sprinten · Shift met stamina: voorover, lange passen, armen pompen':mode==='swim'?'Zwemmen · schoolslag, gekanteld zoals walk.js een zwemmer kantelt':mode==='tread'?'Watertrappen · stil in het water, rechtop':mode==='dig'?'Graven · met de schep':mode==='climb'?'Klimmen · een touwladder op: elke hand en voet pakt om de andere sport, en staat stil op die sport terwijl het lijf stijgt':mode==='fall'?'Vallen · leeg geslagen: door de knieën en voorover, steeds opnieuw':mode==='drown'?'Verdrinken · zonder lucht: rechtop, armen naar boven, zinkend':mode==='cannon'?'Afgevuurd · uit een kanon: opgerold en kopje-over langs de boog, zoals walk.js een afgevuurd lijf draait':mode==='rope'?'Touwlopen · over een strakke harpoenlijn: voet voor voet, armen opzij (Mixamo Careful Walk op afstand; de Reiziger procedureel)':mode==='zip'?'Zipline · aan een steile harpoenlijn naar beneden glijden, hangend aan de handen (Mixamo Hanging By Hands Gently Swaying)':'Lopen · voeten landen, dragen het gewicht en rollen af';
 };
 const syncHorseControls=()=>{
   document.querySelector('[data-gait="horse"]').textContent='Paard · '+HORSE_GAITS[horseGait][0];
@@ -260,15 +298,20 @@ function frame(now){
 // rate (travellerPreview.advance) where a hidden browser pane would run no frames at all.
 function tick(dt){
   time+=dt;
-  const masted=mode==='climb'&&(onMast||onNest), climber=close<0?0:close;
+  const trial=catalogue.frame(dt);
+  trialAt=trial?trialTick(trial,dt):null;
+  if(trial)return;
+  const masted=mode==='climb'&&(onMast||onNest||onPort), climber=close<0?0:close;
   // Climbing close up (Dichtbij) shows the one body and its ladder alone: from the side the other
   // stands in front of it.
-  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&(close<0||i===climber);
+  for(const [i,l] of ladders.entries())l.visible=mode==='climb'&&!onMast&&!onNest&&!onStep&&!onPort&&(close<0||i===climber);
   for(const [i,g] of stepRigs.entries())g.visible=mode==='climb'&&onStep&&(close<0||i===climber);
   const stepped=mode==='climb'&&onStep?stepTick(dt):null;
+  const ported=mode==='climb'&&onPort?portTick(dt):null;
   if(mode!=='climb')for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
   if(mast)mast.visible=masted&&onMast;
   if(nest)nest.visible=masted&&onNest;
+  if(port)port.visible=masted&&onPort;
   for(const [i,f] of figures.entries())f.stand.visible=mode==='climb'&&(masted||close>=0)?i===climber:true;
   document.querySelector('#motion-climb').hidden=mode!=='climb';
   // Round the ladder: past the top back to the foot and the other way, a jump that is no climb.
@@ -328,7 +371,7 @@ function tick(dt){
     // over - tucked (the rig's crouch) and head over heels about the middle of the body at walk.js's
     // LAUNCH_SPIN, as its afterMove turns a launched body.
     // On a harpoon's line (Plans/harpoen.md): walked flat at walk.js's ROPE_WALK, arms out; or hanging
-    // from it sliding down (Mixamo's Hanging Idle), the feet ROPE_HANG under a line drawn over the head.
+    // from it sliding down (Mixamo's Hanging By Hands Gently Swaying), the feet ROPE_HANG under a line drawn over the head.
     if(mode==='rope'||mode==='zip'){
       f.stand.rotation.set(0,0,0);
       const zip=mode==='zip';
@@ -343,6 +386,19 @@ function tick(dt){
       // A low arc and a short one, scaled to the studio's frame (the island's is some 3 up and 26 on).
       f.stand.position.set(f.x-off.x, 4*.45*(t/T)*(1-t/T)+mid-off.y, f.distance+t*.6-off.z);
       f.rig.update({crouching:true,grounded:false,distance:0},dt);
+      continue;
+    }
+    if(ported&&f===figures[climber]){
+      // where the way has the feet, in her frame, turned onto this body's track: her ladder's foot on the
+      // floor under the body's own spot; facing her (-z) all along, as walk.js faces the hull
+      const p=pathAt(ported.w.path,portState.d,{x:0,y:0,z:0}), on=onWay(ported.w,portState.d);
+      const [fx,fz]=portTurn(portRope[0].x,portRope[0].z), [px,pz]=portTurn(p.x,p.z);
+      port.position.set(f.x-fx,-(DECK_Y+PORT_LADDER.foot),f.distance-fz);
+      f.stand.rotation.set(0,Math.PI,0);f.stand.position.set(port.position.x+px,p.y-PORT_LADDER.foot,port.position.z+pz);
+      const rise=p.y-(f.stepY??p.y), step=Math.hypot(p.x-(f.stepAt?.x??p.x),p.z-(f.stepAt?.z??p.z));
+      f.stepY=p.y;f.stepAt={x:p.x,z:p.z};
+      f.rig.update({moving:ported.moving&&!on,grounded:true,distance:on?0:step,onLadder:portState.rest<=0||!!on,
+        climbing:on?{rise,at:p.y-PORT_LADDER.foot,top:on.top,floor:true}:null},dt);
       continue;
     }
     if(stepped){
@@ -387,6 +443,29 @@ function tick(dt){
   if(jumpAt!==null&&time-jumpAt>2*JUMP_V/GRAVITY)jumpAt=null;
   distance=riding?rider.distance:close<0?figures.reduce((a,f)=>a+f.distance,0)/figures.length:figures[close].distance;
 }
+// One step of a clip under trial: everything else put away, the chosen body alone on the track.
+function trialTick(trial,dt){
+  for(const l of ladders)l.visible=false;
+  for(const g of stepRigs)g.visible=false;
+  for(const dots of holdDots)for(const d of dots){d.m.visible=false;d.was=null;}
+  if(mast)mast.visible=false;
+  if(nest)nest.visible=false;
+  if(port)port.visible=false;
+  if(horse)horse.visible=false;
+  showHorsePool(false,0);
+  document.querySelector('#motion-climb').hidden=true;
+  const chosen=trialBodies[trial.body]||trialBodies[0];
+  for(const f of figures){
+    f.stand.visible=f===chosen;
+    if(f!==chosen)continue;
+    if(f.rig.digging())f.rig.dig(false);
+    const hip=f.rig.hipY||.25;
+    f.stand.rotation.set(0,0,0);
+    f.stand.position.set(f.x+trial.travel[0]*hip,0,f.distance+trial.travel[1]*hip);
+    f.rig.update({preview:{clip:trial.clip,u:trial.u},grounded:true,moving:false,distance:0},dt);
+  }
+  return chosen.stand.position;
+}
 function render(){
   // Camera and nearby scenery follow the actual moving body; the ground marks stay fixed.
   track.position.z=Math.floor(distance/2)*2;
@@ -396,6 +475,16 @@ function render(){
   const riding=mode==='horse'&&!!horse;
   const x=riding||close<0?0:figures[close].stand.position.x, near=(close<0?1:mode==='climb'?.95:.72)*(riding?1.9:1);
   // Close up, the camera rises with a jump so the leap stays in the frame.
+  if(trialAt){
+    const at=trialAt;
+    // between the two panels: a little left of the middle, since the catalogue is the wider
+    camera.position.set(at.x+(side?1.6:1.05)*.9,.42,at.z+(side?.03:1.45)*.9);camera.lookAt(at.x,.26,at.z);
+    camera.setViewOffset(innerWidth,innerHeight,innerWidth*.04,0,innerWidth,innerHeight);
+    track.position.z=Math.floor(at.z/2)*2;floor.position.z=track.position.z;
+    sun.position.set(-2,4,at.z+3);sun.target.position.set(at.x,.26,at.z);sun.target.updateMatrixWorld();
+    renderer.render(scene,camera);
+    return;
+  }
   const lift=riding?.3:mode==='climb'?figures[0].stand.position.y:close<0?0:figures[close].stand.position.y*.8;
   const target=new THREE.Vector3(x,(close<0?.245:.26)+lift,distance);
   camera.position.set(x+(side?1.6:1.05)*near,(close<0?.5:.36)+lift,distance+(side?.03:1.45)*near);camera.lookAt(target);
@@ -405,7 +494,7 @@ function render(){
 }
 requestAnimationFrame(frame);
 // A small inspection surface for the motion workbench's browser checks.
-window.travellerPreview={traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
+window.travellerPreview={catalogue,traveller,figures,carrier,scene,camera,renderer,ladders,holdDots,get climbY(){return climbY;},set climbY(v){climbY=v;},get distance(){return distance;},get horse(){return horse;},
   // held: true stops the clock, so a check can step to one moment and look at it.
   held:false,
   advance(frames,dt=1/60){for(let i=0;i<frames;i++)tick(dt);render();}};

@@ -1,6 +1,7 @@
 // The galleon's guns (Plans/kanonnen.md): the ball's flight in shared/cannon.mjs, which the page and
-// the sea both fly, and the gun as drawn - two of the keeper's cannons welded into the hull's one
-// geometry, the barrel laid on its trunnions and the muzzle a ball leaves from where the bore is.
+// the sea both fly, and the gun as drawn - the keeper's cannons, however many her craft mounts, welded
+// into the hull's one geometry, the barrel laid on its trunnions and the muzzle a ball leaves from where
+// the bore is.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -83,19 +84,34 @@ test('the body\'s gravity in a flight out of the gun is walk mode\'s own', () =>
   assert.equal(Number(/const GRAVITY = ([\d.]+);/.exec(walk)[1]), C.HUMAN_G);
 });
 
-test('the old guns are out of the galleon, and her two new ones stand on her waist, one a side', () => {
+test('the old guns are out of the galleon, and her own stand on her deck, cannons before harpoons', () => {
   // The source's guns stood out of her ports to 2.63 from the middle; nothing does any more below
-  // the bulwark's height, between the ladders and the quarterdeck stairs.
-  const p = PIRATESHIP.parts['pirateship hull'].positions;
-  let out = 0;
-  for (let i = 0; i < p.length; i += 3) if (Math.abs(p[i]) > 2.5 && p[i + 2] > -2.4 && p[i + 2] < 1.4 && p[i + 1] > 3 && p[i + 1] < 4) out++;
-  assert.equal(out, 0, `${out} corners still stand out of the ports`);
-  const guns = CRAFTS.galleon.mounts.filter((m) => m.kind === 'cannon');
-  assert.equal(guns.length, 2);
-  assert.ok(guns[0].x > 0 && guns[1].x < 0);
+  // the bulwark's height, between the ladders and the quarterdeck stairs. Measured on the old bake
+  // only: the sloop (Plans/nieuwe-sloep.md) has her own open ports and this says nothing about her.
+  const hull = PIRATESHIP.parts['pirateship hull'];
+  if (hull && !PIRATESHIP.anchors.waterline) {
+    const p = hull.positions;
+    let out = 0;
+    for (let i = 0; i < p.length; i += 3) if (Math.abs(p[i]) > 2.5 && p[i + 2] > -2.4 && p[i + 2] < 1.4 && p[i + 1] > 3 && p[i + 1] < 4) out++;
+    assert.equal(out, 0, `${out} corners still stand out of the ports`);
+  }
+  // However many there are (the galleon two, the sloop one a side and a harpoon on the bow), every
+  // cannon comes before every harpoon - the index is the mount's number on the wire - and the first
+  // mount is a cannon on her starboard side, as it has been since Plans/kanonnen.md.
+  const mounts = CRAFTS.galleon.mounts;
+  const guns = mounts.filter((m) => m.kind === 'cannon');
+  assert.ok(guns.length >= 1, 'no cannon');
+  assert.equal(mounts[0].kind, 'cannon');
+  assert.ok(mounts[0].x > 0, 'mount 0 is on her starboard side');
+  const lastGun = mounts.map((m) => m.kind).lastIndexOf('cannon'), firstHarpoon = mounts.map((m) => m.kind).indexOf('harpoon');
+  assert.ok(firstHarpoon < 0 || lastGun < firstHarpoon, 'a harpoon stands before a cannon in the list');
+  if (guns.length >= 2) assert.ok(guns.some((g) => g.x > 0) && guns.some((g) => g.x < 0), 'guns on one side only');
+  // Each on a stretch of her deck, inside the planking's edge, pointing out of her own side.
   for (const g of guns) {
-    const deck = CRAFTS.galleon.deck[0];
-    assert.ok(Math.abs(g.x) + 0.2 < deck.hx + 0.1 && Math.abs(g.z) < deck.hz, 'on the waist');
+    const on = CRAFTS.galleon.deck.find((d) => Math.abs(g.x - d.x) <= d.hx + 0.1 && Math.abs(g.z - d.z) <= d.hz);
+    assert.ok(on, `gun at (${g.x}, ${g.z}) is on no deck`);
+    assert.ok(Math.abs(g.y - (on.y + (on.slope || 0) * (g.z - on.z))) < 0.05, 'on the planking');
+    assert.ok(Math.sign(Math.sin(g.yaw)) === Math.sign(g.x), 'points out of its own side');
   }
 });
 
@@ -103,7 +119,7 @@ test('a laid barrel turns about its trunnions, and the muzzle a ball leaves from
   const s = cannonShape();
   assert.ok(s, 'the cannon set is baked');
   assert.ok(Math.abs(s.rest - 0.166) < 0.02, `rest elevation ${s.rest}`);
-  const spec = CRAFTS.galleon.mounts[0];
+  const spec = CRAFTS.galleon.mounts.find((m) => m.kind === 'cannon');
   const pin = layPoint(spec, restLay(), 0, true, 0, 0, 0);
   for (const pitch of [C.GUN_PITCH_MIN, 0, C.GUN_PITCH_MAX]) {
     for (const yaw of [-C.GUN_TRAVERSE, 0, C.GUN_TRAVERSE]) {
@@ -126,15 +142,17 @@ test('a laid barrel turns about its trunnions, and the muzzle a ball leaves from
 test('the guns are welded into the hull\'s one geometry and laying one moves only its own corners', () => {
   const scene = new THREE.Scene();
   const boat = createBoat({ scene, material: new THREE.MeshBasicMaterial(), kind: 'ship' });
-  assert.equal(boat.guns, 2);
+  const mounts = CRAFTS.galleon.mounts;
+  assert.equal(boat.guns, mounts.filter((m) => m.kind === 'cannon').length);
   assert.equal(scene.children.filter((o) => o.isMesh).length, 1, 'one mesh, one draw call');
   const pos = boat.object.geometry.attributes.position.array.slice();
-  boat.layGun(0, [0.3, 0.3], 0.1);
+  boat.layGun(mounts.findIndex((m) => m.kind === 'cannon'), [0.3, 0.3], 0.1);
   const now = boat.object.geometry.attributes.position.array;
   let moved = 0, first = Infinity;
   for (let i = 0; i < pos.length; i++) if (pos[i] !== now[i]) { moved++; first = Math.min(first, i); }
   assert.ok(moved > 1000);
-  // Everything that moved lies in the last runs, the guns'; the hull and her ladders did not.
+  // Everything that moved lies in the last runs, the guns' (and after them her sail's and flag's,
+  // ship-motion.js, which a laying does not touch); the hull and her ladders did not.
   const tail = boat.object.geometry.attributes.position.count * 3;
   assert.ok(first > tail * 0.5, `first moved number ${first} of ${tail}`);
   boat.dispose();
