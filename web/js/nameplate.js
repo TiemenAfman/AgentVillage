@@ -13,6 +13,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const frameMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
 const WOOD = new THREE.Color(0x6b4a2f);
 const POST = new THREE.Color(0x5a3c28);
+// The plaque's cream (#f3e7cf in draw()), for the patch the face lies on. From far off the face
+// is not drawn (sign-faces.js) and this is what is left: the same cream spot on the board.
+const CREAM = new THREE.Color(0xf3e7cf);
+// The face is unlit (MeshBasicMaterial) and the patch is in the lit building material, so at
+// night a bare patch went dark where the face it stands in for would have been as bright as by
+// day. The building material adds colour * aEmissive * (0.25 + 1.7 * night) (buildings.js), so
+// this much glow brings the patch near the face at night and lifts it a little by day.
+const PATCH_GLOW = 0.5;
 function painted(geo, colour, x, y, z) {
   geo.translate(x, y, z);
   const n = geo.attributes.position.count;
@@ -26,6 +34,9 @@ const SUNK = 0.2;
 const BOARD_W = 0.86;
 const BOARD_H = 0.34;
 const CANVAS_W = 512;
+// The lettered face's share of the board, and so the patch's.
+const FACE_W = 0.94;
+const FACE_H = 0.86;
 
 function draw(text, boardW, boardH, canvasW, band, sub = null) {
   const CANVAS_H = Math.round(canvasW * boardH / boardW);     // keep the plaque's aspect ratio
@@ -139,8 +150,17 @@ function frameGeometry({ s, width, height, boardY, arch, n, boardAt }) {
     pieces.push(painted(new THREE.BoxGeometry(arch + 0.22, 0.1, 0.13), POST, 0, legH + 0.05, 0));
   }
   pieces.push(painted(new THREE.BoxGeometry(width * s, height * s, 0.03), WOOD, 0, boardAt, 0));
+  // The cream patch, the face's size, a millimetre behind it (the board's front is at 0.015, the
+  // face at 0.017), merged last so its corners are the last ones. Not on a gateway: those keep
+  // their faces at every distance.
+  let patchFrom = -1;
+  if (!arch) {
+    patchFrom = pieces.reduce((n, g) => n + (g.index ? g.index.count : g.attributes.position.count), 0);
+    pieces.push(painted(new THREE.PlaneGeometry(width * s * FACE_W, height * s * FACE_H), CREAM, 0, boardAt, 0.016));
+  }
   const geo = mergeGeometries(pieces, false);
   pieces.forEach((g) => g.dispose());
+  geo.userData.patchFrom = patchFrom;
   return geo;
 }
 
@@ -149,10 +169,13 @@ function frameGeometry({ s, width, height, boardY, arch, n, boardAt }) {
 // nothing lit, the building material draws it exactly as frameMat does - both flat-shaded
 // vertex colour at roughness 0.85 - so a sign in the batch looks as it always did.
 function batchable(geo) {
+  const from = geo.userData.patchFrom;
   const flat = geo.toNonIndexed();
   geo.dispose();
   flat.deleteAttribute('uv');
-  flat.setAttribute('aEmissive', new THREE.BufferAttribute(new Float32Array(flat.attributes.position.count), 1));
+  const emi = new Float32Array(flat.attributes.position.count);
+  if (from >= 0) emi.fill(PATCH_GLOW, from);
+  flat.setAttribute('aEmissive', new THREE.BufferAttribute(emi, 1));
   return flat;
 }
 
@@ -191,7 +214,7 @@ export function createNameplate(text, {
 
   const tex = draw(text, width, height, canvasW, band, sub);
   const faceMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.94, bh * 0.86), faceMat);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(bw * FACE_W, bh * FACE_H), faceMat);
   face.position.set(0, boardAt, 0.017);
   group.add(face);
   // A gateway is walked through both ways, and a single-sided face left whoever was leaving
@@ -212,6 +235,8 @@ export function createNameplate(text, {
 
   return {
     group,
+    // For sign-faces.js: the face, its own material, and how wide it is in the sign's frame.
+    face, faceMat, faceWidth: bw * FACE_W,
     dispose() {
       if (batch) batch.remove(frame);
       else frameGeo.dispose();

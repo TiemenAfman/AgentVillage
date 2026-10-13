@@ -85,9 +85,10 @@ Wat erachter zit:
 
 ## Voorstellen, de grootste winst eerst
 
-1. **Naambordgezichten alleen waar ze leesbaar zijn**: bouw [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md)
-   (al uitgewerkt, nog niet gebouwd: weg onder ~16 px, een crème vlakje in de batch-vorm). Verwacht van boven
-   **~6,5 ms** (gemeten met alle gezichten weg), op straat ~0. Klein, laag risico, geen layout of sea.
+1. **Naambordgezichten alleen waar ze leesbaar zijn**: bouw [naambord-gezichten-op-afstand.md](DONE/naambord-gezichten-op-afstand.md)
+   (weg onder ~16 px, een crème vlakje in de batch-vorm). Verwacht van boven **~6,5 ms** (gemeten met alle
+   gezichten weg), op straat ~0. **Gebouwd op 13 oktober**: van boven 969 → 471 kleurcalls, A/B **4,2-4,9 ms**
+   per frame, uitgezoomd 3,6 ms, in het dorp in de ruis (zie dat plan).
 2. **Schaduw van boven goedkoper**: van boven (orbit, en de camera verder dan een te kiezen afstand (bijvoorbeeld 60) van het doel) de schaduwmap om
    de andere frame verversen, met het mechanisme dat de governor al heeft (`shadowEvery`, inclusief de
    `info.render.frame`-fix voor skinned lijven); en kleine dingen die van boven niets toevoegen geen schaduw

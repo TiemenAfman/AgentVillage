@@ -580,7 +580,16 @@ and night glow is a per-vertex emissive mask - and every building body on an isl
 instance in that island's `BatchedMesh` (`web/js/record-batch.js`: `homeBatch` in main.js in
 `scene`, one per guest inside its offset group), so all of them are one draw call a pass. The
 yard signs' frames are instances in the same batch (`createNameplate({ batch })`, two shared
-shapes); their lettered faces are still a mesh each. **The record keeps its scene graph and the
+shapes); their lettered faces are still a mesh each - and so a call each, which is why **a face is
+drawn only where it can be read** ([Plans/DONE/naambord-gezichten-op-afstand.md](Plans/DONE/naambord-gezichten-op-afstand.md)):
+`fadeSignFaces()`, first thing in `cullRecords()`, works out each yard sign's face width in screen
+pixels (`web/js/sign-faces.js`, pure: full from 24 px, gone under 16, `faceMat.opacity` between) and
+writes `face.visible` / the opacity only on a change - never the sign's group (the planner's) nor
+`rec.group.visible`. What is left from far off is a cream patch of the face's size in the frame's
+shared shape (`PATCH_GLOW` on `aEmissive`, so it neither dims at night nor glares by day): from
+above on Hoogezand 969 -> 471 colour calls, 4-5 ms a frame. Hamlet gateways keep their faces.
+Any other per-object mesh that is unreadable from above can follow the same pattern: a pure size-on-
+screen sum, a stand-in in the batch's shape, and the mesh's own `visible`. **The record keeps its scene graph and the
 batch mirrors it:** `rec.mesh` is an empty Object3D stand-in, and in the batch's own
 `onBeforeRender`, once per `render()` (after `updateMatrixWorld`, before the shadow pass), the
 batch copies each stand-in's visibility (every parent up to the batch's parent `visible`, and
@@ -2968,7 +2977,8 @@ them); `Plans/piratenkroeg.md` has the prompts and the state of every piece.
   that draws several pieces (loop, helper called twice) not all changed alike. A line
   in a helper two models share (`noticeBoard`) changes both.
 
-Debug query params: `?hunt` (`__state`/`__camera` on window without the dive: walk with
+Debug query params: `?stats` (also puts `__state`/`__camera` on window at boot, for measuring:
+`__state.signFacesAll = true` draws every sign face as before, the A/B of fadeSignFaces), `?hunt` (`__state`/`__camera` on window without the dive: walk with
 `document.getElementById('walk-btn').click()`, teleport with `__state.walk.state.pos.set(x, y, z)`, read
 `__state.hunt.sites()`; the browser pane runs no frames between screenshots, so take one to let time pass),
 `?quest=<id>[:<step>]` (the quest book jumps to that quest of shared/quests.mjs with the story before
