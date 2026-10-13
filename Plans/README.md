@@ -54,6 +54,7 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   en achteruit) die blijven staan, ook als je het roer loslaat en aan boord blijft (alleen de kanonnen of het harpoen
   bemannen). Pas wie eraf springt laat haar uitrollen, of de crew die achterblijft vaart haar verder. Een log in de HUD
   (knopen en zeilstand). Een patch, maar de open zee moet worden geredeployd.
+- 🚧 [schip-vaart-door.md](schip-vaart-door.md) — spring je van het galjoen terwijl haar zeilen staan, dan vaart ze door (jouw pagina stapt haar, de zee neemt het aan); ben je haar kwijt, dan komt er een zeemeermin met lichtgevende rook die je met E terugbrengt op haar dek (wat je draagt blijft drijven).
 - 🚧 [kanonnen.md](kanonnen.md) — de acht kanonnen uit de galjoen-bake weg, twee kanonnen van de keeper (eigen FBX) erop: bemannen, draaien, richten, laden, vuren, inslag met explosie, plons en geluid, en jezelf afvuren langs een kogelbaan.
 - 🚧 [inwoners-in-avonturierstijl.md](inwoners-in-avonturierstijl.md) — de inwoners opnieuw in de stijl
   van de Avonturier/Wanderer: één instanced lijf met GPU-skinning per instance (gladde knieën en
