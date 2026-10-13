@@ -129,3 +129,55 @@ test('main.js has her: a frame step, E at her, and the ship we were crew of last
   assert.match(src, /if \(isShip\(b\)\) state\.lastShip = b\.id;/);
   assert.match(src, /state\.net\.boardBoat\(ship\.id\); \}, 300\)/, 'crew before the sea has a pose of us aboard');
 });
+
+test('she is the bake, one draw call, floating at its own waterline', async () => {
+  const { MERMAID } = await import('../web/js/mermaid-mesh.js');
+  const { createMermaid, mermaidGeometry, MERMAID_WATERLINE } = await import('../web/js/mermaid.js');
+  assert.equal(MERMAID_WATERLINE, MERMAID.anchors.waterline[1]);
+  assert.deepEqual(Object.keys(MERMAID.parts).sort(), ['mermaid body', 'mermaid hair', 'mermaid tail']);
+  const her = mermaidGeometry();
+  // Half in the water: her body reaches both under the surface and well above it.
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 1; i < her.hair.from; i += 3) { lo = Math.min(lo, her.positions[i]); hi = Math.max(hi, her.positions[i]); }
+  assert.ok(lo < -0.05 && hi > 0.5, `her body runs ${lo} .. ${hi} about the water`);
+  const scene = new THREE.Scene();
+  const m = createMermaid({ scene });
+  let meshes = 0;
+  m.group.traverse((o) => { if (o.isMesh && o.material.vertexColors) meshes++; });
+  assert.equal(meshes, 1, 'she is more than one draw call');
+  m.show({ x: 0, z: 0, yaw: 0 });
+  m.update(0.1, 3, null, 800);
+  m.dispose();
+});
+
+test('the tail flicks out of the water now and then, the crown of her hair stays put', async () => {
+  const { mermaidGeometry, tailPose, FLICK_EVERY, FLICK_S } = await import('../web/js/mermaid.js');
+  const her = mermaidGeometry();
+  const tailTop = () => { let y = -Infinity; for (let i = her.tail.from + 1; i < her.tail.to; i += 3) y = Math.max(y, her.positions[i]); return y; };
+  // Which windows flick: some, not all - and the same on every page, since it is the sea's clock alone.
+  const windows = Array.from({ length: 40 }, (_, n) => tailPose(n * FLICK_EVERY + FLICK_S / 2).flick > 0);
+  const flicks = windows.filter(Boolean).length;
+  assert.ok(flicks > 10 && flicks < 40, `${flicks} of 40 windows flick`);
+  assert.deepEqual(windows, Array.from({ length: 40 }, (_, n) => tailPose(n * FLICK_EVERY + FLICK_S / 2).flick > 0));
+  const up = windows.indexOf(true), still = windows.indexOf(false);
+  her.pose(still * FLICK_EVERY + FLICK_S / 2);
+  assert.ok(tailTop() < 0.05, `at rest the tail stands ${tailTop()} over the water`);
+  her.pose(up * FLICK_EVERY + FLICK_S / 2);
+  assert.ok(tailTop() > 0.25, `at the top of a flick the fluke reaches only ${tailTop()}`);
+  // The hair: its crown never moves, its ends do.
+  const rest = mermaidGeometry().positions;
+  let crownMoved = 0, endsMoved = 0;
+  const hy = her.hair.pivot[1];
+  for (const t of [0.7, 2.3, 5.1]) {
+    her.pose(t);
+    for (let i = her.hair.from; i < her.hair.to; i += 3) {
+      const d = Math.abs(her.positions[i] - rest[i]) + Math.abs(her.positions[i + 2] - rest[i + 2]);
+      if (rest[i + 1] > hy - 0.06) crownMoved = Math.max(crownMoved, d);
+      else if (rest[i + 1] < 0.1) endsMoved = Math.max(endsMoved, d);
+    }
+  }
+  assert.equal(crownMoved, 0);
+  assert.ok(endsMoved > 0.01, `the ends of her hair drift only ${endsMoved}`);
+  // The body never moves on its own.
+  for (let i = 0; i < her.hair.from; i++) assert.equal(her.positions[i], rest[i]);
+});
