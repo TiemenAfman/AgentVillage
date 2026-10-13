@@ -14,9 +14,25 @@
 //
 // No clock and no three.js: points are { x, y, z } in whatever frame the caller climbs in (a hull's,
 // or the world's), and the caller steps it (`climbAlong`) as it always stepped a ladder.
-import { pathAt, pathLength } from 'shared/deck.mjs';
+import { pathAt, pathLength, deckAt } from 'shared/deck.mjs';
+import { nearestStand } from 'shared/hullwalk.mjs';
 import { stepWay, CLIMB_SPEED } from './classic-avatar.js';
 import { GAIT_CLIPS } from './gait-clips.js';
+
+// Where a ship's rope ladder lands on her: the nearest place her model (`surface`, shared/hullwalk.mjs
+// createSurface) can stand a body at the ladder's `land`, asked from a step over the planks there
+// (deckAt, else the ladder's `top`), never the coordinate itself - a cannon or a post can stand where a
+// table of numbers said there was nothing. One sum, so the top of a climb (walk.js startClimb), a hoist
+// from a rowing boat (hoistOnto), what another page makes of a climber over the top (ladderAt, through
+// `ladderPath`'s way with this as its end) and the motion workbench all end exactly where `ladderUp`
+// lands: Mixamo's Climbing Up A Ladder To Standing is played along the way to this point, so a body
+// found a different spot on arriving moved 0.14 in one frame. Without a surface, the deck's own point.
+export function ladderLanding(surface, craft, ladder) {
+  const [lx, lz] = ladder.land;
+  const floor = deckAt(craft, lx, lz) ?? ladder.top;
+  const at = surface ? nearestStand(surface, lx, lz, floor + 0.2) : null;
+  return at ? { x: at.x, z: at.z, y: at.y } : { x: lx, z: lz, y: floor };
+}
 
 // How much of its own pace the climb over the top is played at: as fast, against the clip, as the
 // rungs below it are climbed against the climb's own clip (CLIMB_SPEED, 1.8 times Climbing Up A
@@ -36,6 +52,7 @@ export function topPace() {
 //
 // Returns { path, len, rungs: [from, to], top: { from, to, at: [d of each row] } | null }, `rungs` and
 // `top` as distances along `path`; `top.at[k]` is how far along the path the clip's row k is.
+const STRETCH = 1.4;
 export function climbWay(rope, from = null) {
   const [foot, head, ...on] = rope;
   const step = stepWay('climbTop');
@@ -54,10 +71,13 @@ export function climbWay(rope, from = null) {
   // the head of the rungs: a step's rise below where the step ends, never below the foot
   const base = { x: head.x, z: head.z, y: Math.max(foot.y, end.y - last[1]) };
   // never further forward than where the ladder lands: the Salty Kraken's mast ladders land 0.19 in
-  // from the rungs, and the clip steps 0.33 forward - there the step is pressed into the room it has
+  // from the rungs, and the clip steps 0.33 forward - there the step is pressed into the room it has.
+  // And drawn out up to STRETCH to reach a landing a little further in, rather than end short of it and
+  // slide the rest over the planks at the climb's pace after standing up: the sloop's entry port lands
+  // 0.43 in, where a body's footprint is first held up by her planks (the keeper, 13 Oct 2026).
   const ahead = (p) => (p.x - head.x) * ix + (p.z - head.z) * iz;
   const room = ahead(on[on.length - 1]);
-  const press = last[0] > room && last[0] > 0 ? Math.max(0, room) / last[0] : 1;
+  const press = last[0] > 0 && room > 0 && room < last[0] * STRETCH ? room / last[0] : last[0] > room && last[0] > 0 ? 0 : 1;
   const over = way.map(([f, u]) => ({ x: base.x + ix * f * press, z: base.z + iz * f * press, y: base.y + u }));
   // and on from where it ends, past what it has already come over
   const rest = on.filter((p, k) => k === on.length - 1 || ahead(p) > last[0] * press + 0.01);
@@ -66,7 +86,23 @@ export function climbWay(rope, from = null) {
   const b = a + pathLength([foot, base]);
   const at = [b];
   for (let k = 1; k < over.length; k++) at.push(at[k - 1] + pathLength([over[k - 1], over[k]]));
-  return { path, len: pathLength(path), rungs: [a, b], top: { from: b, to: at[at.length - 1], at, seconds: step.seconds, points: over } };
+  return { path, len: pathLength(path), rungs: [a, b], top: { from: b, to: at[at.length - 1], at, seconds: step.seconds, points: over, dir: [ix, iz] } };
+}
+
+// Which way a climber faces at `d` on a way whose step over the top goes another way than they faced the
+// rungs (`face`, a unit vector in the way's frame): up a mast's pins and out of a lubber's hole
+// (shared/deck.mjs aloftPath with `hole`) the step is aside, since the mast is ahead. They turn towards it
+// over the first TURN_ON_TOP of the step, so the clip steps the way the feet go; before it and on a way
+// whose step goes the way they face, `face` itself.
+const TURN_ON_TOP = 0.4;
+export function facingOnWay(w, d, face) {
+  const t = w && w.top;
+  if (!t || !t.dir || d <= t.from) return face;
+  const u = d >= t.to ? 1 : topAt(w, d);
+  const k = Math.min(1, u / TURN_ON_TOP), s = k * k * (3 - 2 * k);
+  const x = face[0] * (1 - s) + t.dir[0] * s, z = face[1] * (1 - s) + t.dir[1] * s;
+  const l = Math.hypot(x, z) || 1;
+  return [x / l, z / l];
 }
 
 // How far through the step over the top (0..1) somebody standing at `q` is, read off where they are

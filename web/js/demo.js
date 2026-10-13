@@ -1002,7 +1002,7 @@ function shorePatch(originX, originZ, cells, { inlet }) {
 
 // ---- the ships on the roads ------------------------------------------------------
 // The Batavia (Plans/DONE/batavia.md) in the three liveries an island's three ships wear, afloat
-// on a sheet of sea, with the galleon every island already has beside them at the same
+// on a sheet of sea, with the sloop every island already has beside them at the same
 // waterline - she has to read as the bigger and nobler of the two, and this is where to see
 // whether she does. A row of its own rather than a place in CIVIC: the civic rows are a pitch
 // apart and a ship is fifteen long, so she would lie across three of them. Each is built by
@@ -1035,7 +1035,21 @@ function shorePatch(originX, originZ, cells, { inlet }) {
   const galleon = createBoat({ scene, material, kind: 'ship' });
   galleon.place(1.5 * 6.5, z, 0);
   galleon.object.position.y = FIELD_Y;
-  tag(1.5 * 6.5, z + 8.2, 'Galleon', 'every island\'s first boat');
+  // Her sail set and struck in turn, every SAIL_CYCLE seconds (boat.js `sails`, Plans/DONE/nieuwe-sloep.md
+  // chip 2c): the cloth eases between furled and full in `bob`, which also puts her on the swell - so
+  // she is lifted onto the field again after it. Nothing to see until a bake has a `pirateship sail`.
+  {
+    const SAIL_CYCLE = 4;
+    let t = 0;
+    lives.push((dt) => {
+      t += dt;
+      galleon.sails(Math.floor(t / SAIL_CYCLE) % 2);
+      galleon.bob(t);
+      galleon.object.position.y += FIELD_Y;
+    });
+  }
+  // The sloop (scripts/build-sloop.py, Plans/DONE/nieuwe-sloep.md): still `galleon` in the code, `pirateship` the set.
+  tag(1.5 * 6.5, z + 8.2, 'Sloop', `every island's first boat · ${models.assetTris('pirateship')} tris${galleon.sailParts ? ' · sail set and struck in turn' : ''}`);
   // Her gun (Plans/kanonnen.md, the keeper's own model) on its own, at twice its size: laid as low,
   // as at rest and as high as it goes - the barrel turned on its trunnions, the carriage still.
   const gun = cannonShape();

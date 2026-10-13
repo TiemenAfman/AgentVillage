@@ -9,6 +9,7 @@
 //
 //   npm run models                  bake and check every set
 //   npm run models -- props         only this one
+//   npm run models:craft            read the ship's craft off her bake's anchors again
 //   npm run models:walk             cut the ship's walking surface out of her bake again
 //   npm run models:preview          render a PNG of every asset
 //   npm run models:preview -- props prop_barrel
@@ -76,8 +77,11 @@ if (problems.length) {
 }
 console.log(`${Object.keys(baked).length} set(s) within budget.`);
 
-// The ship is walked on her own model (shared/hullwalk.mjs): a map cut from her bake, which is stale the
-// moment the bake changes, so it is cut again whenever she was baked.
+// The ship's craft (shared/craft-galleon.mjs) is read off her bake's anchors, and she is walked on her
+// own model (shared/hullwalk.mjs): a map cut from her bake. Both are stale the moment the bake changes,
+// so both are made again whenever she was baked - the craft first, because the walk map is cut at the
+// draught the craft now says (build-shipwalk imports SHIP_DRAUGHT from shared/crafts.mjs).
 if (!names.length || names.includes('pirateship')) {
+  execFileSync(process.execPath, [path.join(ROOT, 'scripts/build-craft.mjs')], { stdio: 'inherit' });
   execFileSync(process.execPath, [path.join(ROOT, 'scripts/build-shipwalk.mjs')], { stdio: 'inherit' });
 }

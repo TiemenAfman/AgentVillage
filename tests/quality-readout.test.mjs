@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   QUALITY_KEY, QUALITY_LEVELS, clampQuality, loadQualityChoice, saveQualityChoice,
-  STATS_KEY, loadStatsShown, saveStatsShown, qualityLine, gpuShortName,
+  STATS_KEY, loadStatsShown, saveStatsShown, qualityLine, gpuShortName, isModestGpu,
 } from '../web/js/graphics-settings.js';
 import { RUNGS } from '../web/js/quality.js';
 
@@ -73,6 +73,21 @@ test('the GPU is named as a person would', () => {
   assert.equal(gpuShortName('ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)'), 'NVIDIA GeForce RTX 4090');
   assert.equal(gpuShortName('Adreno (TM) 740'), 'Adreno 740');
   assert.equal(gpuShortName(''), '');
+});
+
+test('the modest tier takes the laptop Arc and never its RTX', () => {
+  // The keeper's laptop, both cards as WebGL names them (measured, October 2026).
+  const arc = 'ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+  const rtx = 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Laptop GPU (0x00002717) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+  assert.equal(isModestGpu(arc), true);
+  assert.equal(isModestGpu(rtx), false);
+  assert.equal(gpuShortName(arc), 'Intel Arc Graphics');
+  assert.equal(gpuShortName(rtx), 'NVIDIA GeForce RTX 4090 Laptop GPU');
+  assert.equal(isModestGpu('ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)'), true);
+  assert.equal(isModestGpu('ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)'), true);
+  assert.equal(isModestGpu('ANGLE (AMD, AMD Radeon RX 7900 XTX (0x0000744C) Direct3D11 vs_5_0 ps_5_0, D3D11)'), false);
+  assert.equal(isModestGpu('unknown'), false);
+  assert.equal(isModestGpu(''), false);
 });
 
 test('Settings draws it, and main.js answers every question it asks', () => {

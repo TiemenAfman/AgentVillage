@@ -62,7 +62,7 @@ const run = (walk, seconds) => { for (let i = Math.round(seconds / FRAME); i > 0
 test('E is offered at a gun\'s breech, and the gunner stands behind it, turned with it', () => {
   const { walk } = harness();
   assert.equal(walk.gunNear(), null, 'a gun within reach of the wheel');
-  walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1] + 0.2;
+  walk.state.deck.y = gun.y; walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1] + 0.2;
   assert.equal(walk.gunNear(), 0);
   assert.ok(walk.manGun(0));
   run(walk, 0.1);
@@ -73,7 +73,7 @@ test('E is offered at a gun\'s breech, and the gunner stands behind it, turned w
 
 test('the camera lays the gun, at the gun\'s pace and never past its limits', () => {
   const { walk } = harness();
-  walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
+  walk.state.deck.y = gun.y; walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
   walk.manGun(0);
   walk.state.camYaw += 3;           // far past the traverse
   walk.state.camPitch = -2;         // and far up
@@ -88,7 +88,7 @@ test('the camera lays the gun, at the gun\'s pace and never past its limits', ()
 
 test('an empty gun does not fire; a rammed one fires once, and runs back and out', () => {
   const { walk, shots, events } = harness();
-  walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
+  walk.state.deck.y = gun.y; walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
   walk.manGun(0);
   assert.equal(walk.fireGun(), false);
   assert.ok(events.includes('empty'));
@@ -123,7 +123,7 @@ test('an empty gun does not fire; a rammed one fires once, and runs back and out
 
 test('a step lets go of it, and E does too', () => {
   const { walk } = harness();
-  walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
+  walk.state.deck.y = gun.y; walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
   walk.manGun(0);
   assert.ok(walk.leaveGun());
   assert.equal(walk.gun(), null);
@@ -132,7 +132,7 @@ test('a step lets go of it, and E does too', () => {
 
 test('climbed into an empty gun and fired, a body flies the arc and comes down in the sea', () => {
   const { walk, shots, left, ship } = harness();
-  walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
+  walk.state.deck.y = gun.y; walk.state.deck.x = gun.stand[0]; walk.state.deck.z = gun.stand[1];
   walk.manGun(0);
   walk.state.camPitch = -2;
   run(walk, 2);

@@ -223,7 +223,9 @@ function village(settlers, cowork = 7) {
 // built and the district keeps its parcel - the resort waits for a quay (`planResort`).
 const NEW = [
   { seed: 90210, size: 128, min: null, cap: 128, settlers: 60 },
-  { seed: 8, size: 128, min: 96, cap: 256, settlers: 200 },
+  // 89, not 8, since the sloop (Plans/DONE/nieuwe-sloep.md): her own probes lay her berth elsewhere, and seed 8 no
+  // longer gets a stone quay (a quay is the exception on an island founded small); 89 is the first of 1..120 that does.
+  { seed: 89, size: 128, min: 96, cap: 256, settlers: 200 },
   { seed: 51, size: 128, min: 96, cap: 256, settlers: 300 },
 ];
 for (const c of NEW) {

@@ -1,12 +1,13 @@
 # Naambordjes: het gezicht alleen waar je het kunt lezen
 
-**🚧 Status: plan, 29 september 2026 — nog niet gebouwd.** Eerst de keuzes onder *Te besluiten*.
-Dit is het eenvoudige alternatief voor stap 3 van [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md)
-(de gezichten in een atlas).
+**✅ Status: gebouwd op 13 oktober 2026** (plan van 29 september). Dit is het eenvoudige alternatief
+voor stap 3 van [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) (de gezichten in een atlas), en
+voorstel 1 van [cpu-van-boven.md](../cpu-van-boven.md). Wat er gebouwd is en wat het opleverde staat
+onder *Gebouwd*, onderaan.
 
 ## Waar dit vandaan komt
 
-Na [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) zitten paal en bord van elk naambordje in
+Na [gebouwen-in-een-batch.md](gebouwen-in-een-batch.md) zitten paal en bord van elk naambordje in
 de batch van het eiland, maar het beletterde gezicht is nog een eigen mesh: een vlak met een
 `MeshBasicMaterial` en een eigen canvas-textuur van 512x202 (`nameplate.js`). Op Hoogezand zijn dat
 399 gezichten, 399 calls in de kleurpas (geen schaduw), en nu de grootste groep calls.
@@ -94,3 +95,51 @@ een los punt voor later (ze vrijgeven als een bordje lang niet getekend is).
 
 Alleen paginacode; niets op de lijn, niets in `layout.json`, `config.json` of de bundle. Past in een
 patch.
+
+## Gebouwd (13 oktober 2026)
+
+De keuzes onder *Te besluiten* zijn genomen zoals voorgesteld:
+
+1. **Het crème vlakje**, in `frameGeometry` (`nameplate.js`): een vlak van de maat van het gezicht op
+   z 0,016, als laatste stuk in de merge, zodat `batchable` weet welke hoeken het zijn. Niet op de
+   poortbogen (punt 4).
+2. **Dag en nacht**: `PATCH_GLOW` 0,5 op het vlakje (`aEmissive`). Bekeken met screenshots om 13:00
+   en 21:00 op 30 en 60 eenheden: overdag is het vlakje een tikje grijzer dan het gezicht, 's nachts
+   een tikje lichter; geen van beide springt eruit, en op de drempel is het ~16 px.
+3. **De drempel**: vol vanaf 24 px, weg onder 16 px (`FACE_FULL`/`FACE_GONE` in `sign-faces.js`), in
+   CSS-pixels op de afstand (niet de diepte, zoals de mist).
+4. **De poortbogen** blijven erbuiten (geen vlakje, geen fade; ze gaan niet via `state.byId`).
+
+Waar: `fadeSignFaces()` in main.js, als eerste in `cullRecords()` (de camera staat dan waar hij
+getekend wordt), over elk record met een `nameplate` dat niet geknipt is. Het schrijft alleen
+`face.visible` en `faceMat.opacity`, en alleen bij een verandering (`showFace`); nooit de groep van het
+bordje (die is van de planner) en nooit `rec.group.visible`. Ook het bordje bij een kantoor doet mee.
+Test: `tests/sign-faces.test.mjs` (de rekensom, het schrijven alleen bij verandering, het vlakje in de
+batch-vorm precies onder het gezicht, de poort zonder vlakje, en dat main.js het vóór de cut doet).
+
+### Gemeten
+
+Zoals in [cpu-van-boven.md](../cpu-van-boven.md): een kopie van Hoogezand (1005 records, 511 bordjes)
+op deze branch (`serve.mjs --port 4790 --no-rescan` met `PROMPTHOLM_HOME` op de kopie, zee `single`),
+een eigen Chrome op de RTX (eigen profiel, `--force_high_performance_gpu --disable-gpu-vsync
+--disable-frame-rate-limit` en de drie achtergrondvlaggen, geminimaliseerd na eerst normaal getoond -
+`--start-minimized` alleen gaf `hidden` en geen frames), 1584x905, pixel ratio 1,
+`?stats&nointro&quality=0`. A/B in dezelfde pagina: `__state.signFacesAll = true` tekent elk gezicht
+zoals vroeger (`?stats` zet `__state` op window); zes paren van 1,5 s om en om, mediaan van het gepaarde
+verschil in frame-interval.
+
+| Standpunt | alle gezichten | met de fade | scheelt | kleurcalls |
+|---|---:|---:|---:|---|
+| Van boven (`122,192,177`), run 1 | 37,6 ms | 33,3 ms | **4,9 ms** (0,8-6,2) | 969 → 471 |
+| Van boven, run 2 | 38,7 ms | 34,6 ms | **4,2 ms** | 970 → 471 |
+| Uitgezoomd (250 verder terug) | 38,3 ms | 35,2 ms | **3,6 ms** | 1005 → 492 |
+| Dorp (35 van het plein) | 33,7 ms | 35,8 ms | -1,3 ms (ruis) | 336 → 301 |
+
+Van boven gaan alle 511 gezichten weg (0 getekend), in het dorp blijven er 148 staan. Minder dan de 6,5 ms
+van de CPU-meting: daar waren de gezichten helemaal weg, hier staat het vlakje in de batch (geen call,
+wel driehoeken) en kost de fade zelf een afstand per bordje. De schaduwpas is ongewijzigd (~307 calls):
+gezichten werpen geen schaduw.
+
+Niet nagelopen: `?modest`, de telefoon en first person (dichtbij is een gezicht altijd vol, dus daar
+verandert niets), en de planner en Settings → House signs (die werken op de groep, niet op het gezicht).
+Het geheugen van de canvassen blijft, zoals voorzien.

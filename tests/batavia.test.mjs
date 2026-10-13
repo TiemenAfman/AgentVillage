@@ -23,6 +23,7 @@ import { register } from 'node:module';
 import { checkSet, HERO_BUDGETS, SHIP_ANCHOR } from '../scripts/model-rules.mjs';
 import { BATAVIA } from '../web/js/batavia-mesh.js';
 import { CRAFTS } from '../shared/crafts.mjs';
+import { deckAt } from '../shared/deck.mjs';
 
 register('./support/shared-loader.mjs', import.meta.url);
 globalThis.document = { createElementNS: () => ({ addEventListener() {}, removeEventListener() {}, set src(_) {} }) };
@@ -65,13 +66,14 @@ test('she is the size decided: longer, slimmer and taller-rigged than the galleo
   // Overall with the bowsprit: everything that stands still, gallery to bowsprit tip.
   const [z0, z1] = extent(still, 2);
   assert.ok(Math.abs(z1 - z0 - 15) < 0.5, `${(z1 - z0).toFixed(2)} overall`);
-  assert.ok(z1 - z0 > 13 + 1, 'overall she is longer than the galleon by more than a unit');
+  assert.ok(z1 - z0 > CRAFTS.galleon.overall + 1, 'overall she is longer than the galleon by more than a unit');
   const [x0, x1] = extent(skin, 0);
   assert.ok(Math.abs(x1 - x0 - 2.8) < 0.1, `${(x1 - x0).toFixed(2)} in the beam`);
   const [, top] = extent(still, 1);
   assert.ok(Math.abs(top - W - 11.5) < 0.2, `the main truck ${(top - W).toFixed(2)} above the water`);
-  assert.ok(top - W > 10.8, 'higher than the galleon\'s top');
-  assert.ok(Math.abs(A['deck.waist.lo'][1] - W - 1.1) < 0.05, 'the waist 1.1 above the water, the galleon\'s 1.108');
+  assert.ok(top - W > CRAFTS.galleon.tall, 'higher than the galleon\'s top');
+  assert.ok(Math.abs(A['deck.waist.lo'][1] - W - 1.1) < 0.05, 'the waist 1.1 above the water');
+  assert.ok(Math.abs(A['deck.waist.lo'][1] - W - deckAt(CRAFTS.galleon, 0, 0)) < 0.05, 'the galleon\'s waist, within a hand');
   // One hero, well within her own budget - and far under the galleon's.
   const tris = parts.reduce((n, [, p]) => n + p.positions.length / 9, 0);
   assert.ok(tris >= 5000 && tris <= HERO_BUDGETS.batavia, `${tris} triangles against ${HERO_BUDGETS.batavia}`);
@@ -260,12 +262,13 @@ test('her side is a wall to a swimmer and a bank to a boat', () => {
   assert.equal(benchy.aground, true, 'and she stopped it');
   assert.ok(benchy.z - (mid.z + mid.hz) < BOW + 0.4, 'against her side, not short of it');
 
-  // The galleon, at her bow: its probes find her before its middle is anywhere near.
+  // The ship, at her bow: its probes find her before its middle is anywhere near (the sloop's bow probe
+  // is 4.3 out at the water, shared/craft-galleon.mjs `probes`).
   const bowOf = hulls.reduce((a, b) => (b.x > a.x ? b : a));
   const galleon = { x: bowOf.x + bowOf.hx + 9, z: bowOf.z, yaw: -Math.PI / 2, v: 0, craft: { spec: CRAFTS.galleon } };
   for (let i = 0; i < 600; i++) stepBoat(galleon, { throttle: 1 }, 1 / 30, sea);
   assert.equal(galleon.aground, true);
-  assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
+  assert.ok(galleon.x - (bowOf.x + bowOf.hx) > 3.5, `the galleon's middle stops ${(galleon.x - bowOf.x - bowOf.hx).toFixed(2)} off her bow`);
 
   // And walk.js hands every one of its hulls - at the helm, walking a deck, climbing her ladder
   // and running her out after you have jumped, climbing her mast and sitting in her crow's nest

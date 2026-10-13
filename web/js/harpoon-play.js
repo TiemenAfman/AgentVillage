@@ -24,14 +24,19 @@ import * as THREE from 'three';
 import { createHarpoonLine } from './harpoon-line.js';
 import { towHull } from './harpoon-tow.js';
 import { REEL_MIN } from 'shared/harpoon.mjs';
+import { CRAFTS } from 'shared/crafts.mjs';
 
+// The ship's are her craft's outline (shared/crafts.mjs `box`, read off her bake), in the proportions the
+// galleon's hand-picked numbers had to hers (box 2 x 5.05, deck 1.948: 2.4, 1.6, 9), so a smaller hull
+// is a smaller target and is drawn in closer.
+const SHIP_BOX = CRAFTS.galleon.box;
 // How short the reel draws a line on each kind of hold: a statue to the mouth, a player to the rail, a
 // ship to the length of the two hulls apart, land to where she would still float, a loose rowing boat
 // alongside.
-const HOLD = Object.freeze({ statue: REEL_MIN, player: 1.8, land: 6, galleon: 9, rowboat: 3 });
+const HOLD = Object.freeze({ statue: REEL_MIN, player: 1.8, land: 6, galleon: Math.round(SHIP_BOX.hz * 1.78 * 10) / 10, rowboat: 3 });
 // How big each kind of target is to a bolt (its middle above the water, and a radius).
-const HULL_R = Object.freeze({ galleon: 2.4, rowboat: 0.8 });
-const HULL_Y = Object.freeze({ galleon: 1.6, rowboat: 0.4 });
+const HULL_R = Object.freeze({ galleon: Math.round((SHIP_BOX.hx + 0.4) * 100) / 100, rowboat: 0.8 });
+const HULL_Y = Object.freeze({ galleon: Math.round(SHIP_BOX.deck * 0.82 * 100) / 100, rowboat: 0.4 });
 const STATUE_R = 0.45;
 const BODY_R = 0.35, BODY_MID = 0.25;
 // How much further than the line is long the two ends may come apart before it parts (a ship drifting

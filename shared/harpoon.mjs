@@ -26,10 +26,12 @@ export const REEL_MIN = 1.2;
 // How hard a taut line takes up the stretch past its length, a second: 1/REEL_K s to close it.
 export const REEL_K = 6;
 // How heavy each thing is to the line. Only the ratio matters: the light end comes, the heavy stays.
-export const MASS = Object.freeze({ statue: 1, chest: 1, player: 2, rowboat: 6, galleon: 60, land: Infinity });
-// On a taut line (walk.js stepRope): how fast it is walked, carefully, a foot before the other, and how
+// The galleon was 60; the sloop that took her place is half her size and weighs about half (Plans/DONE/nieuwe-sloep.md).
+export const MASS = Object.freeze({ statue: 1, chest: 1, player: 2, rowboat: 6, galleon: 30, land: Infinity });
+// On a taut line (walk.js stepRope): how fast it is walked, carefully, a foot before the other (0.45, the
+// walking pace: at 0.9 the Careful Walk, which plants every foot, took over five steps a second), and how
 // far the feet hang under it while it is slid down. Here so the motion workbench draws the same.
-export const ROPE_WALK = 0.9;
+export const ROPE_WALK = 0.45;
 export const ROPE_HANG = 0.42;
 // The points a line is drawn and walked through.
 export const ROPE_SEGS = 16;

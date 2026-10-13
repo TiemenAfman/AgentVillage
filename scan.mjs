@@ -131,6 +131,22 @@ export function backUpBeforeResort(file, hadResort, layout, now = new Date()) {
   }
 }
 
+// The layout as it stood before the sloop's berth (lib/layout.mjs QUAY_VERSION 4, Plans/DONE/nieuwe-sloep.md):
+// the scan that takes a layout from before her to her keeps the file it started from, since that is the
+// scan that may lift a ship off the rede. Only for a layout that had a version before 4.
+export function backUpBeforeSloop(file, before, layout, now = new Date()) {
+  if (!(before >= 1 && before < 4) || layout.quayV !== 4) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    const d = new Date(now), p = (n) => String(n).padStart(2, '0');
+    const name = `layout.before-sloop-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+    const to = path.join(path.dirname(file), name);
+    if (!fs.existsSync(to)) fs.copyFileSync(file, to);
+  } catch (err) {
+    console.warn(`[scan] could not keep the layout before the sloop's berth: ${err.message}`);
+  }
+}
+
 // The layout as it stood before the Salty Kraken moved off the three by three it was placed on
 // before it was a galleon (lib/layout.mjs `liftedPub`, Plans/piratenkroeg.md): the one scan that
 // moves a standing building on purpose, like the resort's, keeps the file it moved it from.
@@ -208,6 +224,7 @@ async function runScan(o) {
   const worksBefore = { works: JSON.stringify(layout.works ?? null), hash: layout.terrainHash };
   const hadResort = !!layout.resort;
   const pubBefore = JSON.stringify((layout.plots && layout.plots['civic:piratetavern']) ?? null);
+  const quayBefore = layout.quayV;
   // `layout.ladder` is the other: the most settlers the village has ever had at once, which
   // the model counts its milestones in (Plans/DONE/tenten-vertrekken.md). Read on every survey
   // rather than captured once, so a plan's re-survey sees the one written back below.
@@ -315,6 +332,7 @@ async function runScan(o) {
     backUpBeforeWorks(files.layout, worksBefore, layout);
     backUpBeforeResort(files.layout, hadResort, layout);
     backUpBeforePub(files.layout, pubBefore, layout);
+    backUpBeforeSloop(files.layout, quayBefore, layout);
     saveLayout(files.layout, layout);
   }
 

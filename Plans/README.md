@@ -6,6 +6,8 @@ Grotere ontwerpen voordat ze code worden — voor mezelf en voor Tiemen. Een pla
 - 🚧 [goudmijn-zoektocht.md](goudmijn-zoektocht.md) — een quest-lijn naast het piratenverhaal: blind graven naar de trap in 7 x 7 per verdieping, zeven verdiepingen, graaf-stamina, een drankje uit de taverne, edelstenen voor de goudsmid, een sleutel onderin.
 - 🚧 [speeltest-quests.md](speeltest-quests.md) — een agent speelde de schattenjacht met de roeiboot uit en de goudmijn tot verdieping 5: vier bugs gerepareerd (de goudsmid als piraat, de mijnladder, de tent-melding van het beeld, de onbereikbare toog), bevindingen (roeiboot door het galjoen, herladen zet je op het plein, de mijn betaalt zijn drankjes niet) en de besluiten van de keeper, gebouwd (graafplekken onzichtbaar, camera van boven; 7 x 7 en de ruimte blijven).
 - 🚧 [minder-browser-meer-spel.md](minder-browser-meer-spel.md) — browsergedrag uit (zoom, sneltoetsen, slepen, witte flits), één UI-model per modus, de haperingen.
+- 🚧 [sneller-op-igpu.md](sneller-op-igpu.md) — de GPU-vlag van het venster deed niets (streepjes in plaats van underscores, nu gerepareerd), en een profiel per onderdeel op de Intel Arc: de schaduwpas, de bewoners en de gebouwen kosten het meest; welke lichter mogen kiest de keeper.
+- 🚧 [cpu-van-boven.md](cpu-van-boven.md) — waar de ~40 ms CPU per frame van boven in zit (Hoogezand, CPU-profiel + A/B): three's kosten per draw call, 520-575 naambordgezichten (~6,5 ms), de schaduwpas (~7 ms), het poseren van de inwoners; drie voorstellen, de keeper kiest.
 
 ## Besluiten die nog niet in een eigen plan zitten
 
@@ -112,10 +114,6 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
   oppervlak (`diving.js`), een zeebodem als teken- en botslaag naast het terrein (geulen tot -3.5,
   banken tot -1.0, nooit `H`), een onderwaterlook met het oppervlak van onderen, verdrinken door de
   zee (`breath`), anderen die je op diepte zien, en leven (kelp, koraal, vissen, bellen).
-- 🚧 [naambord-gezichten-op-afstand.md](naambord-gezichten-op-afstand.md) — plan, nog niet gebouwd: het
-  beletterde gezicht van een naambordje alleen tekenen waar het groot genoeg is om te lezen (in
-  pixels op het scherm, met een fade), met een crème vlakje in de batch voor van veraf. Van boven
-  ~4 ms (gemeten plafond), zonder atlas, zonder verlies aan scherpte.
 - 🚧 [uitrusting-en-vasthouden.md](uitrusting-en-vasthouden.md) — settlers die iets vasthouden en
   een rugzak die uit kan, voor zowel de speler (`classic-avatar.js`) als de instanced settlers
   (`settler-figures.js`). Voor de speler is het grotendeels gebouwd (rugzak, handitems, pantser);
@@ -182,6 +180,10 @@ Wat af is (✅) staat in [DONE/](DONE/); hier in `Plans/` blijft wat nog open is
 
 ### Klaar
 
+- ✅ [naambord-gezichten-op-afstand.md](DONE/naambord-gezichten-op-afstand.md) — het beletterde gezicht van
+  een naambordje wordt alleen getekend waar het op het scherm minstens 16 px breed is (vol vanaf 24, een
+  fade ertussen, `sign-faces.js`); van veraf staat er een crème vlakje in de batch-vorm. Hoogezand van
+  boven: 969 → 471 kleurcalls, 4,2-4,9 ms per frame minder.
 - ✅ [gebouwen-in-een-batch.md](DONE/gebouwen-in-een-batch.md) — elk gebouwlichaam van een eiland (en het
   frame van elk naambord) is een instance in één `BatchedMesh` (`record-batch.js`); het record houdt
   een stand-in en de batch neemt elke render diens zichtbaarheid en matrix over, dus filters,

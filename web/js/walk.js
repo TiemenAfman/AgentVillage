@@ -17,7 +17,7 @@ import { ropeMode, alongLine, ZIP_TOP, ZIP_G, ZIP_FRICTION, ROPE_WALK, ROPE_HANG
 import { clampLay, slewLay, GUN_PITCH_MIN, GUN_PITCH_MAX, GUN_PITCH_REST, LOAD_S, RECOIL_S, FUSE_S } from 'shared/cannon.mjs';
 import { stepDive, canDive, headUnder, divePitch, swimPose, stepLie, lookRise, plungeSpeed, DIVE_DRIFT, DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED } from './diving.js';
 import { stepDeck, toWorld, toLocal, dirToLocal, dirToWorld, deckAt, hullVelocity, ladderPath, pathAt, ladderUp, ladderDown, ladderHolding, aloftPath, aloftUp, aloftDown } from 'shared/deck.mjs';
-import { climbWay, climbWayDown, climbAlong, onWay, topNear, hoistAt, HOIST_PACE, HANG_GAP } from './ladder-way.js';
+import { climbWay, climbWayDown, climbAlong, onWay, topNear, ladderLanding, facingOnWay, hoistAt, HOIST_PACE, HANG_GAP } from './ladder-way.js';
 import { stepBike, bikeAt, createBicycle, RIDER, BIKE_SHORE, BIKE_TOP, stickTurn } from './bicycle.js';
 import { stepMount, mountAt, createMount, MOUNT_SHORE, MOUNT_TOP, MOUNT_GALLOP, MOUNT_HEAD, MOUNT_NOSE, MOUNT_RUMP } from './mount.js';
 import { createPool, stepPool, BODY, BOAT, HORSE } from './stamina.js';
@@ -57,6 +57,9 @@ const EYE = PLAYER_EYE;
 // island into a platform game. Gravity is tuned to that arc rather than to reality: it
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
+// How far a deck's height may lie from the feet for a thing on it (a wheel, a gun) to be within reach: a few
+// treads of a stair, under the 0.57 between the sloop's waist and her quarterdeck.
+const STOREY = 0.4;
 // How quickly the stick turns a jumper's way in the air, per second (walk mode's `airWay`): at
 // 2.5 a standing jump pushed forward covers about half the ground a running one does.
 const AIR_STEER = 2.5;
@@ -377,7 +380,7 @@ export function createWalkMode({
     // and `onGunRope(gun)` (the crouch key at a harpoon) asks main.js for its line to climb onto.
     onGunTow: null,
     onGunRope: null,
-    // Somebody else's harpoon let go of us (walk.js pullTo): `onPullEnd(why)`, 'arrived' | 'free' | 'gone'.
+    // Somebody else's harpoon let go of us (walk.js pullTo): `onPullEnd(why)`, 'boarded' (over her rail, crew) | 'arrived' | 'free' | 'gone'.
     onPullEnd: null,
     // On a harpoon's taut line: 'walk' along it or 'zip' down it, or null (stepRope).
     rope: null,
@@ -402,6 +405,7 @@ export function createWalkMode({
     guard: { leftArm: false, rightArm: false }, // which hand's shield is up
     shields: { left: false, right: false },     // which hands carry one at all: armour
     paused: false,   // true while an overlay owns the input
+    lookPaused: false,   // true while something wants the mouse but not the keys (the chart)
   };
 
   // Letting go of C ends a crouch, but not a nap: once the settler is down they stay
@@ -715,14 +719,12 @@ export function createWalkMode({
     if (row.craft && row.craft.setCargo) row.craft.setCargo(null);
     state.cargo = { item, hull: ship };
     if (ship.craft && ship.craft.setCargo) ship.craft.setCargo(cargoMesh(item, material));
-    const [lx, lz] = ladder.land;
-    const floor = deckAt(specOf(ship), lx, lz) ?? ladder.top;
-    const land = ship.craft && ship.craft.walk ? nearestStand(ship.craft.walk, lx, lz, floor + 0.2) : null;
+    const land = landingOf(ship, ladder);
     state.vehicle = null;
     climb = null;
     deckBoat = ship;
     const yaw = Math.atan2(-(ladder.x < 0 ? -1 : 1), 0);
-    state.deck = { boat: ship.id, x: land ? land.x : lx, z: land ? land.z : lz, y: land ? land.y : floor, vy: 0, grounded: true, yaw };
+    state.deck = { boat: ship.id, x: land.x, z: land.z, y: land.y, vy: 0, grounded: true, yaw };
     state.swimming = false;
     state.grounded = true;
     state.vy = 0;
@@ -955,7 +957,7 @@ export function createWalkMode({
   // (whose button holds rather than acts - guardUp above).
   // A sip the rig actually took is told to `onDrink`, for everybody else to see it too.
   const act = (side) => { if (!beerIn(side)) fight(side); else if (canDrink() && classicAvatar.drink(side) && onDrink) onDrink(side); };
-  const wantLock = () => state.active && !state.paused && !state.working && !lockRefused;
+  const wantLock = () => state.active && !state.paused && !state.working && !state.lookPaused && !lockRefused;
   function requestLock(fromClick = false) {
     if (document.pointerLockElement === dom) return;
     // Not while Escape is down: a panel closed with Escape asks for the lock inside that very
@@ -1021,7 +1023,7 @@ export function createWalkMode({
   };
   document.addEventListener('pointerlockchange', onLockChange);
   const onDown = (e) => {
-    if (!state.active) return;
+    if (!state.active || state.lookPaused) return;
     const side = SIDE_OF[e.button];
     if (!side) return;
     // At a gun the right button is its linstock (the keeper: "rechtermuisknop om te vuren"), and so is
@@ -1058,6 +1060,9 @@ export function createWalkMode({
   // hand swallowed every swing of the other - you could block or fight, never both.
   const BUTTON_BIT = { 0: 1, 1: 4, 2: 2 };
   const onMove = (e) => {
+    // The chart has the mouse (setLookPaused): no looking and no swing, and any drag left
+    // over from before it opened is dropped rather than resumed when it closes.
+    if (state.lookPaused) { dragging = false; return; }
     if (e.button >= 0 && BUTTON_BIT[e.button]) {
       if (e.buttons & BUTTON_BIT[e.button]) onDown(e); else onUp(e);
     }
@@ -1091,7 +1096,7 @@ export function createWalkMode({
     zoomPref = back / base;
   }
   const onWheel = (e) => {
-    if (!state.active || state.paused) return;
+    if (!state.active || state.paused || state.lookPaused) return;
     e.preventDefault();
     // One notch past the nearest stop goes in behind the eyes, and the first notch out
     // comes back to that stop - never both in one notch, or a trackpad flick would flicker.
@@ -1589,6 +1594,11 @@ export function createWalkMode({
   const isFollowing = (b) => (following ? !!following(b) : false);
   const frameOf = (b) => ({ x: b.x, z: b.z, fx: Math.sin(b.yaw), fz: Math.cos(b.yaw) });
   const specOf = (b) => (b && b.craft && b.craft.spec) || null;
+  // Past this from a hull's middle none of her ladders is near (`near` on the craft, shared/crafts.mjs;
+  // the galleon's thirteen of length and her ladders inside it: 7).
+  const nearOf = (spec) => (spec && spec.near) ?? 7;
+  // Where a ladder of hers lands a body (ladder-way.js ladderLanding): one sum for every reader.
+  const landingOf = (b, ladder) => ladderLanding(b.craft && b.craft.walk, specOf(b), ladder);
   function offDeck() { state.deck = null; deckBoat = null; deckJump = false; climb = null; state.gun = null; }
   // A ship left running. Off her deck - over the rail, or off her ladder - a heavy hull has way on
   // her still, and nothing steps a boat that nobody is aboard: she froze where you jumped, which
@@ -1678,11 +1688,14 @@ export function createWalkMode({
     state.bob += dt * 1.2;
     return afterMove(dt);
   }
-  // From the helm onto the deck, a pace forward of the wheel.
+  // From the helm onto the deck, where the pilot stood. It was a pace forward of the wheel, which on the
+  // galleon was clear deck and on the sloop is her binnacle (build-sloop.py: the stand aft of the wheel,
+  // the binnacle 0.42 before it): the body was put down inside it, on the cabin floor a deck below
+  // (13 Oct 2026). The stand is the bake's `anchor.helm`, measured clear (tests/sloop-bake.test.mjs).
   function leaveHelm() {
     const b = state.vehicle, spec = specOf(b);
     if (!b || !spec || spec.crew < 2) return false;
-    let x = spec.helm[0], z = spec.helm[1] + 0.6;
+    let x = spec.helm[0], z = spec.helm[1];
     let y = deckAt(spec, x, z);
     if (y === null) return false;
     // A pace forward of the wheel, wherever the model has room for one: the plinth the wheel stands
@@ -1710,6 +1723,24 @@ export function createWalkMode({
     board(b);
     return true;
   }
+  // The height of the deck the wheel stands on, from the craft's own deck rectangles: the highest that
+  // holds the helm under a crow's nest's height. Null for a craft that has none (the rowing boat, whose
+  // whole deck is her helm), and then any height is the wheel's.
+  const helmFloors = new WeakMap();
+  function helmFloor(spec) {
+    if (!helmFloors.has(spec)) {
+      let y = null;
+      for (const r of spec.deck || []) {
+        if (r.y > 4 || Math.abs(spec.helm[0] - r.x) > r.hx || Math.abs(spec.helm[1] - r.z) > r.hz) continue;
+        if (y === null || r.y > y) y = r.y;
+      }
+      helmFloors.set(spec, y);
+    }
+    return helmFloors.get(spec);
+  }
+  // Whether feet at `y` are on the storey of a thing standing at `at` (null: on every one): within a
+  // stair's few treads of it, not a deck above or below.
+  const onStorey = (y, at) => at == null || Math.abs(y - at) < STOREY;
   // How far you are from the wheel. Nothing else is asked of a deck: there is no key for
   // stepping ashore or over the side - you jump, or you take the ladder - so the only thing
   // E does up here is the helm.
@@ -1722,7 +1753,10 @@ export function createWalkMode({
     const n = spec.nest;
     const away = n && !climb && d.y > n.floor ? Math.hypot(d.x - n.seat.x, d.z - n.seat.z) : Infinity;
     const nest = away <= (n ? n.reach : 0) ? away : null;
-    return { helm: Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]), boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
+    // The wheel only from its own deck: from the cabin under the sloop's quarterdeck it was a pace
+    // away through the planks, and E took the helm from below (13 Oct 2026). Like a room's `floor`.
+    const helm = onStorey(d.y, helmFloor(spec)) ? Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]) : Infinity;
+    return { helm, boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
   }
 
   // ---- rope ladders (Plans/DONE/lopen-op-de-boot.md, "Instappen") --------------------------------
@@ -1904,8 +1938,8 @@ export function createWalkMode({
     for (const b of boatsOf()) {
       const spec = specOf(b);
       if (!spec || !spec.ladders || !spec.ladders.length) continue;
-      // A ship is thirteen long and her ladders inside that: further than that is nowhere near one.
-      if (Math.hypot(state.pos.x - b.x, state.pos.z - b.z) > 7) continue;
+      // Her ladders are inside her length: further than that from her middle is nowhere near one.
+      if (Math.hypot(state.pos.x - b.x, state.pos.z - b.z) > nearOf(spec)) continue;
       const frame = frameOf(b);
       const [lx, lz] = toLocal(frame, state.pos.x, state.pos.z);
       const ly = state.pos.y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
@@ -1934,12 +1968,15 @@ export function createWalkMode({
     for (const b of boatsOf()) {
       const spec = specOf(b);
       if (!spec || !spec.ladders || !spec.ladders.length) continue;
-      if (Math.hypot(x - b.x, z - b.z) > 7) continue;
+      if (Math.hypot(x - b.x, z - b.z) > nearOf(spec)) continue;
       const frame = frameOf(b);
       const [lx, lz] = toLocal(frame, x, z);
       const ly = y - DECK_Y - (b.craft && b.craft.object ? b.craft.object.position.y : 0);
       for (const q of spec.ladders) {
-        const w = climbWay(ladderPath(spec, q, sea));
+        // The way their own page climbs (startClimb): over the top to where the ladder lands on her model.
+        const rope = ladderPath(spec, q, sea);
+        rope[rope.length - 1] = landingOf(b, q);
+        const w = climbWay(rope);
         const top = ly > w.path[1].y - 0.01 ? topNear(w, { x: lx, y: ly, z: lz }) : null;
         if (top === null) continue;
         const [fx, fz] = dirToWorld(frame, q.x < 0 ? 1 : -1, 0);
@@ -1962,9 +1999,9 @@ export function createWalkMode({
     // Where the ladder lands is a place on the model, and the nearest free one is where you step
     // down: a cannon can stand where a table of numbers said there was nothing. Worked out here, as
     // the end of the way up, and not on arriving - found then, it moved the feet 0.14 in one frame.
-    const last = rope[rope.length - 1];
-    const land = b.craft && b.craft.walk ? nearestStand(b.craft.walk, last.x, last.z, last.y) : null;
-    if (land) rope[rope.length - 1] = { x: land.x, z: land.z, y: land.y };
+    // The same place every other reader lands (landingOf), so another page sees the step over the
+    // top end where this one ends it.
+    rope[rope.length - 1] = landingOf(b, ladder);
     const way = dir > 0 ? climbWay(rope, at) : climbWayDown(rope, at);
     offDeck();
     standUp();
@@ -2092,7 +2129,9 @@ export function createWalkMode({
     state.climbing = climbingAt(c, p.y - was, p.y - l.foot);
     state.pos.copy(hullPoint(b, p.x, p.y, p.z));
     planeOf(b);
-    const [fx, fz] = dirToWorld(frame, -l.out[0], -l.out[1]);
+    // Facing the mast; out of a lubber's hole (`hole`), turning to the step aside onto the top's floor.
+    const face = l.hole ? facingOnWay(c.way, c.d, [-l.out[0], -l.out[1]]) : [-l.out[0], -l.out[1]];
+    const [fx, fz] = dirToWorld(frame, face[0], face[1]);
     state.yaw = Math.atan2(fx, fz);
     state.moving = wish !== 0;
     state.running = false;
@@ -2221,6 +2260,7 @@ export function createWalkMode({
     if (!d || !deckBoat || climb || d.seat || state.gun) return null;
     let best = null, bestD = 0.75;
     mountsOf().forEach((g, i) => {
+      if (!onStorey(d.y, g.y)) return;
       const away = Math.min(Math.hypot(d.x - g.stand[0], d.z - g.stand[1]), Math.hypot(d.x - g.x, d.z - g.z) - 0.3);
       if (away < bestD) { bestD = away; best = i; }
     });
@@ -2468,20 +2508,28 @@ export function createWalkMode({
   // ---- on the end of somebody's harpoon line (Plans/harpoen.md, fase B) ----------------------------
   // The sea said another player's line struck us ({t:'harpoon', a:'hooked'}, the keeper: "altijd"):
   // the body is drawn through the air and the water to that ship's harpoon at PULL_SPEED, faced to it,
-  // until it is at the rail - then let go of there, falling with a little of the way it had (onto her
-  // deck or, more often, into the water beside her). Space struggles free; so do a deck, a ladder, a
-  // boat or a line of our own, and PULL_MAX_S. `at()` is main.js's: the mouth of that harpoon in the
-  // scene now, or null once the ship has gone.
-  let pull = null;                 // { at, t, jump }
+  // until it is at the rail. Space struggles free; so do a deck, a ladder, a boat or a line of our own,
+  // and PULL_MAX_S. `at()` is main.js's: the mouth of that harpoon in the scene now, or null once the
+  // ship has gone. With `ship` and `mount` (the gunner's hull and the harpoon's index) the arrival is a
+  // short hop over her bulwark onto the planks behind that harpoon - the nearest place her model has to
+  // stand there (nearestStand), never a coordinate - and the body is crew from then on, as off the top
+  // of a ladder (`onBoarded`). Without them it is let go of at the rail, falling with a little of the
+  // way it had: let go there, it almost always fell beside her into the water.
+  let pull = null;                 // { at, t, jump, ship, mount, over }
   const PULL_SPEED = 4.5;
   const PULL_ARRIVE = 1.4;
   const PULL_MAX_S = 20;
-  function pullTo(at) {
+  // The hop over the rail: how long, and how far over the straight line from where the pull let go to
+  // the deck it rises at its middle - more when it let go below her planks (hauled up out of the water
+  // to within PULL_ARRIVE of the mouth), or the arc ran through her bulwark, ~0.5 over the planks.
+  const OVER_S = 0.45;
+  const OVER_LIFT = 0.6;
+  function pullTo(at, { ship = null, mount = null } = {}) {
     if (typeof at !== 'function' || state.deck || state.vehicle || climb || onLine || state.dying) return false;
     if (state.sitting) standUp();
     if (rides()) dismount({ here: true });
     cancelDig('reset');
-    pull = { at, t: 0, jump: false };
+    pull = { at, t: 0, jump: false, ship, mount, over: null };
     return true;
   }
   function stopPull() {
@@ -2493,7 +2541,53 @@ export function createWalkMode({
     state.floor = groundAt(state.pos.x, state.pos.z, WATER_Y);
     return true;
   }
+  // Where on the gunner's deck a body hauled in by harpoon `mount` comes down: behind it, where its gunner
+  // stands, or the nearest free place to that on her model. Null when there is no such ship or mount.
+  function pullLanding(ship, mount) {
+    const spec = specOf(ship), g = spec && spec.mounts ? spec.mounts[mount] : null;
+    if (!g) return null;
+    const [sx, sz] = g.stand || [g.x, g.z];
+    const floor = deckAt(spec, sx, sz) ?? g.y;
+    const surface = ship.craft && ship.craft.walk;
+    if (!surface) return { x: sx, z: sz, y: floor };
+    return nearestStand(surface, sx, sz, floor + 0.2) || nearestStand(surface, sx, sz, g.y + 0.2, 1.5);
+  }
+  // One frame of the hop over the rail: from where the pull let go to the landing, both moved with her
+  // (the landing is a point of her frame, read off her as drawn now), on an arc. At its end on her deck.
+  function stepOver(dt) {
+    const o = pull.over, b = o.ship;
+    o.t = Math.min(OVER_S, o.t + dt);
+    const k = o.t / OVER_S;
+    const s = k * k * (3 - 2 * k);
+    const to = hullPoint(b, o.land.x, o.land.y, o.land.z);
+    state.pos.set(
+      o.from.x + (to.x - o.from.x) * s,
+      o.from.y + (to.y - o.from.y) * s + (OVER_LIFT + Math.max(0, to.y - o.from.y)) * 4 * k * (1 - k),
+      o.from.z + (to.z - o.from.z) * s,
+    );
+    state.grounded = false;
+    state.swimming = false;
+    state.dive = false;
+    state.vy = 0;
+    drift = null;
+    state.moving = state.running = state.sprinting = false;
+    if (k < 1) return afterMove(dt);
+    pull = null;
+    deckBoat = b;
+    state.deck = { boat: b.id, x: o.land.x, z: o.land.z, y: o.land.y, vy: 0, grounded: true, yaw: state.yaw - b.yaw };
+    state.pos.copy(to);
+    planeOf(b);
+    state.grounded = true;
+    state.floor = state.pos.y;
+    airTop = state.pos.y;
+    place(camBack * 1.5);
+    if (state.onPullEnd) state.onPullEnd('boarded');
+    if (state.onBoarded) state.onBoarded(b, { stowed: false });
+    return afterMove(dt);
+  }
   function stepPull(dt) {
+    // Over the rail already: past letting go, so Space no longer frees anybody from it.
+    if (pull.over) return stepOver(dt);
     const p = pull.at();
     pull.t += dt;
     if (!p || pull.jump || pull.t > PULL_MAX_S || state.deck || state.vehicle || climb || onLine) {
@@ -2505,6 +2599,11 @@ export function createWalkMode({
     const d = Math.hypot(dx, dy, dz) || 1;
     const ux = dx / d, uy = dy / d, uz = dz / d;
     if (d <= PULL_ARRIVE) {
+      const land = pull.ship ? pullLanding(pull.ship, pull.mount) : null;
+      if (land) {
+        pull.over = { ship: pull.ship, land, from: state.pos.clone(), t: 0 };
+        return stepOver(dt);
+      }
       if (state.onPullEnd) state.onPullEnd('arrived');
       stopPull();
       drift = { x: ux * 1.5, z: uz * 1.5 };
@@ -3050,6 +3149,17 @@ export function createWalkMode({
     // come out of a conversation already running.
     if (v) { keys.clear(); stick.x = 0; stick.z = 0; stick.run = false; padCrouch = false; spaceHeld = false; padJump = false; }
     // An overlay needs the cursor; closing it hands the mouse back to looking around.
+    syncLock();
+  }
+
+  // The chart (M) is not a panel: it wants the cursor - you drag it about and read what is
+  // on it - but it is not a pause either, because the feet stay yours underneath it. So it
+  // takes the mouse and not the keys: the lock goes (syncLock, so the arrow shows), and
+  // onDown/onMove/onWheel above stop looking while walking carries on. Unlike setPaused it
+  // clears nothing. Releasing it hands the mouse back the same way closing a panel does.
+  function setLookPaused(v) {
+    if (state.lookPaused === !!v) return;   // showMinimap asks every frame
+    state.lookPaused = !!v;
     syncLock();
   }
 
@@ -3899,22 +4009,46 @@ export function createWalkMode({
   // The hull we are on this frame, read for the boom: her frame, the height of her y = 0 and her
   // walk map (shared/hullwalk.mjs), or null off one. `reach` is how high a floor of hers counts as
   // the deck under the camera: no higher than half a unit over the point looked at, or the roof of
-  // her castle - or her yards - would be floors to a camera on the waist.
+  // her castle - or her yards - would be floors to a camera on the waist - and never up to a lid
+  // over that point (`ceilingIn`, kept as `lid`): in a cabin under the poop the poop deck is no floor
+  // to lift a camera down there onto, it is the lid it stays under (Plans/DONE/nieuwe-sloep.md). On a
+  // hull with no lid over the body - the galleon as she is - the reach is what it was.
   let camHull = null;
+  const hullLocal = [0, 0];
   function hullForCamera(pivotY) {
     const b = deckBoat || state.vehicle || (climb && climb.boat) || null;
     const walkMap = b && b.craft && b.craft.walk;
     if (!walkMap) return null;
     const base = hullPoint(b, 0, 0, 0).y;
-    return { frame: frameOf(b), base, walk: walkMap, reach: pivotY - base + 0.5 };
+    const frame = frameOf(b);
+    toLocal(frame, state.pos.x, state.pos.z, hullLocal);
+    const lid = walkMap.ceilingIn ? walkMap.ceilingIn(hullLocal[0], hullLocal[1], pivotY - base) : null;
+    const reach = Math.min(pivotY - base + 0.5, lid == null ? Infinity : lid - 0.05);
+    return { frame, base, walk: walkMap, reach, lid, covered: lid != null && lid - (pivotY - base) < COVER };
   }
-  const hullLocal = [0, 0];
+  // How close over a point a lid of hers has to be for the point to be under cover - in a cabin - and
+  // not merely under a yard or her crow's nest. The sloop's cabin has 1.17 of headroom.
+  const COVER = 1.4;
+  // Whether a point of the scene is under cover of hers (hullLidAt within COVER over it).
+  function hullCovered(h, x, y, z) {
+    const lid = hullLidAt(h, x, y, z);
+    return lid != null && lid - y < COVER;
+  }
   function hullDeckAt(h, x, z) {
     toLocal(h.frame, x, z, hullLocal);
     const f = h.walk.floorIn(hullLocal[0], hullLocal[1], h.reach, 0);
     return f == null ? null : h.base + f;
   }
-  // Whether the point is inside something the boom must stop at, of what is sampled.
+  // Her lid over a point (the underside of a deck, a beam) in the scene, or null under the open sky.
+  function hullLidAt(h, x, y, z) {
+    if (!h.walk.ceilingIn) return null;
+    toLocal(h.frame, x, z, hullLocal);
+    const c = h.walk.ceilingIn(hullLocal[0], hullLocal[1], y - h.base);
+    return c == null ? null : h.base + c;
+  }
+  // Whether the point is inside something the boom must stop at, of what is sampled. `walled` says the
+  // last one was a cabin's wall (see below).
+  let walled = false;
   function solidPoint(x, y, z) {
     const g = camDive > 0 ? Math.max(heightUnder(x, z), bedUnder(x, z)) : heightUnder(x, z);
     if (y < g + CAM_R * 0.5) return true;
@@ -3928,6 +4062,20 @@ export function createWalkMode({
     if (camHull) {
       const deck = hullDeckAt(camHull, x, z);
       if (deck != null && y < deck + CAM_R * 0.5) return true;
+      // And, with the body under a lid of hers, her lid over the point as a slab, like plank() for a
+      // deck from above: the boom stops under the poop deck from inside the cabin instead of going up
+      // through it. Only then: on an open deck a level spar over the lens - a yard - is a small thing
+      // the camera looks past (solids.js camSeesPast), and as a slab it pulled the boom in by a unit.
+      if (camHull.lid != null) {
+        const lid = hullLidAt(camHull, x, y, z);
+        if (lid != null && y > lid - CAM_R) return true;
+      }
+      // And the walls of a cabin, which the walk map cannot see (it is cut with vertical lines, and a
+      // bulkhead is vertical): from under cover the boom stops where the cover ends, and from the open
+      // deck where it begins. In the sloop's cabin the boom went out through the bulkhead into the
+      // stairwell, and all the keeper saw was the wall with the body in its door (13 Oct 2026).
+      // armReach keeps the lens's room short of it (`walled`), or it stands in the plane of the wall.
+      if (hullCovered(camHull, x, y, z) !== camHull.covered) { walled = true; return true; }
     }
     return false;
   }
@@ -3964,8 +4112,9 @@ export function createWalkMode({
     const step = Math.max(0.06, best / 80);
     let open = false;
     for (let t = 0; t <= best; t += step) {
+      walled = false;
       if (solidPoint(ax + dx * t, ay + dy * t, az + dz * t)) {
-        if (open) { best = Math.max(0, t - step); break; }
+        if (open) { best = Math.max(0, t - step - (walled ? CAM_R : 0)); break; }
       } else open = true;
     }
     return best;
@@ -4087,8 +4236,11 @@ export function createWalkMode({
     // where the camera ended up, for its lid.
     armDir.copy(camera.position).sub(pivot);
     const want = armDir.length();
-    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all.
-    if (cameraFixed()) armLen = want;
+    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all - except
+    // in a ship's cabin, under her deck (camHull.covered): there is no seeing a body in there from
+    // outside its walls, and with no boom the camera stood in the stairwell looking at the bulkhead
+    // with the body in its door (the sloop, 13 Oct 2026).
+    if (cameraFixed() && !(camHull && camHull.covered)) armLen = want;
     else if (want > 1e-6) {
       armDir.divideScalar(want);
       // How far it may reach this frame, at once: nothing between the camera and the body, ever.
@@ -4171,7 +4323,7 @@ export function createWalkMode({
     return !blockerIndex.some(x, z, r, (b) => inside(b, x, z, r));
   }
 
-  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut, stopRunning,
+  return { state, avatar, enter, exit, park, goTo, blockedAt, standFloor, parked: () => state.parked, update, pad, setPaused, setLookPaused, setWorking, release, syncLock, setBlockers, setPeerBlockers, setInteractables, setAvatar, setLevels, setSurfaces, setClimbs, ladderAt, setDecks, sitOn, sitOnDeck, standUp, roomFor, board, unboard, aboard: () => state.vehicle, leaveHelm, takeHelm, deckWhere, runOut, runningOut, stopRunning,
     // The guns on her deck (Plans/kanonnen.md): which one is within reach, manning and letting go of
     // one, and the three things done at it; `launchSelf` is a body out of a gun's mouth.
     gunNear, manGun, leaveGun, loadGun, fireGun, climbInGun, launchSelf, gun: () => state.gun, discharge,

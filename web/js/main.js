@@ -56,10 +56,11 @@ import {
 import { fogCeilingOf, objectReachOf, CULL_PAD } from './fade.js';
 import { keepRecord, keepRegion } from './record-cull.js';
 import { createRecordBatch, pickedId } from './record-batch.js';
-import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName } from './graphics-settings.js';
+import { loadGraphics, saveGraphic, forgetGraphics, clampGraphic, graphicsTier, hazeOpening, objectDistanceOf, hdWanted, GRAPHICS_TIERS, loadPost, savePost, clampPost, postDefaults, forgetPost, loadStatsShown, saveStatsShown, loadQualityChoice, saveQualityChoice, qualityLine, gpuShortName, isModestGpu } from './graphics-settings.js';
 import { loadHdManifest, hdInstalled, hdStatus } from './hd-pieces.js';
 import { createPost } from './post.js';
 import { createNameplate } from './nameplate.js';
+import { showFace, faceOpacity, screenWidth } from './sign-faces.js';
 import { hamletSignSites, hamletEntrances } from './hamlet-sign-placement.js';
 import { resortDressing } from './resort-dressing.js';
 import { createUI } from './ui.js';
@@ -347,9 +348,6 @@ function gpuName() {
   } catch { return 'unknown'; }
 }
 
-// An integrated GPU driving a full-screen scene with a big shadow map is the most
-// likely thing to fall over, so ask it for less.
-const MODEST_GPU = /Intel|Radeon\(TM\)|UHD|Vega|610M|660M|Iris/i;
 canvas.addEventListener('webglcontextrestored', () => {
   recoverCanvas(new Error('The island needs to rebuild its 3D canvas.'));
 });
@@ -398,9 +396,9 @@ async function openBoardWithoutIsland() {
 }
 
 // A phone draws the lighter island unless its player asked for the full one (phoneprefs.js):
-// MODEST_GPU is a list of desktop names, and no Adreno, Mali or PowerVR is on it, so every
-// phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
-const modest = params.has('modest') || MODEST_GPU.test(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
+// isModestGpu (graphics-settings.js) knows desktop names, and no Adreno, Mali or PowerVR is
+// among them, so every phone used to be handed a desktop's pixel ratio, soft shadows and twenty-five thousand trees.
+const modest = params.has('modest') || isModestGpu(graphicsGpu) || (HANDHELD && phonePrefs().quality !== 'full');
 report(`island drawing on: ${graphicsGpu}`);
 // The best this screen is drawn at; the quality governor below only ever takes from it.
 // A phone that runs light draws at its CSS pixels: at a devicePixelRatio of 3 even 1.15 is a
@@ -438,7 +436,7 @@ setStatsShown(params.has('stats') || loadStatsShown());
 // Why this page took itself for the tier it is, for Settings -> Graphics' quality line.
 const tierReason = HANDHELD ? (modest ? 'light' : 'full quality')
   : params.has('modest') ? '?modest'
-  : MODEST_GPU.test(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
+  : isModestGpu(graphicsGpu) ? `integrated graphics: ${gpuShortName(graphicsGpu)}`
   : gpuShortName(graphicsGpu);
 // Frames counted for that line's fps: one increment a frame, read only while Settings is open.
 let framesDrawn = 0;
@@ -607,6 +605,10 @@ const state = {
   // full pit, the same as an island that has never had a reading.
   gold: null,
 };
+// `?stats` is for measuring, and a measurement wants the page's own handles without walking
+// first (`?hunt` only sets them on entering walk mode): `__state.signFacesAll = true` is the
+// A/B of the sign faces (fadeSignFaces), flipped in one page.
+if (params.has('stats')) { window.__state = state; window.__camera = camera; }
 
 // A visitor may walk anywhere and look at anything, but the doors that reach into this
 // machine stay shut. The server refuses them regardless; this is so the refusal arrives
@@ -1199,7 +1201,20 @@ const seatPoint = new THREE.Vector3();
 const seatTilt = new THREE.Quaternion();
 function poseHull(b) {
   b.craft.place(b.x, b.z, b.yaw);
+  if (b.craft.sails) b.craft.sails(sailShareOf(b));
   b.craft.bob(frameSeconds);
+}
+// The sail a hull is drawn under (boat.js `sails`, Plans/DONE/nieuwe-sloep.md chip 2c): what this page knows
+// of her. Her own setting where there is one - ours at the wheel or on her deck (`underSail`), and a
+// followed hull whose setting came with the hand-over (onBoatFromServer writes it) - else, for a hull
+// somebody else sails and said nothing of, the step nearest the way she is making off her track
+// (hullSpeed / her top), so a ship seen crossing the bay carries sail and one lying still does not.
+// Nothing of it is on the wire: a page from before this draws her as she was.
+function sailShareOf(b) {
+  if (Number.isFinite(b.underSail)) return b.underSail;
+  if (!hullFollowed(b)) return sailOf(b);
+  const sail = b.craft && b.craft.spec && b.craft.spec.sail;
+  return sail && sail.top > 0 ? nearestSail(hullSpeed(b) / sail.top) : 0;
 }
 
 // A ship, as opposed to a boat: room for a crew, so it is boarded by her rope ladders (walk.js)
@@ -2448,7 +2463,7 @@ function fireHarpoonHere({ boat, i }) {
   return null;
 }
 // A harpoon on the sea (net.js `harpoon`, Plans/harpoen.md fase B): somebody's line to draw, or our own
-// body hooked by one - drawn to that ship's harpoon by walk mode until it is at the rail, or let go of.
+// body hooked by one - drawn to that ship's harpoon by walk mode and over her rail onto her deck, or let go of.
 function onHarpoonMessage(m) {
   if (!state.harpoons) return;
   if (m.a === 'line') { state.harpoons.onLine(m); return; }
@@ -2463,7 +2478,7 @@ function onHarpoonMessage(m) {
       ship.craft.object.updateMatrixWorld();
       return ship.craft.object.localToWorld(mouth.set(mz.at[0], mz.at[1], mz.at[2]));
     };
-    if (state.walk.pullTo(at)) {
+    if (state.walk.pullTo(at, { ship, mount: m.i })) {
       const who = state.peers ? state.peers.nameOf(m.by) : 'Somebody';
       state.ui.toast(`${who} has you on a harpoon line! <b>Space</b> to struggle free.`);
     }
@@ -4469,7 +4484,29 @@ const cullEye = new THREE.Vector3();
 // of more than the pad in one frame (a tween, a fast zoom) could draw a record a frame late
 // or cut one a frame early inside the fog band. The animations read `rec.cull` from the
 // frame before, which only ever decides whether a mill in full fog turns.
+// A yard sign's lettered face only where it can be read (web/js/sign-faces.js): each face is a
+// call of its own, and from above they were over half the colour pass. Here, beside the cut,
+// because it measures from where the camera is drawn from. Only the face's `visible` and its
+// material's opacity are written, and only on a change - never the sign's group, which the
+// planner owns, nor `rec.group.visible`. A record already cut (`rec.cull`) has its face masked
+// with it and is skipped. `matrixWorld` is last frame's, which a fade over eight pixels never shows.
+function fadeSignFaces() {
+  const fov = camera.fov, viewH = innerHeight;
+  const ex = camera.position.x, ey = camera.position.y, ez = camera.position.z;
+  for (const rec of state.byId.values()) {
+    const plate = rec.nameplate;
+    if (!plate || rec.cull) continue;
+    const m = plate.face.matrixWorld.elements;
+    const dist = Math.hypot(m[12] - ex, m[13] - ey, m[14] - ez);
+    const width = plate.faceWidth * Math.hypot(m[0], m[1], m[2]);
+    // `signFacesAll` (set from the console, `?hunt`'s __state) draws every face as before: the
+    // A/B the plan's numbers were measured with, flipped in one page.
+    showFace(plate.face, plate.faceMat, state.signFacesAll ? 1 : faceOpacity(screenWidth(width, dist, fov, viewH)));
+  }
+}
+
 function cullRecords() {
+  fadeSignFaces();
   cullEye.copy(camera.position);
   setFadeEye(camera.position);
   // Object Distance and nothing else: the haze no longer waits for it (fogCeiling), so a cut
@@ -4614,6 +4651,12 @@ function wrapEye() {
   if (!dx && !dz) return;
   w.pos.x += dx; w.pos.z += dz;
   if (w.vehicle) { w.vehicle.x += dx; w.vehicle.z += dz; }
+  // And the hull we stand on, climb or hang on without having her wheel: on a deck the body is a point
+  // of her frame, so a body moved without her was put straight back beside her by walk mode, still
+  // past the edge, and this ran again every frame - a toast a frame, and a body drawn a world away for
+  // the frame between (the sloop at speed, 13 Oct 2026).
+  const hull = state.walk.onDeck();
+  if (hull && hull !== w.vehicle) { hull.x += dx; hull.z += dz; }
   if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
   if (w.mount) { w.mount.x += dx; w.mount.z += dz; }
   state.ui.toast('Round the world - the far side of the chart');
@@ -5060,7 +5103,12 @@ function setMinimapMode(mode) {
 }
 function showMinimap(on) {
   state.minimap.setVisible(on && minimapMode === 'radar');
-  state.worldMap.setVisible(on && minimapMode === 'map');
+  const chart = on && minimapMode === 'map';
+  state.worldMap.setVisible(chart);
+  // The chart wants the mouse (the cursor is back, a drag pans it) but not the keys: the
+  // feet keep working underneath it. So it is a look-pause and not a walk pause - see
+  // walk.js setLookPaused. Called every frame with the same `on`, which it treats as a no-op.
+  if (state.walk) state.walk.setLookPaused(chart);
 }
 
 // Every boat an island puts in the water, at the moorings shared/quay.mjs derives - the
@@ -8022,8 +8070,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // And our chronicle house opens the chronicle rather than a dossier: the dossier of a civic
     // building is its name and a date, and the chronicle is that date and every other one. A
     // neighbour's is never in state.byId, so it stays a click on nothing (chronicle-house.js).
-    if (hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
-    if (hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
+    // Reading a building off the island is the orbit camera's: the click that opens a dossier
+    // belongs to the sky. On foot that button is the hand's (a swing, a drink, a shot - walk.js
+    // `act`) and a house is entered with E, so clicking one must not also open it from across
+    // the island. The `state.inside` skip above is the room's half of the same rule.
+    if (state.mode === 'orbit' && hit && !pickedFigure && opensChronicle(state.byId.get(hit))) { openChronicle(); downAt = null; return; }
+    if (state.mode === 'orbit' && hit && !String(hit).startsWith('neighbour:') && !pickedGuest.f) select(hit);
     else {
       state.ui.closeDossier();
       // Our own ground, with nothing on it: send the body there (Plans/DONE/karakter-blijft-staan.md).
@@ -8512,8 +8564,7 @@ function frame(nowMs) {
     // Deciding here whether it was worth sending is what made this sixty messages a second
     // and took the socket down under the pilot - see `hull` in net.js.
     if ((b === mine || b === running) && state.net && !hullFollowed(b)) state.net.movedBoat(b.id, b.x, b.z, b.yaw);
-    b.craft.place(b.x, b.z, b.yaw);
-    b.craft.bob(frameSeconds);
+    poseHull(b);
     b.deckY = b.craft.deck ? b.craft.deck() : DECK_Y;
   }
   // While you are sailing, whether there is anywhere to step out changes with every metre,
@@ -9145,6 +9196,7 @@ Everything is copied and checked first; the island then starts again there. The 
       tier: graphicsTier({ modest, phone: HANDHELD }), reason: tierReason,
       rung: quality.rung().name, auto: quality.auto(), fps: framesPerSecond(),
     }),
+    gpuName: () => gpuShortName(graphicsGpu),
     statsShown: () => !!statsReadout,
     onStatsShown: (on) => { saveStatsShown(on); setStatsShown(on); },
   });

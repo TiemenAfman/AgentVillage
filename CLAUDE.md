@@ -28,6 +28,11 @@ when it is done (or stuck on the keeper's choice) reports to the coordinator wit
 branch and last commit, what changed, the tests (passed/failed, which), what is still open, and
 whether it needs a redeploy, a restart or a release (patch or minor). If that message is held, the
 same report as its last answer. Needing newer code, it merges `main` into its own branch.
+A chip runs only the tests of what it touched and what leans on that (importers, the model tests after a
+bake); the **whole suite runs in the coordinator alone**, after merging - several finished chips merged first
+and then one run. Four chips each running the whole suite at once made one run take 42 minutes and every
+"failure" they reported was contention (`plan-scan`, `layout-measure`, `sea-want` passing alone), while the
+one failure that mattered - two chips green apart, red together - only the coordinator's run can see.
 On 6 October 2026 chips merged and pushed themselves and one shipped a regression to GitHub's `main`
 (the sea stopped noticing a departed islander); `~/.claude/hooks/worktree-guard.py` now refuses
 those commands from a worktree, and the `/chip` skill writes this into every task it hands out.
@@ -489,7 +494,11 @@ a ring, `guest` = lots < population), and `p.quay` is not set on a commons lodge
 as `settle.lane` (settleRing's `seed`), so it is written on the step as ordinary `lane` - no new step field,
 no WATER_VERSION bump, bit for bit the hash a field of its own gave (55c22da7 on Hoogezand's r 180 ring).
 `growCanvas` shifts the record; the planner refuses `move`/`parcel` of the quay once it has a resort
-(`onResort`). **QUAY_VERSION 3**: `migrateQuay` from 2 only asks `moveToResort` again (the move itself is
+(`onResort`). **QUAY_VERSION 4** is the sloop (Plans/DONE/nieuwe-sloep.md): her berth is laid by her own probes, so she
+lies elsewhere (nearer her mooring), and `clearSloopRoom` lifts any ship of the rede that her turning room
+(`GALLEON_ROOM`, 6.3 for her 11.6) now sweeps, for the ship loop to anchor again; scan.mjs keeps
+`layout.before-sloop-<ts>.json`. Measured on a copy of Hoogezand: nothing lifted, only `quayV` changed, and the
+scan after byte-identical. **QUAY_VERSION 3**: `migrateQuay` from 2 only asks `moveToResort` again (the move itself is
 `planResort`'s, so a new island and Hoogezand take one road), and **the pick-the-planks branch is `=== 1`,
 not `>= 1`** - a v2 layout through it would re-pick the planks, and `pickPier` answers (163,264) today on
 Hoogezand where they stand at (154,284). Older code on a v3 layout does take that branch (it only knows 2):
@@ -575,7 +584,16 @@ and night glow is a per-vertex emissive mask - and every building body on an isl
 instance in that island's `BatchedMesh` (`web/js/record-batch.js`: `homeBatch` in main.js in
 `scene`, one per guest inside its offset group), so all of them are one draw call a pass. The
 yard signs' frames are instances in the same batch (`createNameplate({ batch })`, two shared
-shapes); their lettered faces are still a mesh each. **The record keeps its scene graph and the
+shapes); their lettered faces are still a mesh each - and so a call each, which is why **a face is
+drawn only where it can be read** ([Plans/DONE/naambord-gezichten-op-afstand.md](Plans/DONE/naambord-gezichten-op-afstand.md)):
+`fadeSignFaces()`, first thing in `cullRecords()`, works out each yard sign's face width in screen
+pixels (`web/js/sign-faces.js`, pure: full from 24 px, gone under 16, `faceMat.opacity` between) and
+writes `face.visible` / the opacity only on a change - never the sign's group (the planner's) nor
+`rec.group.visible`. What is left from far off is a cream patch of the face's size in the frame's
+shared shape (`PATCH_GLOW` on `aEmissive`, so it neither dims at night nor glares by day): from
+above on Hoogezand 969 -> 471 colour calls, 4-5 ms a frame. Hamlet gateways keep their faces.
+Any other per-object mesh that is unreadable from above can follow the same pattern: a pure size-on-
+screen sum, a stand-in in the batch's shape, and the mesh's own `visible`. **The record keeps its scene graph and the
 batch mirrors it:** `rec.mesh` is an empty Object3D stand-in, and in the batch's own
 `onBeforeRender`, once per `render()` (after `updateMatrixWorld`, before the shadow pass), the
 batch copies each stand-in's visibility (every parent up to the batch's parent `visible`, and
@@ -891,8 +909,44 @@ An unattended boat does not stay marooned either: after five quiet minutes the s
 beat walks it back to its home berth (`lib/boats.mjs`) — before this the one boat an island
 has could be left on the far shore for good, recoverable only by restarting the whole sea.
 
+**The galleon's craft is read off her bake, never typed** ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md), chip 2a).
+`scripts/build-sloop.py` (the sloop; it replaced build-pirateship.py, chip 3) sets anchors in the grammar of `scripts/model-rules.mjs` - `deck`/`stair` corners,
+`rail.<n>.a|b` (a run of bulwark on its floor), `solid`, `mast`, `port.<n>.lo|hi` (an opening in the bulwark down
+to the deck), `climb.side-*`/`climb.mast` (lo = the climber's stand, `CLIMB_OUT` outside the ropes; hi = where
+they step off), `mount.<cannon|harpoon>[-name].lo|hi` (**lo = where the gunner stands, hi = the carriage on the
+planking, the bearing lo -> hi is the yaw**; yawLim/pitchLim are the kind's, `MOUNT_LIMITS`), and the points
+`helm`, `nest`, `cargo`, `waterline` - and `scripts/build-craft.mjs` (`npm run models:craft`, run by `npm run
+models -- pirateship` *before* the walk map, since build-shipwalk cuts at `SHIP_DRAUGHT`) derives
+`shared/craft-galleon.mjs`: literals only, `source` = sha1 of anchors + height + the hull's positions, and
+`tests/craft-bake.test.mjs` fails on a stale one. What is no anchor is cut from the hull's triangles
+(`scripts/hull-cut.mjs`, shared with build-shipwalk): her length at the water, `near`, `beam`, the probes, and
+the two heights a rope ladder ends against (the bulwark beside a side ladder - the outermost thing on the
+planking, or a bucket by the landing is read as the rail - and the nest's rim). `shared/crafts.mjs` spreads
+`GALLEON` into `CRAFTS.galleon` and keeps only what is tuned by hand: `crew`, `BULWARK` (a rail's `top` =
+its floor + BULWARK), `LADDER_HW`, `NEST_REACH`, `sail`, `swell`. `sail.probes` is `GALLEON.probes`:
+`shared/quay.mjs` lays every island's ship berth from them, which is why taking them was QUAY_VERSION 4.
+`deck.nest` is no deck of the hull (the sea's clamp never reaches it; it goes to `aloft`/`nest`). The craft's
+rectangles come in no order of their own: find the waist by place, never as `deck[0]`. A stair's anchors are a
+ramp through its treads' middles (half a riser over its foot and its head), or the craft is a riser out at every
+tread's end. `beam` is her breadth up to a body's height over her highest deck, not her yard's arms. boat.js reads
+`HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
+**She is the sloop now** (`scripts/build-sloop.py`, Plans/DONE/nieuwe-sloep.md, 9 long, crew 5): a main deck at 1.15
+over DECK_Y, a cabin's floor sunk 0.68 under it, a quarterdeck at 1.72 over the cabin **to the transom** (no stern
+well: the keeper had the box with an open well behind it taken out, 13 Oct 2026; cabin and quarterdeck are each two
+deck rectangles, `-aft` for the narrow stern), two entry ports cut to the deck (her ladders' `port`, each its own
+`deck.entry-*` rectangle, the ladder landing just inside it), two cannons over the cap rail (no gun ports; closed
+ports as dressing) and one harpoon on her middle line over the bow (mounts `[cannon-s, cannon-p, harpoon]`).
+**The walk map's vertical cut never meets a plumb face** (a vertical triangle has no area in plan): what keeps a
+body out of a wall of hers is a face in the band over a step and a hand and under a head (0.33 to 0.55: a rail at
+0.4, the mast's partners, the top's rim at 0.36, a bulwark's cap at 0.335) or no floor under it. A plumb wall
+with floor on both sides is walked through - and seen through by the camera, unless it is a cabin's (below).
+
+**A gun on her may be drawn larger than its bake** (the mount's `scale`, `MOUNT_LIMITS` in scripts/build-craft.mjs,
+applied in web/js/cannon.js `layPoint`, so muzzle, vent and the welded corners all follow): the sloop's are 1.8,
+to fire over her cap rail, and laid no lower than level (`pitchLim` [0, 0.42]: below it the muzzle is in the cap).
+`tests/cannon.test.mjs` lays the barrel at every limit and fails on a corner seen through her hull.
 **The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
-eight guns are gone (`build-pirateship.py` drops the `M_Cannon*` pieces and the iron inside their boxes); the
+eight guns were dropped from the download (the sloop of `scripts/build-sloop.py` never had any of her own); the
 keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
 `cannon carriage`, `cannon barrel` with its origin on the trunnion axis, `anchor.muzzle`). Where they stand is
 `CRAFTS.galleon.mounts` (`kind: 'cannon'`, `yawLim`, `pitchLim`, `stand` - one list for everything manned, the
@@ -913,7 +967,22 @@ others see a shot (and anybody is hurt) only once the open sea runs this code. A
 galleon 5, a rowing boat 2; whole again after `HULL_MEND_MS`) and then sinks (`boats.wreck`: `{t:'boat',
 ...mooring, sunk: [x, z]}`, crew in the water, the boat whole at her berth) - never in her own island's waters or
 untouched at her mooring, never a skiff; each hit is `{t:'cannon', a:'hull'}` and floats a bar over her
-(`web/js/hull-bars.js`, two instanced meshes).
+(`web/js/hull-bars.js`, two instanced meshes). The outline a ball hits her by is `HULL_BOX` in
+shared/crafts.mjs (cannon.mjs re-exports it; crafts imports nothing from cannon). **Nothing counts her
+mounts**: every reader goes by index and by `kind` (`mounts.findIndex(kind === 'harpoon')`, never 2), the sea
+checks only `i < 8`, and the tests about them hold "every cannon before every harpoon, each on a deck" -
+the sloop ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md)) mounts `[cannon, cannon, harpoon]`.
+**Her sail and flag are moving parts of her one geometry** (chip 2c of that plan): `isShipMoving` in boat.js
+(`pirateship sail|flag`, her own predicate beside `isKrakenMoving`) keeps them out of the hull part and
+`shipMotionParts` welds them in as the last runs after the guns, measured once (`web/js/ship-motion.js`
+`measureSail`: yard = highest row, foot, the yard's direction; `measureFlag`: the luff at the part's `at`);
+`bob(time)` moves their corners on the sea's clock through `moveSail`/`moveFlag` (pure, the Kraken's own
+ripple and flag sums, `tests/ship-sail.test.mjs` holds them equal to `MOTION`). The share of sail drawn is
+`craft.sails(share)` - main.js `sailShareOf`: her `underSail` where there is one, else for a followed hull the
+step nearest `hullSpeed / top` - eased at `SAIL_EASE` (0.5/s, two seconds furled to full, at most a second
+per bob). A bake with no such part welds nothing and the hull is byte for byte what it was; the weld is
+tested on a synthetic sail through the loader hook `tests/support/sloop-parts-loader.mjs`
+(`tests/ship-sail-weld.test.mjs`). `/demo` sets and strikes her sail every four seconds.
 **Her two harpoons are mounts too, after the cannons** ([Plans/harpoen.md](Plans/harpoen.md); `kind: 'harpoon'`,
 forecastle, one a side - appended, never inserted, the index is on the wire). Not welded: the keeper's first choice is
 the Sketchfab GLB (`web/models/harpoon.glb` from the committed `assets/harpoon/source-harpoon.glb` by
@@ -927,13 +996,15 @@ the floating statue is dragged to the gun (treasure.js `drag`/`reelAboard`), lan
 only while no other page steps her (`web/js/harpoon-tow.js` via walk.js `onGunTow`, after `stepUnderSail`). A line in
 land or a ship stays fast when the gun is left: C at the gun or E at the hook puts you on it (walk.js `takeRope`,
 `onLine` - not the ladder's `onRope`): walked flat, slid down steep, never climbed up steep, Space jumps off with the
-way you had; the rig holds its arms out walking one (`roping: 'walk'`) and hangs by Mixamo's Hanging Idle sliding
+way you had; a body that plays clips walks one by Mixamo's Careful Walk (`ropeWalk`, `roping: 'walk'`; the Traveller the gait with his arms out, `ROPE_SPREAD`) - played by distance through the bake's `along`, how far along the stride the hips are each row (`ALONG` in bake-mixamo-gait.py), since the clip dawdles and hurries and played evenly slid the planted foot twice as far; its arms, out some 37 degrees, are lifted and stretched to near level over it, `ROPE_CLIP_SPREAD`/`ROPE_CLIP_STRETCH` - and hangs by Mixamo's Hanging By Hands Gently Swaying sliding
 down (`hang`, `roping: 'zip'`). Sounds `harpoon`/`ratchet`/`creak` on the part `harpoons`. On the sea (fase B,
 `lib/harpoons.mjs`, a patch with no `SEA_V`): `{t:'harpoon', a:'line'}` says a line's state a few times a second,
 passed on only from somebody aboard that ship - every page draws it from that ship's harpoon (harpoon-play.js
 remote lines) and her pilot's page draws her along a line of her crew's (`towByCrew`); `a:'hook'` on a player is
 checked (on foot or swimming, in reach, never on their own island) and told to them alone as `a:'hooked'`, and
-their own walk mode reels them in (`pullTo`, Space struggles free); a loose boat is drawn in by the gunner's page
+their own walk mode reels them in (`pullTo`, Space struggles free) and, at the rail, hops them over her bulwark onto
+the gunner's deck behind that harpoon (`pullLanding`: `nearestStand` on her model, `OVER_S`), crew from there
+(`onBoarded`) like the top of a ladder; a loose boat is drawn in by the gunner's page
 and said as `{t:'boat', a:'tow', by}` (lib/boats.mjs `tow`: nobody at her helm or aboard, not a skiff, a step at a
 time), whose echo main.js leaves for as long as the line holds her. Others see any of it only once the open sea
 runs this code.
@@ -1026,8 +1097,8 @@ the wheel or you are on her again; she is `runningHull()` there, whose position 
 And `ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
 ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
 none from a dock): she is boarded by walking into the foot of one of her two rope ladders
-(`craft.ladders`, at z 1.85 because the gun ports stand out to 2.63 everywhere else along the
-waist; `ladderUp`, and `ladderDown` from the deck, in `shared/deck.mjs`), which you climb along a
+(`craft.ladders`, at her entry ports, z 0.55, through which the climber steps straight onto the deck;
+`ladderUp`, and `ladderDown` from the deck, in `shared/deck.mjs`), which you climb along a
 path in the hull's frame (`stepClimb`: pushing at the hull is up, away is down, no push hangs
 you where you are, a jump lets go) and which tells the sea at the top (`boardBoat`, so you are crew)
 and at the foot or on letting go (`leaveBoat`); and she is left by
@@ -1042,7 +1113,15 @@ her plan and writes where it meets a surface, at what height, and whether it is 
 `tests/shipwalk.test.mjs` fails on a stale one). Floor is the highest surface within a step of the
 feet with a body's air above it, an obstacle is anything at all in a body's height above that,
 and a footprint has to be held up all round, so a bulwark's top is not walked along and a ledge is
-not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
+not walked off: what is left is a jump. **A floor is never looked for through a surface at the feet**:
+`floorIn` stops at a surface at or under the feet that has no air over it (something stands on it), or the
+quarterdeck's planks under her binnacle gave the cabin's floor a deck lower and a body put down or landing
+there was in the cabin (the keeper, 13 Oct 2026); a fall whose feet pass any surface (`hitIn`) is set down
+beside it; and on the ground `blockedAt` asks an inner ring too (`CORE`), since a thing thinner than the gaps of
+the outer ring (the binnacle, 0.16) stood inside a body. `tests/sloop-walk.test.mjs` walks and jumps from every
+place on every deck of hers and fails on feet passing a surface of their own column. A thing on her is offered
+(E) only from its own deck (walk.js `onStorey`, `STOREY`: the wheel's deck from the craft's rectangles, a gun's
+from its mount), never through the planks from the cabin. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
 The same cut also writes **her side at the waterline** (`SHIPWALK.side`, `sideCut`: per 0.1 of her length the
@@ -1051,18 +1130,24 @@ least and most x of the hull from 0.1 under the water to a rowing boat's gunwale
 hull walk.js steps (`boatGround(b)` leaves `b` out), so a rowing boat stops at her side and still reaches her
 ladders' feet (`tests/boat-ships.test.mjs`). A galleon does not yet shove a rowing boat out of her way.
 **Her crow's nest is walked, climbed to and sat in** ([Plans/DONE/kraaiennest.md](Plans/DONE/kraaiennest.md)): the
-bake's own basket at the mainmast's head (floor 8.62, a stepped dais round the topmast, rim 9.24 above
-DECK_Y) is a second layer of the walk map (`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs - a byte holds
-128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The rope ladder
-to it is `craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs, its rungs
-the climb's, drawn by boat.js `ladderBoxes`): both ends are on her, so a mast climb keeps `state.deck` on the
+bake's own top round her mast (floor 7.64 above DECK_Y, rim 0.36 over it) is a second layer of the walk map
+(`SHIPWALK.aloft`, `ALOFT` in build-shipwalk.mjs `gridsOf`, from `deck.nest` and `mast.main` - a byte holds
+128 heights, so one band cannot reach it) that `createSurface` reads with the deck's as one. The way to it is
+`craft.aloft` (`aloftPath`/`aloftUp`/`aloftDown`/`aloftHolding` in shared/deck.mjs): on the sloop **pins baked up
+her mast's after face and a lubber's hole in the top's floor** (`hole: true`, written by build-craft.mjs when the
+ropes' line is inside the top; `top` is then the floor): up through the hole and a step aside onto the floor
+beside it (`land`), the body turning to the step (ladder-way.js `facingOnWay`, `/avatar-motion.html` Lubbergat),
+and down by standing at `land` and pushing back towards the hole. A ladder without `hole` hangs outside the rim
+and is climbed over it, every sum as it was; boat.js draws no rope or rungs for `aloft` any more (the pins are the
+bake's). Both ends are on her, so a mast climb keeps `state.deck` on the
 rope's point and the sea hears it as an ordinary `on` + `d` - which is why lib/players.mjs `DECK_HEIGHT` is 10,
 not 4 (an older sea holds a climber halfway up the mast). E in the nest is `craft.nest`'s seat
 (`walk.sitOnDeck`: a seat in her frame, the SITTING bit). `stepHull` lands only on a floor the feet passed
 this frame - it used to land on any floor under them, eight units down from the nest in one frame - and a
 body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
-Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
-`nearestStand`, never a coordinate. The wheel's plinth is the model's (`SHIP_HELM`).
+Anywhere a body is *put* on a ship (where a ladder lands, the pilot's stand on leaving the wheel) is
+`nearestStand`, never a coordinate. The pilot stands on her quarterdeck behind the wheel (`SHIP_HELM`, the
+model's floor at `helm`).
 **A hull's swell is the craft's** (`swell` in shared/crafts.mjs, `swellOf` in boat.js, on the sea's clock:
 main.js `frameSeconds`): the rowing boat bobs as sailIn always did, the galleon only stirs lying still and rocks
 more with the way she makes, which `bob` works out from where she was placed between two clocks
@@ -1718,13 +1803,24 @@ The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
 line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
 fleet and berth). **The world is round by a jump** ([Plans/DONE/ronde-wereld.md](Plans/DONE/ronde-wereld.md)):
-past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back
+past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back - and the hull we
+stand, climb or hang on without her wheel (`walk.onDeck()`): a body on a deck is a point of her frame, and moved
+without her it was put back beside her past the edge every frame (a toast a frame, the body drawn a world away)
 (`wrapShift`) before walk mode steps, `pushSample` (timeline.js) starts a track again on a
 jump of over half the world instead of gliding it, `nextOrigin` keeps every island's room
 `SEA_BAND` (900) off the edge, and `setFogRange` closes the haze in near it (`edgeReach`) so
 what is across is behind the fog on both sides. The sea knows none of it and needs no
 redeploy for it: a pose on the far side is just a pose. `?edge` starts walk mode 12 units
 short of the east edge.
+
+**On a mouse the chart is a look-pause, not a walk pause.** With it open the cursor is back
+(the pointer lock goes, `walk.js` `setLookPaused`, asked for by `showMinimap` every frame),
+the wheel still zooms and a left-drag pans it (`panMapBy`, the same "keep the point under the
+hand" rule as `zoomMapAt`, caught on the window in the capture phase so neither the orbit
+controls nor the walk's drag-to-look underneath see it). The feet keep working: it is not
+`setPaused`, which would also clear the keys. `setLookPaused` gates only the look
+(`wantLock`, and `onDown`/`onMove`/`onWheel`) and touches a touchscreen not at all - there a
+finger is the touch controls' (one finger looks, two pinch).
 
 **The weather is the sea's, and a missing sky is sunshine.** `lib/weather.mjs` is one word
 (`clear` / `overcast` / `rain` / `fog`) plus a seed and a `since`, turning every eleven
@@ -1889,6 +1985,14 @@ jumps, swim, treading water and dig by time) and set on the ground by `plantFeet
 clip they were a wiggle on a beat of their own. Shift with breath is a sprint,
 without a run (walk.js); a route from the sky always sprints and spends nothing. The route for a new
 clip is the `mixamo-clips` skill; fetching clips from mixamo.com in bulk (outside git) is the `mixamo-fetch` skill.
+**Which clips to bake is chosen in the workbench's Mixamo catalogue** (`/avatar-motion.html` → Mixamo-catalogus,
+`web/js/mixamo-catalogue.js`): the keeper's whole library (`config.mixamo.dir`, else `MIXAMO_OUT`, else `D:\Mixamo`;
+`lib/mixamo.mjs`) through `/api/mixamo` and `/api/mixamo/<file>.fbx` - keeper-only, never in a bundle, release or the
+sea, only a bare `<word>.fbx` out of `anims/y-bot` (the fetcher's token lies beside it). The FBX is parsed with three's
+FBXLoader (vendored, imported dynamically there only) and turned by `mixamo-preview.js` into a baked clip's shape - the
+bake's own sums for a clip played by time, held to the baked `hang` within 3 degrees (`tests/mixamo-catalogue.test.mjs`) -
+which the rig plays as `pose.preview` (`playClips`'s first branch; nothing on the island sets it). Stars are per browser
+(`promptholm.mixamo.favourites`); *Exporteer keuze* gives them in `assets/mixamo/clips.json`'s shape for a bake chip.
 **On a rope ladder the Adventurer climbs by Mixamo's Climbing Up A Ladder, played by height** (`climb`),
 backwards going down and still while hanging; the Traveller reaches up procedurally (`climbReach`: one hand
 at a time from overhead to the chest). **The ladder is cut to the clip, not the clip to the ladder** (the
@@ -1931,6 +2035,32 @@ pose in over `LADDER_FADE` (classic-avatar.js `keepPose`/`fadeIn`, on `onLadder`
 changing), walk.js the drawn body over `STEP_OFF_S` (`stepOffEase`: a treading swimmer hangs `TREAD_SINK`
 under his feet). `ladderAt` reads the step over the top off a position (`topNear`), so peers play it too.
 `tests/ladder-step.test.mjs` walks all three ladders with both bodies and fails on a joint moving over 0.06 a frame.
+**A ladder at a port lands on the deck, and where any ship's ladder lands is one sum** ([Plans/DONE/nieuwe-sloep.md](Plans/DONE/nieuwe-sloep.md), chip 2b).
+A ladder in `CRAFTS.*.ladders` may carry `port` (half the width of the opening in the bulwark); its `top` is then
+the deck's level at `land`, and `ladderPath` (shared/deck.mjs) is three points - foot, deck level outside the skin,
+`land` - straight in over the sill, so Climbing Up A Ladder To Standing ends on the planks and never astride a
+rail; without `port` the four points of old, to the byte (`tests/port-ladder.test.mjs` on the galleon's hull with
+such a ladder). `ladderBoxes` hangs it to the deck and belays it flat on the planks (`PORT_BELAY`). Where a ship's
+ladder lands is `ladderLanding` in web/js/ladder-way.js (`nearestStand` on her walk map from a step over the planks
+at `land`), the one reading for walk.js `startClimb`, `hoistOnto`, `ladderAt` (what another page reads off a
+climber over the top) and the workbench's *Poortladder* (the galleon with a port ladder at her waist; her bulwark
+still stands there until the sloop's bake cuts the port) - the end of the way is substituted before `climbWay`, so
+the clip ends where `ladderUp` lands. `climbWay` draws the step over the top out up to `STRETCH` (1.4) to reach a
+landing a little further in, as it presses it into a nearer one: what is past the clip's end is walked at the
+climb's pace after standing up, which on the sloop was a slide over the planks. How far from her middle a ladder is looked for is the craft's `near` (7
+without one). **A hull may have a lid**: `createSurface(...).ceilingIn(x, z, y)` (shared/hullwalk.mjs) is the
+lowest *level* surface over a point (a rope of the rigging is no lid), and walk.js `hullForCamera` bounds the
+floors under the camera at the lid over the body (`reach`, kept as `lid`). **A cabin's walls are where her cover
+ends**: the walk map cannot see a bulkhead, so with the body under cover (`covered`: a lid within `COVER` 1.4) the
+boom stops where the cover over the lens ends, and from the open deck where it begins (`hullCovered`, CAM_R
+short of it) - and under cover the boom runs even with *Fixed camera distance* on, which otherwise has none: the
+camera stood in the stairwell looking at the bulkhead with the body in its door. Only while the body is under one,
+`solidPoint` takes her lid over a sampled point as a slab (`CAM_R`), so in a cabin under the poop the boom stays
+under the deck through a full turn. Gated on purpose: ungated, a yard 0.14 over the lens pulled the boom in by a
+unit, and a rule that read a floor the camera is under the lid of as no floor changed the galleon's camera under
+her fife rail - measured, 1158 camera positions on the galleon are bit for bit what they were. Known gap: at a
+cabin's doorway with the body outside and the camera behind it inside, the poop deck is still a floor the camera
+is lifted onto.
 
 **A temporary renderer gives its context back.** `renderer.dispose()` does not release a WebGL
 context - only `forceContextLoss()` does - and the browser caps live contexts at about sixteen,
@@ -2847,6 +2977,11 @@ change to the yard too - tests/shipyard.test.mjs says so.
   hedge, which are not drawn with the building material.
 - Triangle budgets follow the name prefix: `flora_` 60, `prop_` 120, `addon_` 150, `roof_`
   300, `house_` 600, `civic_` 1500, hero 4000.
+- A part may carry **colour zones** (opt-in, the sloop's, `scripts/build-sloop.py`): an INT face attribute
+  `zone` plus `obj['zone_names']` (JSON `[[name, '#rrggbb'], ...]`) makes `scripts/export-models.py` write
+  `zones` (an index a triangle) and `zoneNames` on the part, so a page can repaint a zone (new colour / base
+  colour, times the corner's) without the bake knowing who paints it. A part without the attribute bakes
+  byte for byte as before.
 - A set that stands over water is modelled in **one frame**, with its piles' feet at y = 0
   and everything else measured from there, so the island can drop the whole set by one
   number (`QUAY_DECK - DOCK_DECK` in `buildings.js`) and get a deck with no step in it.
@@ -2908,7 +3043,8 @@ them); `Plans/piratenkroeg.md` has the prompts and the state of every piece.
   that draws several pieces (loop, helper called twice) not all changed alike. A line
   in a helper two models share (`noticeBoard`) changes both.
 
-Debug query params: `?hunt` (`__state`/`__camera` on window without the dive: walk with
+Debug query params: `?stats` (also puts `__state`/`__camera` on window at boot, for measuring:
+`__state.signFacesAll = true` draws every sign face as before, the A/B of fadeSignFaces), `?hunt` (`__state`/`__camera` on window without the dive: walk with
 `document.getElementById('walk-btn').click()`, teleport with `__state.walk.state.pos.set(x, y, z)`, read
 `__state.hunt.sites()`; the browser pane runs no frames between screenshots, so take one to let time pass),
 `?quest=<id>[:<step>]` (the quest book jumps to that quest of shared/quests.mjs with the story before
@@ -3039,6 +3175,30 @@ WebView2 profile (throttled to 0.5 s, always on Destroyed; a position off every 
 window is built hidden and shown once placed. Pitfall: started from a Claude desktop session these writes land
 in the MSIX LocalCache (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Local\com.promptholm.island\`), not the
 real AppData.
+**The window asks for the discrete GPU - with underscores** ([Plans/sneller-op-igpu.md](Plans/sneller-op-igpu.md)):
+`--force_high_performance_gpu` in `BROWSER_ARGS`. Chromium matches a switch literally, and the hyphenated
+spelling the window carried up to 0.10.7 did nothing (measured in Chrome: `--force-low-power-gpu` left it on the
+RTX, `--force_low_power_gpu` put it on the Arc). Without it Chromium takes the adapter that drives the screen:
+the RTX while the keeper's AOC monitor is on, the Intel Arc on the laptop panel alone - which is where the
+`modest` tier and 55 ms frames came from. The adapter is picked once, when the GPU process starts: no
+`powerPreference` and nothing at runtime switches it, only a new window with another switch. A browser tab
+(Chrome, `/play`) follows Windows' per-app graphics preference for chrome.exe and nothing the page says.
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` is *appended* to `BROWSER_ARGS` (read the msedgewebview2.exe command
+line), so measuring through it changes nothing else. On this laptop, with other sessions loading the CPU, frame
+time and even seconds-long GPU windows drift by half from one minute to the next: time the GPU with
+`EXT_disjoint_timer_query_webgl2` (Chrome offers it) between `scene.onBeforeRender` and `onAfterRender` - the
+shadow pass falls between - and compare an object on and off in short alternating pairs.
+**Which card is the keeper's choice** (Settings -> Graphics -> *Graphics card*, only in the window): `src-tauri/src/gpu.rs`
+keeps `fast` or `low` in `gpu.json` beside window.json (read before the window is built, `browser_args` puts the
+switch after Tauri's default), the page asks through `promptholm://gpu/<fast|low|query|restart>` (desktop.js
+`desktopGpu`, the fullscreen's door) and is told `window.promptholmGpu({ running, chosen })`; no answer (an older
+window) is no row. *Restart the window now* starts a fresh copy of the exe with the same arguments plus
+`--after-window <pid>` and destroys this window; the islander is untouched and the splash finds it. The new copy
+waits for that pid, then retries the build for 8 s: one WebView2 profile folder is one browser process, and a second
+one asking for other switches is refused while the first lives. That is also why a worktree's exe hangs windowless
+while the keeper's window is open (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` makes the switches differ): test it with
+`WEBVIEW2_USER_DATA_FOLDER` on a scratch folder - gpu.json and window.json are still the real AppData's, so put
+them back afterwards.
 **The islander outlives the window, and there is never more than
 one.** Outliving a plain close is free on Windows; outliving a tree kill (`taskkill /T`, Task
 Manager's "End process tree", closing the terminal that ran `npm run app`) is not, so the
