@@ -623,7 +623,9 @@ export function createNet({ peers, walk, url, join = null, onStatus = () => {}, 
     },
     // Our look, when the wardrobe changes it - and kept for the next connect.
     setLook(spec) { look = spec || null; if (look) send({ t: 'look', ...look }); },
-    leaveBoat(id) { send({ t: 'boat', a: 'leave', id }); },
+    // `sail`: the sails she is left standing under as we go over the side (Plans/schip-vaart-door.md) -
+    // above 0 she sails on under this page; a sea from before it reads no such field.
+    leaveBoat(id, sail) { send({ t: 'boat', a: 'leave', id, ...(Number.isFinite(sail) ? { sail } : {}) }); },
     // Respawn to town (issue #74): only the asking - where to is the sea's (lib/health.mjs
     // respawn). False when the line is down, so the caller can put us back itself.
     respawn() { return walking && send({ t: 'respawn' }); },

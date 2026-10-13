@@ -80,15 +80,48 @@ test('the sea takes her position for as long as she runs out, from full turbo to
   // Still aboard, her sails set (Plans/galjoen-vaart-houden.md): she is theirs to sail on long past a
   // run-out, for as long as they stay on her.
   assert.ok(boats.moved(ID, ANN, 0, 22, 0, t0 + 5 * 60_000), 'the sea froze a ship sailing on under her sails');
-  // Jumped over the side: off the crew, and the hull is still theirs to run out (tests/ship-runout.test.mjs),
-  // for her run-out counted from the jump.
+  // Jumped over the side: off the crew, and the hull is still theirs to run out (tests/ship-runout.test.mjs)
+  // or sail on (Plans/schip-vaart-door.md), for as long as their word keeps coming: each one is another
+  // run-out of window, and a run-out of silence ends it.
   const jump = t0 + 5 * 60_000 + 1000;
   assert.ok(boats.leave(ID, ANN, jump));
   assert.ok(!boats.aboard(ID, ANN));
   assert.ok(boats.moved(ID, ANN, 0, 25, 0, jump + 1000), 'the sea stopped her when the last of the crew jumped');
-  assert.ok(boats.moved(ID, ANN, 0, 30, 0, jump + SAIL.runOut * 1000 - 1));
-  assert.equal(boats.moved(ID, ANN, 0, 40, 0, jump + SAIL.runOut * 1000 + 1), null, 'still steering long after');
+  const last = jump + 1000 + SAIL.runOut * 1000 - 1;
+  assert.ok(boats.moved(ID, ANN, 0, 30, 0, last));
+  assert.equal(boats.moved(ID, ANN, 0, 40, 0, last + SAIL.runOut * 1000 + 1), null, 'still steering long after');
   assert.ok(SAIL.runOut * 1000 > COAST_MS, 'a ship is no lighter than a Benchy');
+});
+
+// Plans/schip-vaart-door.md: over the side with her sails standing she sails on under the page of whoever
+// left her, as long as that page is connected and keeps saying where she is - not sent home after five
+// minutes from under it, and lying still for everybody once its tab closes.
+test('over the side under sail she is sailed on by whoever left her, until their tab closes', () => {
+  const ID = 'boat:abcd1234';
+  const ANN = 'a0'.padEnd(12, '0');
+  const boats = createBoats({ moorings: [{ id: ID, x: 0, z: 0, yaw: 0 }] });
+  boats.board(ID, ANN, [0, 0]);
+  boats.take(ID, ANN);
+  const t0 = 1_000_000;
+  boats.letGo(ID, ANN, t0, 0.5);
+  const left = boats.leave(ID, ANN, t0 + 1000, 0.75);
+  assert.equal(left.coast, ANN, 'nobody is named to sail her on');
+  assert.equal(left.sail, 0.75, 'the sails she was left under are not the ones she is said to have');
+  // Twenty minutes on, a word every second: hers all the way, and never walked home under her.
+  let t = t0 + 1000;
+  for (; t < t0 + 20 * 60_000; t += 1000) {
+    assert.ok(boats.moved(ID, ANN, 0, (t - t0) / 100, 0, t), `the sea stopped taking her at ${((t - t0) / 1000).toFixed(0)} s`);
+    assert.deepEqual(boats.driftHome(t), [], 'a ship sailing on was sent home');
+  }
+  // Ann's tab closes: everybody hears that nobody sails her, and she lies where she is ...
+  const [gone] = boats.release(ANN, t);
+  assert.equal(gone.coast, undefined);
+  assert.ok(gone.z > 100, 'she was taken off where she had got to');
+  assert.equal(boats.moved(ID, ANN, 0, 0, 0, t + 1), null);
+  // ... until her five minutes are up, and then she is at her mooring.
+  assert.deepEqual(boats.driftHome(t + 4 * 60_000), []);
+  const [home] = boats.driftHome(t + 5 * 60_000 + 1);
+  assert.equal(home.z, 0);
 });
 
 test('somebody else aboard does not hold her: only the one who let go of the wheel moves her', () => {

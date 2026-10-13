@@ -130,18 +130,29 @@ test('a swimmer taking the ladder of a ship nobody sails does not set her going,
   assert.equal(ship.z, 0);
 });
 
-test('fired out of a gun, the ship is let run with her sails struck, as over her rail', () => {
+// Plans/schip-vaart-door.md: off her by any way at all, the wind still fills her sails - out of a gun too.
+test('fired out of a gun, the ship sails on under the sails she had, and runs out with none set', () => {
   const ship = shipAt({ v: 4, underSail: 0.75 });
   const walk = world(null, ship, BODIES.adventurer);
   walk.board(ship);
   assert.ok(walk.leaveHelm(), 'could not step off the helm onto her deck');
   ship.underSail = 0.75;
   walk.launchSelf([ship.x + 2, 3, ship.z], [8, 4, 0]);
-  assert.ok(!ship.underSail, `her sails still stand at ${ship.underSail}`);
-  assert.equal(walk.runningOut(), ship, 'nobody runs her out');
-  // and she does run out: stepped by this page until she lies still
-  for (let i = 0; i < 60 * 60 && walk.runningOut(); i++) walk.runOut(FRAME);
-  assert.ok(Math.abs(ship.v) <= 0.05, `still making ${ship.v}`);
+  assert.equal(ship.underSail, 0.75, 'her sails came down');
+  assert.equal(walk.runningOut(), ship, 'nobody sails her on');
+  for (let i = 0; i < 60 * 60; i++) walk.runOut(FRAME);
+  assert.equal(walk.runningOut(), ship, 'she stopped being sailed within a minute');
+  assert.ok(ship.v > 0.7 * 13 * 0.75, `under ¾ sail she makes only ${ship.v}`);
+
+  const bare = shipAt({ v: 4, underSail: 0 });
+  const w2 = world(null, bare, BODIES.adventurer);
+  w2.board(bare);
+  assert.ok(w2.leaveHelm());
+  bare.underSail = 0;
+  w2.launchSelf([bare.x + 2, 3, bare.z], [8, 4, 0]);
+  assert.equal(w2.runningOut(), bare, 'nobody runs her out');
+  for (let i = 0; i < 60 * 60 && w2.runningOut(); i++) w2.runOut(FRAME);
+  assert.ok(Math.abs(bare.v) <= 0.05, `still making ${bare.v}`);
 });
 
 test('out of a gun into the sea, the way is braked by the water and not carried on a ship\'s length', () => {

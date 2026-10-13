@@ -1,4 +1,5 @@
 import { addScaffold as attachScaffold } from './scaffold.js';
+import { createMermaid, stepMermaid, newMermaid, MERMAID_FAR, MERMAID_REACH } from './mermaid.js';
 // Boot, camera, the live feed and the animation queue that turns a data diff into
 // something you can watch happen.
 import * as THREE from 'three';
@@ -1316,6 +1317,11 @@ function interactables() {
         prompt: m.mode === 'zip' ? 'slide down the line' : 'walk the line' });
     }
   }
+  // The mermaid, come for us in the water (mermaidFrame).
+  const merm = mermaid && mermaid.where();
+  if (merm && !aboard && !deck) {
+    out.push({ id: 'mermaid', kind: 'mermaid', x: merm.x, z: merm.z, r: MERMAID_REACH, label: 'the mermaid', prompt: 'go back to your ship' });
+  }
   if (deck) {
     const b = deck.boat;
     // Only a free wheel, or one that is ours already: a second hand on it is the sea's refusal
@@ -2278,6 +2284,7 @@ function walkCallbacks() {
         else takeBoat(it.id);
       }
       else if (it.kind === 'dock') takeBoatAt(it.id);
+      else if (it.kind === 'mermaid') mermaidHome();
       else if (it.kind === 'ashore') stepAshore();
       // Letting go of the wheel keeps you aboard as crew, and the hull runs out under your last word
       // (lib/boats.mjs letGo); taking it again is the sea's take, which a crew may make from the deck.
@@ -2304,7 +2311,7 @@ function walkCallbacks() {
     onSendAway: (it) => {
       if (it.treasure) return;   // the bottle, the X and the statue are not settlers
       if (it.kind === 'bed') { digBed(it.id); return; }
-      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat', 'gun', 'gunning'].includes(it.kind)) askToSendAway(it.id);
+      if (!['board', 'issues', 'townhall', 'office', 'market', 'mailbox', 'goldpit', 'goldmine', 'goldsmith', 'tavern', 'castle', 'chronicle', 'keeper', 'boat', 'ashore', 'dock', 'helm', 'leavehelm', 'nestseat', 'gun', 'gunning', 'mermaid'].includes(it.kind)) askToSendAway(it.id);
     },
     // Up a ship's rope ladder, and off her again by jumping or down it (walk.js): the sea counts a
     // crew, so it is told at the top and again once you are off. No room to change - on the deck
@@ -2313,11 +2320,14 @@ function walkCallbacks() {
     // `boarded`, as a rowing boat walked into with her is (takeBoat).
     onBoarded: (b, { stowed = false } = {}) => {
       if (state.net) { state.net.boardBoat(b.id); state.net.setRoom(null, state.walk); }
+      // The ship a mermaid takes us back to (Plans/schip-vaart-door.md): the last we were crew of.
+      if (isShip(b)) state.lastShip = b.id;
       if (stowed && state.hunt) state.hunt.boardedWith(false);
       state.walk.setInteractables(interactables());
     },
     onLeftDeck: (b) => {
-      if (state.net) { state.net.leaveBoat(b.id); state.net.setRoom(null, state.walk); }
+      // With the sails she sails on under (walk.js letRun): the sea keeps us as the one sailing her.
+      if (state.net) { state.net.leaveBoat(b.id, b.underSail || 0); state.net.setRoom(null, state.walk); }
       state.walk.setInteractables(interactables());
     },
     onPlant: () => sowHere(),
@@ -3803,6 +3813,7 @@ function treasureBoats() {
         // Crew from the top of the ladder, as a climb makes you - once the sea has had a pose of
         // us up here, since it boards nobody standing further than a deck's reach off her middle.
         setTimeout(() => { if (state.net && state.walk && state.walk.deckWhere()) state.net.boardBoat(ship.id); }, 300);
+        state.lastShip = ship.id;
         state.net.setRoom(null, state.walk);
       }
       state.walk.setInteractables(interactables());
@@ -4660,6 +4671,64 @@ function wrapEye() {
   if (w.bike) { w.bike.x += dx; w.bike.z += dz; }
   if (w.mount) { w.mount.x += dx; w.mount.z += dz; }
   state.ui.toast('Round the world - the far side of the chart');
+}
+
+// The mermaid (Plans/schip-vaart-door.md, web/js/mermaid.js): lost at sea - swimming, on no hull, further
+// than MERMAID_FAR from the last ship we were crew of - for MERMAID_AFTER_S, and she comes up ahead of us,
+// towards that ship, under her column of glowing smoke. E at her (`mermaid` in interactables) is
+// mermaidHome. This page's alone: nothing of her is on the wire.
+// On `state` for the console (`__state.mermaid.t = 9.9` brings her on the next frame).
+const mermaidState = state.mermaid = newMermaid();
+let mermaid = null;
+// Water she may come up in: deep enough to dive in, as a statue afloat wants (walk.js floatAt).
+const mermaidWater = (x, z) => state.sea.height(x, z) < -0.6;
+function mermaidShip() {
+  return state.lastShip ? state.boats.find((b) => b.id === state.lastShip && isShip(b)) || null : null;
+}
+function mermaidFrame(dt) {
+  const w = state.mode === 'walk' && !state.inside && state.walk;
+  const ws = w ? state.walk.state : null;
+  const ship = w ? mermaidShip() : null;
+  const lost = !!(ws && ship && ws.swimming && !ws.dying && !state.walk.onDeck() && !state.walk.aboard()
+    && Math.hypot(ship.x - ws.pos.x, ship.z - ws.pos.z) > MERMAID_FAR);
+  if (!lost && !mermaidState.at && !mermaid) return;
+  const said = stepMermaid(mermaidState, { lost, body: ws && ws.pos, ship, water: mermaidWater, facing: ws ? ws.yaw : 0 }, dt);
+  if (said === 'came') {
+    if (!mermaid) mermaid = createMermaid({ scene });
+    mermaid.show(mermaidState.at);
+    state.ui.toast('A mermaid has come for you - swim to the glowing smoke and she will take you back to your ship.');
+  } else if (said === 'gone' && mermaid) mermaid.hide();
+  if (said && state.walk) state.walk.setInteractables(interactables());
+  if (mermaid) mermaid.update(dt, frameSeconds, (x, z) => (state.world && state.world.surfaceAt ? state.world.surfaceAt(x, z) : 0),
+    renderer ? renderer.domElement.height : 0);
+}
+// E at her: whatever the arms hold stays afloat here (walk.js letGo), a moment of her smoke's green on
+// the screen, and then the planks of the ship - crew once the sea has had a pose of us up there, as
+// `hoist` does it, since it boards nobody further than a deck's reach from her middle.
+function mermaidHome() {
+  const ship = mermaidShip();
+  if (!ship || !state.walk) return;
+  respawnFade();
+  if (!state.walk.mermaidAboard(ship)) { state.ui.toast('The mermaid cannot find a place for you on her.'); return; }
+  mermaidState.at = null;
+  mermaidState.t = 0;
+  if (mermaid) mermaid.hide();
+  if (state.net) {
+    setTimeout(() => { if (state.net && state.walk && state.walk.onDeck() === ship) state.net.boardBoat(ship.id); }, 300);
+    state.net.setRoom(null, state.walk);
+  }
+  state.walk.setInteractables(interactables());
+  state.ui.toast('The mermaid takes you back to your ship.');
+}
+
+// A ship sailing on with nobody aboard (Plans/schip-vaart-door.md) goes round the world as a body does:
+// this page steps her, so this page moves her the whole width back once she is past the edge, and every
+// other page starts her track again on a jump of over half the world (timeline.js pushSample).
+function wrapHull(b) {
+  const home = state.homeOrigin;
+  if (!b || !home) return;
+  b.x += wrapShift(b.x + home[0]);
+  b.z += wrapShift(b.z + home[1]);
 }
 
 // Islands that are in no sea: an island conjured by `?join=` so that the whole coordinate
@@ -8355,8 +8424,9 @@ function frame(nowMs) {
   const live = state.chronicle.t == null;
   // Before the peers and the fleet loop, which read where she is: a ship nobody is aboard is stepped
   // here and nowhere else (walk.js runOut), in every mode.
-  if (state.walk) state.walk.runOut(dt);
+  if (state.walk) wrapHull(state.walk.runOut(dt));
   glideBoats();
+  mermaidFrame(dt);
   // Balls in flight and what they come down on (Plans/kanonnen.md): after the boats are where they
   // are drawn this frame, so a ball meets a hull where it is seen.
   gunFuseFx();
