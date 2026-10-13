@@ -182,6 +182,60 @@ test('a walker goes up the ramp, along the pier and out onto the head\'s wing wi
   assert.ok(back.drop < 0.05, `dropped ${back.drop.toFixed(2)} in one frame on the way down`);
 });
 
+// Out of the water onto the planks (the keeper, 13 Oct 2026): a swimmer floats 0.51 under a deck at
+// QUAY_DECK, more than a step, so Space at the edge pulls them up (walk.js climbOut).
+test('a swimmer beside the pier pulls themselves up onto it with Space, and under it does not', () => {
+  const walk = walkOn({
+    height: coast.worldHeight, levels: pierLevels, levelKey: pierKey, surfaces: pierPlanks,
+    // walk mode sets a body down on dry boards (enter), so off the pier's side into the sea first
+    at: [0, 3], facing: [-10, 3],
+  });
+  stride(walk, 'w', 1.5, (p) => p.x <= -1.5);
+  for (let i = 0; i < 60; i++) walk.update(FRAME);
+  walk.state.camYaw = Math.PI / 2;
+  assert.equal(walk.state.swimming, true, `not in the water beside the pier: ${walk.state.pos.toArray().map((v) => v.toFixed(2))}`);
+  // Pushing at it is no way up: under the boards, as always.
+  stride(walk, 'w', 1.5, (p) => p.x >= -0.75);
+  assert.equal(walk.state.swimming, true);
+  // Space at the edge: up onto the boards, at once and with the body's room up there.
+  let rose = 0, last = walk.state.pos.y;
+  key(' ', true);
+  let outs = 0, back = 0;
+  for (let i = 0; i < 240; i++) {
+    walk.update(FRAME);
+    rose = Math.max(rose, walk.state.pos.y - last); last = walk.state.pos.y;
+    if (walk.state.climbing && walk.state.climbing.out != null) outs++;
+    if (i === 0) key(' ', false);
+  }
+  // the clip (Mixamo's Freehang Climb To Standing) is played while the feet go up, a step a frame
+  assert.ok(outs > 60, `climbed out in ${outs} frames`);
+  assert.ok(rose < 0.05, `rose ${rose.toFixed(3)} in one frame`);
+  assert.equal(walk.state.climbing, null, 'still climbing out');
+  key(' ', false);
+  assert.equal(walk.state.swimming, false, `still swimming at x ${walk.state.pos.x.toFixed(2)}`);
+  assert.ok(Math.abs(walk.state.pos.y - QUAY_DECK) < 1e-9, `at ${walk.state.pos.y}`);
+  assert.ok(pierCell(walk.state.pos.x, walk.state.pos.z), `not on the pier: ${walk.state.pos.x.toFixed(2)}, ${walk.state.pos.z.toFixed(2)}`);
+  // And walked on along it without dropping off.
+  walk.state.camYaw = 0;
+  const on = stride(walk, 'w', 1);
+  assert.equal(on.airborne, false);
+  assert.equal(walk.state.swimming, false);
+  // Under the pier, Space does nothing: the boards are over the head, not at its edge.
+  const under = walkOn({
+    height: coast.worldHeight, levels: pierLevels, levelKey: pierKey, surfaces: pierPlanks,
+    at: [0, 2], facing: [-10, 2],
+  });
+  stride(under, 'w', 1.5, (p) => p.x <= -1.5);
+  for (let i = 0; i < 60; i++) under.update(FRAME);
+  under.state.camYaw = Math.PI / 2;
+  stride(under, 'w', 3, (p) => p.x >= 0);
+  assert.equal(under.state.swimming, true, 'climbed onto the pier from beside it by pushing');
+  key(' ', true);
+  for (let i = 0; i < 10; i++) under.update(FRAME);
+  key(' ', false);
+  assert.equal(under.state.swimming, true, 'pulled up through the pier from under it');
+  assert.ok(Math.abs(under.state.pos.y - SWIM_Y) < 1e-9, `at ${under.state.pos.y}`);
+});
 // ---- the quay's finger jetties ------------------------------------------------------------------
 // tests/quay-basin.test.mjs's quay: three wide along x 10..12, rows 2..29, land to the east, on a
 // grid of 32 - and water to the west of it, so the fingers have somewhere to go.
@@ -304,4 +358,24 @@ test('a swimmer at the face of the wall stays in the water, and a walker on the 
   for (let i = 0; i < 60; i++) walker.update(FRAME);
   assert.ok(walker.state.pos.x < face, `did not get off the quay: x ${walker.state.pos.x.toFixed(2)}`);
   assert.equal(walker.state.swimming, true, 'not in the harbour after walking off the wall');
+});
+
+test('a swimmer at the face of the wall pulls themselves up onto the quay with Space', () => {
+  const busy = new Set([...kade.stairs.flatMap((st) => st.cells.map((c) => c.gz)), ...kade.fingers.map((fg) => fg.along)]);
+  const row = kade.foot.find((f) => f.gz > 3 && ![-1, 0, 1].some((d) => busy.has(f.gz + d)));
+  const z = row.gz - kt.half + 0.5;
+  const face = row.face - kt.half;
+  const swim = walkOn({
+    height: kadeGround, levelKey: () => null, regionAt: () => kadeRegion, surfaces: kadePlanks.map((s) => ({ ...s, lid: true })),
+    at: [face - 1.5, z], facing: [face + 10, z],
+  });
+  for (let i = 0; i < 20; i++) swim.update(FRAME);
+  stride(swim, 'w', 4);
+  assert.equal(swim.state.swimming, true);
+  key(' ', true);
+  for (let i = 0; i < 240; i++) swim.update(FRAME);
+  key(' ', false);
+  assert.equal(swim.state.swimming, false, `still in the harbour at ${swim.state.pos.toArray().map((v) => v.toFixed(2))} yaw ${swim.state.yaw.toFixed(2)} face ${face}`);
+  assert.ok(swim.state.pos.x > face, `not on the quay: x ${swim.state.pos.x.toFixed(2)}`);
+  assert.ok(swim.state.pos.y >= level - 1e-9, `at ${swim.state.pos.y}`);
 });

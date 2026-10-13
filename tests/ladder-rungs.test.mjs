@@ -25,6 +25,7 @@ const { CRAFTS } = await import('../shared/crafts.mjs');
 const { DECK_Y } = await import('../shared/hull.mjs');
 const { ladderBoxes } = await import('../web/js/boat.js');
 const { PIRATETAVERN } = await import('../web/js/piratetavern-mesh.js');
+const await_ship = await import('../web/js/pirateship-mesh.js');
 
 // The Adventurer's leg (classic-avatar.js bodyOf: hip pivot to ankle), on which the clip rises.
 const ADVENTURER_LEG = 0.2111;
@@ -198,21 +199,35 @@ test('the Salty Kraken\'s mast ladders are baked to the climb: plumb, rungs RUNG
   assert.equal(Number(/^LADDER_X = ([\d.]+)/m.exec(py)[1]), K.MAST_LADDER);
 });
 
-test("the galleon's mast ladder is the climb's too: rungs RUNG_STEP up from its foot on the deck, RUNG_FROM before the climber", () => {
-  // Up to her crow's nest (shared/crafts.mjs aloft, Plans/DONE/kraaiennest.md): the same rungs, turned to the face of the top it hangs from.
+test("the ship's mast pins are the climb's too: RUNG_STEP up from its foot on the deck, RUNG_FROM before the climber", () => {
+  // Up to her crow's nest (shared/crafts.mjs aloft): the sloop's pins are baked into her hull
+  // (scripts/build-sloop.py), not drawn as boxes - a rod across the mast's after face, its middle where a
+  // rope ladder's rung's would be.
   const SHIP = CRAFTS.galleon, L = SHIP.aloft[0];
-  const boxes = ladderBoxes({ ladders: [], aloft: SHIP.aloft });
-  const rungs = boxes.map((g) => { g.computeBoundingBox(); return g.boundingBox; }).filter((bb) => bb.max.y - bb.min.y < 3 * RUNG_R);
-  const span = (L.top - L.foot);
-  assert.ok(rungs.length > span / RUNG_STEP - 3, `${rungs.length} rungs for ${span.toFixed(2)} of rope`);
-  for (const bb of rungs) {
-    const y = (bb.min.y + bb.max.y) / 2 - DECK_Y - L.foot, k = Math.round(y / RUNG_STEP);
-    assert.ok(Math.abs(y - k * RUNG_STEP) < 1e-6 && k >= 1, `a rung ${y.toFixed(4)} above the foot`);
-    const cx = (bb.min.x + bb.max.x) / 2, cz = (bb.min.z + bb.max.z) / 2;
-    const out = (cx - L.x) * L.out[0] + (cz - L.z) * L.out[1];
-    assert.ok(Math.abs(out - RUNG_OUT) < 1e-6, `a rung ${out.toFixed(4)} out from the ropes`);
+  assert.equal(ladderBoxes({ ladders: [], aloft: SHIP.aloft }).length, 0, 'nothing drawn for it beside the bake');
+  const { PIRATESHIP } = await_ship;
+  const pos = PIRATESHIP.parts['pirateship hull'].positions;
+  const lift = PIRATESHIP.anchors.waterline[1] + DECK_Y;
+  // the line the pins lie on: RUNG_OUT out from the ropes, as on every rope ladder
+  const lx = L.x + L.out[0] * RUNG_OUT, lz = L.z + L.out[1] * RUNG_OUT;
+  const ys = new Map();
+  for (let i = 0; i < pos.length; i += 3) {
+    // a pin's ends, half its length either side of the mast (the iron bands round the mast are nearer in)
+    if (Math.abs(Math.abs(pos[i] - lx) - 0.15) > 0.012 || Math.abs(pos[i + 2] - lz) > 2 * RUNG_R + 0.006) continue;
+    const y = pos[i + 1] - lift - L.foot;
+    // over the partners round the mast's foot and under the top's floor, which have corners of their own there
+    if (y < 0.45 || y > L.top - L.foot - 0.07) continue;
+    const k = Math.round(y / RUNG_STEP);
+    if (!ys.has(k)) ys.set(k, []);
+    ys.get(k).push(y);
   }
-  // the climber hangs on the line aloftPath has them on: RUNG_FROM behind the rungs, as on her side
+  const span = L.top - L.foot;
+  assert.ok(ys.size > (span - 0.45) / RUNG_STEP - 3, `${ys.size} pins for ${span.toFixed(2)} of mast`);
+  for (const [k, list] of ys) {
+    const mid = (Math.min(...list) + Math.max(...list)) / 2;
+    assert.ok(Math.abs(mid - k * RUNG_STEP) < 1e-4 && k >= 1, `a pin ${mid.toFixed(4)} above the foot`);
+  }
+  // the climber hangs on the line aloftPath has them on: RUNG_FROM behind the pins, as on her side
   const [a] = aloftPath(L);
   const back = (a.x - L.x) * L.out[0] + (a.z - L.z) * L.out[1];
   assert.ok(Math.abs(back - RUNG_OUT - RUNG_FROM) < 1e-9, `the climber ${back.toFixed(3)} out from the ropes`);

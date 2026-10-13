@@ -89,14 +89,17 @@ export const DIVE_COAST = 2.2;
 // surface at 3/s - about a second - but a body that has gone under carries on: at 1/s it shoots
 // on for the best part of a boat's speed in units, and only then is a diver again.
 export const DIVE_DRIFT = 1;
-// Out of a gun the way is a cannon's (shared/cannon.mjs HUMAN_SPEED: 27 units/s across), which at
-// DIVE_DRIFT would carry a body 27 units on under water, or 9 skimming the surface at 3/s. Going in,
-// it keeps at most SHOT_DRIFT of it - a boat's way - so the water stops a shot body as it should.
-export const SHOT_DRIFT = 4;
-export function shotDrift(drift) {
-  if (!drift) return drift;
-  const n = Math.hypot(drift.x, drift.z);
-  return n > SHOT_DRIFT ? { x: drift.x * SHOT_DRIFT / n, z: drift.z * SHOT_DRIFT / n } : drift;
+export const SURFACE_DRIFT = 3;
+// Those two rates are a boat's way, a few units a second. A body out of a gun's mouth comes down at
+// 12 to 30 (shared/cannon.mjs HUMAN_SPEED), and at 1/s it shot on under water a whole ship's length
+// and more - the keeper's "je remt niet af in het water" (13 Oct 2026). Water's drag grows with the
+// speed, so past DRIFT_FREE each unit a second more adds DRIFT_DRAG to the rate: a boat's way below
+// it is what it was, a cannon's is mostly gone within a few units.
+export const DRIFT_FREE = 3;
+export const DRIFT_DRAG = 0.5;
+// How fast what is left of a way (walk.js `drift`) dies in the water, per second, at `speed`.
+export function driftRate(speed, under) {
+  return (under ? DIVE_DRIFT : SURFACE_DRIFT) + DRIFT_DRAG * Math.max(0, speed - DRIFT_FREE);
 }
 export function plungeSpeed(vy, bed, surface = 0) {
   if (vy > -PLUNGE_MIN || !canDive(bed, surface)) return 0;

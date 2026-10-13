@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  stepDive, plungeSpeed, shotDrift, SHOT_DRIFT, PLUNGE_MAX, DIVE_DRIFT, canDive, headUnder, divePitch, lookRise, SWIM_PITCH,
+  stepDive, plungeSpeed, PLUNGE_MAX, DIVE_DRIFT, driftRate, canDive, headUnder, divePitch, lookRise, SWIM_PITCH,
   swimPose, stepLie, TREAD_PITCH, TREAD_SINK,
   LOOK_LEVEL, LOOK_DEAD, LOOK_SPAN, LOOK_LEVEL_FP, LOOK_DEAD_FP, LOOK_SPAN_FP,
   DIVE_SPEED, DIVE_TURBO, BOTTOM_SPEED, DIVE_DOWN, DIVE_UP, DIVE_HEAD, DIVE_MIN_WATER, BED_CLEAR, SHALLOW,
@@ -201,9 +201,21 @@ test('walk.js starts the dive from a fall into deep water', () => {
 });
 
 test('the hull\'s way carries on under water far longer than at the surface', () => {
-  assert.match(WALK, /Math\.exp\(-\(state\.dive \? DIVE_DRIFT : 3\) \* dt\)/, 'drift has to decay slower for a diver');
-  const reach = (rate) => 8 / rate;   // a boat at 8 u/s, exponential decay
-  assert.ok(reach(DIVE_DRIFT) > 2 * reach(3), 'the plunge has to shoot on, not stop with the surface\'s drag');
+  assert.match(WALK, /Math\.exp\(-driftRate\(Math\.hypot\(drift\.x, drift\.z\), state\.dive\) \* dt\)/, 'drift has to decay by driftRate');
+  assert.ok(reach(3, true) > 2 * reach(3, false), 'the plunge has to shoot on, not stop with the surface\'s drag');
+  assert.equal(driftRate(3, true), DIVE_DRIFT, 'a boat\'s way under water dies as it always did');
+});
+
+// How far a way of `v0` carries in the water, stepped frame by frame as walk.js steps `drift`.
+function reach(v0, under) {
+  let v = v0, d = 0;
+  for (let i = 0; i < 6000 && v > 0.05; i++) { d += v * FRAME; v *= Math.exp(-driftRate(v, under) * FRAME); }
+  return d;
+}
+test('a body out of a gun is braked by the water, not carried on a ship\'s length', () => {
+  // HUMAN_SPEED (shared/cannon.mjs) fired level: at the old 1/s it went 21 units on under water
+  assert.ok(reach(21, true) < 9, `under water a cannon's way carries ${reach(21, true).toFixed(1)}`);
+  assert.ok(reach(21, false) < 4, `at the surface a cannon's way carries ${reach(21, false).toFixed(1)}`);
 });
 
 // ---- steering by the view -----------------------------------------------------------------
@@ -318,18 +330,4 @@ test('a swimmer going nowhere treads water upright, and lies down in the stroke 
   assert.ok(lie < 0.02, `after a second and a half the swimmer is upright (lie ${lie})`);
   for (let i = 0; i < 90; i++) lie = stepLie(lie, true, FRAME);
   assert.ok(lie > 0.98, 'and swimming off lays it back in the stroke');
-});
-
-test('a body out of a gun keeps no more than a boat\'s way going into the water', async () => {
-  const { HUMAN_SPEED } = await import('../shared/cannon.mjs');
-  const way = shotDrift({ x: HUMAN_SPEED * 0.9, z: HUMAN_SPEED * 0.1 });
-  assert.ok(Math.abs(Math.hypot(way.x, way.z) - SHOT_DRIFT) < 1e-9);
-  assert.ok(way.x > 0 && way.z > 0, 'the way keeps its heading');
-  // Coasting at DIVE_DRIFT that is SHOT_DRIFT units on under water, not the shot's own way.
-  assert.ok(SHOT_DRIFT / DIVE_DRIFT <= 5);
-  const slow = { x: 1, z: 2 };
-  assert.equal(shotDrift(slow), slow);
-  assert.equal(shotDrift(null), null);
-  const walk = readFileSync(new URL('../web/js/walk.js', import.meta.url), 'utf8');
-  assert.match(walk, /state\.launched && inWater\) drift = shotDrift\(drift\)/);
 });

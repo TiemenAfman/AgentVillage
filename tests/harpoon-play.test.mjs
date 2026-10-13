@@ -17,7 +17,11 @@ const { CRAFTS } = await import('../shared/crafts.mjs');
 const { createBoat } = await import('../web/js/boat.js');
 const { createHarpoonPlay } = await import('../web/js/harpoon-play.js');
 
+// The first harpoon mount, wherever the craft lists it (after the cannons: the sloop's one, on her bow and
+// pointing over it - Plans/DONE/nieuwe-sloep.md); never a number written down here. What it is fired at lies
+// ahead of her, inside the gun's traverse.
 const I = CRAFTS.galleon.mounts.findIndex((m) => m.kind === 'harpoon');
+assert.ok(I >= 0, 'the galleon mounts no harpoon');
 const DT = 1 / 60;
 
 function setup({ ground = () => -3, followed = () => false, others = [], peers = [] } = {}) {
@@ -60,8 +64,8 @@ function aimAt(craft, ship, x, z, pitch) {
 
 test('fired at the floating statue, the line hooks her, hauls her in and lays her on the deck', () => {
   const { craft, ship, statue, play, run } = setup();
-  Object.assign(statue, { x: 8, y: 0, z: 9 });
-  aimAt(craft, ship, 8, 9, -0.12);
+  Object.assign(statue, { x: 4, y: 0, z: 12 });
+  aimAt(craft, ship, 4, 12, -0.08);
   assert.equal(play.fire(ship, I), 'fired');
   run(1.2);
   const line = play.lineAt(ship, I);
@@ -107,8 +111,8 @@ test('a hull another page is stepping is never towed', () => {
 
 test('what sound.js hears: the shot, and the reel ticking while it takes line in', () => {
   const { craft, ship, statue, play, run } = setup();
-  Object.assign(statue, { x: 8, y: 0, z: 9 });
-  aimAt(craft, ship, 8, 9, -0.12);
+  Object.assign(statue, { x: 4, y: 0, z: 12 });
+  aimAt(craft, ship, 4, 12, -0.08);
   play.fire(ship, I);
   const shot = play.events();
   assert.equal(shot.list.at(-1).kind, 'harpoon');
@@ -121,7 +125,7 @@ test('what sound.js hears: the shot, and the reel ticking while it takes line in
 test('a line out is said to the sea while it is out, and once when it is in', () => {
   const { craft, ship, statue, play, run, sent } = setup();
   statue.gone = true;
-  aimAt(craft, ship, 6, 6, -0.2);
+  aimAt(craft, ship, 3, 9, -0.2);
   play.fire(ship, I);
   run(4);
   const lines = sent.filter((m) => m.t === 'line');
@@ -132,10 +136,10 @@ test('a line out is said to the sea while it is out, and once when it is in', ()
 });
 
 test('another player struck: the sea is told, and let go of they are freed', () => {
-  const peers = [{ id: 'p2', x: 8, y: 0, z: 9, sailing: false }];
+  const peers = [{ id: 'p2', x: 4, y: 0, z: 12, sailing: false }];
   const { craft, ship, statue, play, run, sent } = setup({ peers });
   statue.gone = true;
-  aimAt(craft, ship, 8, 9, -0.12);
+  aimAt(craft, ship, 4, 12, -0.08);
   play.fire(ship, I);
   run(1.2);
   assert.equal(play.lineAt(ship, I).hooked().kind, 'player');
@@ -145,10 +149,10 @@ test('another player struck: the sea is told, and let go of they are freed', () 
 });
 
 test('a loose rowing boat is drawn in and the sea told where; a sailed one is chased instead', () => {
-  const row = { id: 'boat:abcd-n1', kind: 'rowboat', x: 8, z: 9, yaw: 0, pilot: null, craft: {} };
+  const row = { id: 'boat:abcd-n1', kind: 'rowboat', x: 4, z: 12, yaw: 0, pilot: null, craft: {} };
   const { craft, ship, statue, play, run, sent } = setup({ others: [row] });
   statue.gone = true;
-  aimAt(craft, ship, 8, 9, -0.1);
+  aimAt(craft, ship, 4, 12, -0.1);
   play.fire(ship, I);
   run(1.2);
   assert.equal(play.lineAt(ship, I).hooked().kind, 'rowboat');

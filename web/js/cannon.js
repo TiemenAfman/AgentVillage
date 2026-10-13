@@ -62,6 +62,10 @@ export function layPoint(spec, lay, kick, barrel, px, py, pz, out = [0, 0, 0]) {
     const ny = y * c - z * sn, nz = y * sn + z * c;
     x += s.pin[0]; y = ny + s.pin[1]; z = nz + s.pin[2];
   }
+  // A gun drawn larger than its bake (the mount's `scale`, scripts/build-craft.mjs MOUNT_LIMITS): every
+  // point of it, the muzzle and the vent included, from the foot of its carriage.
+  const k = spec.scale || 1;
+  x *= k; y *= k; z *= k;
   z -= kick;
   const yaw = spec.yaw + lay[0];
   const c = Math.cos(yaw), sn = Math.sin(yaw);

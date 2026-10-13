@@ -1087,8 +1087,9 @@ if PREVIEW_DIR:
     galleon = None
     if 'galleon' in VIEWS or 'pair' in VIEWS:
         with bpy.data.libraries.load(str(ROOT / 'assets/pirateship/pirateship.blend')) as (src, dst):
-            dst.objects = [n for n in src.objects if n == 'pirateship hull']
-        galleon = dst.objects[0]
+            dst.objects = ['pirateship hull', 'anchor.waterline']
+        # in the order asked for: her own anchor.waterline is renamed on the way in, since this scene has one
+        galleon, GALLEON_W = dst.objects[0], dst.objects[1].location.z
         scene.collection.objects.link(galleon)
         galleon.hide_render = True
     # The fleet: the second and third ships beside her, repainted the way buildings.js
@@ -1146,9 +1147,9 @@ if PREVIEW_DIR:
             c.hide_render = view != 'fleet'
         if galleon:
             galleon.hide_render = view not in ('galleon', 'pair')
-            # at the same waterline (its keel is 1.469 under its water): astern of her for the
-            # side view, abeam to port for the pair, each as far from the camera as she is
-            galleon.location = xyz((0, W - 12.29 * 7 / 58.56, -16.0) if view == 'galleon' else (9.0, W - 12.29 * 7 / 58.56, 0))
+            # at the same waterline (her bake's own anchor.waterline, read with her hull): astern of
+            # her for the side view, abeam to port for the pair, each as far from the camera as she is
+            galleon.location = xyz((0, W - GALLEON_W, -16.0) if view == 'galleon' else (9.0, W - GALLEON_W, 0))
         eye, look, lens = SHOTS[view]
         cam.data.lens = lens
         cam.location = xyz(eye)

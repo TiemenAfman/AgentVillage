@@ -97,6 +97,16 @@ function sampleClip(clip, u, out) {
   out.drop = a[k] * (1 - f) + b[k] * f;
   return out;
 }
+// Where in a clip played through its `along` (bake-mixamo-gait.py ALONG) the body is, `s` (0..1,
+// wrapping) of its stride on: the row whose hips are that far along, so the planted foot keeps still
+// through a stretch the clip dawdles in and one it hurries through alike.
+function alongAt(clip, s) {
+  const a = clip.along, n = a.length, x = ((s % 1) + 1) % 1;
+  let i = 0;
+  while (i < n - 1 && a[i + 1] <= x) i++;
+  const next = i + 1 < n ? a[i + 1] : 1, f = next > a[i] ? (x - a[i]) / (next - a[i]) : 0;
+  return (i + Math.min(1, Math.max(0, f))) / n;
+}
 // A clip that plays once (a jump, its flight) is read without wrapping round to its start.
 function sampleOnce(clip, u, out) {
   const n = clip.rows.length;
@@ -226,6 +236,8 @@ export function settleReach(r, top) {
 // stand where the step put them on the way down as on the way up.
 export function ladderStep(ladder) {
   if (!ladder) return null;
+  // Up out of the water onto planks (walk.js climbOut, `out` 0..1 through Freehang Climb To Standing).
+  if (ladder.out != null) return GAIT_CLIPS.climbOut ? { clip: 'climbOut', u: Math.max(0, Math.min(1, ladder.out)) } : null;
   if (ladder.top != null && GAIT_CLIPS.climbTop) return { clip: 'climbTop', u: Math.max(0, Math.min(1, ladder.top)) };
   const on = ladder.floor && Number.isFinite(ladder.at) ? stepWay('climbOn') : null;
   if (!on) return null;
@@ -249,8 +261,10 @@ export const CLIMB_CLIP_LIFT = { leftArm: -0.13, rightArm: -0.195 };
 const liftQ = new THREE.Quaternion(), liftAxis = new THREE.Vector3(1, 0, 0);
 // Out along a harpoon's line walked flat (walk.js state.rope 'walk', Plans/harpoen.md): both arms held
 // out to the sides over whatever the gait does with them, ROPE_SPREAD radians about the body's forward
-// axis. No balance clip on Mixamo's list yet; this is the pose until there is one.
-const ROPE_SPREAD = 1.25, spreadAxis = new THREE.Vector3(0, 0, 1);
+// axis - the Traveller's, who plays no clips. A body that does walks Mixamo's Careful Walk (`ropeWalk`),
+// whose arms are out only some 37 degrees (65 at most), so they are lifted ROPE_CLIP_SPREAD more, to near level (0.8 put a hand over the head at the top of its swing): a
+// rope walker's arms, the keeper's ask (9 Oct 2026).
+const ROPE_SPREAD = 1.25, ROPE_CLIP_SPREAD = 0.55, ROPE_CLIP_STRETCH = 0.75, noTurn = new THREE.Quaternion(), spreadAxis = new THREE.Vector3(0, 0, 1);
 function blendPose(out, a, b, t) {
   for (let j = 0; j < out.q.length; j++) out.q[j].slerpQuaternions(a.q[j], b.q[j], t);
   out.drop = a.drop + (b.drop - a.drop) * t;
@@ -1293,9 +1307,18 @@ function buildRig(spec, material) {
   let ladderT = 0;
   const LADDER_EASE = 0.4;
   const poseClimb = clipPose();
-  // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging Idle, `hang`).
+  // Hanging from a harpoon's line, sliding down it (Mixamo's Hanging By Hands Gently Swaying, `hang`: hanging free, where the
+  // Hanging Idle it replaced hung off a ledge against a wall, the keeper's choice of 9 Oct 2026).
   const poseHang = clipPose();
+  const posePreview = clipPose();
   let hangT = 0, ropeArms = 0;
+  // Over a harpoon's line walked flat (walk.js state.rope 'walk'): Mixamo's Careful Walk (`ropeWalk`),
+  // one foot before the other with the arms out, played by distance - `ropeS` is how far into its
+  // stride the body has walked - so it plants each foot on the line and never slides it. Standing
+  // still on the line it stands still where it is.
+  const poseRope = clipPose();
+  let ropeS = 0;
+  const ropeClip = () => (G.clips && GAIT_CLIPS.ropeWalk) || null;
   // Onto a ladder and off it the body changes hands in one frame: from the walk's pose (or the
   // idle's, the swim's) to the climb's and back, and the Adventurer's clip from one Mixamo pose to
   // another - the keeper's recording of 8 Oct 2026 had him stood on the landing one frame and
@@ -1306,7 +1329,7 @@ function buildRig(spec, material) {
   // running starts from where that one had got to, so a body that steps on and straight off again
   // never jumps either.
   const LADDER_FADE = 0.35;
-  let fade = 0, wasLadder = false, wasOnWay = false, wasStep = null;
+  let fade = 0, wasLadder = false, wasOnWay = false, wasStep = null, wasRope = null;
   const fadeJoints = [];
   const fadeFrom = { q: [], y: 0, rot: new THREE.Euler() }, fadeTo = new THREE.Quaternion();
   function keepPose() {
@@ -1345,6 +1368,15 @@ function buildRig(spec, material) {
   const AIR_S = 2 * 3.1 / 12.5;   // walk.js's JUMP_V and GRAVITY: how long a jump is in the air
   function playClips(pose, dt, { run, dash, flying, fp, dance, dug, carryOn, ride, gaitPose, back, ladder }) {
     if (!G.clips) return;
+    // A clip under trial (the motion workbench's Mixamo catalogue, web/js/mixamo-catalogue.js):
+    // `pose.preview = { clip, u, drop }`, a clip shaped like a baked one (mixamo-preview.js) read at
+    // `u` without wrapping. It owns the whole body; nothing on the island ever sets it.
+    if (pose.preview) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      applyClip(sampleOnce(pose.preview.clip, pose.preview.u, posePreview), clipMix, { arms: true, drop: pose.preview.drop !== false });
+      return;
+    }
     // Dying owns the whole body: its own clip, played once from the moment it began, or - with
     // none baked - every clip eased out, and the procedural fall (dyingPose) does it.
     if (pose.dying) {
@@ -1356,7 +1388,7 @@ function buildRig(spec, material) {
       applyClip(sampleOnce(C, pose.dying.t / C.seconds, poseDie), clipMix, { arms: true, drop: pose.dying.kind === 'fall' });
       return;
     }
-    // Sliding down a harpoon's line (walk.js state.rope 'zip'): Mixamo's Hanging Idle, by time - two
+    // Sliding down a harpoon's line (walk.js state.rope 'zip'): Mixamo's Hanging By Hands Gently Swaying, by time - two
     // hands on the line over the head and the legs hanging. Before the ladder: walk.js says `climbing`
     // too, which is what a body with no clips (the Traveller) reaches up by.
     hangT = pose.roping === 'zip' ? hangT + dt : 0;
@@ -1365,6 +1397,15 @@ function buildRig(spec, material) {
       clipMix = damp(clipMix, 1, 10, dt);
       if (clipMix < 1e-3) return;
       applyClip(sampleClip(GAIT_CLIPS.hang, hangT / GAIT_CLIPS.hang.seconds, poseHang), clipMix, { arms: true, drop: false });
+      return;
+    }
+    // Walking along it: the Careful Walk at `ropeS` (above). An arm holding something keeps to it.
+    if (pose.roping === 'walk' && ropeClip()) {
+      clipFree = digByClip = false;
+      clipMix = damp(clipMix, 1, 10, dt);
+      if (clipMix < 1e-3) return;
+      const C = ropeClip();
+      applyClip(sampleClip(C, alongAt(C, ropeS), poseRope), clipMix, { drop: pose.grounded });
       return;
     }
     // On a rope ladder: Mixamo's Climbing Up A Ladder, played by height - a cycle per `rise` of
@@ -1380,7 +1421,9 @@ function buildRig(spec, material) {
       const step = ladderStep(ladder);
       const p = step ? sampleOnce(GAIT_CLIPS[step.clip], step.u, poseClimb) : sampleClip(GAIT_CLIPS.climb, climbU, poseClimb);
       applyClip(p, clipMix, { arms: true, drop: true });
-      // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs
+      // and both arms turned CLIMB_CLIP_LIFT about the shoulder, so the hands close on the rungs - not
+      // out of the water, where there are no rungs: the hands are on the planks' edge
+      if (step && step.clip === 'climbOut') return;
       for (const side of ['leftArm', 'rightArm']) {
         if (busy[side]) continue;
         liftQ.setFromAxisAngle(liftAxis, -CLIMB_CLIP_LIFT[side] * clipMix);
@@ -1584,14 +1627,16 @@ function buildRig(spec, material) {
     const onWay = !!pose.onLadder;
     // and where one clip of the climb hands over to another (onto the rungs, off them over the top)
     const stepNow = ladder && G.clips ? (ladderStep(ladder) || { clip: 'climb' }).clip : null;
-    if (!!ladder !== wasLadder || onWay !== wasOnWay || stepNow !== wasStep) {
-      keepPose(); fade = 1; wasLadder = !!ladder; wasOnWay = onWay; wasStep = stepNow;
+    // Onto a harpoon's line and off it the same: a walk into the Careful Walk or the hang.
+    const ropeNow = pose.roping || null;
+    if (!!ladder !== wasLadder || onWay !== wasOnWay || stepNow !== wasStep || ropeNow !== wasRope) {
+      keepPose(); fade = 1; wasLadder = !!ladder; wasOnWay = onWay; wasStep = stepNow; wasRope = ropeNow;
     }
     if (ladder) climbU = Number.isFinite(ladder.at) ? climbPhase(ladder.at, G) : climbStep(climbU, ladder.rise || 0, climbPerCycle(G), dt);
     else climbU = 0;
     // The Traveller has no clip for the step over the top: he lets go of the climb's reach as he comes
     // up over it, by how far over he is, and stands.
-    const reach = ladder && climbKind(G) === 'reach' ? settleReach(climbReach(climbU), ladder.top) : null;
+    const reach = ladder && climbKind(G) === 'reach' ? settleReach(climbReach(climbU), ladder.top ?? ladder.out) : null;
     const moving = pose.moving && pose.grounded && !pose.sitting && !pose.lying && !ride && !horse && !ladder;
     let distance = pose.distance;
     if (!Number.isFinite(distance)) {
@@ -1607,6 +1652,7 @@ function buildRig(spec, material) {
     speedOf = speedNow;
     const sprinting = pose.sprinting ?? (!!pose.running && sprintAt(G, speedNow) > 0);
     const gaitPose = gait.update(Math.max(0,distance), { ...pose, sprinting }, dt);
+    ropeS = pose.roping === 'walk' && ropeClip() ? (ropeS + Math.max(0, distance) / (ropeClip().stride * G.leg)) % 1 : 0;
     const run = gaitPose.run, dash = gaitPose.sprint;
     // In the air: how fast the jump is going, as a share of a sprint.
     const flying = !pose.grounded && !pose.swimming && !ride && !horse && !pose.sitting && !pose.lying;
@@ -1950,10 +1996,13 @@ function buildRig(spec, material) {
     fadeIn(dt);
     ropeArms = damp(ropeArms, pose.roping === 'walk' ? 1 : 0, 8, dt);
     if (ropeArms > 1e-3) {
+      const spread = ropeClip() ? ROPE_CLIP_SPREAD : ROPE_SPREAD;
       for (const side of ['leftArm', 'rightArm']) {
         if (busy[side]) continue;
-        liftQ.setFromAxisAngle(spreadAxis, (side === 'leftArm' ? -1 : 1) * ROPE_SPREAD * ropeArms);
+        liftQ.setFromAxisAngle(spreadAxis, (side === 'leftArm' ? -1 : 1) * spread * ropeArms);
         pieces[side].pivot.quaternion.premultiply(liftQ);
+        // and stretched: the clip's elbow, bent forward, pointed the forearm up once the arm was out
+        if (ropeClip()) chains[side].bend.quaternion.slerp(noTurn, ROPE_CLIP_STRETCH * ropeArms);
       }
     }
     for (const side of ['leftArm', 'rightArm']) {

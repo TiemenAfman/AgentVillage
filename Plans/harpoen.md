@@ -172,12 +172,27 @@ schip) is een pad. Het is een nieuwe stand in walk.js, `state.rope = { a, b, t, 
   laat los) laat je vallen.
 - **Vaste touwen** op het schip (de stagen van boegspriet naar mast) kunnen later met dezelfde code.
   Eerst alleen het harpoentouw.
-- **Animaties**: in `D:\Mixamo\anims\y-bot` staat geen koorddans- of zipline-clip. Wel *Catwalk Idle To
-  Walk Forward* (voet voor voet) en *Hanging Idle* (twee handen boven het hoofd). Het voorstel is
-  balanceren als de catwalk-gang met de armen procedureel uit en zijwaartse schommel uit `sway`, en
-  ziplinen als *Hanging Idle* met de benen iets opgetrokken. Voor de Reiziger wordt het procedureel,
-  zoals `climbReach`. Met `/mixamo-fetch` zoek ik nog naar een echte *balance walk*. Alles is te zien en
-  te beoordelen in `/avatar-motion.html` onder twee nieuwe knoppen, *Touwlopen* en *Zipline*.
+- **Animaties**: in de volledige bibliotheek (`D:\Mixamo\anims\y-bot`, 2419 clips, 9 oktober doorzocht) staat
+  geen koorddans-, balk- of ziplineclip. Het lopen is Mixamo's *Careful Walk* (`walking-c9c7fda5`, clip `ropeWalk`):
+  armen opzij (handen gemiddeld 0,55 been van de heup, de breedste van alle loopclips), de voeten bijna op één lijn
+  (0,10 been uit elkaar) en langzaam. Hij wordt op afstand gespeeld, maar niet gelijkmatig: de clip zwaait het ene been
+  in een seconde en het andere in twee, dus de bake schrijft per rij hoe ver de heupen in de pas zijn (`along`) en de rig
+  zoekt daarin op hoe ver het lijf gelopen is. Gelijkmatig gleed de staande voet twee keer zo ver. De armen van de clip
+  staan maar zo'n 37 graden uit, dus de rig tilt ze er nog `ROPE_CLIP_SPREAD` (0,55 rad) bij en strekt de elleboog grotendeels
+  (`ROPE_CLIP_STRETCH`), tot bijna horizontaal: koorddansersarmen, op verzoek van de keeper. Stil op het touw
+  blijft hij staan waar hij is, ook halverwege een pas. Alternatieven die zijn gemeten: *Male Careful Walk*
+  (`walking-c9c608c6`, voeten 0,30 uit elkaar, armen nauwelijks uit), *Catwalk Walk Forward Crossed* (voeten gekruist
+  op één lijn, maar de armen langs het lijf), *Sneak Walk* (armen voor het lijf, sluipend) en *Teeter* / *Wobbling*
+  (balanceren op een rand, maar staand, zonder pas). Ziplinen is *Hanging By Hands Gently Swaying* (`hang`, sinds 9 oktober). De Reiziger, die geen clips
+  speelt, loopt de gang met de armen procedureel opzij (`ROPE_SPREAD`) en reikt bij het glijden omhoog. Alles te zien in
+  `/avatar-motion.html` onder *Touwlopen* en *Zipline*, voor alle vier de lichamen.
+- **Tempo**: `ROPE_WALK` is 0,45, het wandeltempo (keuze van de keeper, 9 oktober). Omdat de voet niet mag glijden,
+  bepaalt de pas van de clip (1,53 been per twee stappen, 0,32 op de Avonturier) de cadans: bij de 0,9 van eerst was dat
+  ruim vijf stappen per seconde, nu zo'n tweeënhalf.
+- **Zipline**: `hang` was *Hanging From A Ledge Idle* (handen 0,5 been uit elkaar, tegen een muur). Sinds 9 oktober is het
+  *Hanging By Hands Gently Swaying* (`hanging-idle-c9c98f5f`, als `hanging-swaying.fbx`: vrij hangend, zacht zwaaiend,
+  loopt naadloos rond in 2,3 s), de keuze van de keeper. Bekeken en afgevallen: *Moving Sideways While Hanging From A Bar*
+  (schuift zijwaarts) en *Hanging* (één hand lager dan de andere).
 - **Anderen** zien je via de `y` en de positie die al over de lijn gaan. Hangt een peer aan een touw dat
   zij kennen, dan tekenen ze hem zo, zoals `ladderAt`. Anders lijkt het een val. Er komt geen pose-bit bij.
 
@@ -205,11 +220,12 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
 5. ✅ Het eigen schip naar land of een ander schip slepen (`harpoon-tow.js`, walk.js `onGunTow` na `stepUnderSail`),
    alleen een romp die deze pagina stapt. Een lijn die niemand inspoelt knapt als het schip wegdrijft.
 6. ✅ Over het touw: `takeRope` (C aan het harpoen, E bij de haak): lopen, glijden en eraf springen, met een echte
-   walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging Idle* (clip `hang`), bij het lopen de gewone gang
-   met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js). Allebei te zien in `/avatar-motion.html` onder
+   walk-mode-test. De houdingen: bij het glijden Mixamo's *Hanging By Hands Gently Swaying* (clip `hang`), bij het lopen de gewone gang
+   met beide armen opzij (`ROPE_SPREAD` in classic-avatar.js), sinds 9 oktober Mixamo's *Careful Walk* (`ropeWalk`) voor
+   elk lijf dat clips speelt (`tests/rope-walk-clip.test.mjs`). Allebei te zien in `/avatar-motion.html` onder
    *Touwlopen* en *Zipline*. De Reiziger, die geen clips heeft, reikt bij het glijden omhoog zoals op een ladder.
-   **Open**: een echte balansloop van Mixamo, zodra `/mixamo-fetch` klaar is (op 8 oktober om 16:00 stond het op
-   1531/2446) en er een tussen zit.
+   Touwtempo 0,45 en de zipline-clip zijn gekozen (9 oktober). **Open**: wat het lijf doet als het stilstaat halverwege
+   een pas op het touw (nu blijft het zo staan).
 7. ✅ Geluid: part `harpoons`, families `harpoon`, `ratchet` en `creak`.
 8. ✅ Fase B, de zee (`lib/harpoons.mjs`, lib/boats.mjs `tow`, net.js, harpoon-play.js):
    - **Het touw voor anderen**: `{t:'harpoon', a:'line'}`, alleen van wie aan boord is. Andere pagina's tekenen het
@@ -217,8 +233,11 @@ Het loopt via de cue-afspraak: `harpoon-fx.js` heeft een teller en een spannings
    - **De trek naar de schipper**: de pagina die het schip vaart, trekt het langs de lijn van de bemanning
      (`towByCrew`).
    - **Spelers grijpen**: `a:'hook'` gaat via de zee alleen naar de gegrepen speler, en nooit op diens eigen eiland.
-     Die wordt door de eigen pagina naar de reling gehaald (walk.js `pullTo`); Space rukt los.
+     Die wordt door de eigen pagina naar de reling gehaald (walk.js `pullTo`); Space rukt los. Aan de reling springt
+     hij in een korte boog (`OVER_S`, hoger als hij onder het dek losliet) over de bulwark het dek op, waar de schutter
+     van dat harpoen staat (`pullLanding`: `nearestStand` op haar model) en is vanaf dan crew (`onBoarded` →
+     `boardBoat`), net als bovenaan een ladder. Test: tests/harpoon-rope-walk.test.mjs.
    - **Een losse boot slepen**: de schutter haalt hem binnen en zegt de zee `{t:'boat', a:'tow'}`.
    - Een patch zonder `SEA_V`, maar anderen zien het pas na een redeploy van de open zee (stack 28, met de hand).
-   - **Open**: een speler die bij de reling aankomt, valt meestal naast het schip in het water: er is geen landing
-     op het dek uit de lucht. En van een gesleepte boot ziet een ander alleen de stappen die de zee doorgeeft.
+   - ✅ Een speler die bij de reling aankomt, landt op het dek (hierboven); vroeger viel hij meestal naast het schip.
+   - **Open**: van een gesleepte boot ziet een ander alleen de stappen die de zee doorgeeft.

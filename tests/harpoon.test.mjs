@@ -78,7 +78,8 @@ test('reeling brings a statue to a ship and leaves the ship where it is', () => 
   }
   assert.equal(r.L, REEL_MIN);
   assert.ok(dist(ship, statue) < REEL_MIN + 0.3, `drawn in (${dist(ship, statue)})`);
-  assert.ok(Math.hypot(ship.x, ship.z) < 0.6, `ship barely moved (${ship.x})`);
+  // the sloop weighs half what the galleon did (MASS.galleon 30): the statue's share of the pull is 1/31 of 20
+  assert.ok(Math.hypot(ship.x, ship.z) < 1.0, `ship barely moved (${ship.x})`);
 });
 
 test('a line never pushes, and pulls nothing that is land at both ends', () => {

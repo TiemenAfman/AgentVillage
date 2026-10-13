@@ -145,7 +145,7 @@ export function stepDeck(s, input, craft, dt, move) {
 // carried along it at one speed and a hull that pitches under it cannot make it fall.
 
 // How far outside the ropes' plumb line a climber's feet are: on the rungs, not in the hull.
-const CLIMB_OUT = 0.16;
+export const CLIMB_OUT = 0.16;
 // Every rope ladder is cut to the climb, not the climb to the ladder (the keeper's choice, 7 Oct
 // 2026): Mixamo's Climbing Up A Ladder on the Adventurer rises 0.5778 legs a cycle - 0.1220 on his
 // leg of 0.2111 - with each hand and each foot taking hold once a cycle, the left and the right half
@@ -186,11 +186,26 @@ const dist3 = (a, b) => {
 // the height of its feet then), straight up the outside of the hull to the bulwark, over it and
 // down onto the deck. Climbed backwards it is the way down. Points of { x, z, y }, y on the same
 // scale as a deck's, above DECK_Y.
+//
+// A ladder with a `port` (half the width of an opening in the bulwark, Plans/DONE/nieuwe-sloep.md: the
+// sloop's two entrances, the bulwark cut away to the deck) hangs to the deck's own level: `top` is
+// then the height of the planks at `land`, and the way goes straight in over the sill at that
+// height - three points, no climb over a rail. Mixamo's Climbing Up A Ladder To Standing
+// (web/js/ladder-way.js) then ends on the deck, where it was made to end, and never astride a
+// bulwark with one hand in the air. Without a `port` the way is what it always was, to the byte.
 export function ladderPath(craft, ladder, y0) {
   const s = sideOf(ladder);
   const out = s * (Math.abs(ladder.x) + CLIMB_OUT);
   const [lx, lz] = ladder.land;
   const floor = deckAt(craft, lx, lz);
+  if (ladder.port) {
+    return [
+      { x: out, z: ladder.z, y: y0 },
+      // The deck's level, still outside her skin: from here the step over the sill goes inward.
+      { x: out, z: ladder.z, y: ladder.top },
+      { x: lx, z: lz, y: floor === null ? ladder.top : floor },
+    ];
+  }
   return [
     { x: out, z: ladder.z, y: y0 },
     { x: out, z: ladder.z, y: ladder.top },
@@ -284,6 +299,11 @@ export function ladderDown(craft, lx, lz, dx) {
 // `x`, `z` is the ropes' plumb line, `hw` half the width between them, `foot` the height of the deck
 // under them (rung 0) and `top` of the rim they hang from; `land` is where a climber steps down inside
 // the top and `floor` the height there.
+//
+// Or, with `hole` (the sloop's, Plans/DONE/nieuwe-sloep.md): pins up the mast's own face and a lubber's hole in
+// the top's floor over them. Its `top` is that floor - there is no rim to go over - and the way off it is
+// up through the hole and a step aside onto the floor beside it (`land`), since what is ahead of the
+// climber is the mast. Without `hole` every sum here is the one it always was.
 
 // Where on the deck the foot of a mast ladder may be taken from: no further out from the ropes than this,
 // and no nearer (the climber's own spot is CLIMB_OUT out). And how far above `foot` the feet may be.
@@ -303,6 +323,8 @@ const alongOut = (l, d) => [l.x + l.out[0] * d, l.z + l.out[1] * d];
 // the floor inside. Climbed backwards it is the way down.
 export function aloftPath(l) {
   const [cx, cz] = alongOut(l, CLIMB_OUT);
+  // Through the hole: up the climber's line to the floor's height, and aside onto it.
+  if (l.hole) return [{ x: cx, z: cz, y: l.foot }, { x: cx, z: cz, y: l.top }, { x: l.land[0], z: l.land[1], y: l.floor }];
   const [ox, oz] = alongOut(l, -0.14);
   return [
     { x: cx, z: cz, y: l.foot },
@@ -329,10 +351,23 @@ export function aloftUp(craft, lx, lz, ly, px, pz) {
   return null;
 }
 
-// The mast ladder a body standing in the top is at the head of and pushing out over, or null.
+// How near the step-off beside a lubber's hole a body in the top has to stand to take the way down it, and
+// how squarely towards the hole it has to push.
+const HOLE_HEAD = 0.3;
+
+// The mast ladder a body standing in the top is at the head of and pushing out over, or null. Through a
+// hole: standing by where it is stepped off onto, pushing back towards the climber's line.
 export function aloftDown(craft, lx, lz, ly, px, pz) {
   if (!craft.aloft) return null;
   for (const l of craft.aloft) {
+    if (l.hole) {
+      if (Math.abs(ly - l.floor) > 0.3) continue;
+      if (Math.hypot(lx - l.land[0], lz - l.land[1]) > HOLE_HEAD) continue;
+      const [cx, cz] = alongOut(l, CLIMB_OUT);
+      const dx = cx - l.land[0], dz = cz - l.land[1], dl = Math.hypot(dx, dz) || 1;
+      if ((px * dx + pz * dz) / dl >= PUSH_DOWN) return l;
+      continue;
+    }
     if (ly < l.floor - 0.3 || ly > l.top) continue;
     const dx = lx - l.x, dz = lz - l.z;
     const along = dx * l.out[0] + dz * l.out[1];

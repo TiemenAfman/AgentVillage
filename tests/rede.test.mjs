@@ -29,7 +29,9 @@ import { blockOf, superOf } from '../shared/lattice.mjs';
 import { village, clone, key, stands, movedBetween } from './support/village.mjs';
 
 const SIZE = 128;
-const SEEDS = [5, 2024, 1337];
+// Seed 7 since the sloop (Plans/DONE/nieuwe-sloep.md): her smaller hull lies nearer her mooring, in the water
+// where the Batavia's sisters anchored beside her on the first three, which now lay them apart.
+const SEEDS = [5, 2024, 1337, 7];
 const SHIPS = ['civic:ship', 'civic:ship:2', 'civic:ship:3'];
 // The rungs, and the scans in between, of a village that grows to the top of the ladder.
 const STEPS = [40, 90, 95, 106, 113, 120, 127, 134, 142, 150, 158, 165, 175, 184, 192, 200];

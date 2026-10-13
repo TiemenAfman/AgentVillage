@@ -59,7 +59,7 @@ function harness() {
     onBuild: noop, onAvatar: noop, onExit: noop, onRelease: noop, onToggleMinimap: noop, onGive: noop,
   });
   const ship = { id: 'boat:abcd1234', x: 0, z: 0, yaw: 0, v: 0, craft: { spec: CRAFTS.galleon, object: null } };
-  return { walk, ship, left, camera };
+  return { walk, ship, left, camera, terrain };
 }
 
 test('a ship you jump from runs out on her own, and stops being run when she is done', () => {
@@ -68,6 +68,8 @@ test('a ship you jump from runs out on her own, and stops being run when she is 
   walk.board(ship);
   assert.ok(walk.leaveHelm(), 'could not step off the helm onto the deck');
   assert.equal(walk.onDeck(), ship);
+  // Her sails struck (S at the wheel): a ship under sail sails on instead (the next test).
+  ship.underSail = 0;
   // With nobody at the helm and nobody having jumped, she is stepped by the deck alone.
   assert.equal(walk.runningOut(), null, 'on her deck she is not "left running"');
   // Over the side: the body goes past the rail at the waist, the jump takes it off the planks.
@@ -139,8 +141,10 @@ test('a ship running out with no sails we know of is given the step that matches
   assert.equal(ship.underSail, 0.5);
 });
 
-test('over the side her sails are struck and she runs out as before', () => {
-  const { walk, ship, left } = harness();
+// Plans/schip-vaart-door.md: the wind does not care who is aboard. Over the side under sail she sails on,
+// stepped by the page that left her, until the ground strikes her sails - and then she runs out.
+test('over the side under sail she sails on, until the ground strikes her sails', () => {
+  const { walk, ship, left, terrain } = harness();
   ship.v = 8;
   ship.underSail = 0.75;
   walk.board(ship);
@@ -149,11 +153,35 @@ test('over the side her sails are struck and she runs out as before', () => {
   walk.state.deck.x = 1.95; walk.state.deck.z = 0;
   for (let i = 0; i < 240 && !left.length; i++) { walk.state.deck.x += 0.05; walk.update(FRAME); }
   assert.deepEqual(left, [ship.id]);
-  assert.equal(ship.underSail, 0, 'sails still set on a ship nobody is aboard');
+  assert.equal(ship.underSail, 0.75, 'the sails came down on a ship we jumped from');
+  // Twice her run-out, and she still makes three quarters of her top speed on her old heading.
+  const yaw0 = ship.yaw;
+  for (let t = 0; t < 2 * CRAFTS.galleon.sail.runOut * 60; t++) walk.runOut(FRAME);
+  assert.equal(walk.runningOut(), ship, 'nobody is stepping the ship that sails on');
+  const want = 0.75 * CRAFTS.galleon.sail.top;
+  assert.ok(Math.abs(ship.v - want) < 1e-6, `under ¾ sail she makes ${ship.v}, not ${want}`);
+  assert.ok(Math.abs(ship.yaw - yaw0) < 1e-9, 'with her rudder midships she turned');
+  // Land ahead: aground strikes her sails (boat.js stepUnderSail), and then she is done.
+  const shore = ship.z + 30;
+  terrain.worldHeight = (x, z) => (z > shore ? 1 : -2.5);
+  ship.z = shore - 1;
   let t = 0;
   for (; t < 100 * 60 && walk.runningOut(); t++) walk.runOut(FRAME);
+  assert.equal(walk.runningOut(), null, 'she sails on through the land');
+  assert.equal(ship.underSail, 0, 'aground with her sails still set');
+  assert.ok(ship.z <= shore + 1, `she went ${(ship.z - shore).toFixed(1)} up the beach`);
+  // With no sail set she runs out as she always did, within her run-out.
+  const bare = harness();
+  bare.ship.v = 8;
+  bare.walk.board(bare.ship);
+  bare.walk.leaveHelm();
+  bare.ship.underSail = 0;
+  bare.walk.state.deck.x = 1.95;
+  for (let i = 0; i < 240 && !bare.left.length; i++) { bare.walk.state.deck.x += 0.05; bare.walk.update(FRAME); }
+  t = 0;
+  for (; t < 100 * 60 && bare.walk.runningOut(); t++) bare.walk.runOut(FRAME);
   assert.ok(t / 60 < CRAFTS.galleon.sail.runOut, `she ran ${(t / 60).toFixed(0)} s, past her run-out`);
-  assert.equal(ship.v, 0);
+  assert.equal(bare.ship.v, 0);
   // And somebody else sailing her on (lib/boats.mjs handOn) ends our running her out at once.
   const again = harness();
   again.ship.v = 8;
@@ -164,6 +192,27 @@ test('over the side her sails are struck and she runs out as before', () => {
   assert.equal(again.walk.runningOut(), again.ship);
   again.walk.stopRunning(again.ship);
   assert.equal(again.walk.runningOut(), null);
+});
+
+// But not for ever (the keeper, 13 Oct 2026): ten minutes on, her sails come down by themselves and she
+// runs out - whichever comes first, that or something stopping her.
+test('under sail with nobody aboard her sails come down after ten minutes, and she runs out', () => {
+  const { walk, ship, left } = harness();
+  ship.v = 8;
+  walk.board(ship);
+  walk.leaveHelm();
+  ship.underSail = 1;
+  walk.state.deck.x = 1.95;
+  for (let i = 0; i < 240 && !left.length; i++) { walk.state.deck.x += 0.05; walk.update(FRAME); }
+  const step = 0.1;
+  for (let t = 0; t < 599; t += step) walk.runOut(step);
+  assert.equal(ship.underSail, 1, 'her sails came down before ten minutes were up');
+  for (let t = 0; t < 2; t += step) walk.runOut(step);
+  assert.equal(ship.underSail, 0, 'still under sail past ten minutes');
+  let t = 0;
+  for (; t < 100 / step && walk.runningOut(); t++) walk.runOut(step);
+  assert.equal(walk.runningOut(), null);
+  assert.equal(ship.v, 0);
 });
 
 test('main.js hands her on: our sails go with the letgo, and the sea word on who sails her is read', () => {
@@ -201,7 +250,7 @@ test('the camera takes only a share of the swell of the ship it is on', () => {
   // A hull pitched 0.2 rad (far more than her swell) with her wheel where the ship's is.
   const object = new THREE.Object3D();
   object.rotation.x = 0.2;
-  ship.craft = { spec: CRAFTS.galleon, object, camScale: 10, helm: { x: 0, y: 2, z: -3.2 } };
+  ship.craft = { spec: CRAFTS.galleon, object, camScale: 10, helm: { x: CRAFTS.galleon.helm[0], y: 2, z: CRAFTS.galleon.helm[1] } };
   ship.v = 8;
   walk.board(ship);
   walk.update(FRAME);

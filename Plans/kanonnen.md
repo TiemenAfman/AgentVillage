@@ -111,7 +111,7 @@ varend schip springt. Afvuren doet:
 - `state.pos` naar de monding, `state.vy` = de verticale component van `HUMAN_SPEED` (30 u/s, ~59 eenheden ver vanaf het dek, minder
   dan een kogel) maal de elevatie, en `drift` = de horizontale component. Voor de vlucht wordt
   `drift` niet gedempt: een nieuwe `launched`-vlag houdt hem vol tot de landing, zodat de baan een
-  echte parabool is. In het water houdt hij er hoogstens `SHOT_DRIFT` (diving.js) van over.
+  echte parabool is. In het water remt `driftRate` (diving.js) hem af: bij 30 u/s nog ~8 eenheden onder water door, ~4 aan het oppervlak.
 - `onLeftDeck` / `leaveBoat` zoals bij een sprong van het dek: je bent geen bemanning meer.
 - Landen in diep water is de bestaande `plungeSpeed`: je duikt een paar meter onder en zwemt weer
   op. Landen op land is de bestaande landing. Een val doet nu nergens schade, dus een kanonsvlucht

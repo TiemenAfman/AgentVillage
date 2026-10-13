@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
-import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf, checkResidents, RESIDENT_FIGURE } from '../scripts/model-rules.mjs';
+import { checkSet, checkAll, SHEETS, BUDGETS, HERO_BUDGET, budgetOf, checkResidents, RESIDENT_FIGURE, MOUNT_ANCHOR } from '../scripts/model-rules.mjs';
 import { RESIDENTS } from '../web/js/residents-mesh.js';
 import { KINDS, knownShape } from '../shared/shapes.mjs';
 import { GOLDPIT } from '../web/js/goldpit-mesh.js';
@@ -170,6 +170,30 @@ test('an anchor nothing reads is a typo, and two sets cannot share a part name',
   assert.deepEqual(checkSet('props', one({}, { anchors: { smoke: [0, 1, 0] } })), []);
   complains(checkSet('props', one({}, { anchors: { banner: [0, 1, 0] } })), /anchor\.banner is not one of/);
   complains(checkAll({ a: one({}), b: one({}) }), /already baked a part with that name/);
+});
+
+// A sailed ship's anchors (scripts/build-sloop.py, read by scripts/build-craft.mjs): the points
+// helm, nest and cargo; deck, stair, mast and port names with hyphens; walked rails, solids and climbs;
+// and a mount as a pair whose bearing is its yaw. Half a pair is refused, and so is a kind of mount
+// nobody can draw.
+test('a ship measures herself in pairs: ports, climbs with hyphens, mounts by kind, and three points', () => {
+  const pair = (name, lo = [0, 2, 0], hi = [1, 2, 1]) => ({ [`${name}.lo`]: lo, [`${name}.hi`]: hi });
+  const fine = {
+    helm: [0, 2, -3], nest: [0, 9, 0], cargo: [0, 2, 1],
+    ...pair('deck.forecastle-fore'), ...pair('stair.quarterdeck-s'), ...pair('port.1'), 'mast.fore-top': [0, 2, 3],
+    'rail.12.a': [1, 2, -2], 'rail.12.b': [1, 2, 2], ...pair('solid.stringer-p'), ...pair('climb.side-port'), ...pair('climb.mast'),
+    ...pair('mount.cannon-s'), ...pair('mount.harpoon'),
+  };
+  assert.deepEqual(checkSet('props', one({}, { anchors: fine })), []);
+  for (const name of ['port.a', 'mount.swivel', 'mount.cannon.s', 'climb.Side', 'deck.poop-']) {
+    complains(checkSet('props', one({}, { anchors: pair(name) })), new RegExp(`anchor\\.${name.replace(/\./g, '\\.')}\\.lo is not one of`));
+  }
+  for (const [name, end] of [['port.1', 'hi'], ['mount.cannon-s', 'lo'], ['climb.side-port', 'hi']]) {
+    const half = { ...fine };
+    delete half[`${name}.${end}`];
+    complains(checkSet('props', one({}, { anchors: half })), new RegExp(`is one corner of ${name.replace(/\./g, '\\.')} and the other is missing`));
+  }
+  assert.ok(MOUNT_ANCHOR.test('mount.harpoon-p.hi') && !MOUNT_ANCHOR.test('mount.harpoon-p'));
 });
 
 // The props, as a set. The barrel has two tests of its own below because it has to be the
@@ -380,8 +404,8 @@ test('the register spans every set and answers by part name alone', () => {
     'harpoon',
     'house_cottage_a', 'house_house_a', 'house_hut_a', 'house_manor_a',
     'lighthouse',
-    // The pirate ship, a hero like the Benchy: Greggory_Fisher's galleon (CC-BY-4.0) reduced
-    // to one painted mesh by scripts/build-pirateship.py.
+    // The pirate ship, a hero like the Benchy: the sloop, modelled from nothing and painted per
+    // corner by scripts/build-sloop.py.
     'pirateship',
     // The Salty Kraken's hanging sign, a hero because its carved kraken is most of it
     // (scripts/build-piratesign.py); the board and the lantern swing inside the one asset.
