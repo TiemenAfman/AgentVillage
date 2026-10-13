@@ -194,6 +194,27 @@ test('over the side under sail she sails on, until the ground strikes her sails'
   assert.equal(again.walk.runningOut(), null);
 });
 
+// But not for ever (the keeper, 13 Oct 2026): ten minutes on, her sails come down by themselves and she
+// runs out - whichever comes first, that or something stopping her.
+test('under sail with nobody aboard her sails come down after ten minutes, and she runs out', () => {
+  const { walk, ship, left } = harness();
+  ship.v = 8;
+  walk.board(ship);
+  walk.leaveHelm();
+  ship.underSail = 1;
+  walk.state.deck.x = 1.95;
+  for (let i = 0; i < 240 && !left.length; i++) { walk.state.deck.x += 0.05; walk.update(FRAME); }
+  const step = 0.1;
+  for (let t = 0; t < 599; t += step) walk.runOut(step);
+  assert.equal(ship.underSail, 1, 'her sails came down before ten minutes were up');
+  for (let t = 0; t < 2; t += step) walk.runOut(step);
+  assert.equal(ship.underSail, 0, 'still under sail past ten minutes');
+  let t = 0;
+  for (; t < 100 / step && walk.runningOut(); t++) walk.runOut(step);
+  assert.equal(walk.runningOut(), null);
+  assert.equal(ship.v, 0);
+});
+
 test('main.js hands her on: our sails go with the letgo, and the sea word on who sails her is read', () => {
   const src = readFileSync(new URL('../web/js/main.js', import.meta.url), 'utf8');
   assert.match(src, /letGoBoat\(it\.id, sailOf\(state\.walk\.onDeck\(\)\)\)/);

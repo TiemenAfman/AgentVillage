@@ -1621,8 +1621,13 @@ export function createWalkMode({
   // is aboard - stepped by this page with her rudder where `leaveHelm` left it, midships, until the
   // ground strikes her sails (stepUnderSail), somebody else sails her or we are on her again. Backed or
   // with no sail set she runs out on the water's drag, as before.
+  // But never for ever (the keeper, 13 Oct 2026): after SAIL_ON_S her sails come down by themselves and she
+  // runs out - whichever comes first, that or something stopping her.
+  const SAIL_ON_S = 600;
+  let sailedOn = 0;
   const sailing = (b) => !!b && heavy(b) && (b.underSail || 0) > 0;
   function letRun(b) {
+    sailedOn = 0;
     if (!sailing(b)) strikeSail(b);
     loose = b && heavy(b) && (sailing(b) || Math.abs(b.v || 0) > RUNNING) ? b : null;
   }
@@ -1637,7 +1642,9 @@ export function createWalkMode({
   }
   function runOut(dt) {
     const b = runningOut();
-    if (b) stepUnderSail(b, dt, boatGround(b));
+    if (!b) return b;
+    if (sailing(b) && (sailedOn += dt) > SAIL_ON_S) strikeSail(b);
+    stepUnderSail(b, dt, boatGround(b));
     return b;
   }
   // A hull is a reference plane (boat.js hullPointOf): where you stand on it is a point of its own
@@ -2632,6 +2639,39 @@ export function createWalkMode({
     if (state.onPullEnd) state.onPullEnd('boarded');
     if (state.onBoarded) state.onBoarded(b, { stowed: false });
     return afterMove(dt);
+  }
+  // Back aboard by the mermaid (Plans/schip-vaart-door.md, web/js/mermaid.js): out of the water and onto
+  // `ship`'s planks in one go - the nearest place to her middle her model lets a body stand
+  // (nearestStand, never a coordinate), her middle because the sea boards nobody further than a deck's
+  // reach from it (lib/boats.mjs BOARD_REACH). Whatever the arms held stays afloat where we swam
+  // (`letGo`, the statue's own way of never being lost). Not crew yet: the caller tells the sea once it
+  // has had a pose of us up here, as `hoist` does. False when there is nowhere on her to stand.
+  function mermaidAboard(ship) {
+    if (!ship || state.vehicle || state.deck || climb || onLine || pull || state.dying) return false;
+    const spec = specOf(ship), surface = ship.craft && ship.craft.walk;
+    if (!spec) return false;
+    const floor = deckAt(spec, 0, 0) ?? (DECK_Y + 1);
+    const at = surface
+      ? nearestStand(surface, 0, 0, floor + 0.2) || nearestStand(surface, 0, 0, floor + 0.2, 1.5)
+      : { x: 0, z: 0, y: floor };
+    if (!at) return false;
+    if (state.carry) letGo('mermaid');
+    if (state.sitting) standUp();
+    cancelDig('reset');
+    endDive();
+    deckBoat = ship;
+    state.deck = { boat: ship.id, x: at.x, z: at.z, y: at.y, vy: 0, grounded: true, yaw: state.yaw - ship.yaw };
+    state.pos.copy(hullPoint(ship, at.x, at.y, at.z));
+    planeOf(ship);
+    state.swimming = false;
+    state.grounded = true;
+    state.vy = 0;
+    drift = null;
+    state.floor = state.pos.y;
+    airTop = state.pos.y;
+    state.moving = state.running = state.sprinting = false;
+    place(camBack * 1.5);
+    return true;
   }
   function stepPull(dt) {
     // Over the rail already: past letting go, so Space no longer frees anybody from it.
@@ -4392,7 +4432,7 @@ export function createWalkMode({
     // `setDown()` is H (false and onBlocked('set') where she may not lie); `letGo(why)` is the hands
     // giving out - both end in the constructor's onLetGo with where she lies.
     setDown, letGo,
-    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, takeRope, onLine: () => !!onLine, pullTo, stopPull, pulled: () => !!pull, cargo: () => state.cargo, hoistOnto, lowerOff,
+    lift, putDown, carrying: () => state.carry, putOnBoat, takeAsCargo, takeOffBoat, takeRope, onLine: () => !!onLine, pullTo, stopPull, pulled: () => !!pull, cargo: () => state.cargo, hoistOnto, lowerOff, mermaidAboard,
     // A dig with the shovel. `dig(seconds = 2.5)` begins one (false if it may not); it ends in the
     // constructor's onDigDone(x, z, { from, yaw }) or onDigCancelled(reason). `cancelDig(reason)` is
     // for what only main.js sees (a blow: 'hit'); `digging()` says whether one is going and
