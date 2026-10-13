@@ -81,6 +81,13 @@ Chip 1 en chip 2 (a/b/c) kunnen parallel; chip 3 wacht op checkpoint A; chip 4 o
 - **Checkpoint A (keeper)**: boeg/boven/schaal goed, `W` gekozen, hoogte van het achterdek boven het
   hoofddek gelezen (< 0.75 → omhoog in de bouw).
 
+- **Checkpoint A, beantwoord (12 oktober)** - uit `refs/sloop/measure.json` (`scripts/measure-sloop.py`):
+  schaal en boeg akkoord; **diepgang `W` = 0,83** (kandidaat h35); romp 9, boegspriet tot z 6,91, breedte
+  3,34, hoofddek 2,03, achterdek 2,60, mast op z 0,55, nestvloer 8,52, roer z -2,5, open poort rond z 1,45.
+  **De hut is verzonken zoals in het gekochte model**, niet het achterdek omhoog (vervangt dat besluit):
+  hutvloer 1,35 (0,68 onder het hoofddek), stahoogte 1,17, trap omlaag 7 x 0,11 tussen z -0,9 en -0,3,
+  achterbak open naar de waist.
+
 ### Chip 2a — Anchor-grammatica, generator en bevroren oude getallen (vóór de bake; in-game niets anders)
 
 - `scripts/model-rules.mjs`: `ANCHORS += helm, nest, cargo`; `SHIP_ANCHOR` krijgt `port.<n>.lo|hi`;
