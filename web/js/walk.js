@@ -57,6 +57,9 @@ const EYE = PLAYER_EYE;
 // island into a platform game. Gravity is tuned to that arc rather than to reality: it
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
+// How far a deck's height may lie from the feet for a thing on it (a wheel, a gun) to be within reach: a few
+// treads of a stair, under the 0.57 between the sloop's waist and her quarterdeck.
+const STOREY = 0.4;
 // How quickly the stick turns a jumper's way in the air, per second (walk mode's `airWay`): at
 // 2.5 a standing jump pushed forward covers about half the ground a running one does.
 const AIR_STEER = 2.5;
@@ -1635,6 +1638,24 @@ export function createWalkMode({
     board(b);
     return true;
   }
+  // The height of the deck the wheel stands on, from the craft's own deck rectangles: the highest that
+  // holds the helm under a crow's nest's height. Null for a craft that has none (the rowing boat, whose
+  // whole deck is her helm), and then any height is the wheel's.
+  const helmFloors = new WeakMap();
+  function helmFloor(spec) {
+    if (!helmFloors.has(spec)) {
+      let y = null;
+      for (const r of spec.deck || []) {
+        if (r.y > 4 || Math.abs(spec.helm[0] - r.x) > r.hx || Math.abs(spec.helm[1] - r.z) > r.hz) continue;
+        if (y === null || r.y > y) y = r.y;
+      }
+      helmFloors.set(spec, y);
+    }
+    return helmFloors.get(spec);
+  }
+  // Whether feet at `y` are on the storey of a thing standing at `at` (null: on every one): within a
+  // stair's few treads of it, not a deck above or below.
+  const onStorey = (y, at) => at == null || Math.abs(y - at) < STOREY;
   // How far you are from the wheel. Nothing else is asked of a deck: there is no key for
   // stepping ashore or over the side - you jump, or you take the ladder - so the only thing
   // E does up here is the helm.
@@ -1647,7 +1668,10 @@ export function createWalkMode({
     const n = spec.nest;
     const away = n && !climb && d.y > n.floor ? Math.hypot(d.x - n.seat.x, d.z - n.seat.z) : Infinity;
     const nest = away <= (n ? n.reach : 0) ? away : null;
-    return { helm: Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]), boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
+    // The wheel only from its own deck: from the cabin under the sloop's quarterdeck it was a pace
+    // away through the planks, and E took the helm from below (13 Oct 2026). Like a room's `floor`.
+    const helm = onStorey(d.y, helmFloor(spec)) ? Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]) : Infinity;
+    return { helm, boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
   }
 
   // ---- rope ladders (Plans/DONE/lopen-op-de-boot.md, "Instappen") --------------------------------
@@ -2147,6 +2171,7 @@ export function createWalkMode({
     if (!d || !deckBoat || climb || d.seat || state.gun) return null;
     let best = null, bestD = 0.75;
     mountsOf().forEach((g, i) => {
+      if (!onStorey(d.y, g.y)) return;
       const away = Math.min(Math.hypot(d.x - g.stand[0], d.z - g.stand[1]), Math.hypot(d.x - g.x, d.z - g.z) - 0.3);
       if (away < bestD) { bestD = away; best = i; }
     });
