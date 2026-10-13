@@ -91,7 +91,7 @@ export const DIVE_COAST = 2.2;
 export const DIVE_DRIFT = 1;
 export const SURFACE_DRIFT = 3;
 // Those two rates are a boat's way, a few units a second. A body out of a gun's mouth comes down at
-// 12 to 21 (shared/cannon.mjs HUMAN_SPEED), and at 1/s it shot on under water a whole ship's length
+// 12 to 30 (shared/cannon.mjs HUMAN_SPEED), and at 1/s it shot on under water a whole ship's length
 // and more - the keeper's "je remt niet af in het water" (13 Oct 2026). Water's drag grows with the
 // speed, so past DRIFT_FREE each unit a second more adds DRIFT_DRAG to the rate: a boat's way below
 // it is what it was, a cannon's is mostly gone within a few units.
