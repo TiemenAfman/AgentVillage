@@ -1082,7 +1082,8 @@ run-out from full turbo or she freezes for everybody else while her own page sti
 (`tests/boat-inertia.test.mjs`). **A ship is sailed by her sails, not a throttle** ([Plans/galjoen-vaart-houden.md](Plans/galjoen-vaart-houden.md)):
 at her wheel W/S step `b.underSail` through `SAIL_STEPS` (-1 astern .. 1 full, boat.js `sailStep`; Shift is turbo
 only under full sail) and the setting stands with no key held, at the wheel and after `leaveHelm` alike - every
-step of her in walk.js is `stepUnderSail`, so a crew of one can man a gun; struck aground and by `letRun`.
+step of her in walk.js is `stepUnderSail`, so a crew of one can man a gun; struck aground, and by `letRun` only when
+none are set (below).
 **Every way off her is `letRun`** - over the rail, off her ladder, out of a gun (`launchSelf`), onto a harpoon line
 (`takeRope`): left standing, nobody stepped her and she lay frozen with her speed in `v` (the log's 75.8 kn is real:
 `top` 13 x 3/4). And a swimmer up her ladder steps her only if she is ours to (`c.crew` or `loose`), never a ship
@@ -1099,6 +1100,21 @@ climb off (`letRun` in walk.js, the three `onLeftDeck` sites) is kept in `loose`
 the wheel or you are on her again; she is `runningHull()` there, whose position is sent like
 `ownHull()`'s and whose echo from the sea is not taken back. Escape from the deck is not that:
 `exitWalk` stops her on purpose (`tests/ship-runout.test.mjs` drives the real walk mode headless).
+**Off her under sail, she sails on** ([Plans/schip-vaart-door.md](Plans/schip-vaart-door.md), Sea of Thieves): `letRun`
+strikes nothing while `underSail > 0`, and `runOut` steps her with `stepUnderSail` (rudder midships) until the ground
+strikes them, somebody else sails her, we are on her again, or `SAIL_ON_S` (600 s, the keeper's cap) brings them down.
+The page tells the sea with `leave`'s optional `sail`; lib/boats.mjs `moved` takes the leaver's word while it keeps
+coming (each one is another `runOut` of `coast.until`, and `freedAt` = now), `driftHome` waits while `coast` runs, and
+`release` of a leaver who is not aboard tells everybody she is nobody's (she lies still, home five minutes later). The
+sea steps no hull: a page gone is a ship stopped. main.js `wrapHull` takes her round the world as `wrapEye` does a body.
+**Lost at sea, a mermaid brings you back** (`web/js/mermaid.js`, main.js `mermaidFrame`/`mermaidHome`): swimming, on no
+hull, more than `MERMAID_FAR` (40) from `state.lastShip` (the last ship we were crew of, set in `onBoarded` and `hoist`)
+for `MERMAID_AFTER_S` (10), and she comes up `MERMAID_AHEAD` towards that ship under a column of glowing smoke and a
+glow on the water (additive points and a disc, `renderOrder` 20 so the transparent sea does not paint over them; never a
+light). This page's alone, nothing on the wire. E at her: `walk.mermaidAboard(ship)` (`letGo('mermaid')` first - the
+statue floats where we swam; then `nearestStand` round her middle, since the sea boards nobody past `BOARD_REACH` of
+it) and `boardBoat` 300 ms later, once the sea has had a pose of us up there, as `hoist` does. `__state.mermaid.t = 9.9`
+brings her from the console. Her figure is a placeholder of primitives until the keeper picks a model.
 And `ownHull()` in main.js is the hull that is ours whether at the wheel, on the planks or on her
 ladder. **A ship has no key to board or leave** (`isShip` in main.js: no `boat` interactable,
 none from a dock): she is boarded by walking into the foot of one of her two rope ladders

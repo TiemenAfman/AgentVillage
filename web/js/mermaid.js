@@ -152,7 +152,7 @@ export function createMermaid({ scene }) {
         vec3 p = vec3(cos(a) * r, life * ${SMOKE_H.toFixed(1)}, sin(a) * r);
         vAlpha = sin(life * 3.14159) * (1.0 - life * 0.5);
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = (0.9 + life * 2.2) * uScale / max(0.5, -mv.z);
+        gl_PointSize = (0.5 + life * 1.6) * uScale / max(0.5, -mv.z);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
@@ -163,10 +163,12 @@ export function createMermaid({ scene }) {
         vec2 q = gl_PointCoord * 2.0 - 1.0;
         float d = dot(q, q);
         if (d > 1.0) discard;
-        gl_FragColor = vec4(uColour * (1.0 - d) * (1.0 - d) * vAlpha * uFade * 0.55, 1.0);
+        gl_FragColor = vec4(uColour * (1.0 - d) * (1.0 - d) * vAlpha * uFade * 0.5, 1.0);
       }`,
   }));
   smoke.frustumCulled = false;
+  // After the water (transparent, drawn back to front by its far-off middle), or the sea paints over both.
+  smoke.renderOrder = 20;
   group.add(smoke);
 
   // The glow on the water under her.
@@ -180,11 +182,12 @@ export function createMermaid({ scene }) {
       void main() {
         float d = length(vUv - 0.5) * 2.0;
         float ring = 0.6 + 0.4 * sin(uTime * 2.0 - d * 6.0);
-        gl_FragColor = vec4(uColour * pow(max(0.0, 1.0 - d), 2.0) * ring * uFade * 0.6, 1.0);
+        gl_FragColor = vec4(uColour * pow(max(0.0, 1.0 - d), 2.0) * ring * uFade, 1.0);
       }`,
   }));
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = 0.03;
+  glow.position.y = 0.1;
+  glow.renderOrder = 20;
   group.add(glow);
   scene.add(group);
 

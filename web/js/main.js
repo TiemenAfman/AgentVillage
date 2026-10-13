@@ -4677,7 +4677,8 @@ function wrapEye() {
 // than MERMAID_FAR from the last ship we were crew of - for MERMAID_AFTER_S, and she comes up ahead of us,
 // towards that ship, under her column of glowing smoke. E at her (`mermaid` in interactables) is
 // mermaidHome. This page's alone: nothing of her is on the wire.
-const mermaidState = newMermaid();
+// On `state` for the console (`__state.mermaid.t = 9.9` brings her on the next frame).
+const mermaidState = state.mermaid = newMermaid();
 let mermaid = null;
 // Water she may come up in: deep enough to dive in, as a statue afloat wants (walk.js floatAt).
 const mermaidWater = (x, z) => state.sea.height(x, z) < -0.6;

@@ -42,7 +42,7 @@ Zolang niets haar stopt. Dat kan zijn:
   brengt je daar dan naartoe.
 - **Iemand anders** pakt het roer of gaat aan boord: `take`/`handOn`, de bestaande overdracht.
 - **De verbinding** van wie haar uitliet (zie 1).
-- **`SAIL_ON_S`** (keuze voor de keeper, zie vraag 3): een plafond, waarna de zeilen vanzelf zakken en ze
+- **`SAIL_ON_S`** (600 s, besluit van de keeper): een plafond, waarna de zeilen vanzelf zakken en ze
   uitrolt.
 
 ## 3. De wereldrand
@@ -78,7 +78,7 @@ ziet haar stilliggen. Dat is hetzelfde bekende gat als bij galjoen-vaart-houden.
   boot, en
 - **je schip** (zie hieronder) ligt verder dan `MERMAID_FAR` (40 eenheden, ruim buiten zicht van haar
   ladders) of is van de kaart, en
-- dat is al `MERMAID_AFTER_S` (20 s) aan één stuk zo. Uit het water of dichtbij zet de klok terug op 0.
+- dat is al `MERMAID_AFTER_S` (10 s) aan één stuk zo. Uit het water of dichtbij zet de klok terug op 0.
 
 Dan komt ze boven `MERMAID_AHEAD` (6) voor je, naar de kant van je schip, op water dat diep genoeg is
 (`canDive`) en zonder dek erboven. Daar blijft ze tot je haar gebruikt, het water uit gaat, je schip
@@ -126,16 +126,25 @@ E bij haar (binnen `MERMAID_REACH` 2,5, zwemmend) doet dit:
    `board` niet. Vanaf dan ben je crew. Vaart zij nog onder jouw zeil (`loose`), dan stapt `update()` haar
    weer.
 
-## Vragen voor de keeper
+## Besluiten van de keeper (13 oktober)
 
-1. Het model van de zeemeermin: een bake in eiland-stijl (aanbevolen), Pixal3D van een referentieplaatje
-   (GPU nodig, jouw go), of de Wanderer-vrouw met een staart.
-2. Welk schip: het laatste waarvan je crew was (aanbevolen), alleen het galjoen van je eigen eiland, of
-   elk schip waarvan je ooit crew was.
-3. Hoe lang ze doorvaart: tot iets haar stopt (aanbevolen), of zakken de zeilen na 10 minuten vanzelf.
-4. Wanneer ze komt: na 20 s zwemmen, 40+ eenheden van je schip (aanbevolen), of sneller (10 s), of
-   trager (45 s).
+- **Welk schip**: het laatste waarvan je crew was (`state.lastShip`).
+- **Doorvaren**: tot iets haar stopt, maar **hoogstens 10 minuten** (`SAIL_ON_S` in walk.js). Wat eerder komt, wint.
+- **Timing**: na **10 s** (`MERMAID_AFTER_S`). In Sea of Thieves zijn het een paar seconden.
+- **Uiterlijk**: nog open. De keeper vraagt wat het verschil is tussen een bake in Blender en Pixal3D. Tot hij
+  kiest, is ze een plaatshouder van primitieven (`bodyGeometry`/`tailGeometry` in mermaid.js).
+
+## Wat er gebouwd is
+
+- Zee: `leave` met `sail`, `moved` verlengt het venster van wie haar uitlaat, `driftHome` wacht, `release`
+  meldt het aan iedereen (lib/boats.mjs; tests/boat-inertia.test.mjs).
+- Pagina: `letRun` strijkt alleen een schip zonder zeil, `runOut` stapt onder zeil met het plafond van 10
+  minuten, `wrapHull` (tests/ship-runout.test.mjs, tests/ladder-moving-hull.test.mjs).
+- Zeemeermin: web/js/mermaid.js, `walk.mermaidAboard`, main.js `mermaidFrame`/`mermaidHome`
+  (tests/mermaid.test.mjs). Getest in de preview: ze komt op, de rook is van ver te zien, en E zet je op het dek.
 
 ## Open
 
+- Het model van de zeemeermin (Blender-bake of Pixal3D), daarna eventueel een Mixamo-clip op ons lijf bij het oppakken.
 - De zee stapt geen verlaten romp. Dat zou een eigen plan zijn (stepBoat naar `shared/`, terrein op de zee).
+- In-game nalopen met twee spelers: ziet de ander het doorvarende schip na een redeploy van de open zee.
