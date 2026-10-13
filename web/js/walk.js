@@ -57,6 +57,9 @@ const EYE = PLAYER_EYE;
 // island into a platform game. Gravity is tuned to that arc rather than to reality: it
 // puts the player back on the ground in about half a second.
 const JUMP_V = 3.1;
+// How far a deck's height may lie from the feet for a thing on it (a wheel, a gun) to be within reach: a few
+// treads of a stair, under the 0.57 between the sloop's waist and her quarterdeck.
+const STOREY = 0.4;
 // How quickly the stick turns a jumper's way in the air, per second (walk mode's `airWay`): at
 // 2.5 a standing jump pushed forward covers about half the ground a running one does.
 const AIR_STEER = 2.5;
@@ -1644,11 +1647,14 @@ export function createWalkMode({
     state.bob += dt * 1.2;
     return afterMove(dt);
   }
-  // From the helm onto the deck, a pace forward of the wheel.
+  // From the helm onto the deck, where the pilot stood. It was a pace forward of the wheel, which on the
+  // galleon was clear deck and on the sloop is her binnacle (build-sloop.py: the stand aft of the wheel,
+  // the binnacle 0.42 before it): the body was put down inside it, on the cabin floor a deck below
+  // (13 Oct 2026). The stand is the bake's `anchor.helm`, measured clear (tests/sloop-bake.test.mjs).
   function leaveHelm() {
     const b = state.vehicle, spec = specOf(b);
     if (!b || !spec || spec.crew < 2) return false;
-    let x = spec.helm[0], z = spec.helm[1] + 0.6;
+    let x = spec.helm[0], z = spec.helm[1];
     let y = deckAt(spec, x, z);
     if (y === null) return false;
     // A pace forward of the wheel, wherever the model has room for one: the plinth the wheel stands
@@ -1676,6 +1682,24 @@ export function createWalkMode({
     board(b);
     return true;
   }
+  // The height of the deck the wheel stands on, from the craft's own deck rectangles: the highest that
+  // holds the helm under a crow's nest's height. Null for a craft that has none (the rowing boat, whose
+  // whole deck is her helm), and then any height is the wheel's.
+  const helmFloors = new WeakMap();
+  function helmFloor(spec) {
+    if (!helmFloors.has(spec)) {
+      let y = null;
+      for (const r of spec.deck || []) {
+        if (r.y > 4 || Math.abs(spec.helm[0] - r.x) > r.hx || Math.abs(spec.helm[1] - r.z) > r.hz) continue;
+        if (y === null || r.y > y) y = r.y;
+      }
+      helmFloors.set(spec, y);
+    }
+    return helmFloors.get(spec);
+  }
+  // Whether feet at `y` are on the storey of a thing standing at `at` (null: on every one): within a
+  // stair's few treads of it, not a deck above or below.
+  const onStorey = (y, at) => at == null || Math.abs(y - at) < STOREY;
   // How far you are from the wheel. Nothing else is asked of a deck: there is no key for
   // stepping ashore or over the side - you jump, or you take the ladder - so the only thing
   // E does up here is the helm.
@@ -1688,7 +1712,10 @@ export function createWalkMode({
     const n = spec.nest;
     const away = n && !climb && d.y > n.floor ? Math.hypot(d.x - n.seat.x, d.z - n.seat.z) : Infinity;
     const nest = away <= (n ? n.reach : 0) ? away : null;
-    return { helm: Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]), boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
+    // The wheel only from its own deck: from the cabin under the sloop's quarterdeck it was a pace
+    // away through the planks, and E took the helm from below (13 Oct 2026). Like a room's `floor`.
+    const helm = onStorey(d.y, helmFloor(spec)) ? Math.hypot(d.x - spec.helm[0], d.z - spec.helm[1]) : Infinity;
+    return { helm, boat: deckBoat, nest, seat: n ? n.seat : null, seated: !!d.seat };
   }
 
   // ---- rope ladders (Plans/DONE/lopen-op-de-boot.md, "Instappen") --------------------------------
@@ -2192,6 +2219,7 @@ export function createWalkMode({
     if (!d || !deckBoat || climb || d.seat || state.gun) return null;
     let best = null, bestD = 0.75;
     mountsOf().forEach((g, i) => {
+      if (!onStorey(d.y, g.y)) return;
       const away = Math.min(Math.hypot(d.x - g.stand[0], d.z - g.stand[1]), Math.hypot(d.x - g.x, d.z - g.z) - 0.3);
       if (away < bestD) { bestD = away; best = i; }
     });
@@ -3951,7 +3979,15 @@ export function createWalkMode({
     toLocal(frame, state.pos.x, state.pos.z, hullLocal);
     const lid = walkMap.ceilingIn ? walkMap.ceilingIn(hullLocal[0], hullLocal[1], pivotY - base) : null;
     const reach = Math.min(pivotY - base + 0.5, lid == null ? Infinity : lid - 0.05);
-    return { frame, base, walk: walkMap, reach, lid };
+    return { frame, base, walk: walkMap, reach, lid, covered: lid != null && lid - (pivotY - base) < COVER };
+  }
+  // How close over a point a lid of hers has to be for the point to be under cover - in a cabin - and
+  // not merely under a yard or her crow's nest. The sloop's cabin has 1.17 of headroom.
+  const COVER = 1.4;
+  // Whether a point of the scene is under cover of hers (hullLidAt within COVER over it).
+  function hullCovered(h, x, y, z) {
+    const lid = hullLidAt(h, x, y, z);
+    return lid != null && lid - y < COVER;
   }
   function hullDeckAt(h, x, z) {
     toLocal(h.frame, x, z, hullLocal);
@@ -3965,7 +4001,9 @@ export function createWalkMode({
     const c = h.walk.ceilingIn(hullLocal[0], hullLocal[1], y - h.base);
     return c == null ? null : h.base + c;
   }
-  // Whether the point is inside something the boom must stop at, of what is sampled.
+  // Whether the point is inside something the boom must stop at, of what is sampled. `walled` says the
+  // last one was a cabin's wall (see below).
+  let walled = false;
   function solidPoint(x, y, z) {
     const g = camDive > 0 ? Math.max(heightUnder(x, z), bedUnder(x, z)) : heightUnder(x, z);
     if (y < g + CAM_R * 0.5) return true;
@@ -3987,6 +4025,12 @@ export function createWalkMode({
         const lid = hullLidAt(camHull, x, y, z);
         if (lid != null && y > lid - CAM_R) return true;
       }
+      // And the walls of a cabin, which the walk map cannot see (it is cut with vertical lines, and a
+      // bulkhead is vertical): from under cover the boom stops where the cover ends, and from the open
+      // deck where it begins. In the sloop's cabin the boom went out through the bulkhead into the
+      // stairwell, and all the keeper saw was the wall with the body in its door (13 Oct 2026).
+      // armReach keeps the lens's room short of it (`walled`), or it stands in the plane of the wall.
+      if (hullCovered(camHull, x, y, z) !== camHull.covered) { walled = true; return true; }
     }
     return false;
   }
@@ -4023,8 +4067,9 @@ export function createWalkMode({
     const step = Math.max(0.06, best / 80);
     let open = false;
     for (let t = 0; t <= best; t += step) {
+      walled = false;
       if (solidPoint(ax + dx * t, ay + dy * t, az + dz * t)) {
-        if (open) { best = Math.max(0, t - step); break; }
+        if (open) { best = Math.max(0, t - step - (walled ? CAM_R : 0)); break; }
       } else open = true;
     }
     return best;
@@ -4146,8 +4191,11 @@ export function createWalkMode({
     // where the camera ended up, for its lid.
     armDir.copy(camera.position).sub(pivot);
     const want = armDir.length();
-    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all.
-    if (cameraFixed()) armLen = want;
+    // Settings -> On foot -> Fixed distance (camera-prefs.js, on by default): no boom at all - except
+    // in a ship's cabin, under her deck (camHull.covered): there is no seeing a body in there from
+    // outside its walls, and with no boom the camera stood in the stairwell looking at the bulkhead
+    // with the body in its door (the sloop, 13 Oct 2026).
+    if (cameraFixed() && !(camHull && camHull.covered)) armLen = want;
     else if (want > 1e-6) {
       armDir.divideScalar(want);
       // How far it may reach this frame, at once: nothing between the camera and the body, ever.

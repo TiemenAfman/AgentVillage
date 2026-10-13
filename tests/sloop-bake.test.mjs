@@ -215,15 +215,14 @@ function crosses(a, b) {
   return false;
 }
 
-test('the guns stand on the waist and see out of their ports; the harpoon is on her middle line, over the bow', () => {
+test('the guns stand on the waist and point square out; the harpoon is on her middle line, over the bow', () => {
+  // That they fire over her cap rail, drawn at their `scale`, is tests/cannon.test.mjs's: it lays the barrel.
   const guns = Object.entries(mounts).filter(([n]) => n.startsWith('cannon'));
   assert.equal(guns.length, 2);
   for (const [name, { lo, hi }] of guns) {
     assert.equal(lo[1], A['deck.waist.lo'][1], `mount.${name} is not on the waist`);
     const s = Math.sign(hi[0] - lo[0]);
     assert.ok(Math.abs(hi[2] - lo[2]) < 1e-9 && s !== 0, `mount.${name} does not point square out`);
-    // the bore's line, a hand and a half over the deck, out past her side
-    assert.ok(!crosses([hi[0], hi[1] + 0.15, hi[2]], [s * 2.2, hi[1] + 0.15, hi[2]]), `mount.${name} fires into her own bulwark`);
   }
   const { lo, hi } = mounts.harpoon;
   assert.ok(Math.abs(lo[0]) < 0.05 && Math.abs(hi[0]) < 0.05, 'the harpoon is off her middle line');

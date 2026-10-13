@@ -119,8 +119,9 @@ const DT = 1 / 60;
 const galleon = CRAFTS.galleon;
 
 // The sloop's floors (scripts/build-sloop.py, read off her bake into the craft): the main deck, the cabin's
-// sunk under it with the stern well, the quarterdeck over the cabin; and where her mast stands.
-const MAIN = deckAt(galleon, 0, 1.8), CABIN = deckAt(galleon, 0, -3.6), QUARTER = deckAt(galleon, 0.5, -2.2);
+// sunk under it, the quarterdeck over the cabin to the transom; and where her mast stands. The cabin is
+// asked for at the companion's foot, where the quarterdeck is not over it (deckAt is the highest).
+const MAIN = deckAt(galleon, 0, 1.8), CABIN = deckAt(galleon, 0, -1.21), QUARTER = deckAt(galleon, 0.5, -2.2);
 const MAST_Z = galleon.rails.find((r) => r.top === undefined && r.hx === r.hz && r.x === 0).z;
 
 test('a bulwark stops a walker and a jump goes over it, which is how you leave a ship', () => {
@@ -203,7 +204,7 @@ test('the stairs are walked from their foot to their head, and the walls beside 
   assert.ok(over && j.y < QUARTER - 0.5, `jumped the balustrade to z ${j.z.toFixed(2)}, y ${j.y}`);
 });
 
-test("her decks are one connected deck: from the companion's foot to the bow, and the stern well beside the cabin", () => {
+test("her decks are one connected deck: from the companion's foot to the bow, and the quarterdeck to the transom", () => {
   // Along her middle from the companion to the tip of the bow the planking never breaks off and no step is
   // bigger than half a riser of her stairs where a ramp meets a deck.
   let last = null;
@@ -214,9 +215,8 @@ test("her decks are one connected deck: from the companion's foot to the bow, an
     last = y;
   }
   assert.ok(Math.abs(deckAt(galleon, 0.1, 3.7) - MAIN) < 1e-9, "the bow at the main deck's height");
-  // The cabin's floor and the stern well's are one height, a wall's breadth apart.
-  assert.equal(deckAt(galleon, 0.1, -3.04), null, 'the back wall');
-  assert.equal(deckAt(galleon, 0.1, -3.8), CABIN);
+  // The quarterdeck is one floor from its front to the transom, with no stern well behind it.
+  for (let z = -1.5; z >= -4.4; z -= 0.1) assert.equal(deckAt(galleon, 0.1, z), QUARTER, `the quarterdeck at z ${z.toFixed(1)}`);
 });
 
 test('a rope ladder is walked into at its foot and out onto at its head, on either side', () => {

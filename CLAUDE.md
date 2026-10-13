@@ -931,14 +931,20 @@ ramp through its treads' middles (half a riser over its foot and its head), or t
 tread's end. `beam` is her breadth up to a body's height over her highest deck, not her yard's arms. boat.js reads
 `HELM_AT`, `near`, `beam` and `cargo` off the craft; `SHIP_TALL` is gone (`GALLEON.tall`).
 **She is the sloop now** (`scripts/build-sloop.py`, Plans/DONE/nieuwe-sloep.md, 9 long, crew 5): a main deck at 1.15
-over DECK_Y, a cabin's floor sunk 0.68 under it with the stern well behind, a quarterdeck at 1.72 over the cabin,
-two entry ports cut to the deck (her ladders' `port`) and two gun ports, two cannons and one harpoon on her
-middle line over the bow (mounts `[cannon-s, cannon-p, harpoon]`). **The walk map's vertical cut never meets a
-plumb face** (a vertical triangle has no area in plan): what keeps a body out of a wall of hers is a face in the
-band over a step and a hand and under a head (0.33 to 0.55: a rail at 0.4, the mast's partners, the top's rim
-at 0.36, a bulwark's cap at 0.335) or no floor under it (the cabin's and the well's floors are cut at the back
-wall but for the door's threshold). A plumb wall with floor on both sides is walked through.
+over DECK_Y, a cabin's floor sunk 0.68 under it, a quarterdeck at 1.72 over the cabin **to the transom** (no stern
+well: the keeper had the box with an open well behind it taken out, 13 Oct 2026; cabin and quarterdeck are each two
+deck rectangles, `-aft` for the narrow stern), two entry ports cut to the deck (her ladders' `port`, each its own
+`deck.entry-*` rectangle, the ladder landing just inside it), two cannons over the cap rail (no gun ports; closed
+ports as dressing) and one harpoon on her middle line over the bow (mounts `[cannon-s, cannon-p, harpoon]`).
+**The walk map's vertical cut never meets a plumb face** (a vertical triangle has no area in plan): what keeps a
+body out of a wall of hers is a face in the band over a step and a hand and under a head (0.33 to 0.55: a rail at
+0.4, the mast's partners, the top's rim at 0.36, a bulwark's cap at 0.335) or no floor under it. A plumb wall
+with floor on both sides is walked through - and seen through by the camera, unless it is a cabin's (below).
 
+**A gun on her may be drawn larger than its bake** (the mount's `scale`, `MOUNT_LIMITS` in scripts/build-craft.mjs,
+applied in web/js/cannon.js `layPoint`, so muzzle, vent and the welded corners all follow): the sloop's are 1.8,
+to fire over her cap rail, and laid no lower than level (`pitchLim` [0, 0.42]: below it the muzzle is in the cap).
+`tests/cannon.test.mjs` lays the barrel at every limit and fails on a corner seen through her hull.
 **The galleon's guns are mounts, manned from her deck** ([Plans/kanonnen.md](Plans/kanonnen.md)). Her bake's own
 eight guns were dropped from the download (the sloop of `scripts/build-sloop.py` never had any of her own); the
 keeper's model is the set `cannon` (`scripts/build-cannon.py` from `assets/cannon/source/martijn-cannon.fbx`:
@@ -1107,7 +1113,15 @@ her plan and writes where it meets a surface, at what height, and whether it is 
 `tests/shipwalk.test.mjs` fails on a stale one). Floor is the highest surface within a step of the
 feet with a body's air above it, an obstacle is anything at all in a body's height above that,
 and a footprint has to be held up all round, so a bulwark's top is not walked along and a ledge is
-not walked off: what is left is a jump. The sea walks nobody on a ship and clamps a claimed
+not walked off: what is left is a jump. **A floor is never looked for through a surface at the feet**:
+`floorIn` stops at a surface at or under the feet that has no air over it (something stands on it), or the
+quarterdeck's planks under her binnacle gave the cabin's floor a deck lower and a body put down or landing
+there was in the cabin (the keeper, 13 Oct 2026); a fall whose feet pass any surface (`hitIn`) is set down
+beside it; and on the ground `blockedAt` asks an inner ring too (`CORE`), since a thing thinner than the gaps of
+the outer ring (the binnacle, 0.16) stood inside a body. `tests/sloop-walk.test.mjs` walks and jumps from every
+place on every deck of hers and fails on feet passing a surface of their own column. A thing on her is offered
+(E) only from its own deck (walk.js `onStorey`, `STOREY`: the wheel's deck from the craft's rectangles, a gun's
+from its mount), never through the planks from the cabin. The sea walks nobody on a ship and clamps a claimed
 position to the coarse rectangles of `shared/crafts.mjs` (also where a ladder lands, and the
 fallback for a craft with no model); `tests/deck-bake.test.mjs` keeps those honest against the bake.
 The same cut also writes **her side at the waterline** (`SHIPWALK.side`, `sideCut`: per 0.1 of her length the
@@ -1131,7 +1145,7 @@ not 4 (an older sea holds a climber halfway up the mast). E in the nest is `craf
 (`walk.sitOnDeck`: a seat in her frame, the SITTING bit). `stepHull` lands only on a floor the feet passed
 this frame - it used to land on any floor under them, eight units down from the nest in one frame - and a
 body come down astride a rim is nudged (`NUDGE`) to where it can stand, never to a floor a step lower.
-Anywhere a body is *put* on a ship (where a ladder lands, a pace ahead of the wheel) is
+Anywhere a body is *put* on a ship (where a ladder lands, the pilot's stand on leaving the wheel) is
 `nearestStand`, never a coordinate. The pilot stands on her quarterdeck behind the wheel (`SHIP_HELM`, the
 model's floor at `helm`).
 **A hull's swell is the craft's** (`swell` in shared/crafts.mjs, `swellOf` in boat.js, on the sea's clock:
@@ -1789,7 +1803,9 @@ The chart (`createWorldMap`, M on foot, M or the Map chip from the sky - `skyMap
 shows the whole world, `WORLD_HALF` (2016) round the volcano in `shared/regions.mjs`, with a
 line every `KM` (252 units, a sixteenth: A-P by 1-16) and every islet (`mapIslets`, once per
 fleet and berth). **The world is round by a jump** ([Plans/DONE/ronde-wereld.md](Plans/DONE/ronde-wereld.md)):
-past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back
+past `WORLD_HALF` `wrapEye` in main.js moves body, hull and bicycle the whole width back - and the hull we
+stand, climb or hang on without her wheel (`walk.onDeck()`): a body on a deck is a point of her frame, and moved
+without her it was put back beside her past the edge every frame (a toast a frame, the body drawn a world away)
 (`wrapShift`) before walk mode steps, `pushSample` (timeline.js) starts a track again on a
 jump of over half the world instead of gliding it, `nextOrigin` keeps every island's room
 `SEA_BAND` (900) off the edge, and `setFogRange` closes the haze in near it (`edgeReach`) so
@@ -2029,10 +2045,16 @@ ladder lands is `ladderLanding` in web/js/ladder-way.js (`nearestStand` on her w
 at `land`), the one reading for walk.js `startClimb`, `hoistOnto`, `ladderAt` (what another page reads off a
 climber over the top) and the workbench's *Poortladder* (the galleon with a port ladder at her waist; her bulwark
 still stands there until the sloop's bake cuts the port) - the end of the way is substituted before `climbWay`, so
-the clip ends where `ladderUp` lands. How far from her middle a ladder is looked for is the craft's `near` (7
+the clip ends where `ladderUp` lands. `climbWay` draws the step over the top out up to `STRETCH` (1.4) to reach a
+landing a little further in, as it presses it into a nearer one: what is past the clip's end is walked at the
+climb's pace after standing up, which on the sloop was a slide over the planks. How far from her middle a ladder is looked for is the craft's `near` (7
 without one). **A hull may have a lid**: `createSurface(...).ceilingIn(x, z, y)` (shared/hullwalk.mjs) is the
 lowest *level* surface over a point (a rope of the rigging is no lid), and walk.js `hullForCamera` bounds the
-floors under the camera at the lid over the body (`reach`, kept as `lid`); only while the body is under one,
+floors under the camera at the lid over the body (`reach`, kept as `lid`). **A cabin's walls are where her cover
+ends**: the walk map cannot see a bulkhead, so with the body under cover (`covered`: a lid within `COVER` 1.4) the
+boom stops where the cover over the lens ends, and from the open deck where it begins (`hullCovered`, CAM_R
+short of it) - and under cover the boom runs even with *Fixed camera distance* on, which otherwise has none: the
+camera stood in the stairwell looking at the bulkhead with the body in its door. Only while the body is under one,
 `solidPoint` takes her lid over a sampled point as a slab (`CAM_R`), so in a cabin under the poop the boom stays
 under the deck through a full turn. Gated on purpose: ungated, a yard 0.14 over the lens pulled the boom in by a
 unit, and a rule that read a floor the camera is under the lid of as no floor changed the galleon's camera under

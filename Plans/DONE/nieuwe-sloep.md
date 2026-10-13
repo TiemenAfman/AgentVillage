@@ -13,6 +13,10 @@ hieronder staat, met de keeper afgestemd:
 - **Loodrechte wanden** ziet de loopkaart niet: wat een lijf tegenhoudt is een vlak tussen 0,33 en 0,55 boven de
   vloer (balustrades op 0,4, een kraag om de mastvoet, de nestrand) of geen vloer (de hutvloer is bij het schot
   onderbroken, op een drempel in de deur na).
+- **Na het spelen (13 oktober, zelfde dag)**: het achterdek loopt door tot de spiegel (geen achterbak, geen
+  losse doos), de kanonnen zijn 1,8x getekend en schieten over de kaprail (geen open poort en luik meer),
+  de poortladder landt net binnen de ingang; plus de fixes in het lopen (niet meer door het dek bij het
+  nachthuis), de camera in de hut en E alleen vanaf het eigen dek (CLAUDE.md, tests/sloop-walk.test.mjs).
 - **Kleurzones** per vlak (`zones`/`zoneNames` in de bake) voor latere kleuren per speler; die zelf zijn niet gebouwd.
 
 
