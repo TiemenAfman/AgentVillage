@@ -440,7 +440,51 @@ export function createWalkMode({
     if (pull) { pull.jump = true; return; }        // and on the end of somebody else's, struggling free
     if (state.deck) { deckJump = true; return; }   // stepDeck's, in the planks' own frame
     if (state.sitting) { standUp(); return; }   // stand before you jump, not off the stool
+    if (state.swimming) { climbOut(); return; }  // at a plank's edge, up onto it; otherwise nothing
     if (state.grounded && !state.swimming) { state.vy = JUMP_V; state.grounded = false; }
+  }
+
+  // Out of the water onto planks (the keeper, 13 Oct 2026: "je kan vanaf het water niet de steiger
+  // op"). A swimmer floats at WATER_Y - SWIM_SINK and steps STEP_UP, to 0.38; every plank over the
+  // water - a pier and its head, the Salty Kraken's gangway, the quay's fingers and its top - lies at
+  // QUAY_DECK 0.44, so each was a lid you swam under and never a floor. Space at the edge pulls you
+  // up onto it (the keeper's choice over stepping up by itself, which would have ended swimming in
+  // under a pier: from the side you would have climbed it): an edge within CLIMB_REACH ahead of the
+  // way you face, its top no more than CLIMB_OUT over the surface, room to stand on it - and never
+  // from under it, which is what keeps a swimmer under a pier or a finger where they are. Not with
+  // the statue in the arms (both hands are full, as for a jump), nor for a diver (Space swims them up).
+  // The feet are put up there at once; the drawn body is eased up over STEP_OFF_S and the camera
+  // after it (pulledUp, afterMove), as a ladder's foot is.
+  const CLIMB_OUT = 0.6;
+  const CLIMB_REACH = 0.5;
+  let pulledUp = 0;
+  function climbOut() {
+    if (state.dive || state.carry || !state.grounded || state.vehicle || rides()) return false;
+    const from = WATER_Y + CLIMB_OUT - STEP_UP;    // groundAt's reach is `from + STEP_UP`
+    const { x, z } = state.pos;
+    const fx = Math.sin(state.yaw), fz = Math.cos(state.yaw);
+    // Under the planks is a body's back under them too: the middle alone may be - the quay's coping
+    // overhangs its face, and a head pushed in under a pier's edge is still at its edge.
+    if (groundAt(x - fx * BODY_R, z - fz * BODY_R, from) >= 0) return false;
+    for (let d = 0.1; d <= CLIMB_REACH + 1e-9; d += 0.05) {
+      const top = groundAt(x + fx * d, z + fz * d, from);
+      if (!(top >= WATER_Y + 0.06)) continue;
+      // Stand a body's width in from the edge, on the same planks, with room for it up there.
+      const lx = x + fx * (d + BODY_R + 0.05), lz = z + fz * (d + BODY_R + 0.05);
+      const y = groundAt(lx, lz, top);
+      if (Math.abs(y - top) > STEP_DOWN || blocked(lx, lz, y, true, false)) return false;
+      if (ceilingAt(lx, lz, y) - y < HEAD) return false;
+      pulledUp = y - state.pos.y;
+      state.pos.set(lx, y, lz);
+      state.floor = y;
+      state.vy = 0;
+      state.grounded = true;
+      state.swimming = false;
+      drift = null;
+      easeFromDrawn();
+      return true;
+    }
+    return false;
   }
   function crouchToggle() {
     if (state.digging) { cancelDig('crouch'); return; }
@@ -1663,12 +1707,16 @@ export function createWalkMode({
   const STEP_OFF_S = 0.5;
   let onRope = false, stepOff = 0;
   const drawnAt = new THREE.Vector3(), drawnQ = new THREE.Quaternion(), stepOffAt = new THREE.Vector3(), stepOffQ = new THREE.Quaternion(), stepOffTo = new THREE.Quaternion();
+  // Out of the water by Space (climbOut): drawn from where it was, eased onto the planks.
+  function easeFromDrawn() {
+    stepOff = 1;
+    stepOffAt.copy(drawnAt);
+    stepOffQ.copy(drawnQ);
+  }
   function stepOffEase(dt) {
     if (!!climb !== onRope) {
       onRope = !!climb;
-      stepOff = 1;
-      stepOffAt.copy(drawnAt);
-      stepOffQ.copy(drawnQ);
+      easeFromDrawn();
     }
     if (stepOff > 0) {
       stepOff = Math.max(0, stepOff - dt / STEP_OFF_S);
@@ -3052,7 +3100,7 @@ export function createWalkMode({
   const RIDE_LOOK = 0.8;           // and it looks further along the line, or it weaves along it
   const RIDE_CORNER = 0.55;        // radians off the next point: slow to the corner pace
   const RIDE_CORNER_V = 1.2;       // the corner pace: at MOUNT_TURN a turn this fast is 0.46 round, inside RIDE_NEAR
-  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/s²)
+  const RIDE_BRAKE = 3;            // how hard a pace may come off ahead of a corner or the end (units/sÂ²)
   const RIDE_GALLOP_RUN = 2.5;     // units of straight way ahead before a gallop is worth it
   const BIKE_CRUISE = 3.5;         // a bicycle on a route keeps to this, well under BIKE_TOP
   function rideInput(dt) {
@@ -3758,7 +3806,8 @@ export function createWalkMode({
     // not jolted a riser at a time. A fall, a jump, the water or a hull is followed as it always was.
     const rose = stepFrom == null ? 0 : state.pos.y - stepFrom;
     const afoot = state.grounded && !state.swimming && !state.vehicle && !plane && !state.sitting;
-    if (afoot && Math.abs(rose) <= STEP_UP) camStep = clamp(camStep - rose, -STEP_UP, STEP_UP);
+    if (pulledUp) { camStep = -pulledUp; pulledUp = 0; }       // up out of the water: eased, not thrown
+    else if (afoot && Math.abs(rose) <= STEP_UP) camStep = clamp(camStep - rose, -STEP_UP, STEP_UP);
     else camStep = 0;
     camStep *= Math.exp(-CAM_STEP_RATE * dt);
     stepFrom = state.pos.y;
