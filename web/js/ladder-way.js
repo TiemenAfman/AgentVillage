@@ -52,6 +52,7 @@ export function topPace() {
 //
 // Returns { path, len, rungs: [from, to], top: { from, to, at: [d of each row] } | null }, `rungs` and
 // `top` as distances along `path`; `top.at[k]` is how far along the path the clip's row k is.
+const STRETCH = 1.4;
 export function climbWay(rope, from = null) {
   const [foot, head, ...on] = rope;
   const step = stepWay('climbTop');
@@ -70,10 +71,13 @@ export function climbWay(rope, from = null) {
   // the head of the rungs: a step's rise below where the step ends, never below the foot
   const base = { x: head.x, z: head.z, y: Math.max(foot.y, end.y - last[1]) };
   // never further forward than where the ladder lands: the Salty Kraken's mast ladders land 0.19 in
-  // from the rungs, and the clip steps 0.33 forward - there the step is pressed into the room it has
+  // from the rungs, and the clip steps 0.33 forward - there the step is pressed into the room it has.
+  // And drawn out up to STRETCH to reach a landing a little further in, rather than end short of it and
+  // slide the rest over the planks at the climb's pace after standing up: the sloop's entry port lands
+  // 0.43 in, where a body's footprint is first held up by her planks (the keeper, 13 Oct 2026).
   const ahead = (p) => (p.x - head.x) * ix + (p.z - head.z) * iz;
   const room = ahead(on[on.length - 1]);
-  const press = last[0] > room && last[0] > 0 ? Math.max(0, room) / last[0] : 1;
+  const press = last[0] > 0 && room > 0 && room < last[0] * STRETCH ? room / last[0] : last[0] > room && last[0] > 0 ? 0 : 1;
   const over = way.map(([f, u]) => ({ x: base.x + ix * f * press, z: base.z + iz * f * press, y: base.y + u }));
   // and on from where it ends, past what it has already come over
   const rest = on.filter((p, k) => k === on.length - 1 || ahead(p) > last[0] * press + 0.01);

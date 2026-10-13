@@ -173,3 +173,20 @@ test('in her cabin the camera stays in the cabin, looking round: it never goes o
   }
   assert.deepEqual(out, []);
 });
+
+test('up her port ladder the step over the top ends where the clip stands up: nothing slides after it', async () => {
+  // The keeper, 13 Oct 2026: the body stood in the entry port and then slid a unit inboard over the planks to
+  // where the ladder landed. The way is cut so the clip's own step reaches the landing (web/js/ladder-way.js).
+  const { ladderPath } = await import('../shared/deck.mjs');
+  const { climbWay, ladderLanding } = await import('../web/js/ladder-way.js');
+  for (const l of C.ladders) {
+    const rope = ladderPath(C, l, l.foot);
+    const land = ladderLanding(S, C, l);
+    rope[rope.length - 1] = land;
+    const w = climbWay(rope);
+    assert.ok(w.top, 'no step over the top');
+    assert.ok(w.len - w.top.to < 0.02, `the body goes ${(w.len - w.top.to).toFixed(2)} on after the clip has stood up`);
+    // and it stands in the port, not a pace inboard of it
+    assert.ok(Math.abs(land.x) > Math.abs(l.x) - 0.4, `lands at x ${land.x.toFixed(2)}, the ropes at ${l.x}`);
+  }
+});

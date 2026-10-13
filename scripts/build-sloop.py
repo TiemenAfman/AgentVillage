@@ -1047,6 +1047,10 @@ def narrowest(y, z0, z1, k=12):
 for name, z0, z1 in (('waist', STAIR_FOOT, 2.4), ('fore', 2.4, 3.4), ('bow', 3.4, 4.0)):
     w = narrowest(DECK, z0, z1)
     pair('deck', name, (-w, DECK, z0), (w, DECK, z1))
+# each entry port's floor, out to her skin: the rope ladders land in it (climb.side-*.hi, below)
+for sign, side in ((1.0, 'starboard'), (-1.0, 'port')):
+    x0, x1 = narrowest(DECK, ENTRY[0], ENTRY[1]) - 0.3, min(side_x(ENTRY[0], DECK), side_x(ENTRY[1], DECK)) - 0.02
+    pair('deck', f'entry-{side}', (sign * x0, DECK, ENTRY[0] + 0.02), (sign * x1, DECK, ENTRY[1] - 0.02))
 # the break, beside the foot of the quarterdeck's stair
 pair('deck', 'break', (STAIR_X[1] + 0.02, DECK, COMPANION[1]), (narrowest(DECK, COMPANION[1], STAIR_FOOT), DECK, STAIR_FOOT))
 pair('deck', 'walkway', (WALK_X + 0.02, DECK, CABIN_FORE), (narrowest(DECK, CABIN_FORE, COMPANION[1]), DECK, COMPANION[1]))
@@ -1115,11 +1119,14 @@ pair('climb', 'mast', (0, DECK, PIN_Z - RUNG_FROM), (0.46, NEST_FLOOR, MAST_Z))
 anchor('nest', SEAT)
 
 # The rope ladders at the entry ports, hung outside her side, their foot under the water and their head on
-# the deck inside the port.
+# the deck just inside the port: where Climbing Up A Ladder To Standing ends of itself (web/js/ladder-way.js
+# climbWay: it steps 0.32 in from the climber's line, and a head nearer than that presses the step into the
+# room there is). It was 0.35 inside the inner face, and the body slid the 0.29 beyond the clip's end over
+# the planks at the climb's pace after it had stood up (the keeper, 13 Oct 2026: "dit schuiven moet eruit").
 LADDER_Z = sum(ENTRY) / 2
 for sign, side in ((1.0, 'starboard'), (-1.0, 'port')):
     ropes = side_x(LADDER_Z, DECK) + 0.04
-    pair('climb', f'side-{side}', (sign * (ropes + CLIMB_OUT), W - 0.6, LADDER_Z), (sign * (inner_x(LADDER_Z, DECK) - 0.35), DECK, LADDER_Z))
+    pair('climb', f'side-{side}', (sign * (ropes + CLIMB_OUT), W - 0.6, LADDER_Z), (sign * (inner_x(LADDER_Z, DECK) - 0.08), DECK, LADDER_Z))
 
 # What is manned: the guns square out over the cap rail, the gunner inboard of the carriage; the harpoon on
 # the bow on her middle line, pointing over the stem.

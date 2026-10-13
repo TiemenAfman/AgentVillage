@@ -3,7 +3,7 @@
 // shared/crafts.mjs spreads it into CRAFTS.galleon and adds what is tuned by hand. Literals only, so
 // the sea reads it like any shared module. `source` is what it was derived from (tests/craft-bake.test.mjs).
 export const GALLEON = {
-  "source": "9998ff485d47b4f7",
+  "source": "18d5d8c142becfa9",
   "draught": 0.83,
   "tall": 10.36,
   "length": 9,
@@ -54,6 +54,20 @@ export const GALLEON = {
       "hx": 0.58,
       "hz": 0.16,
       "y": 0.4685
+    },
+    {
+      "x": -1.252,
+      "z": 0.55,
+      "hx": 0.18,
+      "hz": 0.23,
+      "y": 1.1485
+    },
+    {
+      "x": 1.252,
+      "z": 0.55,
+      "hx": 0.18,
+      "hz": 0.23,
+      "y": 1.1485
     },
     {
       "x": 0,
@@ -451,7 +465,7 @@ export const GALLEON = {
       "foot": -0.6555,
       "top": 1.1485,
       "land": [
-        1.051,
+        1.321,
         0.55
       ],
       "port": 0.25
@@ -462,7 +476,7 @@ export const GALLEON = {
       "foot": -0.6555,
       "top": 1.1485,
       "land": [
-        -1.051,
+        -1.321,
         0.55
       ],
       "port": 0.25
